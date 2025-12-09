@@ -3,36 +3,26 @@ session_start();
 ob_start();
 include 'db.php';
 
+// DEBUG LOGS
+file_put_contents("debug_load.txt",
+    "pid=" . ($_POST['prospectus_id'] ?? 'NULL') .
+    " | ay=" . ($_POST['ay'] ?? 'NULL') .
+    " | semester=" . ($_POST['semester'] ?? 'NULL') .
+    " | TIME=" . date("Y-m-d H:i:s") . "\n",
+    FILE_APPEND
+);
+
+
+
 $pid      = intval($_POST['prospectus_id'] ?? 0);
-$ay_id    = intval($_POST['ay'] ?? 0);          // ay_id (number)
-$semester = trim($_POST['semester'] ?? '');     // 1,2,3
+$ay_id    = intval($_POST['ay'] ?? 0);   // <-- AY ID
+$semester = trim($_POST['semester'] ?? '');
 
 if (!$pid || !$ay_id || $semester === '') {
     echo "<tr><td colspan='10' class='text-center text-muted'>Missing filters.</td></tr>";
     exit;
 }
 
-/**
- * Get actual AY string (e.g., 2024-2025) from ay_id
- * so we can show it later if needed.
- */
-$ay = '';
-$ayStmt = $conn->prepare("SELECT ay FROM tbl_academic_years WHERE ay_id = ?");
-$ayStmt->bind_param("i", $ay_id);
-$ayStmt->execute();
-$ayStmt->bind_result($ay);
-$ayStmt->fetch();
-$ayStmt->close();
-
-/**
- * Main query:
- *  - tbl_prospectus_offering      = o
- *  - tbl_prospectus_subjects      = ps   (has total_units)
- *  - tbl_subject_masterlist       = sm   (sub_code, sub_description)
- *  - tbl_sections                 = sec  (section_name)
- *  - tbl_faculty                  = f    (faculty name, optional)
- *  - tbl_rooms                    = r    (room name, optional)
- */
 $sql = "
     SELECT 
         o.offering_id,
@@ -51,22 +41,19 @@ $sql = "
 
         sec.section_name
     FROM tbl_prospectus_offering o
-    LEFT JOIN tbl_prospectus_subjects ps 
-           ON ps.ps_id = o.ps_id
-    LEFT JOIN tbl_subject_masterlist sm 
-           ON sm.sub_id = ps.sub_id
-    LEFT JOIN tbl_sections sec 
-           ON sec.section_id = o.section_id
+    LEFT JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+    LEFT JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
+    LEFT JOIN tbl_sections sec ON sec.section_id = o.section_id
     WHERE o.prospectus_id = ?
-      AND o.ay = ?
+      AND o.ay = ?               -- USE AY ID
       AND o.semester = ?
     ORDER BY sec.section_name, sm.sub_code
 ";
 
-
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("iis", $pid, $ay_id, $semester);   // ay stored as ay_id (number)
+$stmt->bind_param("iis", $pid, $ay_id, $semester);  // PASS AY ID
 $stmt->execute();
+
 $result = $stmt->get_result();
 
 if (!$result || $result->num_rows === 0) {

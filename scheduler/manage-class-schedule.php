@@ -324,24 +324,34 @@ $(document).ready(function () {
   $('#sched_room_id').select2({ dropdownParent: $('#scheduleModal'), width: '100%' });
 
   // LOAD SCHEDULE TABLE
-  $('#btnLoadSchedule').on('click', function () {
+$('#btnLoadSchedule').on('click', function () {
+
     const pid = $('#prospectus_id').val();
     const ay  = $('#ay_id').val();
     const sem = $('#semester').val();
 
     if (!pid || !ay || !sem) {
-      Swal.fire('Missing Data', 'Please select Prospectus, AY, and Semester.', 'warning');
-      return;
+        Swal.fire('Missing Data','Please select Prospectus, AY, and Semester.','warning');
+        return;
     }
 
+    // RESET TABLE to prevent ghost rows
+// RESET TABLE to show loading state
+$("#scheduleTable tbody").html(
+    "<tr><td colspan='10' class='text-center text-muted'>Loading...</td></tr>"
+);
+
+
     $.post('../backend/load_class_offerings.php', {
-      prospectus_id: pid,
-      ay: ay,
-      semester: sem
-    }, function (rows) {
-      $('#scheduleTable tbody').html(rows);
+        prospectus_id: pid,
+        ay: ay,
+        semester: sem
+    }, function(rows){
+        $('#scheduleTable tbody').html(rows);
     });
-  });
+});
+
+
 
   // OPEN MODAL FOR SCHEDULING
   $(document).on('click', '.btn-schedule', function () {
@@ -375,7 +385,8 @@ $(document).ready(function () {
   });
 
   // SAVE SCHEDULE
-  $('#btnSaveSchedule').on('click', function () {
+$('#btnSaveSchedule').on('click', function () {
+
     const offering_id = $('#sched_offering_id').val();
     const faculty_id  = $('#sched_faculty_id').val();
     const room_id     = $('#sched_room_id').val();
@@ -412,6 +423,12 @@ $(document).ready(function () {
       },
       success: function (res) {
 
+        console.log("RELOAD WITH: ", 
+            $("#prospectus_id").val(),
+            $("#ay_id").val(),
+            $("#semester").val()
+        );
+
         if (res.status === 'conflict') {
           Swal.fire({
             icon: 'error',
@@ -430,9 +447,9 @@ $(document).ready(function () {
           });
           $('#scheduleModal').modal('hide');
 
-          // reload table with current filters
-          $('#btnLoadSchedule').click();
-        } else {
+          $('#btnLoadSchedule').click();   // 🔥 this is correct
+        } 
+        else {
           Swal.fire('Error', res.message || 'Unknown error.', 'error');
         }
       },
@@ -440,7 +457,8 @@ $(document).ready(function () {
         Swal.fire('Error', xhr.responseText, 'error');
       }
     });
-  });
+});
+
 
 });
 </script>
