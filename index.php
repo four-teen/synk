@@ -165,9 +165,6 @@ if (isset($_POST['login'])) {
                 <div class="mb-3 form-password-toggle">
                   <div class="d-flex justify-content-between">
                     <label class="form-label" for="password">Password</label>
-                    <a href="#">
- 
-                    </a>
                   </div>
                   <div class="input-group input-group-merge">
                     <input
@@ -182,21 +179,28 @@ if (isset($_POST['login'])) {
                   </div>
                 </div>
                 <div class="mb-3">
-                  <div class="form-check">
-
-                  </div>
-                </div>
-                <div class="mb-3">
                   <button type="button" id="btn_login" class="btn btn-primary d-grid w-100">Sign in</button>
                 </div>
+            <footer class="content-footer footer bg-footer-theme">
+              <div class="container-xxl d-flex flex-wrap justify-content-between py-2 flex-md-row flex-column">
+                <div class="mb-2 mb-md-0">
+                  DevDate 12 8 
+                  <script>
+                    document.write(new Date().getFullYear());
+                  </script>
+                  <br>
+                  <a href="#" target="_blank" class="footer-link fw-bolder">SAM Project</a>
+                  Secured Administrative Management
+                </div>
+                <div>
+                  <a href="#" class="footer-link me-4" target="_blank">eOa</a>
+                </div>
+              </div>
+            </footer>
               </form>
-
-              <p class="text-center">
-
-              </p>
             </div>
           </div>
-          <!-- /Register -->
+
         </div>
       </div>
     </div>
@@ -218,6 +222,14 @@ if (isset($_POST['login'])) {
 
 <script>
 $(document).ready(function(){
+
+// 🔹 Trigger login when pressing ENTER inside email or password
+$('#email, #password').on('keypress', function(e) {
+    if (e.which === 13) {  // 13 = ENTER key
+        $("#btn_login").click(); // simulate button click
+    }
+});
+
 
   $("#btn_login").click(function(){
 

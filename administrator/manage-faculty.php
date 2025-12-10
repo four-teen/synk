@@ -28,6 +28,10 @@
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
+    <!-- Datatables CSS -->
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css" />
+
 
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
@@ -40,6 +44,8 @@
       #facultyTable td:last-child {
         white-space: nowrap !important;
       }
+
+
     </style>
 </head>
 
@@ -235,12 +241,17 @@
 <script src="../assets/vendor/js/bootstrap.js"></script>
 <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
 <script src="../assets/vendor/js/menu.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="../assets/js/main.js"></script>
+<!-- Datatables JS -->
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+<script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
+
 
 <script>
-
+let facultyDT; // global variable
 // INITIAL LOAD
 loadFaculty();
 
@@ -249,7 +260,29 @@ loadFaculty();
 // ------------------------------------
 function loadFaculty() {
   $.post("../backend/query_faculty.php", { load_faculty: 1 }, function(data) {
+
     $("#facultyTable tbody").html(data);
+
+    // Destroy old DataTable before reinitializing to avoid duplication
+    if (facultyDT) {
+      facultyDT.destroy();
+    }
+
+    facultyDT = $("#facultyTable").DataTable({
+      responsive: true,
+      autoWidth: false,
+      ordering: true,
+      pageLength: 10,
+      language: {
+        search: "Search:",
+        lengthMenu: "Show _MENU_ entries",
+        info: "Showing _START_ to _END_ of _TOTAL_ faculty",
+      },
+      columnDefs: [
+        { orderable: false, targets: 3 } // disable sorting for action column
+      ]
+    });
+
   });
 }
 

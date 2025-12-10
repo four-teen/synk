@@ -108,34 +108,35 @@ while ($row = $result->fetch_assoc()) {
     }
 
     // ---------- row output ----------
-    echo "
-    <tr>
-        <td>" . htmlspecialchars($row['section_name']) . "</td>
-        <td>" . htmlspecialchars($row['sub_code']) . "</td>
-        <td>" . htmlspecialchars($row['sub_description']) . "</td>
-        <td class='text-center'>" . (int)$row['total_units'] . "</td>
-        <td>$faculty</td>
-        <td>$days</td>
-        <td>$time</td>
-        <td>$room</td>
-        <td>$statusBadge</td>
-        <td>
-            <button 
-                class='btn btn-sm btn-outline-primary btn-schedule'
-                data-offering-id='" . $row['offering_id'] . "'
-                data-section='" . htmlspecialchars($row['section_name'], ENT_QUOTES) . "'
-                data-sub-code='" . htmlspecialchars($row['sub_code'], ENT_QUOTES) . "'
-                data-sub-desc='" . htmlspecialchars($row['sub_description'], ENT_QUOTES) . "'
-                data-faculty-id='" . ($row['faculty_id'] ?? '') . "'
-                data-room-id='" . ($row['room_id'] ?? '') . "'
-                data-days-json='" . htmlspecialchars($row['days_json'] ?? '', ENT_QUOTES) . "'
-                data-time-start='" . ($row['time_start'] ?? '') . "'
-                data-time-end='" . ($row['time_end'] ?? '') . "'
-            >
-                <i class='bx bx-calendar-edit me-1'></i>Schedule
-            </button>
-        </td>
-    </tr>";
+        echo "
+        <tr>
+            <td>" . htmlspecialchars($row['section_name']) . "</td>
+            <td>" . htmlspecialchars($row['sub_code']) . "</td>
+            <td>" . htmlspecialchars($row['sub_description']) . "</td>
+            <td class='text-center'>" . (int)$row['total_units'] . "</td>
+            <td>$faculty</td>
+            <td>$days</td>
+            <td>$time</td>
+            <td>$room</td>
+            <td>$statusBadge</td>
+            <td>
+                <button 
+                    class='btn btn-sm btn-outline-primary btn-schedule'
+                    data-offering-id='" . $row['offering_id'] . "'
+                    data-section='" . htmlspecialchars($row['section_name'], ENT_QUOTES) . "'
+                    data-sub-code='" . htmlspecialchars($row['sub_code'], ENT_QUOTES) . "'
+                    data-sub-desc='" . htmlspecialchars($row['sub_description'], ENT_QUOTES) . "'
+                    data-faculty-id='" . ($row['faculty_id'] ?? '') . "'
+                    data-room-id='" . ($row['room_id'] ?? '') . "'
+                    data-days-json='" . htmlspecialchars(json_encode($row['days_json']), ENT_QUOTES) . "'
+                    data-time-start='" . ($row['time_start'] ?? '') . "'
+                    data-time-end='" . ($row['time_end'] ?? '') . "'
+                >
+                    <i class='bx bx-calendar-edit me-1'></i>Schedule
+                </button>
+            </td>
+        </tr>";
+
 }
 
 $stmt->close();

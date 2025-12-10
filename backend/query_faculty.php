@@ -32,7 +32,7 @@ if (isset($_POST['load_faculty'])) {
 
         echo "
             <tr>
-                <td>{$count}</td>
+                <td>{$count}.</td>
                 <td>" . htmlspecialchars($fullname) . "</td>
                 <td>{$badge}</td>
                 <td class='text-end'>

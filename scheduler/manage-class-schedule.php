@@ -1,7 +1,12 @@
 <?php
 session_start();
-ob_start();
-include '../backend/db.php';
+  ob_start();
+  include '../backend/db.php';
+
+  if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
+      header("Location: ../index.php");
+      exit;
+  }
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -154,11 +159,11 @@ include '../backend/db.php';
                 </tr>
                 </thead>
                 <tbody>
-                <tr>
-                  <td colspan="10" class="text-center text-muted">
-                    Select filters and click <strong>Load</strong>.
-                  </td>
-                </tr>
+                  <tr id="initial_row">
+                    <td colspan="10" class="text-center text-muted">
+                      Select filters and click <strong>Load</strong>.
+                    </td>
+                  </tr>
                 </tbody>
               </table>
             </div>
@@ -316,152 +321,176 @@ include '../backend/db.php';
 <script>
 $(document).ready(function () {
 
+  // ============================
   // INIT SELECT2
-  $('#prospectus_id').select2({ placeholder: 'Select Prospectus', width: '100%' });
-  $('#ay_id').select2({ placeholder: 'Select Academic Year', width: '100%' });
-  $('#semester').select2({ placeholder: 'Select Semester', width: '100%' });
-  $('#sched_faculty_id').select2({ dropdownParent: $('#scheduleModal'), width: '100%' });
-  $('#sched_room_id').select2({ dropdownParent: $('#scheduleModal'), width: '100%' });
+  // ============================
+  $('#prospectus_id').select2({ width: '100%' });
+  $('#ay_id').select2({ width: '100%' });
+  $('#semester').select2({ width: '100%' });
 
-  // LOAD SCHEDULE TABLE
-$('#btnLoadSchedule').on('click', function () {
-
-    const pid = $('#prospectus_id').val();
-    const ay  = $('#ay_id').val();
-    const sem = $('#semester').val();
-
-    if (!pid || !ay || !sem) {
-        Swal.fire('Missing Data','Please select Prospectus, AY, and Semester.','warning');
-        return;
-    }
-
-    // RESET TABLE to prevent ghost rows
-// RESET TABLE to show loading state
-$("#scheduleTable tbody").html(
-    "<tr><td colspan='10' class='text-center text-muted'>Loading...</td></tr>"
-);
-
-
-    $.post('../backend/load_class_offerings.php', {
-        prospectus_id: pid,
-        ay: ay,
-        semester: sem
-    }, function(rows){
-        $('#scheduleTable tbody').html(rows);
-    });
-});
-
-
-
-  // OPEN MODAL FOR SCHEDULING
-  $(document).on('click', '.btn-schedule', function () {
-    const $btn = $(this);
-
-    $('#sched_offering_id').val($btn.data('offering-id'));
-    $('#sched_subject_label').text(
-      $btn.data('sub-code') + ' — ' + $btn.data('sub-desc')
-    );
-    $('#sched_section_label').text('Section: ' + $btn.data('section'));
-
-    // reset fields
-    $('#sched_faculty_id').val($btn.data('faculty-id') || '').trigger('change');
-    $('#sched_room_id').val($btn.data('room-id') || '').trigger('change');
-    $('.sched-day').prop('checked', false);
-    $('#sched_time_start').val('');
-    $('#sched_time_end').val('');
-
-    // prefill existing, if any
-    const daysJson = $btn.data('days-json');
-    if (daysJson) {
-      try {
-        const arr = JSON.parse(daysJson);
-        arr.forEach(d => $('#day_' + d.replace('"','')).prop('checked', true));
-      } catch (e) {}
-    }
-    if ($btn.data('time-start')) $('#sched_time_start').val($btn.data('time-start'));
-    if ($btn.data('time-end')) $('#sched_time_end').val($btn.data('time-end'));
-
-    $('#scheduleModal').modal('show');
+  $('#sched_faculty_id').select2({
+      dropdownParent: $('#scheduleModal'),
+      width: '100%'
   });
 
-  // SAVE SCHEDULE
-$('#btnSaveSchedule').on('click', function () {
+  $('#sched_room_id').select2({
+      dropdownParent: $('#scheduleModal'),
+      width: '100%'
+  });
 
-    const offering_id = $('#sched_offering_id').val();
-    const faculty_id  = $('#sched_faculty_id').val();
-    const room_id     = $('#sched_room_id').val();
-    const time_start  = $('#sched_time_start').val();
-    const time_end    = $('#sched_time_end').val();
 
-    let days = [];
-    $('.sched-day:checked').each(function () {
-      days.push($(this).val());
-    });
+  // ============================
+  // LOAD SCHEDULE TABLE
+  // ============================
+  $("#btnLoadSchedule").on("click", function () {
+      loadScheduleTable();
+  });
 
-    if (!offering_id || !faculty_id || !room_id || !time_start || !time_end || days.length === 0) {
-      Swal.fire('Missing Data', 'Please complete all schedule fields.', 'warning');
-      return;
-    }
+    function loadScheduleTable() {
 
-    if (time_end <= time_start) {
-      Swal.fire('Invalid Time', 'End time must be later than start time.', 'warning');
-      return;
-    }
+        const pid = $("#prospectus_id").val();
+        const ay  = $("#ay_id").val();
+        const sem = $("#semester").val();
 
-    $.ajax({
-      url: '../backend/query_class_schedule.php',
-      type: 'POST',
-      dataType: 'json',
-      data: {
-        save_schedule: 1,
-        offering_id: offering_id,
-        faculty_id: faculty_id,
-        room_id: room_id,
-        time_start: time_start,
-        time_end: time_end,
-        days_json: JSON.stringify(days)
-      },
-      success: function (res) {
+        if (!pid || !ay || !sem) {
+            Swal.fire("Missing Data", "Please select Prospectus, AY, and Semester.", "warning");
+            return;
+        }
 
-        console.log("RELOAD WITH: ", 
-            $("#prospectus_id").val(),
-            $("#ay_id").val(),
-            $("#semester").val()
+        // Show loading placeholder
+        $("#scheduleTable tbody").html(
+            "<tr><td colspan='10' class='text-center text-muted'>Loading...</td></tr>"
         );
 
-        if (res.status === 'conflict') {
-          Swal.fire({
-            icon: 'error',
-            title: 'Schedule Conflict',
-            html: res.message
-          });
-          return;
-        }
+        $.post("../backend/load_class_offerings.php",
+        {
+            prospectus_id: pid,
+            ay: ay,
+            semester: sem
+        },
+        function (rows) {
+            $("#scheduleTable tbody").html(rows);
+        });
+    }
 
-        if (res.status === 'ok') {
-          Swal.fire({
-            icon: 'success',
-            title: 'Schedule Saved',
-            timer: 1200,
-            showConfirmButton: false
-          });
-          $('#scheduleModal').modal('hide');
 
-          $('#btnLoadSchedule').click();   // 🔥 this is correct
-        } 
-        else {
-          Swal.fire('Error', res.message || 'Unknown error.', 'error');
-        }
-      },
-      error: function (xhr) {
-        Swal.fire('Error', xhr.responseText, 'error');
+  // ============================
+  // OPEN SCHEDULE MODAL
+  // ============================
+  $(document).on("click", ".btn-schedule", function () {
+
+      const btn = $(this);
+
+      $("#sched_offering_id").val(btn.data("offering-id"));
+      $("#sched_subject_label").text(btn.data("sub-code") + " — " + btn.data("sub-desc"));
+      $("#sched_section_label").text("Section: " + btn.data("section"));
+
+      // Reset fields
+      $("#sched_faculty_id").val(btn.data("faculty-id") || "").trigger("change");
+      $("#sched_room_id").val(btn.data("room-id") || "").trigger("change");
+      $(".sched-day").prop("checked", false);
+      $("#sched_time_start").val("");
+      $("#sched_time_end").val("");
+
+      // Days (if existing)
+      let days = btn.data("days-json");
+      if (days) {
+          try {
+              JSON.parse(days).forEach(d => $("#day_" + d.replace('"','')).prop("checked", true));
+          } catch (e) {}
       }
-    });
-});
+
+      if (btn.data("time-start")) $("#sched_time_start").val(btn.data("time-start"));
+      if (btn.data("time-end"))   $("#sched_time_end").val(btn.data("time-end"));
+
+      $("#scheduleModal").modal("show");
+  });
+
+
+  // ============================
+  // SAVE SCHEDULE
+  // ============================
+  $("#btnSaveSchedule").on("click", function () {
+
+      const offering_id = $("#sched_offering_id").val();
+      const faculty_id  = $("#sched_faculty_id").val();
+      const room_id     = $("#sched_room_id").val();
+      const time_start  = $("#sched_time_start").val();
+      const time_end    = $("#sched_time_end").val();
+
+      let days = [];
+      $(".sched-day:checked").each(function () {
+          days.push($(this).val());
+      });
+
+      // VALIDATIONS
+      if (!offering_id || !faculty_id || !room_id || !time_start || !time_end || days.length === 0) {
+          Swal.fire("Missing Data", "Please complete all schedule fields.", "warning");
+          return;
+      }
+
+      if (time_end <= time_start) {
+          Swal.fire("Invalid Time", "End time must be later than start time.", "warning");
+          return;
+      }
+
+      // SEND TO BACKEND
+      $.ajax({
+          url: "../backend/query_class_schedule.php",
+          type: "POST",
+          dataType: "json",
+          data: {
+              save_schedule: 1,
+              offering_id: offering_id,
+              faculty_id: faculty_id,
+              room_id: room_id,
+              time_start: time_start,
+              time_end: time_end,
+              days_json: JSON.stringify(days)
+          },
+
+          success: function (res) {
+
+              if (res.status === "conflict") {
+                  Swal.fire({
+                      icon: "error",
+                      title: "Schedule Conflict",
+                      html: res.message
+                  });
+                  return;
+              }
+
+              if (res.status === "ok") {
+
+                  Swal.fire({
+                      icon: "success",
+                      title: "Schedule Saved",
+                      timer: 1300,
+                      showConfirmButton: false
+                  });
+
+                  $("#scheduleModal").modal("hide");
+
+                  // RELOAD TABLE
+                  setTimeout(() => {
+                      loadScheduleTable();
+                  }, 300);
+                  return;
+              }
+
+              Swal.fire("Error", res.message || "Unknown error.", "error");
+          },
+
+          error: function (xhr) {
+              Swal.fire("Error", xhr.responseText, "error");
+          }
+      });
+  });
 
 
 });
 </script>
+
 
 </body>
 </html>
