@@ -65,8 +65,8 @@ if (isset($_POST['load_colleges'])) {
 if (isset($_POST['save_college'])) {
 
     $campus_id = $_POST['campus_id'];
-    $code      = $_POST['college_code'];
-    $name      = $_POST['college_name'];
+    $code      = strtoupper($_POST['college_code']);
+    $name      = strtoupper($_POST['college_name']);
 
     $sql = "INSERT INTO tbl_college (campus_id, college_code, college_name)
             VALUES ('$campus_id', '$code', '$name')";
@@ -85,8 +85,8 @@ if (isset($_POST['update_college'])) {
 
     $college_id = $_POST['college_id'];
     $campus_id  = $_POST['campus_id'];
-    $code       = $_POST['college_code'];
-    $name       = $_POST['college_name'];
+    $code       = strtoupper($_POST['college_code']);
+    $name       = strtoupper($_POST['college_name']);
     $status     = $_POST['status'];
 
     $sql = "

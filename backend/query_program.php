@@ -78,9 +78,9 @@ if (isset($_POST['load_programs'])) {
 if (isset($_POST['save_program'])) {
 
     $college_id   = $_POST['college_id'];
-    $program_code = $_POST['program_code'];
-    $program_name = $_POST['program_name'];
-    $major        = $_POST['major'];
+    $program_code = strtoupper($_POST['program_code']);
+    $program_name = strtoupper($_POST['program_name']);
+    $major        = strtoupper($_POST['major']);
 
     $sql = "INSERT INTO tbl_program (college_id, program_code, program_name, major)
             VALUES ('$college_id', '$program_code', '$program_name', '$major')";
@@ -100,9 +100,9 @@ if (isset($_POST['update_program'])) {
 
     $program_id   = $_POST['program_id'];
     $college_id   = $_POST['college_id'];
-    $program_code = $_POST['program_code'];
-    $program_name = $_POST['program_name'];
-    $major        = $_POST['major'];
+    $program_code = strtoupper($_POST['program_code']);
+    $program_name = strtoupper($_POST['program_name']);
+    $major        = strtoupper($_POST['major']);
     $status       = $_POST['status'];
 
     $sql = "

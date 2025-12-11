@@ -24,7 +24,8 @@
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
-
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+  
     <style>
       #programTable td {
           padding-top: 0.65rem !important;
@@ -124,7 +125,8 @@
                   <?php
                     $colleges = $conn->query("SELECT college_id, college_name FROM tbl_college WHERE status='active'");
                     while ($c = $colleges->fetch_assoc()) {
-                      echo "<option value='{$c['college_id']}'>{$c['college_name']}</option>";
+                      $x = strtoupper($c['college_name']);
+                      echo "<option value='{$c['college_id']}'>{$x}</option>";
                     }
                   ?>
                 </select>
@@ -223,17 +225,44 @@
 
     <!-- JS Files -->
     <script src="../assets/vendor/libs/jquery/jquery.js"></script>
+    <script src="../assets/vendor/libs/popper/popper.js"></script>
     <script src="../assets/vendor/js/bootstrap.js"></script>
+    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
+    <script src="../assets/vendor/js/menu.js"></script>
+    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
+    <script src="../assets/js/main.js"></script>
+    <script src="../assets/js/dashboards-analytics.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
 
     <script>
       loadPrograms();
 
-      function loadPrograms() {
-        $.post("../backend/query_program.php", { load_programs: 1 }, function(data) {
-          $("#programTable tbody").html(data);
+let progTable = null;
+
+function loadPrograms() {
+    $.post("../backend/query_program.php", { load_programs: 1 }, function (data) {
+        
+        // Destroy existing DataTable before loading new data
+        if (progTable !== null) {
+            progTable.destroy();
+        }
+
+        $("#programTable tbody").html(data);
+
+        // Reinitialize DataTable
+        progTable = $("#programTable").DataTable({
+            pageLength: 10,
+            ordering: true,
+            responsive: true,
+            autoWidth: false
         });
-      }
+    });
+}
+
 
       $("#btnSaveProgram").click(function () {
         $.post("../backend/query_program.php",

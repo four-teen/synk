@@ -132,9 +132,12 @@
                   <option value="">Select Campus</option>
                   <?php
                     $campus = $conn->query("SELECT * FROM tbl_campus WHERE status='active'");
-                    while ($c = $campus->fetch_assoc()) {
-                        echo "<option value='{$c['campus_id']}'>{$c['campus_name']}</option>";
-                    }
+                      while ($c = $campus->fetch_assoc()) {
+                          // Use strtoupper() on the value you want to make uppercase
+                          $uppercase_name = strtoupper($c['campus_name']);
+                          
+                          echo "<option value='{$c['campus_id']}'>{$uppercase_name}</option>";
+                      }
                   ?>
                 </select>
               </div>
@@ -220,8 +223,14 @@
 
     <!-- JS -->
     <script src="../assets/vendor/libs/jquery/jquery.js"></script>
+    <script src="../assets/vendor/libs/popper/popper.js"></script>
     <script src="../assets/vendor/js/bootstrap.js"></script>
+    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
     <script src="../assets/vendor/js/menu.js"></script>
+    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
+    <script src="../assets/js/main.js"></script>
+    <script src="../assets/js/dashboards-analytics.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 
     <script>

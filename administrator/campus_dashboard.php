@@ -142,6 +142,74 @@ $rsRooms = $conn->query($roomListQuery);
 while ($row = $rsRooms->fetch_assoc()) {
     $rooms[] = $row;
 }
+
+
+// -----------------------------------------
+// CAMPUS METRICS (FACULTY, PROGRAMS, SECTIONS, ROOMS)
+// -----------------------------------------
+
+$facultyCount = 0;
+$programCount = 0;
+$sectionCount = 0;
+
+if ($isUniversitySummary) {
+
+    // ALL FACULTY
+    $facultyCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_faculty
+        WHERE status='active'
+    ")->fetch_assoc()['cnt'];
+
+    // ALL PROGRAMS
+    $programCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_program
+        WHERE status='active'
+    ")->fetch_assoc()['cnt'];
+
+    // ALL SECTIONS
+    $sectionCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_sections
+        WHERE status='active'
+    ")->fetch_assoc()['cnt'];
+
+} else {
+
+    // FACULTY assigned to this campus
+    $facultyCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_faculty f
+        INNER JOIN tbl_college_faculty cf ON cf.faculty_id = f.faculty_id
+        INNER JOIN tbl_college c ON c.college_id = cf.college_id
+        WHERE c.campus_id = {$campusId}
+          AND f.status = 'active'
+          AND cf.status = 'active'
+    ")->fetch_assoc()['cnt'];
+
+    // PROGRAMS under this campus (via college)
+    $programCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_program p
+        INNER JOIN tbl_college c ON c.college_id = p.college_id
+        WHERE c.campus_id = {$campusId}
+          AND p.status = 'active'
+    ")->fetch_assoc()['cnt'];
+
+    // SECTIONS under this campus (via program → college → campus)
+    $sectionCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_sections s
+        INNER JOIN tbl_program p ON p.program_id = s.program_id
+        INNER JOIN tbl_college c ON c.college_id = p.college_id
+        WHERE c.campus_id = {$campusId}
+          AND s.status = 'active'
+    ")->fetch_assoc()['cnt'];
+}
+
+
+
 ?>
 <!DOCTYPE html>
 <html
@@ -303,7 +371,7 @@ while ($row = $rsRooms->fetch_assoc()) {
                           <div class="kpi-icon bg-primary">
                             <i class="bx bx-user-voice"></i>
                           </div>
-                          <h3 class="kpi-value text-primary mt-2">0</h3>
+                          <h3 class="kpi-value text-info mt-2"><?= $facultyCount; ?></h3>
                           <small class="text-muted">
                             <?= $isUniversitySummary ? 'Faculty (All Campuses)' : 'Campus Faculty'; ?>
                           </small>
