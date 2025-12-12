@@ -1,7 +1,6 @@
 <?php 
     session_start();
     ob_start();
-
     include '../backend/db.php';
 ?>
 <!DOCTYPE html>
@@ -31,7 +30,7 @@
     <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
 
-
+      <link rel="stylesheet" type="text/css" href="custom_css.css">
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
 
@@ -49,6 +48,35 @@
         padding-top: 0.4rem !important;
         padding-bottom: 0.4rem !important;
       }
+
+      .swal2-container {
+          z-index: 20000 !important;
+      }
+
+      /* Smaller and cleaner SweetAlert */
+      .swal2-popup {
+          font-size: 0.85rem !important;
+          padding: 1.2rem !important;
+          border-radius: 12px !important;
+      }
+
+      /* Green loader bar */
+      .swal2-timer-progress-bar {
+          background: #28a745 !important; /* Bootstrap success green */
+      }
+
+      /* Ensure alert stays on top of modal */
+      .swal2-container {
+          z-index: 20000 !important;
+      }
+
+.accordion-header {
+    background: #FFF7E6 !important;     /* light beige */
+    border: 1px solid #FFE4C2 !important;
+    border-radius: 6px;
+    padding: 6px 12px;
+    margin-bottom: 6px;
+}
     </style>
 </head>
 
@@ -91,21 +119,51 @@
                   <label class="form-label prospectus-header-label">Program</label>
                   <select class="form-select" name="program_id" id="program_id" required>
                     <option value="">Select Program</option>
+
                     <?php
-                      $prog = $conn->query("
-                        SELECT p.program_id, p.program_code, p.program_name, c.college_name
-                        FROM tbl_program p
-                        LEFT JOIN tbl_college c ON p.college_id = c.college_id
-                        WHERE p.status='active'
-                        ORDER BY c.college_name, p.program_name
-                      ");
+                      $role = $_SESSION['role'];
+                      $myCollege = $_SESSION['college_id'];
+
+                      // ADMIN → can see ALL programs
+                      if ($role === 'admin') {
+
+                        $prog = $conn->query("
+                          SELECT p.program_id, p.program_code, p.program_name, c.college_name
+                          FROM tbl_program p
+                          LEFT JOIN tbl_college c ON p.college_id = c.college_id
+                          WHERE p.status='active'
+                          ORDER BY c.college_name, p.program_name
+                        ");
+
+                      } 
+                      // SCHEDULER → can see ONLY programs under *their* college
+                      else if ($role === 'scheduler') {
+
+                        $prog = $conn->query("
+                          SELECT p.program_id, p.program_code, p.program_name, c.college_name
+                          FROM tbl_program p
+                          LEFT JOIN tbl_college c ON p.college_id = c.college_id
+                          WHERE p.status='active'
+                            AND p.college_id = '$myCollege'
+                          ORDER BY p.program_name
+                        ");
+                      }
+
                       while ($r = $prog->fetch_assoc()) {
-                        $label = $r['college_name'] . ' - ' . $r['program_name'] . ' (' . $r['program_code'] . ')';
+                        // Cleaner label for scheduler
+                        if ($role === 'scheduler') {
+                            $label = $r['program_name'] . ' (' . $r['program_code'] . ')';
+                        } else {
+                            $label = $r['college_name'] . ' - ' . $r['program_name'] . ' (' . $r['program_code'] . ')';
+                        }
+
                         echo "<option value='{$r['program_id']}'>" . htmlspecialchars($label) . "</option>";
                       }
                     ?>
+
                   </select>
                 </div>
+
 
                 <!-- CMO No -->
                 <div class="col-md-3">
@@ -252,22 +310,31 @@
 
           <!-- UNITS -->
           <div class="row">
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Lec</label>
-              <input type="number" name="lec_units" id="ps_lec_units"
-                     class="form-control" min="0" value="0">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Lab</label>
-              <input type="number" name="lab_units" id="ps_lab_units"
-                     class="form-control" min="0" value="0">
-            </div>
-            <div class="col-md-4 mb-3">
-              <label class="form-label">Sort Order</label>
-              <input type="number" name="sort_order" id="ps_sort_order"
-                     class="form-control" min="1" value="1">
-            </div>
+              <div class="col-md-3 mb-3">
+                  <label class="form-label">Lec</label>
+                  <input type="number" name="lec_units" id="ps_lec_units"
+                         class="form-control calc-units" min="0" value="0">
+              </div>
+
+              <div class="col-md-3 mb-3">
+                  <label class="form-label">Lab</label>
+                  <input type="number" name="lab_units" id="ps_lab_units"
+                         class="form-control calc-units" min="0" value="0">
+              </div>
+
+              <div class="col-md-3 mb-3">
+                  <label class="form-label">Total Units</label>
+                  <input type="number" name="total_units" id="ps_total_units"
+                         class="form-control" min="0" value="0">
+              </div>
+
+              <div class="col-md-3 mb-3">
+                  <label class="form-label">Sort Order</label>
+                  <input type="number" name="sort_order" id="ps_sort_order"
+                         class="form-control" min="1" value="1">
+              </div>
           </div>
+
 
           <!-- PRE-REQUISITE SUBJECTS -->
           <div class="mb-3">
@@ -318,16 +385,33 @@
 
 
 <!-- JS -->
-  <script src="https://code.jquery.com/jquery-3.6.0.min.js"></script>
-<script src="../assets/vendor/js/bootstrap.js"></script>
-<script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
-<script src="../assets/vendor/js/menu.js"></script>
-<script src="../assets/js/sweetalert2.all.min.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
-<script src="../assets/js/main.js"></script>
+    <script src="../assets/vendor/libs/jquery/jquery.js"></script>
+    <script src="../assets/vendor/libs/popper/popper.js"></script>
+    <script src="../assets/vendor/js/bootstrap.js"></script>
+    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
+    <script src="../assets/vendor/js/menu.js"></script>
+    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
+    <script src="../assets/js/main.js"></script>
+    <script src="../assets/js/dashboards-analytics.js"></script>
+
 
 <script>
 
+let lastOpenedPys = null;
+
+// $(document).on("input", ".calc-units", function () {
+//     let lec = parseInt($("#ps_lec_units").val()) || 0;
+//     let lab = parseInt($("#ps_lab_units").val()) || 0;
+
+//     $("#ps_total_units").val(lec + lab);
+// });
+
+
+$(document).on("shown.bs.collapse", ".accordion-collapse", function () {
+    lastOpenedPys = $(this).attr("id"); // example: collapse12
+});
 
 function loadPrerequisiteOptions(prospectus_id) {
     return $.post(
@@ -350,20 +434,74 @@ function loadPrerequisiteOptions(prospectus_id) {
     );
 }
 
+// -----------------------------
+// DELETE YEAR SEMESTER
+// -----------------------------
+$(document).on("click", ".btnDeleteYearSem", function () {
+    let pys_id = $(this).data("pys");
 
+    Swal.fire({
+        title: "Delete Year & Semester?",
+        html: "<small>This will permanently remove this year/semester <br> and all subjects under it.</small>",
+        icon: "warning",
+        showCancelButton: true,
+        confirmButtonColor: "#d33",
+        cancelButtonColor: "#aaa",
+        confirmButtonText: "Yes, delete it",
+    }).then((result) => {
+        if (result.isConfirmed) {
+            $.post("../backend/query_prospectus.php", {
+                delete_year_sem: 1,
+                pys_id: pys_id
+            }, function (res) {
+
+                let parts = res.split("|");
+                let status = parts[0];
+                let msg = parts[1];
+
+                if (status === "OK") {
+                    Swal.fire({
+                        icon: "success",
+                        title: msg,
+                        timer: 1200,
+                        showConfirmButton: false,
+                    });
+
+                    loadYearSem($("#prospectus_id").val());
+                } else {
+                    Swal.fire("Error", msg, "error");
+                }
+            });
+        }
+    });
+});
 
 
 // -----------------------------
 // GLOBAL FUNCTION (must be here)
 // -----------------------------
-function loadYearSem(prospectus_id) {
-    console.log("Loading Year/Sem for ID:", prospectus_id);
+// function loadYearSem(prospectus_id) {
+//     console.log("Loading Year/Sem for ID:", prospectus_id);
 
+//     $.post(
+//         "../backend/query_prospectus.php",
+//         { load_year_sem: 1, prospectus_id: prospectus_id },
+//         function (html) {
+//             $("#yearSemAccordion").html(html);
+//         }
+//     );
+// }
+function loadYearSem(prospectus_id) {
     $.post(
         "../backend/query_prospectus.php",
         { load_year_sem: 1, prospectus_id: prospectus_id },
         function (html) {
             $("#yearSemAccordion").html(html);
+
+            // Re-open the previously opened section
+            if (lastOpenedPys) {
+                $("#" + lastOpenedPys).collapse("show");
+            }
         }
     );
 }
@@ -373,12 +511,13 @@ function loadYearSem(prospectus_id) {
 // -----------------------------
 $(document).ready(function () {
 
-// $('#ps_prerequisites').select2({
-//     placeholder: "Select prerequisite subjects",
-//     allowClear: true,
-//     width: "100%",
-//     dropdownParent: $('#subjectModal')
-// });
+// Initialize SUBJECT dropdown as single-select Select2
+$('#ps_sub_id').select2({
+    placeholder: "Select Subject",
+    allowClear: true,
+    width: "100%",
+    dropdownParent: $('#subjectModal')
+});
 
     // Make globally accessible
     window.loadYearSem = loadYearSem;
@@ -435,7 +574,16 @@ $(document).ready(function () {
                 $("#cmo_no").val(parts[2]);
                 $("#effective_sy").val(parts[3]);
 
-                Swal.fire("Loaded!", "Prospectus loaded successfully.", "success");
+                Swal.fire({
+                    icon: "success",
+                    title: "Loaded!",
+                    text: "Prospectus loaded successfully.",
+                    timer: 1000,
+                    timerProgressBar: true,
+                    showConfirmButton: false,
+                    heightAuto: false
+                });
+
 
                 $("#loadProspectusModal").modal("hide");
                 $("#yearSemCard").show();
@@ -514,30 +662,46 @@ $(document).ready(function () {
 $(document).on("click", ".btnAddSubject", function () {
 
     let pys = $(this).data("pys");
-    $("#ps_pys_id").val(pys);
+    console.log("PYS SENT:", pys);   // ← ADD THIS
+    // $("#ps_pys_id").val(pys);
+    $('#subjectModal').find('#ps_pys_id').val(pys);
 
     // Load prerequisite options (AJAX)
     loadPrerequisiteOptions($("#prospectus_id").val()).then(() => {
 
-// Destroy previous Select2 to avoid duplicate initialization
-if ($('#ps_prerequisites').hasClass("select2-hidden-accessible")) {
-    $('#ps_prerequisites').select2('destroy');
+    // Destroy previous Select2 to avoid duplicate initialization
+    if ($('#ps_prerequisites').hasClass("select2-hidden-accessible")) {
+        $('#ps_prerequisites').select2('destroy');
+    }
+
+    // Initialize Select2 normally
+    $('#ps_prerequisites').select2({
+        placeholder: "Select prerequisite subjects",
+        allowClear: true,
+        width: "100%",
+        dropdownParent: $('#subjectModal')
+    });
+
+        });
+
+        $("#subjectModal").modal("show");
+    });
+
+// Destroy old Select2 (avoid duplicate instances)
+if ($('#ps_sub_id').hasClass("select2-hidden-accessible")) {
+    $('#ps_sub_id').select2('destroy');
 }
 
-// Initialize Select2 normally
-$('#ps_prerequisites').select2({
-    placeholder: "Select prerequisite subjects",
+// Reinitialize as single select
+$('#ps_sub_id').select2({
+    placeholder: "Select Subject",
     allowClear: true,
     width: "100%",
     dropdownParent: $('#subjectModal')
 });
 
-    });
-
-    $("#subjectModal").modal("show");
-});
-
-
+// Clear previous value
+$('#ps_sub_id').val('').trigger('change');
 
 
 
@@ -547,7 +711,7 @@ $('#ps_prerequisites').select2({
 $("#btnSaveProspectusSubject").click(function () {
 
     // Get all form values manually
-    let form = $("#prospectusSubjectForm");
+    let form = $('#subjectModal').find('#prospectusSubjectForm');
     let formData = form.serializeArray();
 
     // Extract prerequisite values (array)
@@ -583,22 +747,34 @@ $("#btnSaveProspectusSubject").click(function () {
             return;
         }
 
-        if (status === "OK") {
-            Swal.fire("Success", msg, "success");
+      if (status === "OK") {
+          Swal.fire({
+              icon: "success",
+              title: "Saved Successfully!",
+              text: msg,
+              timer: 1200,
+              timerProgressBar: true,
+              showConfirmButton: false,
+              heightAuto: false,
+          });
 
-            // Do NOT CLOSE MODAL
-            // $("#subjectModal").modal("hide");
+          // Reload year/semester subject list
+          loadYearSem($("#prospectus_id").val());
 
-            // Reload the subject list
-            loadYearSem($("#prospectus_id").val());
+          // Clear subject & prerequisites
+          $("#ps_sub_id").val("").trigger("change");
+          $("#ps_prerequisites").val([]).trigger("change");
 
-            // Clear fields for fast entry
-            $("#ps_sub_id").val("").trigger("change");
-            $("#ps_lec_units").val(0);
-            $("#ps_lab_units").val(0);
-            $("#ps_sort_order").val(1);
-            $("#ps_prerequisites").val([]).trigger("change");
-        }
+          // ✅ Increment sort order automatically
+          let currentSort = parseInt($("#ps_sort_order").val()) || 1;
+          $("#ps_sort_order").val(currentSort + 1);
+
+          // ✅ Focus back to subject dropdown
+          setTimeout(() => {
+              $("#ps_sub_id").select2("open"); // or .focus() if not select2
+          }, 200);
+      }
+
     });
 
 });

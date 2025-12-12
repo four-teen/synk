@@ -22,66 +22,6 @@
         </li>
 
 
-        <li class="menu-item">
-            <a href="javascript:void(0);" class="menu-link menu-toggle">
-                <i class="menu-icon tf-icons bx bx-user"></i>
-                <div>Accounts</div>
-            </a>
-            <ul class="menu-sub">
-                <li class="menu-item">
-                    <a href="manage-accounts.php" class="menu-link">
-                        <div>Manage Users</div>
-                    </a>
-                </li>
-                <li class="menu-item">
-                    <a href="manage-roles.php" class="menu-link">
-                        <div>Roles</div>
-                    </a>
-                </li>
-            </ul>
-        </li>
-
-
-        <li class="menu-item">
-            <a href="javascript:void(0);" class="menu-link menu-toggle">
-                <i class="menu-icon tf-icons bx bx-buildings"></i>
-                <div>Academics</div>
-            </a>
-
-            <ul class="menu-sub">
-                <li class="menu-item">
-                    <a href="manage-campuses.php" class="menu-link">
-                        <div>Campuses</div>
-                    </a>
-                </li>
-
-                <li class="menu-item">
-                    <a href="manage-colleges.php" class="menu-link">
-                        <div>Colleges</div>
-                    </a>
-                </li>
-
-                <li class="menu-item">
-                    <a href="manage-programs.php" class="menu-link">
-                        <div>Programs / Courses</div>
-                    </a>
-                </li>
-
-                <li class="menu-item">
-                    <a href="manage-subject-masterlist.php" class="menu-link">
-                        <div>Subjects (Catalog)</div>
-                    </a>
-                </li>
-
-                <li class="menu-item">
-                    <a href="manage-faculty.php" class="menu-link">
-                        <div>Faculty Masterlist</div>
-                    </a>
-                </li>
-            </ul>
-        </li>
-
-
         <!-- SCHEDULING -->
         <li class="menu-item">
             <a href="javascript:void(0);" class="menu-link menu-toggle">
@@ -97,22 +37,47 @@
                 </li>
 
                 <li class="menu-item">
-                    <a href="faculty-workload.php" class="menu-link">
+                    <a href="manage-offerings.php" class="menu-link">
+                        <div>Generate Offerings</div>
+                    </a>
+                </li>
+
+                <li class="menu-item">
+                    <a href="manage-college-faculty.php" class="menu-link">
+                        <div>Manage Faculty</div>
+                    </a>
+                </li>
+
+                <li class="menu-item">
+                    <a href="manage-workload.php" class="menu-link">
                         <div>Faculty Workload</div>
                     </a>
                 </li>
 
                 <li class="menu-item">
-                    <a href="class-scheduling.php" class="menu-link">
+                    <a href="manage-class-schedule.php" class="menu-link">
                         <div>Class Scheduling</div>
                     </a>
                 </li>
 
                 <li class="menu-item">
-                    <a href="room-utilization-matrix.php" class="menu-link">
+                    <a href="manage-room-utilization.php" class="menu-link">
                         <div>Room Utilization Matrix</div>
                     </a>
                 </li>
+
+                <li class="menu-item">
+                    <a href="manage-rooms.php" class="menu-link">
+                        <div>Manage Rooms</div>
+                    </a>
+                </li> 
+
+                <li class="menu-item">
+                    <a href="manage-sections.php" class="menu-link">
+                        <div>Rooms Sectioning</div>
+                    </a>
+                </li>
+
             </ul>
         </li>
 
@@ -125,6 +90,13 @@
             </a>
 
             <ul class="menu-sub">
+
+                <li class="menu-item">
+                    <a href="manage-faculty-workload.php" class="menu-link">
+                        <div>Manage Faculty Workloads</div>
+                    </a>
+                </li>  
+                              
                 <li class="menu-item">
                     <a href="mwth-balance.php" class="menu-link">
                         <div>MW/TTh Balance</div>

@@ -36,19 +36,6 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
       font-size: 0.85rem;
       color: #6c757d;
     }
-    .swal-top {
-        z-index: 20000 !important;
-    }
-/* Force SweetAlert above Bootstrap modal */
-.swal2-container {
-    z-index: 30000 !important;
-}
-
-/* Prevent modal from stealing focus */
-body.swal2-shown .modal {
-    filter: blur(1px);
-}
-
   </style>
 </head>
 
@@ -400,58 +387,18 @@ $(document).ready(function () {
             days.push($(this).val());
         });
 
-// ----------------------------
-// VALIDATION (Improved)
-// ----------------------------
-function showValidation(title, message) {
-    // keep modal open but bring alert to front
-    Swal.fire({
-        icon: "warning",
-        title: title,
-        html: message,
-        allowOutsideClick: false,
-        customClass: {
-            popup: 'swal-top'
+        // ----------------------------
+        // VALIDATION
+        // ----------------------------
+        if (!offering_id || !faculty_id || !room_id || !time_start || !time_end || days.length === 0) {
+            Swal.fire("Missing Data", "Please complete all schedule fields.", "warning");
+            return;
         }
-    });
-}
 
-if (!offering_id) {
-    showValidation("Missing Data", "Offering reference is missing. Please reload the page.");
-    return;
-}
-
-if (!faculty_id) {
-    showValidation("Missing Faculty", "Please select an instructor for this class.");
-    return;
-}
-
-if (!room_id) {
-    showValidation("Missing Room", "Please select a room.");
-    return;
-}
-
-if (!time_start || !time_end) {
-    showValidation("Missing Time", "Please provide both start and end time.");
-    return;
-}
-
-if (time_end <= time_start) {
-    showValidation(
-        "Invalid Time Range",
-        "End time must be later than start time."
-    );
-    return;
-}
-
-if (days.length === 0) {
-    showValidation(
-        "Missing Days",
-        "Please select at least one day for the class schedule."
-    );
-    return;
-}
-
+        if (time_end <= time_start) {
+            Swal.fire("Invalid Time", "End time must be later than start time.", "warning");
+            return;
+        }
 
         // ----------------------------
         // AJAX SAVE
@@ -471,15 +418,14 @@ if (days.length === 0) {
             },
             success: function (res) {
 
-                Swal.fire({
-                    icon: "error",
-                    title: "Schedule Conflict",
-                    html: res.message,
-                    allowOutsideClick: false,
-                    customClass: {
-                        popup: 'swal-top'
-                    }
-                });
+                if (res.status === "conflict") {
+                    Swal.fire({
+                        icon: "error",
+                        title: "Schedule Conflict",
+                        html: res.message
+                    });
+                    return;
+                }
 
                 if (res.status === "ok") {
                     Swal.fire({

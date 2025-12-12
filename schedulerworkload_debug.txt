@@ -1,0 +1,216 @@
+[2025-12-12 14:06:13] FILTER INPUTS => Array
+(
+    [prospectus_id] => 25
+    [ay_id] => 2
+    [semester] => 1
+    [college_id] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:13] CAMPUS LABEL => ISULAN CAMPUS CAMPUS
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:13] AY LOOKUP RESULT => Array
+(
+    [ay_id] => 2
+    [ayLabel] => 2024-2025
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:13] FINAL SQL => 
+SELECT
+  sm.sub_code,
+  sm.sub_description,
+  sec.section_name,
+  cs.days_json,
+  cs.time_start,
+  cs.time_end,
+  r.room_name
+FROM tbl_prospectus_offering o
+JOIN tbl_sections sec ON sec.section_id = o.section_id
+JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
+LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
+LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
+WHERE o.prospectus_id = ?
+AND o.ay = ?
+AND o.semester = ?
+ORDER BY sm.sub_code, sec.section_name
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:13] SQL BINDS => Array
+(
+    [prospectus_id] => 25
+    [ay_string] => 2024-2025
+    [semester] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:13] QUERY RESULT COUNT => 0
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:13] GROUPED COURSES => Array
+(
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] FILTER INPUTS => Array
+(
+    [prospectus_id] => 25
+    [ay_id] => 2
+    [semester] => 1
+    [college_id] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] CAMPUS LABEL => ISULAN CAMPUS CAMPUS
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] AY LOOKUP RESULT => Array
+(
+    [ay_id] => 2
+    [ayLabel] => 2024-2025
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] FINAL SQL => 
+SELECT
+  sm.sub_code,
+  sm.sub_description,
+  sec.section_name,
+  cs.days_json,
+  cs.time_start,
+  cs.time_end,
+  r.room_name
+FROM tbl_prospectus_offering o
+JOIN tbl_sections sec ON sec.section_id = o.section_id
+JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
+LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
+LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
+WHERE o.prospectus_id = ?
+AND o.ay = ?
+AND o.semester = ?
+ORDER BY sm.sub_code, sec.section_name
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] SQL BINDS => Array
+(
+    [prospectus_id] => 25
+    [ay_string] => 2024-2025
+    [semester] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] QUERY RESULT COUNT => 0
+--------------------------------------------------------------------------------
+[2025-12-12 14:06:31] GROUPED COURSES => Array
+(
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] FILTER INPUTS => Array
+(
+    [prospectus_id] => 25
+    [ay_id] => 2
+    [semester] => 1
+    [college_id] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] CAMPUS LABEL => ISULAN CAMPUS CAMPUS
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] AY LOOKUP RESULT => Array
+(
+    [ay_id] => 2
+    [ayLabel] => 2024-2025
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] FINAL SQL => 
+SELECT
+  sm.sub_code,
+  sm.sub_description,
+  sec.section_name,
+  cs.days_json,
+  cs.time_start,
+  cs.time_end,
+  r.room_name
+FROM tbl_prospectus_offering o
+JOIN tbl_sections sec ON sec.section_id = o.section_id
+JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
+LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
+LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
+WHERE o.prospectus_id = ?
+AND o.ay_id = ?
+AND o.semester = ?
+ORDER BY sm.sub_code, sec.section_name
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] SQL BINDS => Array
+(
+    [prospectus_id] => 25
+    [ay_string] => 2024-2025
+    [semester] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] QUERY RESULT COUNT => 0
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:26] GROUPED COURSES => Array
+(
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] FILTER INPUTS => Array
+(
+    [prospectus_id] => 25
+    [ay_id] => 2
+    [semester] => 1
+    [college_id] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] CAMPUS LABEL => ISULAN CAMPUS CAMPUS
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] AY LOOKUP RESULT => Array
+(
+    [ay_id] => 2
+    [ayLabel] => 2024-2025
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] FINAL SQL => 
+SELECT
+  sm.sub_code,
+  sm.sub_description,
+  sec.section_name,
+  cs.days_json,
+  cs.time_start,
+  cs.time_end,
+  r.room_name
+FROM tbl_prospectus_offering o
+JOIN tbl_sections sec ON sec.section_id = o.section_id
+JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
+LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
+LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
+WHERE o.prospectus_id = ?
+AND o.ay_id = ?
+AND o.semester = ?
+ORDER BY sm.sub_code, sec.section_name
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] SQL BINDS => Array
+(
+    [prospectus_id] => 25
+    [ay_string] => 2024-2025
+    [semester] => 1
+)
+
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] QUERY RESULT COUNT => 0
+--------------------------------------------------------------------------------
+[2025-12-12 14:17:30] GROUPED COURSES => Array
+(
+)
+
+--------------------------------------------------------------------------------

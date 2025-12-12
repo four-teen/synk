@@ -1,57 +1,57 @@
 <?php
 session_start();
-    ob_start();
-    include '../backend/db.php';
+include 'db.php';
 
-$pid = intval($_POST['prospectus_id'] ?? 0);
-$ay  = $_POST['ay'] ?? '';
-$sem = $_POST['semester'] ?? '';
+$prospectus_id = $_POST['prospectus_id'] ?? '';
+$ay_id         = $_POST['ay_id'] ?? '';
+$semester      = $_POST['semester'] ?? '';
 
-if (!$pid || !$ay || !$sem) {
+if (!$prospectus_id || !$ay_id || !$semester) {
     echo "<tr><td colspan='5' class='text-center text-muted'>Missing filters.</td></tr>";
     exit;
 }
 
 $sql = "
-    SELECT 
-        o.*,
-        subj.sub_code,
-        subj.sub_description AS sub_desc,
-        sec.section_name,
-        ps.total_units AS units
-    FROM tbl_prospectus_offering o
-    LEFT JOIN tbl_prospectus_subjects ps 
-        ON ps.ps_id = o.ps_id
-    LEFT JOIN tbl_subject_masterlist subj
-        ON subj.sub_id = ps.sub_id
-    LEFT JOIN tbl_sections sec
-        ON sec.section_id = o.section_id
-    WHERE o.prospectus_id = ?
-      AND o.ay = ?
-      AND o.semester = ?
-    ORDER BY sec.section_name, subj.sub_code
+SELECT
+    o.offering_id,
+    sec.section_name,
+    sm.sub_code,
+    sm.sub_description,
+    ps.total_units,
+    o.status
+FROM tbl_prospectus_offering o
+JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
+LEFT JOIN tbl_sections sec ON sec.section_id = o.section_id
+WHERE o.prospectus_id = ?
+  AND o.ay_id = ?
+  AND o.semester = ?
+ORDER BY sec.section_name, sm.sub_code
 ";
 
-
-
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("iss", $pid, $ay, $sem);
+$stmt->bind_param("iii", $prospectus_id, $ay_id, $semester);
 $stmt->execute();
-$result = $stmt->get_result();
+$res = $stmt->get_result();
 
-if ($result->num_rows === 0) {
+if ($res->num_rows === 0) {
     echo "<tr><td colspan='5' class='text-center text-muted'>No offerings found.</td></tr>";
     exit;
 }
 
-while ($r = $result->fetch_assoc()) {
+while ($row = $res->fetch_assoc()) {
+
+    $status = ucfirst($row['status']);
+
     echo "
     <tr>
-        <td>{$r['section_name']}</td>
-        <td>{$r['sub_code']}</td>
-        <td>{$r['sub_desc']}</td>
-        <td>{$r['units']}</td>
-        <td>{$r['status']}</td>
-    </tr>";
+        <td>{$row['section_name']}</td>
+        <td>{$row['sub_code']}</td>
+        <td>{$row['sub_description']}</td>
+        <td class='text-center'>{$row['total_units']}</td>
+        <td class='text-center'>
+            <span class='badge bg-secondary'>{$status}</span>
+        </td>
+    </tr>
+    ";
 }
-
