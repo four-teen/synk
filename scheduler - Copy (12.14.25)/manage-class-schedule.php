@@ -388,22 +388,10 @@ while ($ay = $ayQ->fetch_assoc()) {
     <select id="sched_room_id" class="form-select">
     <option value="">Select room...</option>
     <?php
-        $college_id = (int)$_SESSION['college_id'];
-
-        $rQ = $conn->prepare("
-            SELECT room_id, room_name
-            FROM tbl_rooms
-            WHERE college_id = ?
-              AND status = 'active'
-            ORDER BY room_name
-        ");
-        $rQ->bind_param("i", $college_id);
-        $rQ->execute();
-        $res = $rQ->get_result();
-
-        while ($r = $res->fetch_assoc()) {
-            echo "<option value='{$r['room_id']}'>{$r['room_name']}</option>";
-        }
+    $rQ = $conn->query("SELECT room_id, room_name FROM tbl_rooms WHERE status='active'");
+    while ($r = $rQ->fetch_assoc()) {
+      echo "<option value='{$r['room_id']}'>{$r['room_name']}</option>";
+    }
     ?>
     </select>
     </div>

@@ -44,7 +44,7 @@ if (isset($_POST['delete_year_sem'])) {
 
 if (isset($_POST['get_all_subjects'])) {
 
-    $sql = "SELECT sub_code, sub_description
+    $sql = "SELECT sub_id, sub_code, sub_description
             FROM tbl_subject_masterlist
             WHERE status='active'
             ORDER BY sub_code ASC";
@@ -324,6 +324,7 @@ if (isset($_POST['save_prospectus_subject'])) {
     $total_units   = intval($_POST['total_units'] ?? 0); // NEW FIELD
     $sort_order    = intval($_POST['sort_order'] ?? 1);
     $prerequisites = trim($_POST['prerequisites'] ?? '');
+    $prereq_ids_json = $_POST['prerequisite_sub_ids'] ?? null;
 
     if ($pys_id <= 0 || $sub_id <= 0) {
         echo "ERROR|0|Missing Year/Sem (pys_id) or Subject.";
@@ -353,8 +354,8 @@ if (isset($_POST['save_prospectus_subject'])) {
 
     // INSERT NEW SUBJECT
     $sql = "INSERT INTO tbl_prospectus_subjects 
-            (pys_id, sub_id, lec_units, lab_units, total_units, prerequisites, sort_order)
-            VALUES (?, ?, ?, ?, ?, ?, ?)";
+            (pys_id, sub_id, lec_units, lab_units, total_units, prerequisites, prerequisite_sub_ids, sort_order)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?)";
 
     $stmt = $conn->prepare($sql);
 
@@ -363,16 +364,17 @@ if (isset($_POST['save_prospectus_subject'])) {
         exit;
     }
 
-    $stmt->bind_param(
-        "iiiiisi",
-        $pys_id,
-        $sub_id,
-        $lec_units,
-        $lab_units,
-        $total_units,
-        $prerequisites,
-        $sort_order
-    );
+$stmt->bind_param(
+    "iiiiissi",
+    $pys_id,
+    $sub_id,
+    $lec_units,
+    $lab_units,
+    $total_units,
+    $prerequisites,
+    $prereq_ids_json,
+    $sort_order
+);
 
     if ($stmt->execute()) {
         $new_ps_id = $stmt->insert_id;
@@ -486,8 +488,8 @@ $sub_sql = "SELECT ps.ps_id,
             $total_units_sum += $t_units;
 
             $ps_id   = $s['ps_id'];
-            $code    = htmlspecialchars($s['sub_code']);
-            $title   = htmlspecialchars($s['sub_description']);
+            $code    = htmlspecialchars(strtoupper($s['sub_code']));
+            $title   = htmlspecialchars(strtoupper($s['sub_description']));
             $prereq  = htmlspecialchars($s['prerequisites']);
 
             $rows_html .= '

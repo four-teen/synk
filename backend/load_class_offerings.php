@@ -10,7 +10,7 @@ $ay_id         = $_POST['ay_id'] ?? '';
 $semester      = $_POST['semester'] ?? '';
 
 if ($prospectus_id === '' || $ay_id === '' || $semester === '') {
-    echo "<tr><td colspan='10' class='text-center text-danger'>Missing filters.</td></tr>";
+    echo "<tr><td colspan='8' class='text-center text-danger'>Missing filters.</td></tr>";
     exit;
 }
 
@@ -84,7 +84,7 @@ $stmt->execute();
 $res = $stmt->get_result();
 
 if ($res->num_rows === 0) {
-    echo "<tr><td colspan='10' class='text-center text-muted'>No class offerings found.</td></tr>";
+    echo "<tr><td colspan='8' class='text-center text-muted'>No class offerings found.</td></tr>";
     exit;
 }
 
@@ -114,38 +114,38 @@ while ($row = $res->fetch_assoc()) {
                     date("h:i A", strtotime($row['time_end']));
     }
 
-    $facultyText = $row['faculty_name'] ?: "<span class='text-muted'>—</span>";
+    // $facultyText = $row['faculty_name'] ?: "<span class='text-muted'>—</span>";
     $roomText    = $row['room_name'] ?: "<span class='text-muted'>—</span>";
 
     $btnLabel = $isScheduled ? "Edit" : "Schedule";
     $btnClass = $isScheduled ? "btn-warning" : "btn-primary";
+    $sc = strtoupper($row['sub_code']);
+    $sd = strtoupper($row['sub_description']);
 
-    echo "
-    <tr>
-        <td>{$row['section_name']}</td>
-        <td>{$row['sub_code']}</td>
-        <td>{$row['sub_description']}</td>
-        <td class='text-center'><span class='text-muted'>—</span></td>
-        <td>{$facultyText}</td>
-        <td class='text-center'>{$daysText}</td>
-        <td class='text-center'>{$timeText}</td>
-        <td class='text-center'>{$roomText}</td>
-        <td class='text-center'>{$statusBadge}</td>
-        <td class='text-center'>
-            <button
-                class='btn {$btnClass} btn-sm btn-schedule'
-                data-offering-id='{$row['offering_id']}'
-                data-sub-code='{$row['sub_code']}'
-                data-sub-desc='{$row['sub_description']}'
-                data-section='{$row['section_name']}'
-                data-faculty-id='{$row['faculty_id']}'
-                data-room-id='{$row['room_id']}'
-                data-time-start='{$row['time_start']}'
-                data-time-end='{$row['time_end']}'
-                data-days-json='".htmlspecialchars($row['days_json'], ENT_QUOTES)."'>
-                {$btnLabel}
-            </button>
-        </td>
-    </tr>
-    ";
+echo "
+<tr>
+    <td>{$row['section_name']}</td>
+    <td>{$sc}</td>
+    <td>{$sd}</td>
+    <td class='text-center'>{$daysText}</td>
+    <td class='text-center'>{$timeText}</td>
+    <td class='text-center'>{$roomText}</td>
+    <td class='text-center'>{$statusBadge}</td>
+    <td class='text-center'>
+        <button
+            class='btn {$btnClass} btn-sm btn-schedule'
+            data-offering-id='{$row['offering_id']}'
+            data-sub-code='{$row['sub_code']}'
+            data-sub-desc='{$row['sub_description']}'
+            data-section='{$row['section_name']}'
+            data-room-id='{$row['room_id']}'
+            data-time-start='{$row['time_start']}'
+            data-time-end='{$row['time_end']}'
+            data-days-json='".htmlspecialchars($row['days_json'], ENT_QUOTES)."'>
+            {$btnLabel}
+        </button>
+    </td>
+</tr>
+";
+
 }

@@ -3,7 +3,7 @@
 $servername = "localhost";
 $username   = "root";
 $password   = "";
-$dbase      = "sksu_balancing_db";
+$dbase      = "synk_db";
 
 $conn = mysqli_connect($servername, $username, $password, $dbase);
 

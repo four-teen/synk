@@ -67,7 +67,7 @@ if (isset($_POST['save_subject'])) {
     $desc = $conn->real_escape_string(strtoupper($_POST['sub_description']));
 
     // prevent duplicates (optional but good practice)
-    $dupCheck = $conn->query("SELECT sub_id FROM tbl_subject_masterlist WHERE sub_code='$code'");
+    $dupCheck = $conn->query("SELECT sub_id FROM tbl_subject_masterlist WHERE sub_code='$code' AND sub_description='$desc'");
     if ($dupCheck->num_rows > 0) {
         echo "duplicate";
         exit;

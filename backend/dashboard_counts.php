@@ -53,9 +53,32 @@ $stmt->close();
 
 /* --------------------------------------------------
    4️⃣ COUNT UNSCHEDULED CLASSES
-   (No schedule table exists yet → ALWAYS 0)
 -------------------------------------------------- */
-$response['unscheduled_classes'] = 0;
+
+/*
+  NOTE:
+  We count offerings that:
+  - belong to this college
+  - do NOT yet have a schedule
+*/
+
+   $sql = "
+       SELECT COUNT(*) AS total
+       FROM tbl_prospectus_offering o
+       INNER JOIN tbl_program p
+           ON p.program_id = o.program_id
+       LEFT JOIN tbl_class_schedule cs
+           ON cs.offering_id = o.offering_id
+       WHERE p.college_id = ?
+         AND cs.schedule_id IS NULL
+   ";
+
+   $stmt = $conn->prepare($sql);
+   $stmt->bind_param("i", $college_id);
+   $stmt->execute();
+   $response['unscheduled_classes'] = $stmt->get_result()->fetch_assoc()['total'];
+   $stmt->close();
+
 
 
 /* --------------------------------------------------

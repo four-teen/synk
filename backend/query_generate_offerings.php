@@ -38,6 +38,31 @@ try {
     }
 
     /* ============================
+       DELETE CLASS SCHEDULES FIRST
+       (Prevent orphan schedules)
+    ============================ */
+    $delSched = $conn->prepare("
+        DELETE cs
+        FROM tbl_class_schedule cs
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        WHERE o.prospectus_id = ?
+          AND o.ay_id = ?
+          AND o.semester = ?
+    ");
+
+    $delSched->bind_param(
+        "iii",
+        $prospectus_id,
+        $ay_id,
+        $semester
+    );
+
+    $delSched->execute();
+    $deletedSchedules = $delSched->affected_rows;
+    $delSched->close();
+
+    /* ============================
        DELETE OLD OFFERINGS
     ============================ */
     $del = $conn->prepare("
@@ -70,21 +95,16 @@ try {
     }
 
     /* ============================
-       GET SECTIONS
+       PREPARE SECTIONS (FILTERED BY YEAR LEVEL)
+       NOTE: This assumes tbl_sections has year_level column
     ============================ */
     $sec = $conn->prepare("
         SELECT section_id
         FROM tbl_sections
         WHERE program_id = ?
+          AND year_level = ?
           AND status = 'active'
     ");
-    $sec->bind_param("i", $program_id);
-    $sec->execute();
-    $sections = $sec->get_result();
-
-    if ($sections->num_rows === 0) {
-        throw new Exception("No sections found");
-    }
 
     /* ============================
        INSERT OFFERINGS
@@ -95,26 +115,40 @@ try {
         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
     ");
 
-    $inserted = 0;
+$inserted = 0;
 
-    while ($s = $subjects->fetch_assoc()) {
-        $sections->data_seek(0); // IMPORTANT: reset pointer
+while ($s = $subjects->fetch_assoc()) {
 
-        while ($secRow = $sections->fetch_assoc()) {
-            $ins->bind_param(
-                "iiiiiii",
-                $program_id,
-                $prospectus_id,
-                $s['ps_id'],
-                $s['year_level'],
-                $semester,
-                $ay_id,
-                $secRow['section_id']
-            );
-            $ins->execute();
-            $inserted++;
-        }
+    $yearLevel = (int)$s['year_level'];
+
+    // get ONLY sections that match this subject's year level
+    $sec->bind_param("ii", $program_id, $yearLevel);
+    $sec->execute();
+    $sections = $sec->get_result();
+
+    // if no sections for that year, skip
+    if ($sections->num_rows === 0) {
+        continue;
     }
+
+    while ($secRow = $sections->fetch_assoc()) {
+
+        $ins->bind_param(
+            "iiiiiii",
+            $program_id,
+            $prospectus_id,
+            $s['ps_id'],
+            $yearLevel,
+            $semester,
+            $ay_id,
+            $secRow['section_id']
+        );
+
+        $ins->execute();
+        $inserted++;
+    }
+}
+
 
     $conn->commit();
 

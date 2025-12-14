@@ -42,12 +42,13 @@ if ($res->num_rows === 0) {
 while ($row = $res->fetch_assoc()) {
 
     $status = ucfirst($row['status']);
-
+    $sc = strtoupper($row['sub_code']);
+    $sd = strtoupper($row['sub_description']);
     echo "
     <tr>
         <td>{$row['section_name']}</td>
-        <td>{$row['sub_code']}</td>
-        <td>{$row['sub_description']}</td>
+        <td>{$sc}</td>
+        <td>{$sd}</td>
         <td class='text-center'>{$row['total_units']}</td>
         <td class='text-center'>
             <span class='badge bg-secondary'>{$status}</span>

@@ -7,14 +7,23 @@ include 'db.php';
  - prospectus_id
  - ay_id
  - semester
+ - college_id
 */
+
+$college_id = intval($_POST['college_id'] ?? 0);
 
 $prospectus_id = isset($_POST['prospectus_id']) ? (int)$_POST['prospectus_id'] : 0;
 $ay_id         = isset($_POST['ay_id']) ? (int)$_POST['ay_id'] : 0;
 $semester      = isset($_POST['semester']) ? (int)$_POST['semester'] : 0;
 
+/* ---------- VALIDATION ---------- */
 if (!$prospectus_id || !$ay_id || !$semester) {
     echo "<div class='text-danger text-center'>Missing filters.</div>";
+    exit;
+}
+
+if (!$college_id) {
+    echo "<div class='text-danger text-center'>Invalid college context.</div>";
     exit;
 }
 
@@ -33,15 +42,21 @@ while ($start < $end) {
 }
 
 /* =========================================================
-   2. LOAD ACTIVE ROOMS
+   2. LOAD ACTIVE ROOMS (✅ COLLEGE FILTER – SAFE)
 ========================================================= */
 $rooms = [];
-$roomsQ = $conn->query("
+
+$roomsStmt = $conn->prepare("
     SELECT room_id, room_name
     FROM tbl_rooms
     WHERE status = 'active'
+      AND college_id = ?
     ORDER BY room_name
 ");
+
+$roomsStmt->bind_param("i", $college_id);
+$roomsStmt->execute();
+$roomsQ = $roomsStmt->get_result();
 
 while ($r = $roomsQ->fetch_assoc()) {
     $rooms[$r['room_id']] = $r['room_name'];
@@ -77,7 +92,7 @@ $schedStmt->bind_param("iii", $prospectus_id, $ay_id, $semester);
 $schedStmt->execute();
 $schedRes = $schedStmt->get_result();
 
-/* Index schedules by room */
+/* ---------- INDEX SCHEDULES BY ROOM ---------- */
 $schedules = [];
 while ($row = $schedRes->fetch_assoc()) {
     $row['days'] = json_decode($row['days_json'], true);

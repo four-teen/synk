@@ -42,7 +42,10 @@
         #subjectTable td:last-child {
             white-space: nowrap !important;
         }
-
+        /* FORCE SweetAlert ABOVE Bootstrap Modal */
+        .swal2-container {
+            z-index: 20000 !important;
+        }
 
     </style>
 </head>
@@ -255,9 +258,16 @@ $("#btnSaveSubject").click(function () {
                 Swal.fire({
                     icon: "warning",
                     title: "Duplicate Subject",
-                    text: "This subject code already exists.",
+                    text: "This subject already exists (same code and description).",
+
+                    // 🔥 FORCE IN FRONT OF MODAL
+                    target: document.getElementById('addSubjectModal'),
+
+                    customClass: {
+                        container: 'swal2-container'
+                    }
                 });
-                return;
+                return; // ⛔ STOP HERE
             }
 
             Swal.fire({
@@ -265,8 +275,16 @@ $("#btnSaveSubject").click(function () {
                 title: "Saved!",
                 text: "Subject added successfully.",
                 timer: 1200,
-                showConfirmButton: false
+                showConfirmButton: false,
+
+                // 🔥 FORCE position above modal
+                target: document.getElementById('addSubjectModal'),
+
+                customClass: {
+                    container: 'swal2-container'
+                }
             });
+
 
             // Clear inputs
             $("#addSubjectForm")[0].reset();
