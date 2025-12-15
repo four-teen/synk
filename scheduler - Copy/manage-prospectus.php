@@ -30,7 +30,7 @@
     <link rel="stylesheet"
       href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
 
-      <link rel="stylesheet" type="text/css" href="custom_css.css">
+    <link rel="stylesheet" type="text/css" href="custom_css.css">
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
 
@@ -425,7 +425,7 @@ function loadPrerequisiteOptions(prospectus_id) {
 
             data.forEach(sub => {
                 select.append(
-                    `<option value="${sub.sub_code}">
+                    `<option value="${sub.sub_id}">
                         ${sub.sub_code} - ${sub.sub_description}
                     </option>`
                 );
@@ -714,20 +714,37 @@ $("#btnSaveProspectusSubject").click(function () {
     let form = $('#subjectModal').find('#prospectusSubjectForm');
     let formData = form.serializeArray();
 
-    // Extract prerequisite values (array)
-    let prereqArray = $("#ps_prerequisites").val(); // returns array or null
+// Get selected prerequisite IDs
+let prereqIds = $("#ps_prerequisites").val() || [];   // array of sub_id
 
-    // Convert to comma-separated string
-    let prereqString = prereqArray && prereqArray.length ? prereqArray.join(",") : "";
+// JSON version (for DB logic)
+let prereqJson = prereqIds.length ? JSON.stringify(prereqIds) : null;
 
-    // Remove old prerequisites[] entry
-    formData = formData.filter(item => item.name !== "prerequisites[]");
+// Human-readable string (for display)
+let prereqText = $("#ps_prerequisites option:selected")
+    .map(function () {
+        // get only sub_code AND clean spaces
+        return $(this)
+            .text()
+            .split(" - ")[0]
+            .trim();   // ✅ REMOVE leading/trailing spaces
+    })
+    .get()
+    .filter(v => v !== "")   // ✅ safety: remove empty
+    .join(", ");             // ✅ consistent spacing
 
-    // Add new prereq string
-    formData.push({ name: "prerequisites", value: prereqString });
 
-    // Add save flag
-    formData.push({ name: "save_prospectus_subject", value: 1 });
+// Remove old prerequisites[] entry
+formData = formData.filter(item => item.name !== "prerequisites[]");
+
+// Add display string
+formData.push({ name: "prerequisites", value: prereqText });
+
+// Add JSON ID list
+formData.push({ name: "prerequisite_sub_ids", value: prereqJson });
+
+// Save flag
+formData.push({ name: "save_prospectus_subject", value: 1 });
 
     $.post("../backend/query_prospectus.php", formData, function (res) {
 

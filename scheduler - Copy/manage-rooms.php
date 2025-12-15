@@ -17,19 +17,27 @@ $college_name = $_SESSION['college_name'];
     <meta charset="utf-8"/>
     <title>Room Management | Synk Scheduler</title>
 
+    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
     <link rel="stylesheet" href="../assets/vendor/css/core.css" />
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
+    <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+
+    <link rel="stylesheet" type="text/css" href="custom_css.css">
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
-       <!-- Icons. Uncomment required icon fonts -->
-    <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
 
     <style>
         #roomTable td {
             padding-top: 0.5rem !important;
             padding-bottom: 0.5rem !important;
         }
+
+
     </style>
 </head>
 
@@ -128,7 +136,7 @@ $college_name = $_SESSION['college_name'];
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel/Close</button>
         <button class="btn btn-primary" id="btnSaveRoom">Save</button>
       </div>
 
@@ -188,50 +196,120 @@ $college_name = $_SESSION['college_name'];
 </div>
 
 
-<!-- SCRIPTS -->
-<script src="../assets/vendor/libs/jquery/jquery.js"></script>
-<script src="../assets/vendor/js/bootstrap.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<!-- JS -->
+    <script src="../assets/vendor/libs/jquery/jquery.js"></script>
+    <script src="../assets/vendor/libs/popper/popper.js"></script>
+    <script src="../assets/vendor/js/bootstrap.js"></script>
+    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="../assets/vendor/js/menu.js"></script>
+    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
+    <script src="../assets/js/main.js"></script>
+    <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
-loadRooms();
+let roomTable;
 
-// LOAD ROOMS
+$(document).ready(function () {
+
+    // 1️⃣ Initialize DataTable FIRST (no ajax!)
+    roomTable = $('#roomTable').DataTable({
+        paging: true,
+        searching: true,
+        ordering: true,
+        lengthChange: true,
+        pageLength: 10,
+        responsive: true,
+        columnDefs: [
+            { orderable: false, targets: -1 }, // Actions column
+            { className: "text-end", targets: -1 }
+        ]
+    });
+
+    // 2️⃣ Load initial data
+    loadRooms();
+});
+
+
+// ==========================
+// LOAD ROOMS (HTML rows)
+// ==========================
 function loadRooms() {
-    $.post('../backend/query_rooms.php', { load_rooms: 1 }, function(data){
-        $("#roomTable tbody").html(data);
+    $.post('../backend/query_rooms.php', { load_rooms: 1 }, function (data) {
+
+        // Clear DataTable safely
+        roomTable.clear().draw();
+
+        // Inject new rows
+        $('#roomTable tbody').html(data);
+
+        // Re-register rows to DataTable
+        roomTable.rows.add($('#roomTable tbody tr')).draw();
     });
 }
 
-// SAVE ROOM
+
+// ==========================
+// SAVE ROOM (MODAL STAYS OPEN)
+// ==========================
 $("#btnSaveRoom").click(function () {
-    $.post('../backend/query_rooms.php', $("#addRoomForm").serialize() + "&save_room=1", function(res){
-        Swal.fire("Success", "Room added successfully", "success");
-        // $("#addRoomModal").modal("hide");
-        loadRooms();
-    });
+
+    $.post('../backend/query_rooms.php',
+        $("#addRoomForm").serialize() + "&save_room=1",
+        function(res) {
+
+            if (res === "duplicate") {
+                Swal.fire({
+                    icon: "warning",
+                    title: "Duplicate!",
+                    text: "Room code already exists.",
+                    target: '#addRoomModal',
+                    backdrop: false
+                });
+                return;
+            }
+
+            if (res === "success") {
+                Swal.fire({
+                    icon: "success",
+                    title: "Success",
+                    text: "Room added successfully",
+                    timer: 1200,
+                    showConfirmButton: false,
+                    target: '#addRoomModal',
+                    backdrop: false
+                });
+
+                $("#addRoomForm")[0].reset();
+                loadRooms();
+            }
+        }
+    );
 });
 
-// 🔹 OPEN EDIT MODAL
+
+
+// ==========================
+// OPEN EDIT MODAL
+// ==========================
 $(document).on("click", ".btnEdit", function () {
 
-    let id       = $(this).data("id");
-    let code     = $(this).data("code");
-    let name     = $(this).data("name");
-    let type     = $(this).data("type");
-    let capacity = $(this).data("capacity");
-
-    $("#edit_room_id").val(id);
-    $("#edit_room_code").val(code);
-    $("#edit_room_name").val(name);
-    $("#edit_room_type").val(type);
-    $("#edit_room_capacity").val(capacity);
+    $("#edit_room_id").val($(this).data("id"));
+    $("#edit_room_code").val($(this).data("code"));
+    $("#edit_room_name").val($(this).data("name"));
+    $("#edit_room_type").val($(this).data("type"));
+    $("#edit_room_capacity").val($(this).data("capacity"));
 
     $("#editRoomModal").modal("show");
 });
 
 
-// 🔹 UPDATE ROOM
+// ==========================
+// UPDATE ROOM
+// ==========================
 $("#btnUpdateRoom").click(function () {
 
     $.post('../backend/query_rooms.php',
@@ -244,7 +322,11 @@ $("#btnUpdateRoom").click(function () {
             }
 
             if (res === "success") {
-                Swal.fire("Updated!", "Room updated successfully.", "success");
+                Swal.fire({
+                    icon: "success",
+                    title: "Updated!",
+                    text: "Room updated successfully."
+                });
                 $("#editRoomModal").modal("hide");
                 loadRooms();
             }
@@ -253,7 +335,9 @@ $("#btnUpdateRoom").click(function () {
 });
 
 
-// 🔹 DELETE ROOM
+// ==========================
+// DELETE ROOM
+// ==========================
 $(document).on("click", ".btnDelete", function () {
 
     let id = $(this).data("id");
@@ -265,7 +349,8 @@ $(document).on("click", ".btnDelete", function () {
         showCancelButton: true,
         confirmButtonColor: "#d33",
         cancelButtonColor: "#aaa",
-        confirmButtonText: "Delete"
+        confirmButtonText: "Delete",
+        target: document.body
     }).then((result) => {
 
         if (result.isConfirmed) {
@@ -284,7 +369,9 @@ $(document).on("click", ".btnDelete", function () {
     });
 });
 
+
 </script>
+
 
 </body>
 </html>

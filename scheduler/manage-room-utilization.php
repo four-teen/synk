@@ -35,44 +35,118 @@ $college_name = $_SESSION['college_name'] ?? '';
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
 
-    <style>
-        .select2-container--default .select2-selection--single {
-            height: 45px !important;
-            padding: 6px 12px !important;
-            display: flex;
-            align-items: center;
-            border: 1px solid #d9dee3;
-            border-radius: 6px;
-        }
-        .select2-container--default .select2-selection--single .select2-selection__arrow {
-            height: 42px !important;
-            right: 10px !important;
-        }
-        .select2-selection__rendered {
-            line-height: 42px !important;
-        }
+<style>
+    /* ===============================
+       SELECT2 CONSISTENCY
+    =============================== */
+    .select2-container--default .select2-selection--single {
+        height: 45px !important;
+        padding: 6px 12px !important;
+        display: flex;
+        align-items: center;
+        border: 1px solid #d9dee3;
+        border-radius: 6px;
+    }
+    .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 42px !important;
+        right: 10px !important;
+    }
+    .select2-selection__rendered {
+        line-height: 42px !important;
+    }
 
-        .ru-room-label {
-            font-weight: 600;
-        }
-        .ru-term-label {
-            font-size: 0.85rem;
-            color: #6c757d;
-        }
-        .ru-cell {
-            min-width: 130px;
-        }
-        .ru-cell div.small {
-            line-height: 1.1;
-        }
+    /* ===============================
+       ROOM UTILIZATION LABELS
+    =============================== */
+    .ru-room-label {
+        font-weight: 600;
+    }
+    .ru-term-label {
+        font-size: 0.85rem;
+        color: #6c757d;
+    }
 
-        .ru-hover-highlight {
-            outline: 3px solid #ffbf00 !important; /* gold highlight */
-            z-index: 10;
-            position: relative;
-        }
-        
-    </style>
+    /* ===============================
+       GRID CELLS (BODY)
+    =============================== */
+    .ru-cell {
+        min-width: 70px;          /* 🔽 reduced from 130px */
+        padding: 4px 6px;
+    }
+    .ru-cell div.small {
+        line-height: 1.1;
+        font-size: 0.72rem;
+    }
+
+    /* ===============================
+       TIME HEADER (IMPORTANT PART)
+    =============================== */
+    .ru-time-header {
+        width: 70px;              /* 🔥 controls column width */
+        min-width: 70px;
+        max-width: 70px;
+        font-size: 0.72rem;
+        white-space: nowrap;
+        padding: 4px 2px;
+        text-align: center;
+    }
+
+    /* ===============================
+       SCHEDULE BLOCKS
+    =============================== */
+    .ru-block {
+        border-radius: 6px;
+        font-size: 0.72rem;
+        font-weight: 600;
+        padding: 4px;
+        text-align: center;
+    }
+
+    /* ===============================
+       HOVER HIGHLIGHT
+    =============================== */
+    .ru-hover,
+    .ru-hover-highlight {
+        outline: 3px solid #ffbf00 !important; /* gold highlight */
+        z-index: 10;
+        position: relative;
+        border-radius: 4px;
+    }
+    /* ===============================
+       ROOM COLUMN – NO WRAP
+    =============================== */
+    table th:first-child,
+    table td:first-child {
+        white-space: nowrap;      /* prevent wrapping */
+        width: 90px;              /* fixed width for ROOM column */
+        min-width: 90px;
+        max-width: 90px;
+        text-align: left;
+    }
+    .ru-loader {
+        position: fixed;
+        inset: 0;
+        background: rgba(255,255,255,0.85);
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        z-index: 2000;
+    }
+
+    .ru-loader-box {
+        text-align: center;
+    }
+
+    /* SINGLE ROOM TIME COLUMN */
+    .ru-time-cell {
+        white-space: nowrap;      /* 🔥 prevent wrapping */
+        min-width: 95px;          /* adjust width if needed */
+        text-align: center;
+        font-size: 0.75rem;
+        line-height: 1.2;
+    }
+</style>
+
 </head>
 
 <body>
@@ -185,6 +259,14 @@ $college_name = $_SESSION['college_name'] ?? '';
 
 <?php include '../footer.php'; ?>
 
+<!-- GLOBAL LOADER -->
+<div id="ruLoader" class="ru-loader d-none">
+    <div class="ru-loader-box">
+        <div class="spinner-border text-primary mb-2" role="status"></div>
+        <div class="small fw-semibold">Loading room utilization…</div>
+    </div>
+</div>
+
 </div>
 </div>
 </div>
@@ -202,276 +284,238 @@ $college_name = $_SESSION['college_name'] ?? '';
     <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
-$(document).ready(function(){
+$(document).ready(function () {
 
-    // INIT SELECT2
-    $('.select2-single').select2({
-        width: '100%',
-        placeholder: "Select...",
-        allowClear: true
-    });
+function showLoader() {
+    $("#ruLoader").removeClass("d-none");
+}
 
-    // ============================================================
-    // COLOR MAP PER SUBJECT (CONSISTENT)
-    // ============================================================
-    let subjectColorMap = {};
+function hideLoader() {
+    $("#ruLoader").addClass("d-none");
+}
 
-    function getColorForSubject(subjCode) {
-        if (!subjectColorMap[subjCode]) {
-            subjectColorMap[subjCode] = generateRandomPastelColor();
-        }
-        return subjectColorMap[subjCode];
+/* =====================================================
+   LOAD SINGLE ROOM SCHEDULE
+===================================================== */
+function loadRoomSchedule() {
+
+    let ay       = $("#ru_ay").val();
+    let semester = $("#ru_semester").val();
+    let room_id  = $("#ru_room_id").val();
+
+    if (!ay || !room_id) {
+        $("#roomTimetableWrapper").html(
+            '<div class="p-3 text-muted text-center">Select A.Y. and Room</div>'
+        );
+        return;
     }
 
-    function generateRandomPastelColor() {
-        const hue = Math.floor(Math.random() * 360);
-        return `hsl(${hue}, 70%, 85%)`;
-    }
+    showLoader(); // 🔥 START LOADER
 
-    // ============================================================
-    // FILTER CHANGE HANDLING
-    // ============================================================
-    $("#ru_ay, #ru_semester").on('change', function() {
-        if ($("#btnModeAll").hasClass("active")) {
-            loadAllRoomsOverview();
-        } else {
-            loadRoomSchedule();
-        }
-    });
+    $.post('../backend/query_room_utilization.php', {
+        load_room_schedule: 1,
+        ay: ay,
+        semester: semester,
+        room_id: room_id
+    }, function (res) {
 
-    $("#ru_room_id").on('change', function() {
-        if (!$("#btnModeAll").hasClass("active")) {
-            loadRoomSchedule();
-        }
-    });
+        hideLoader(); // 🔥 STOP LOADER
 
-    // ============================================================
-    // LOAD SINGLE ROOM SCHEDULE
-    // ============================================================
-    function loadRoomSchedule() {
-        let ay       = $("#ru_ay").val().trim();
-        let semester = $("#ru_semester").val();
-        let room_id  = $("#ru_room_id").val();
+        let data = [];
+        try { data = JSON.parse(res); } catch (e) {}
 
-        if (!ay || !room_id) {
-            $("#roomTimetableWrapper").html("");
-            $("#roomTimetableCard").hide();
+        if (!data.length) {
+            $("#roomTimetableWrapper").html(
+                '<div class="p-3 text-muted text-center">No schedule found</div>'
+            );
             return;
         }
 
-        $.post('../backend/query_workload.php', {
-            load_room_schedule: 1,
-            ay: ay,
-            semester: semester,
-            room_id: room_id
-        }, function(res){
-            try {
-                let data = JSON.parse(res);
+        renderRoomTimetable(data);
+    });
+}
 
-                if (!Array.isArray(data) || data.length === 0) {
-                    $("#roomTimetableWrapper").html(
-                        '<div class="p-3 text-center text-muted">No scheduled classes for this room.</div>'
-                    );
-                    $("#roomTimetableCard").show();
-                    updateRoomHeader();
-                    return;
-                }
+function renderRoomTimetable(data) {
 
-                renderRoomTimetable(data);
-                updateRoomHeader();
+    const days = [
+        { key: "M",  label: "Mon" },
+        { key: "T",  label: "Tue" },
+        { key: "W",  label: "Wed" },
+        { key: "TH", label: "Thu" },
+        { key: "F",  label: "Fri" },
+        { key: "S",  label: "Sat" }
+    ];
 
-            } catch(e) {
-                $("#roomTimetableWrapper").html(
-                    '<div class="p-3 text-center text-danger">Error loading room schedule.</div>'
-                );
-                $("#roomTimetableCard").show();
+    const slots = generateTimeSlots();
+
+    let html = `
+    <table class="table table-bordered table-sm mb-0">
+        <thead class="table-light">
+            <tr>
+                <th style="width:90px">TIME</th>
+                ${days.map(d => `<th class="text-center">${d.label}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>
+    `;
+
+    slots.forEach(slot => {
+
+        html += `
+        <tr>
+            <td class="ru-time-cell">
+                ${minutesToAMPM(slot.start)}<br>—<br>${minutesToAMPM(slot.end)}
+            </td>
+        `;
+
+        days.forEach(day => {
+
+            let found = data.find(item => {
+                let days = item.days_raw || [];
+                if (!days.includes(day.key)) return false;
+
+                let s = timeToMinutes(item.time_start.substring(0,5));
+                let e = timeToMinutes(item.time_end.substring(0,5));
+
+                return slot.start >= s && slot.start < e;
+            });
+
+            if (found) {
+                let bg = getColorForSubject(found.subject_code);
+                html += `
+                <td style="background:${bg}" class="text-center">
+                    <div class="small fw-semibold">${found.subject_code}</div>
+                    <div class="small">${found.section_name}</div>
+                    <div class="small text-muted">${found.faculty_name}</div>
+                </td>`;
+            } else {
+                html += `<td></td>`;
             }
         });
+
+        html += `</tr>`;
+    });
+
+    html += `</tbody></table>`;
+
+    $("#roomTimetableWrapper").html(html);
+}
+
+    /* =====================================================
+       TIME HELPERS
+    ===================================================== */
+    function timeToMinutes(t) {
+        let [h, m] = t.split(':').map(Number);
+        return h * 60 + m;
     }
 
-    function updateRoomHeader() {
-        let roomText = $("#ru_room_id option:selected").text() || "Room";
-        let ay       = $("#ru_ay").val().trim();
-        let semester = $("#ru_semester").val();
-
-        $("#ruRoomLabel").text(roomText);
-        $("#ruTermLabel").text(semester + " Semester • A.Y. " + ay);
-        $("#roomTimetableCard").show();
+    function minutesToAMPM(mins) {
+        let h = Math.floor(mins / 60);
+        let m = mins % 60;
+        let ampm = h >= 12 ? 'PM' : 'AM';
+        h = h % 12 || 12;
+        return `${h}:${String(m).padStart(2,'0')} ${ampm}`;
     }
 
-    // ============================================================
-    // TIME HELPERS
-    // ============================================================
     function generateTimeSlots() {
         let slots = [];
-        let startMinutes = 7 * 60;
-        let endMinutes   = 19 * 60;
+        let start = 7 * 60 + 30; // 7:30 AM
+        let end   = 17 * 60;     // 5:00 PM
 
-        for (let m = startMinutes; m < endMinutes; m += 30) {
-            let hh = String(Math.floor(m / 60)).padStart(2, '0');
-            let mm = String(m % 60).padStart(2, '0');
-            slots.push({ label: hh + ":" + mm, minutes: m });
+        for (let m = start; m < end; m += 30) {
+            slots.push({
+                start: m,
+                end: m + 30
+            });
         }
         return slots;
     }
 
-    function timeStringToMinutes(t) {
-        if (!t) return 0;
-        let parts = t.split(':');
-        let hh = parseInt(parts[0] || "0", 10);
-        let mm = parseInt(parts[1] || "0", 10);
-        return hh * 60 + mm;
-    }
+    /* =====================================================
+       COLORS
+    ===================================================== */
+    let subjectColorMap = {};
 
-    // ============================================================
-    // SINGLE ROOM TIMETABLE (COLORED)
-    // ============================================================
-    function renderRoomTimetable(data) {
-
-        const days = [
-            { key: "M",  label: "Mon" },
-            { key: "T",  label: "Tue" },
-            { key: "W",  label: "Wed" },
-            { key: "TH", label: "Thu" },
-            { key: "F",  label: "Fri" },
-            { key: "S",  label: "Sat" }
-        ];
-
-        const slots = generateTimeSlots();
-
-        let html = `
-            <table class="table table-bordered table-sm mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th style="width: 90px;">Time</th>
-                        ${days.map(d => `<th class="text-center">${d.label}</th>`).join('')}
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        slots.forEach((slot, idx) => {
-            let nextSlot = (idx < slots.length - 1) ? slots[idx + 1] : { minutes: slot.minutes + 30 };
-            let endHour = String(Math.floor(nextSlot.minutes / 60)).padStart(2,'0');
-            let endMin  = String(nextSlot.minutes % 60).padStart(2,'0');
-            let endLabel = endHour + ":" + endMin;
-
-            html += `<tr><td><small>${slot.label}–${endLabel}</small></td>`;
-
-            days.forEach(day => {
-                let matchedItem = null;
-
-                data.forEach(function(item) {
-                    let days_raw = item.days_raw || [];
-                    if (days_raw.indexOf(day.key) === -1) return;
-
-                    let ts = (item.time_start || '').substring(0,5);
-                    let te = (item.time_end   || '').substring(0,5);
-                    if (!ts || !te) return;
-
-                    let slotMin  = slot.minutes;
-                    let startMin = timeStringToMinutes(ts);
-                    let endMin   = timeStringToMinutes(te);
-
-                    if (slotMin >= startMin && slotMin < endMin) {
-                        matchedItem = item;
-                    }
-                });
-
-                if (matchedItem) {
-                    let bg = getColorForSubject(matchedItem.subject_code);
-                    html += `
-                        <td class="align-middle text-center ru-cell" 
-                            style="background:${bg}">
-                            <div class="small fw-semibold">${matchedItem.subject_code}</div>
-                            <div class="small">${matchedItem.section_name}</div>
-                            <div class="small text-muted">${matchedItem.faculty_name || ""}</div>
-                        </td>
-                    `;
-                } else {
-                    html += `<td class="align-middle text-center ru-cell"></td>`;
-                }
-            });
-
-            html += `</tr>`;
-        });
-
-        html += `</tbody></table>`;
-
-        $("#roomTimetableWrapper").html(html);
-        $("#roomTimetableCard").show();
-    }
-
-    // ============================================================
-    // OVERVIEW MODE – LOAD ALL ROOMS
-    // ============================================================
-    function loadAllRoomsOverview() {
-        let ay       = $("#ru_ay").val().trim();
-        let semester = $("#ru_semester").val();
-
-        if (!ay) {
-            $("#allRoomsWrapper").html("");
-            return;
+    function getColorForSubject(code) {
+        if (!subjectColorMap[code]) {
+            let hue = Math.floor(Math.random() * 360);
+            subjectColorMap[code] = `hsl(${hue},70%,85%)`;
         }
-
-        $.post('../backend/query_workload.php', {
-            load_all_rooms: 1,
-            ay: ay,
-            semester: semester
-        }, function(res){
-            let data = [];
-            try { data = JSON.parse(res); }
-            catch(e){ return; }
-
-            renderAllRoomsTable(data);
-        });
+        return subjectColorMap[code];
     }
 
-    // ============================================================
-    // OVERVIEW MODE – MERGED BLOCKS + HOVER + CLICK
-    // ============================================================
+    /* =====================================================
+       LOAD ALL ROOMS OVERVIEW
+    ===================================================== */
+function loadAllRoomsOverview() {
+
+    let ay = $("#ru_ay").val();
+    let semester = $("#ru_semester").val();
+
+    if (!ay) return;
+
+    showLoader(); // 🔥 START LOADER
+
+    $.post('../backend/query_room_utilization.php', {
+        load_all_rooms: 1,
+        ay: ay,
+        semester: semester
+    }, function (res) {
+
+        hideLoader(); // 🔥 STOP LOADER
+
+        let data = JSON.parse(res);
+        renderAllRoomsTable(data);
+    });
+}
+
+
+    /* =====================================================
+       RENDER OVERVIEW TABLE (WORKING)
+    ===================================================== */
     function renderAllRoomsTable(roomsData) {
 
         const slots = generateTimeSlots();
 
         let html = `
-            <table class="table table-bordered table-sm mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th style="white-space:nowrap;">Room</th>
-                        ${slots.map(s => `<th class="text-center"><small>${s.label}</small></th>`).join('')}
-                    </tr>
-                </thead>
-                <tbody>
+        <table class="table table-bordered table-sm mb-0">
+            <thead class="table-light">
+                <tr>
+                    <th>ROOM</th>
+                    ${slots.map(s => `
+                        <th class="ru-time-header text-center">
+                            <div>${minutesToAMPM(s.start)}</div>
+                            <div>—</div>
+                            <div>${minutesToAMPM(s.end)}</div>
+                        </th>
+                    `).join('')}
+                </tr>
+            </thead>
+            <tbody>
         `;
 
         roomsData.forEach(room => {
 
-            html += `<tr>
-                <td class="fw-semibold">${room.room_code}</td>
-            `;
-
-            let slotItems = new Array(slots.length).fill(null);
+            let slotMap = new Array(slots.length).fill(null);
 
             room.items.forEach(item => {
-                let start = timeStringToMinutes(item.time_start.substring(0,5));
-                let end   = timeStringToMinutes(item.time_end.substring(0,5));
+                let start = timeToMinutes(item.time_start.substring(0,5));
+                let end   = timeToMinutes(item.time_end.substring(0,5));
+                let span  = Math.ceil((end - start) / 30);
 
-                let startIdx = slots.findIndex(s => s.minutes >= start);
-                let endIdx   = slots.findIndex(s => s.minutes >= end) - 1;
+                let startIdx = slots.findIndex(s => s.start === start);
+                if (startIdx === -1) return;
 
-                if (startIdx < 0) startIdx = 0;
-                if (endIdx < startIdx) endIdx = startIdx;
-                if (endIdx >= slots.length) endIdx = slots.length - 1;
-
-                for (let i = startIdx; i <= endIdx; i++) {
-                    slotItems[i] = item;
+                for (let i = startIdx; i < startIdx + span; i++) {
+                    if (i < slotMap.length) slotMap[i] = item;
                 }
             });
 
+            html += `<tr><td class="fw-semibold">${room.room_code}</td>`;
+
             for (let i = 0; i < slots.length; ) {
 
-                let item = slotItems[i];
+                let item = slotMap[i];
 
                 if (!item) {
                     html += `<td></td>`;
@@ -479,35 +523,19 @@ $(document).ready(function(){
                     continue;
                 }
 
-                let j = i + 1;
-                while (j < slots.length && slotItems[j] === item) {
-                    j++;
-                }
-
-                let span = j - i;
-                let bg = getColorForSubject(item.subject_code);
-                let blockId = `${room.room_id}_${item.subject_code}_${i}`;
+                let start = timeToMinutes(item.time_start.substring(0,5));
+                let end   = timeToMinutes(item.time_end.substring(0,5));
+                let span  = Math.ceil((end - start) / 30);
+                let bg    = getColorForSubject(item.subject_code);
 
                 html += `
-                    <td colspan="${span}" 
-                        class="ru-block"
-                        data-block-id="${blockId}"
-                        data-subject="${item.subject_code}"
-                        data-section="${item.section_name}"
-                        data-faculty="${item.faculty_name}"
-                        data-start="${item.time_start}"
-                        data-end="${item.time_end}"
-                        data-room="${room.room_code}"
-                        style="background:${bg}; 
-                               text-align:center;
-                               cursor:pointer;">
-                        <div class="small fw-semibold">${item.subject_code}</div>
-                        <div class="small">${item.section_name}</div>
-                        <div class="small text-muted">${item.faculty_name}</div>
-                    </td>
-                `;
+                <td colspan="${span}" class="ru-block" style="background:${bg}">
+                    <div class="small fw-semibold">${item.subject_code}</div>
+                    <div class="small">${item.section_name}</div>
+                    <div class="small text-muted">${item.faculty_name}</div>
+                </td>`;
 
-                i = j;
+                i += span;
             }
 
             html += `</tr>`;
@@ -517,74 +545,80 @@ $(document).ready(function(){
         $("#allRoomsWrapper").html(html);
     }
 
-    // ============================================================
-    // HOVER EFFECT + MODAL CLICK DETAILS
-    // ============================================================
-    $(document).on("mouseenter", ".ru-block", function() {
-        let blockId = $(this).data("block-id");
-        $(`.ru-block[data-block-id="${blockId}"]`).addClass("ru-hover");
-    });
+/* =====================================================
+   MODE SWITCH (FIXED)
+===================================================== */
 
-    $(document).on("mouseleave", ".ru-block", function() {
-        let blockId = $(this).data("block-id");
-        $(`.ru-block[data-block-id="${blockId}"]`).removeClass("ru-hover");
-    });
+$("#btnModeAll").click(function () {
 
-    $(document).on("click", ".ru-block", function() {
-        Swal.fire({
-            title: `<strong>${$(this).data("subject")} — ${$(this).data("section")}</strong>`,
-            html: `
-                <div style='text-align:left;'>
-                    <p><b>Faculty:</b> ${$(this).data("faculty")}</p>
-                    <p><b>Room:</b> ${$(this).data("room")}</p>
-                    <p><b>Time:</b> ${$(this).data("start")} — ${$(this).data("end")}</p>
-                </div>
-            `,
-            icon: "info",
-            confirmButtonText: "Close"
-        });
-    });
+    $(this).addClass("active");
+    $("#btnModeSingle").removeClass("active");
 
-    // ============================================================
-    // MODE SWITCHING
-    // ============================================================
-    $("#btnModeSingle").click(function(){
-        $(this).addClass("active");
-        $("#btnModeAll").removeClass("active");
+    $("#roomTimetableCard").hide();
+    $("#allRoomsCard").show();
+
+    $("#ru_room_id").prop("disabled", true).val("").trigger("change");
+
+    loadAllRoomsOverview(); // ✅ force load
+});
+
+$("#btnModeSingle").click(function () {
+
+    $(this).addClass("active");
+    $("#btnModeAll").removeClass("active");
+
+    $("#allRoomsCard").hide();
+    $("#roomTimetableCard").show();
+
+    $("#ru_room_id").prop("disabled", false);
+
+    loadRoomSchedule(); // ✅ force load
+});
+
+
+$("#ru_ay, #ru_semester, #ru_room_id").on("change", function () {
+    reloadCurrentView();
+});
+
+function reloadCurrentView() {
+
+    let ay = $("#ru_ay").val();
+    let room = $("#ru_room_id").val();
+
+    // ----------------------------
+    // SINGLE ROOM MODE
+    // ----------------------------
+    if ($("#btnModeSingle").hasClass("active")) {
+
+        if (!ay || !room) return;
 
         $("#allRoomsCard").hide();
-        $("#roomTimetableCard").hide();
-
-        $("#ru_room_id").prop("disabled", false);
+        $("#roomTimetableCard").show();   // 🔥 THIS WAS MISSING
         loadRoomSchedule();
-    });
+    }
 
-    $("#btnModeAll").click(function(){
-        $(this).addClass("active");
-        $("#btnModeSingle").removeClass("active");
+    // ----------------------------
+    // OVERVIEW MODE
+    // ----------------------------
+    if ($("#btnModeAll").hasClass("active")) {
+
+        if (!ay) return;
 
         $("#roomTimetableCard").hide();
-        $("#allRoomsWrapper").html("");
-        $("#allRoomsCard").show();
-
-        $("#ru_room_id").prop("disabled", true).val("").trigger("change");
-
+        $("#allRoomsCard").show();        // 🔥 THIS WAS MISSING
         loadAllRoomsOverview();
-    });
+    }
+}
 
+    /* ===============================
+       🔥 AUTO LOAD ON PAGE READY
+    =============================== */
+
+    setTimeout(() => {
+        reloadCurrentView();
+    }, 200);
 });
 </script>
-
-<style>
-/* Hover highlight for merged blocks */
-.ru-hover {
-    outline: 3px solid #ffbf00 !important;
-    z-index: 10;
-    position: relative;
-    border-radius: 4px;
-}
-</style>
-
 
 </body>
 </html>

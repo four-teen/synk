@@ -220,7 +220,7 @@
                         <div class="card-body text-center">
                           <i class="bx bx-time-five text-warning fs-1 mb-2"></i>
                           <h6 class="fw-bold">Class Scheduling</h6>
-                          <p class="text-muted small">Add time, days, faculty, rooms</p>
+                          <p class="text-muted small">Add time, days, rooms</p>
                         </div>
                       </div>
                     </a>
@@ -242,14 +242,15 @@
               <!-- Alerts Panel -->
               <div class="row">
                 <div class="col-md-12">
-                  <div class="card border-danger">
-                    <div class="card-header bg-danger text-white fw-bold">
-                      ⚠ Scheduler Warnings
-                    </div>
-                    <div class="card-body" id="warning_list">
-                      <p class="text-muted">No warnings detected.</p>
-                    </div>
-                  </div>
+<div class="card">
+  <div class="card-header fw-bold">
+    📈 Faculty Teaching Load (Units)
+  </div>
+  <div class="card-body">
+    <div id="facultyLoadChart" style="height: 320px;"></div>
+  </div>
+</div>
+
                 </div>
               </div>
 
@@ -294,6 +295,112 @@
 <script>
 
 $(document).ready(function(){
+
+//dasboard line graph based on the number of units faculty earned
+    $.ajax({
+        url: "../backend/dashboard_faculty_load.php",
+        type: "POST",
+        dataType: "json",
+        success: function (data) {
+
+            if (!Array.isArray(data) || data.length === 0) {
+                $("#facultyLoadChart").html(
+                    "<p class='text-muted text-center'>No workload data available.</p>"
+                );
+                return;
+            }
+
+            let facultyNames = [];
+            let unitValues   = [];
+            let markersColor = [];
+
+            data.forEach((row, index) => {
+
+                facultyNames.push(row.faculty);
+                unitValues.push(row.units);
+
+                // 🔴 OVERLOAD ≥ 21
+                if (row.units >= 21) {
+                    markersColor.push({
+                        seriesIndex: 0,
+                        dataPointIndex: index,
+                        fillColor: '#ff4d4f',
+                        strokeColor: '#ff4d4f',
+                        size: 7
+                    });
+                }
+                // 🟡 UNDERLOAD < 18
+                else if (row.units < 18) {
+                    markersColor.push({
+                        seriesIndex: 0,
+                        dataPointIndex: index,
+                        fillColor: '#faad14',
+                        strokeColor: '#faad14',
+                        size: 7
+                    });
+                }
+                // 🟢 NORMAL 18–20
+                else {
+                    markersColor.push({
+                        seriesIndex: 0,
+                        dataPointIndex: index,
+                        fillColor: '#52c41a',
+                        strokeColor: '#52c41a',
+                        size: 6
+                    });
+                }
+
+            });
+
+            let options = {
+                chart: {
+                    type: 'line',
+                    height: 320,
+                    toolbar: { show: false }
+                },
+                series: [{
+                    name: 'Total Units',
+                    data: unitValues
+                }],
+                xaxis: {
+                    categories: facultyNames,
+                    labels: { rotate: -45 }
+                },
+                yaxis: {
+                    min: 0,
+                    title: { text: 'Units' }
+                },
+                stroke: {
+                    curve: 'smooth',
+                    width: 3
+                },
+                markers: {
+                    size: 5,
+                    discrete: markersColor
+                },
+                colors: ['#696cff'],
+                tooltip: {
+                    y: {
+                        formatter: function (val) {
+                            if (val >= 21) return val + " units (Overload)";
+                            if (val < 18) return val + " units (Underload)";
+                            return val + " units (Normal)";
+                        }
+                    }
+                }
+            };
+
+            let chart = new ApexCharts(
+                document.querySelector("#facultyLoadChart"),
+                options
+            );
+            chart.render();
+        },
+        error: function (xhr) {
+            console.error("Faculty load chart error:", xhr.responseText);
+        }
+    });
+
 
 $.ajax({
     url: "../backend/dashboard_counts.php",

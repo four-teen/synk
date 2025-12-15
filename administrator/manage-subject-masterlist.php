@@ -93,10 +93,12 @@
                     <th style="width: 60px;">#</th>
                     <th style="width: 150px;">Subject Code</th>
                     <th>Subject Description</th>
+                    <th>Used In Program(s)</th>
                     <th style="width: 120px;">Status</th>
                     <th class="text-end" style="width: 120px;">Actions</th>
                   </tr>
                 </thead>
+
                 <tbody></tbody>
               </table>
             </div>
@@ -349,11 +351,35 @@ $(document).on("click", ".btnDelete", function () {
     }).then((result) => {
 
         if (result.isConfirmed) {
-            $.post('../backend/query_subject_masterlist.php', { delete_subject: 1, sub_id: id }, function(res) {
-                Swal.fire("Deleted!", "Subject removed successfully!", "success");
-                loadSubjects();
-            });
+
+            $.post(
+                '../backend/query_subject_masterlist.php',
+                { delete_subject: 1, sub_id: id },
+                function (res) {
+
+                    // 🚫 SUBJECT IS IN USE
+                    if (res === "in_use") {
+                        Swal.fire(
+                            "Action Blocked",
+                            "This subject is already used in a prospectus and cannot be deleted.",
+                            "warning"
+                        );
+                        return;
+                    }
+
+                    // ✅ SUCCESS DELETE
+                    Swal.fire(
+                        "Deleted!",
+                        "Subject removed successfully!",
+                        "success"
+                    );
+
+                    loadSubjects();
+                }
+            );
+
         }
+
 
     });
 
