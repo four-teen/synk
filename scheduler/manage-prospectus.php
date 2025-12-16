@@ -128,37 +128,60 @@
                       if ($role === 'admin') {
 
                         $prog = $conn->query("
-                          SELECT p.program_id, p.program_code, p.program_name, c.college_name
+                          SELECT 
+                            p.program_id, 
+                            p.program_code, 
+                            p.program_name, 
+                            p.major,
+                            c.college_name
                           FROM tbl_program p
                           LEFT JOIN tbl_college c ON p.college_id = c.college_id
                           WHERE p.status='active'
-                          ORDER BY c.college_name, p.program_name
+                          ORDER BY c.college_name, p.program_name, p.major
                         ");
 
                       } 
                       // SCHEDULER → can see ONLY programs under *their* college
                       else if ($role === 'scheduler') {
 
-                        $prog = $conn->query("
-                          SELECT p.program_id, p.program_code, p.program_name, c.college_name
-                          FROM tbl_program p
-                          LEFT JOIN tbl_college c ON p.college_id = c.college_id
-                          WHERE p.status='active'
-                            AND p.college_id = '$myCollege'
-                          ORDER BY p.program_name
-                        ");
+                      $prog = $conn->query("
+                        SELECT 
+                          p.program_id, 
+                          p.program_code, 
+                          p.program_name, 
+                          p.major,
+                          c.college_name
+                        FROM tbl_program p
+                        LEFT JOIN tbl_college c ON p.college_id = c.college_id
+                        WHERE p.status='active'
+                          AND p.college_id = '$myCollege'
+                        ORDER BY p.program_name, p.major
+                      ");
                       }
 
                       while ($r = $prog->fetch_assoc()) {
-                        // Cleaner label for scheduler
-                        if ($role === 'scheduler') {
-                            $label = $r['program_name'] . ' (' . $r['program_code'] . ')';
-                        } else {
-                            $label = $r['college_name'] . ' - ' . $r['program_name'] . ' (' . $r['program_code'] . ')';
-                        }
 
-                        echo "<option value='{$r['program_id']}'>" . htmlspecialchars($label) . "</option>";
+                          $programName = $r['program_name'];
+                          $programCode = $r['program_code'];
+                          $major       = trim($r['major']);
+
+                          // Build readable label
+                          if ($major !== '') {
+                              $baseLabel = $programName . ' major in ' . $major . ' (' . $programCode . ')';
+                          } else {
+                              $baseLabel = $programName . ' (' . $programCode . ')';
+                          }
+
+                          // ADMIN includes college name
+                          if ($role === 'admin') {
+                              $label = $r['college_name'] . ' - ' . $baseLabel;
+                          } else {
+                              $label = $baseLabel;
+                          }
+
+                          echo "<option value='{$r['program_id']}'>" . htmlspecialchars($label) . "</option>";
                       }
+
                     ?>
 
                   </select>
@@ -537,13 +560,25 @@ $('#ps_sub_id').select2({
                 $("#existingProspectusList").empty()
                     .append(`<option value="">Select Prospectus</option>`);
 
-                res.forEach(item => {
-                    $("#existingProspectusList").append(`
-                        <option value="${item.prospectus_id}">
-                            ${item.program_name} — ${item.cmo_no} — ${item.effective_sy}
-                        </option>
-                    `);
-                });
+                  res.forEach(item => {
+
+                      let programLabel = '';
+
+                      if (item.major && item.major.trim() !== '') {
+                          programLabel = `${item.program_name} major in ${item.major} (${item.program_code})`;
+                      } else {
+                          programLabel = `${item.program_name} (${item.program_code})`;
+                      }
+
+                      let finalLabel = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
+
+                      $("#existingProspectusList").append(`
+                          <option value="${item.prospectus_id}">
+                              ${finalLabel}
+                          </option>
+                      `);
+                  });
+
             }
         });
     });
