@@ -5,6 +5,62 @@ ob_start();
 include '../backend/db.php';
 
 // ======================================================
+// EDIT SUBJECT ADDED TO PROSPECTUS
+// ======================================================
+if (isset($_POST['load_subject_for_edit'])) {
+
+    $ps_id = intval($_POST['ps_id'] ?? 0);
+    if ($ps_id <= 0) { echo json_encode([]); exit; }
+
+    $sql = "SELECT ps_id, sub_id, lec_units, lab_units, total_units, sort_order, prerequisites, prerequisite_sub_ids
+            FROM tbl_prospectus_subjects
+            WHERE ps_id = ? LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $ps_id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    echo json_encode($row ?: []);
+    exit;
+}
+
+if (isset($_POST['update_prospectus_subject'])) {
+
+    $ps_id  = intval($_POST['ps_id'] ?? 0);
+    $sub_id = intval($_POST['sub_id'] ?? 0);
+
+    $lec   = intval($_POST['lec_units'] ?? 0);
+    $lab   = intval($_POST['lab_units'] ?? 0);
+    $total = intval($_POST['total_units'] ?? ($lec + $lab));
+    $sort  = intval($_POST['sort_order'] ?? 1);
+
+    $prereq_text = $_POST['prerequisites'] ?? '';
+    $prereq_ids  = $_POST['prerequisite_sub_ids'] ?? null;
+
+    if ($ps_id <= 0 || $sub_id <= 0) {
+        echo "ERROR|Invalid input|Please select a subject.";
+        exit;
+    }
+
+    $sql = "UPDATE tbl_prospectus_subjects
+            SET sub_id = ?, lec_units = ?, lab_units = ?, total_units = ?, sort_order = ?,
+                prerequisites = ?, prerequisite_sub_ids = ?
+            WHERE ps_id = ?";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("iiiiissi", $sub_id, $lec, $lab, $total, $sort, $prereq_text, $prereq_ids, $ps_id);
+
+    if ($stmt->execute()) {
+        echo "OK|UPDATED|Subject updated successfully.";
+    } else {
+        echo "ERROR|DB_ERROR|Failed to update.";
+    }
+    $stmt->close();
+    exit;
+}
+
+
+// ======================================================
 // DELETE YEAR & SEM + ALL SUBJECTS INSIDE IT
 // ======================================================
 if (isset($_POST['delete_year_sem'])) {
@@ -82,13 +138,13 @@ if (isset($_POST['load_prospectus_list'])) {
                 LEFT JOIN tbl_program p ON p.program_id = h.program_id
                 ORDER BY h.prospectus_id DESC";
     } else {
-        // Scheduler sees only their college
         $sql = "SELECT 
                     h.prospectus_id,
                     h.cmo_no,
                     h.effective_sy,
                     p.program_name,
-                    p.program_code
+                    p.program_code,
+                    p.major
                 FROM tbl_prospectus_header h
                 LEFT JOIN tbl_program p ON p.program_id = h.program_id
                 WHERE p.college_id = '$myCollege'
@@ -317,6 +373,12 @@ if (isset($_POST['save_year_sem'])) {
 // ======================================================================
 if (isset($_POST['save_prospectus_subject'])) {
 
+    // 🔒 SAFETY GUARD — THIS IS THE FIX
+    if (isset($_POST['ps_id']) && intval($_POST['ps_id']) > 0) {
+        echo "ERROR|EDIT_MODE|Insert blocked during edit.";
+        exit;
+    }    
+
     $pys_id        = intval($_POST['pys_id'] ?? 0);
     $sub_id        = intval($_POST['sub_id'] ?? 0);
     $lec_units     = intval($_POST['lec_units'] ?? 0);
@@ -460,7 +522,7 @@ if (isset($_POST['load_year_sem'])) {
         $sem_label = sem_label($semester);
 
         // Fetch subjects under this PYS
-$sub_sql = "SELECT ps.ps_id,
+        $sub_sql = "SELECT ps.ps_id,
                    ps.lec_units,
                    ps.lab_units,
                    ps.total_units,
@@ -481,37 +543,45 @@ $sub_sql = "SELECT ps.ps_id,
         $total_units_sum = 0;
         $ctr             = 1;
 
-        while ($s = $sub_res->fetch_assoc()) {
-            $lecu   = (int)$s['lec_units'];
-            $labu   = (int)$s['lab_units'];
-            $t_units = isset($s['total_units']) ? (int)$s['total_units'] : ($lecu + $labu);
-            $total_units_sum += $t_units;
+            while ($s = $sub_res->fetch_assoc()) {
+                $lecu   = (int)$s['lec_units'];
+                $labu   = (int)$s['lab_units'];
+                $t_units = isset($s['total_units']) ? (int)$s['total_units'] : ($lecu + $labu);
+                $total_units_sum += $t_units;
 
-            $ps_id   = $s['ps_id'];
-            $code    = htmlspecialchars(strtoupper($s['sub_code']));
-            $title   = htmlspecialchars(strtoupper($s['sub_description']));
-            $prereq  = htmlspecialchars($s['prerequisites']);
+                $ps_id   = $s['ps_id'];
+                $code    = htmlspecialchars(strtoupper($s['sub_code']));
+                $title   = htmlspecialchars(strtoupper($s['sub_description']));
+                $prereq  = htmlspecialchars($s['prerequisites']);
 
-            $rows_html .= '
-              <tr>
-                <td class="text-center">' . $ctr++ . '</td>
-                <td>' . $code . '</td>
-                <td>' . $title . '</td>
-                <td class="text-center">' . $lecu . '</td>
-                <td class="text-center">' . $labu . '</td>
-                <td class="text-center">' . $t_units . '</td>
-                <td>' . $prereq . '</td>
-                <td class="text-center">
-                  <button type="button" 
-                          class="btn btn-sm btn-icon text-danger btnDeleteSubject"
-                          data-ps="' . $ps_id . '"
-                          title="Remove Subject">
-                    <i class="bx bx-trash"></i>
-                  </button>
-                </td>
-              </tr>
-            ';
-        }
+                $rows_html .= '
+                  <tr>
+                    <td class="text-center">' . $ctr++ . '</td>
+                    <td>' . $code . '</td>
+                    <td>' . $title . '</td>
+                    <td class="text-center">' . $lecu . '</td>
+                    <td class="text-center">' . $labu . '</td>
+                    <td class="text-center">' . $t_units . '</td>
+                    <td>' . $prereq . '</td>
+                    <td class="text-center text-nowrap">
+                      <!-- EDIT (NEW) -->
+                      <button type="button"
+                              class="btn btn-sm btn-icon text-primary btnEditSubject"
+                              data-ps="' . $ps_id . '"
+                              title="Edit Subject">
+                        <i class="bx bx-edit"></i>
+                      </button>
+
+                      <button type="button" 
+                              class="btn btn-sm btn-icon text-danger btnDeleteSubject"
+                              data-ps="' . $ps_id . '"
+                              title="Remove Subject">
+                        <i class="bx bx-trash"></i>
+                      </button>
+                    </td>
+                  </tr>
+                ';
+            }
         $sub_stmt->close();
 
         if ($rows_html === '') {

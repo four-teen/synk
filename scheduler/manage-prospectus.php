@@ -406,6 +406,83 @@
 </div>
 
 
+<!-- ====================================== -->
+<!-- MODAL: EDIT SUBJECT (NEW / SEPARATE)   -->
+<!-- ====================================== -->
+<div class="modal fade" id="editSubjectModal" tabindex="-1">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Edit Prospectus Subject</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <form id="editProspectusSubjectForm">
+          <input type="hidden" name="ps_id" id="edit_ps_id">
+
+          <!-- SUBJECT (editable) -->
+          <div class="mb-3">
+            <label class="form-label">Subject</label>
+            <select name="sub_id" id="edit_sub_id" class="form-select" required>
+              <option value="">Select Subject</option>
+              <?php
+                $sub = $conn->query("
+                  SELECT sub_id, sub_code, sub_description
+                  FROM tbl_subject_masterlist
+                  WHERE status='active'
+                  ORDER BY sub_code
+                ");
+                while ($s = $sub->fetch_assoc()) {
+                  $label = $s['sub_code'] . ' - ' . $s['sub_description'];
+                  echo "<option value='{$s['sub_id']}'>" . htmlspecialchars($label) . "</option>";
+                }
+              ?>
+            </select>
+          </div>
+
+          <!-- UNITS -->
+          <div class="row">
+            <div class="col-md-3 mb-3">
+              <label class="form-label">Lec</label>
+              <input type="number" name="lec_units" id="edit_lec_units" class="form-control" min="0" value="0">
+            </div>
+
+            <div class="col-md-3 mb-3">
+              <label class="form-label">Lab</label>
+              <input type="number" name="lab_units" id="edit_lab_units" class="form-control" min="0" value="0">
+            </div>
+
+            <div class="col-md-3 mb-3">
+              <label class="form-label">Total Units</label>
+              <input type="number" name="total_units" id="edit_total_units" class="form-control" min="0" value="0">
+            </div>
+
+            <div class="col-md-3 mb-3">
+              <label class="form-label">Sort Order</label>
+              <input type="number" name="sort_order" id="edit_sort_order" class="form-control" min="1" value="1">
+            </div>
+          </div>
+
+          <!-- PREREQUISITES -->
+          <div class="mb-3">
+            <label class="form-label">Pre-requisite Subjects</label>
+            <select name="prerequisites[]" id="edit_prerequisites" class="form-select" multiple="multiple">
+              <!-- will be populated via AJAX (same pattern) -->
+            </select>
+          </div>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="btnUpdateProspectusSubject">Update</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 
 <!-- JS -->
     <script src="../assets/vendor/libs/jquery/jquery.js"></script>
@@ -422,15 +499,134 @@
 
 <script>
 
+// ===============================
+// EDIT SUBJECTS
+// ===============================
+
+$("#btnUpdateProspectusSubject").click(function () {
+
+  let prereqIds = $("#edit_prerequisites").val() || [];
+  let prereqJson = prereqIds.length ? JSON.stringify(prereqIds) : null;
+
+  let prereqText = $("#edit_prerequisites option:selected")
+    .map(function(){ return $(this).text().split(" - ")[0].trim(); })
+    .get()
+    .filter(v => v !== "")
+    .join(", ");
+
+  let payload = $("#editProspectusSubjectForm").serializeArray();
+
+  // remove prerequisites[] array entries
+  payload = payload.filter(x => x.name !== "prerequisites[]");
+
+  // add both formats like your add flow
+  payload.push({ name: "prerequisites", value: prereqText });
+  payload.push({ name: "prerequisite_sub_ids", value: prereqJson });
+  payload.push({ name: "update_prospectus_subject", value: 1 });
+
+  $.post("../backend/query_prospectus.php", payload, function(res){
+
+    let parts = res.split("|");
+    if (parts[0] !== "OK") {
+      Swal.fire("Error", parts[1] || "Update failed", "error");
+      return;
+    }
+
+    Swal.fire({
+      icon: "success",
+      title: "Updated!",
+      text: parts[2] || "Subject updated successfully.",
+      timer: 1200,
+      timerProgressBar: true,
+      showConfirmButton: false,
+      heightAuto: false
+    });
+
+    $("#editSubjectModal").modal("hide");
+    loadYearSem($("#prospectus_id").val());
+  });
+
+});
+
+
+$(document).on("click", ".btnEditSubject", function () {
+
+  let ps_id = $(this).data("ps");
+  let prospectus_id = $("#prospectus_id").val();
+
+  $("#edit_ps_id").val(ps_id);
+
+  // load options first, then load row and select
+  loadPrerequisiteOptionsEdit(prospectus_id).then(() => {
+
+    // init select2 multi (avoid duplicates)
+    if ($('#edit_prerequisites').hasClass("select2-hidden-accessible")) {
+      $('#edit_prerequisites').select2('destroy');
+    }
+
+    $('#edit_prerequisites').select2({
+      placeholder: "Select prerequisite subjects",
+      allowClear: true,
+      width: "100%",
+      dropdownParent: $('#editSubjectModal')
+    });
+
+    $.post("../backend/query_prospectus.php",
+      { load_subject_for_edit: 1, ps_id: ps_id },
+      function(resp){
+
+        let item = JSON.parse(resp);
+
+        $("#edit_sub_id").val(item.sub_id).trigger("change");
+        $("#edit_lec_units").val(item.lec_units);
+        $("#edit_lab_units").val(item.lab_units);
+        $("#edit_total_units").val(item.total_units);
+        $("#edit_sort_order").val(item.sort_order);
+
+        // prerequisites selected IDs (JSON)
+        let prereqIds = [];
+        try {
+          prereqIds = item.prerequisite_sub_ids ? JSON.parse(item.prerequisite_sub_ids) : [];
+        } catch(e) { prereqIds = []; }
+
+        $("#edit_prerequisites").val(prereqIds).trigger("change");
+
+        $("#editSubjectModal").modal("show");
+      }
+    );
+  });
+
+});
+
+
+function loadPrerequisiteOptionsEdit(prospectus_id) {
+  return $.post("../backend/query_prospectus.php",
+    { get_all_subjects: 1, prospectus_id },
+    function(res){
+      let data = JSON.parse(res);
+      let select = $("#edit_prerequisites");
+      select.empty();
+
+      data.forEach(sub => {
+        select.append(`<option value="${sub.sub_id}">${sub.sub_code} - ${sub.sub_description}</option>`);
+      });
+    }
+  );
+}
+
+$('#edit_sub_id').select2({
+  placeholder: "Select Subject",
+  allowClear: true,
+  width: "100%",
+  dropdownParent: $('#editSubjectModal')
+});
+
+
+// ===============================
+// END EDIT SUBJECTS
+// ===============================
+
 let lastOpenedPys = null;
-
-// $(document).on("input", ".calc-units", function () {
-//     let lec = parseInt($("#ps_lec_units").val()) || 0;
-//     let lab = parseInt($("#ps_lab_units").val()) || 0;
-
-//     $("#ps_total_units").val(lec + lab);
-// });
-
 
 $(document).on("shown.bs.collapse", ".accordion-collapse", function () {
     lastOpenedPys = $(this).attr("id"); // example: collapse12
@@ -560,24 +756,24 @@ $('#ps_sub_id').select2({
                 $("#existingProspectusList").empty()
                     .append(`<option value="">Select Prospectus</option>`);
 
-                  res.forEach(item => {
+                    res.forEach(item => {
 
-                      let programLabel = '';
+                        let programLabel = '';
 
-                      if (item.major && item.major.trim() !== '') {
-                          programLabel = `${item.program_name} major in ${item.major} (${item.program_code})`;
-                      } else {
-                          programLabel = `${item.program_name} (${item.program_code})`;
-                      }
+                        if (item.major && item.major.trim() !== '') {
+                            programLabel = `${item.program_name} ${item.major} (${item.program_code})`;
+                        } else {
+                            programLabel = `${item.program_name} (${item.program_code})`;
+                        }
 
-                      let finalLabel = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
+                        let finalLabel = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
 
-                      $("#existingProspectusList").append(`
-                          <option value="${item.prospectus_id}">
-                              ${finalLabel}
-                          </option>
-                      `);
-                  });
+                        $("#existingProspectusList").append(`
+                            <option value="${item.prospectus_id}">
+                                ${finalLabel}
+                            </option>
+                        `);
+                    });
 
             }
         });
