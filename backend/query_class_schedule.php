@@ -165,24 +165,26 @@ if (isset($_POST['save_schedule'])) {
     $cStmt->execute();
     $cRes = $cStmt->get_result();
 
-    while ($x = $cRes->fetch_assoc()) {
-        $xDays = json_decode($x['days_json'], true);
-        if (!days_overlap($newDays, $xDays)) continue;
+while ($x = $cRes->fetch_assoc()) {
+    $xDays = json_decode($x['days_json'], true);
+    if (!days_overlap($newDays, $xDays)) continue;
 
-        $when = days_fmt($xDays) . " " .
-                time_fmt($x['time_start']) . " - " .
-                time_fmt($x['time_end']);
+    $when = days_fmt($xDays) . " " .
+            time_fmt($x['time_start']) . " - " .
+            time_fmt($x['time_end']);
 
-        if ($x['room_id'] == $room_id) {
-            respond("conflict", "Room conflict<br>{$when}");
-        }
-        if ($x['section_id'] == $ctx['section_id']) {
-            respond("conflict", "Section conflict<br>{$when}");
-        }
-        if ($faculty_id && $x['faculty_id'] == $faculty_id) {
-            respond("conflict", "Faculty conflict<br>{$when}");
-        }
+    // ROOM conflict (STRICT)
+    if ($x['room_id'] == $room_id) {
+        respond("conflict", "Room conflict<br>{$when}");
     }
+
+    // FACULTY conflict (OPTIONAL but recommended)
+    if ($faculty_id && $x['faculty_id'] == $faculty_id) {
+        respond("conflict", "Faculty conflict<br>{$when}");
+    }
+
+    // ❌ SECTION conflict REMOVED
+}
 
     /* -----------------------------
        SAVE (LEC)
