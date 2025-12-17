@@ -25,6 +25,7 @@ SELECT
 
     sm.sub_code,
     sm.sub_description,
+    ps.lab_units,    
 
     cs.schedule_id,
     cs.faculty_id,
@@ -138,12 +139,14 @@ echo "
             data-sub-code='{$row['sub_code']}'
             data-sub-desc='{$row['sub_description']}'
             data-section='{$row['section_name']}'
+            data-lab-units='{$row['lab_units']}'
             data-room-id='{$row['room_id']}'
             data-time-start='{$row['time_start']}'
             data-time-end='{$row['time_end']}'
             data-days-json='".htmlspecialchars($row['days_json'], ENT_QUOTES)."'>
             {$btnLabel}
         </button>
+
     </td>
 </tr>
 ";

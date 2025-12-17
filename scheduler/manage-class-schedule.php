@@ -7,6 +7,29 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
     exit;
 }
+
+/* ==============================
+   BUILD ROOM OPTIONS (UI USE)
+============================== */
+$roomOptions = "";
+
+$college_id = (int)$_SESSION['college_id'];
+
+$roomQ = $conn->prepare("
+    SELECT room_id, room_name
+    FROM tbl_rooms
+    WHERE college_id = ?
+      AND status = 'active'
+    ORDER BY room_name
+");
+$roomQ->bind_param("i", $college_id);
+$roomQ->execute();
+$roomRes = $roomQ->get_result();
+
+while ($r = $roomRes->fetch_assoc()) {
+    $roomOptions .= "<option value='{$r['room_id']}'>{$r['room_name']}</option>";
+}
+
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -421,6 +444,105 @@ while ($ay = $ayQ->fetch_assoc()) {
     </div>
 </div>
 
+
+
+<!-- =======================================================
+     LECTURE + LAB SCHEDULING MODAL
+======================================================= -->
+<!-- LECTURE + LAB SCHEDULING MODAL -->
+<div class="modal fade" id="dualScheduleModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">Define Lecture & Laboratory Schedule</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        <input type="hidden" id="dual_offering_id">
+
+        <div class="mb-3">
+          <strong id="dual_subject_label"></strong><br>
+          <small class="text-muted" id="dual_section_label"></small>
+        </div>
+
+        <hr>
+
+        <!-- =========================
+             LECTURE SCHEDULE
+        ========================== -->
+        <h6 class="text-primary">Lecture Schedule</h6>
+
+        <div class="row g-3 mb-4">
+          <div class="col-md-4">
+            <label class="form-label">Days</label><br>
+            <div id="lec_days"></div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Time</label>
+            <div class="d-flex gap-2">
+              <input type="time" id="lec_time_start" class="form-control">
+              <input type="time" id="lec_time_end" class="form-control">
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Room</label>
+            <select id="lec_room_id" class="form-select">
+              <option value="">Select lecture room...</option>
+              <?= $roomOptions ?? '' ?>
+            </select>
+          </div>
+        </div>
+
+        <hr>
+
+        <!-- =========================
+             LABORATORY SCHEDULE
+        ========================== -->
+        <h6 class="text-success">Laboratory Schedule</h6>
+
+        <div class="row g-3">
+          <div class="col-md-4">
+            <label class="form-label">Days</label><br>
+            <div id="lab_days"></div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Time</label>
+            <div class="d-flex gap-2">
+              <input type="time" id="lab_time_start" class="form-control">
+              <input type="time" id="lab_time_end" class="form-control">
+            </div>
+          </div>
+
+          <div class="col-md-4">
+            <label class="form-label">Room</label>
+            <select id="lab_room_id" class="form-select">
+              <option value="">Select laboratory room...</option>
+              <?= $roomOptions ?? '' ?>
+            </select>
+          </div>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button class="btn btn-primary" id="btnSaveDualSchedule">
+          <i class="bx bx-save me-1"></i> Save Lecture & Lab
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+
+
 <!-- ROOM MATRIX MODAL -->
 <div class="modal fade" id="matrixModal" tabindex="-1">
   <div class="modal-dialog modal-fullscreen-lg-down modal-xxl modal-dialog-scrollable">
@@ -460,6 +582,24 @@ while ($ay = $ayQ->fetch_assoc()) {
     <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
+
+    function buildDayButtons(containerId, prefix) {
+      const days = ['M','T','W','Th','F','S'];
+      let html = '';
+
+      days.forEach(d => {
+        html += `
+          <input type="checkbox" class="btn-check ${prefix}-day" id="${prefix}_${d}" value="${d}">
+          <label class="btn btn-outline-secondary btn-sm me-1" for="${prefix}_${d}">
+            ${d}
+          </label>
+        `;
+      });
+
+      $("#" + containerId).html(html);
+    }
+
+
     const COLLEGE_ID = <?= (int)$_SESSION['college_id'] ?>;
     function loadScheduleTable() {
 
@@ -558,54 +698,129 @@ $("#btnShowMatrix").on("click", function () {
         // ============================
         // CLICK SCHEDULE / EDIT BUTTON
         // ============================
-        $(document).on("click", ".btn-schedule", function () {
+$(document).on("click", ".btn-schedule", function () {
 
-            const btn = $(this);
+    const btn = $(this);
 
-            // Set hidden offering ID
-            $("#sched_offering_id").val(btn.data("offering-id"));
+    const offeringId = btn.data("offering-id");
+    const labUnits   = parseInt(btn.data("lab-units"), 10) || 0;
+    const isEditMode = btn.text().trim().toLowerCase() === "edit";
 
-            // Labels
-            $("#sched_subject_label").text(
-                btn.data("sub-code") + " — " + btn.data("sub-desc")
-            );
-            $("#sched_section_label").text(
-                "Section: " + btn.data("section")
-            );
+    const subCode = btn.data("sub-code");
+    const subDesc = btn.data("sub-desc");
+    const section = btn.data("section");
 
-            // Reset fields
-            $(".sched-day").prop("checked", false);
-            $("#sched_time_start").val("");
-            $("#sched_time_end").val("");
+    // Shared labels
+    const subjectLabel = subCode + " — " + subDesc;
 
-            // Faculty & room
-            $("#sched_faculty_id").val(btn.data("faculty-id") || "").trigger("change");
-            $("#sched_room_id").val(btn.data("room-id") || "").trigger("change");
+    // ============================
+    // CASE A — LECTURE ONLY
+    // ============================
+    if (labUnits === 0) {
 
-            // Days (JSON)
-            let daysJson = btn.data("days-json");
-            if (daysJson) {
-                try {
-                    let days = JSON.parse(daysJson);
-                    days.forEach(d => {
-                        $("#day_" + d).prop("checked", true);
-                    });
-                } catch (e) {
-                    console.warn("Invalid days JSON", e);
-                }
+        // Populate existing modal
+        $("#sched_offering_id").val(offeringId);
+        $("#sched_subject_label").text(subjectLabel);
+        $("#sched_section_label").text("Section: " + section);
+
+        // Reset fields
+        $(".sched-day").prop("checked", false);
+        $("#sched_time_start").val("");
+        $("#sched_time_end").val("");
+        $("#sched_room_id").val("").trigger("change");
+
+        // Existing data (edit mode)
+        const daysJson = btn.data("days-json");
+        if (daysJson) {
+            try {
+                JSON.parse(daysJson).forEach(d => {
+                    $("#day_" + d).prop("checked", true);
+                });
+            } catch(e){}
+        }
+
+        if (btn.data("time-start")) $("#sched_time_start").val(btn.data("time-start"));
+        if (btn.data("time-end"))   $("#sched_time_end").val(btn.data("time-end"));
+        if (btn.data("room-id"))    $("#sched_room_id").val(btn.data("room-id")).trigger("change");
+
+        $("#scheduleModal").modal("show");
+        return;
+    }
+
+// ============================
+// CASE B — LECTURE + LAB
+// ============================
+$("#dual_offering_id").val(offeringId);
+$("#dual_subject_label").text(subjectLabel);
+$("#dual_section_label").text("Section: " + section);
+
+// Build day buttons first
+buildDayButtons("lec_days", "lec");
+buildDayButtons("lab_days", "lab");
+
+// CLEAR fields (default)
+$("#lec_time_start, #lec_time_end, #lab_time_start, #lab_time_end").val("");
+$("#lec_room_id, #lab_room_id").val("");
+$(".lec-day, .lab-day").prop("checked", false);
+
+// ============================
+// EDIT MODE → LOAD EXISTING
+// ============================
+if (isEditMode) {
+
+    $.ajax({
+        url: "../backend/query_class_schedule.php",
+        type: "POST",
+        dataType: "json",
+        data: {
+            load_dual_schedule: 1,
+            offering_id: offeringId
+        },
+        success: function (res) {
+
+            if (res.status !== "ok") {
+                Swal.fire("Error", res.message, "error");
+                return;
             }
 
-            // Time
-            if (btn.data("time-start")) {
-                $("#sched_time_start").val(btn.data("time-start"));
-            }
-            if (btn.data("time-end")) {
-                $("#sched_time_end").val(btn.data("time-end"));
+            // -------- LECTURE --------
+            if (res.LEC) {
+                $("#lec_time_start").val(res.LEC.time_start);
+                $("#lec_time_end").val(res.LEC.time_end);
+                $("#lec_room_id").val(res.LEC.room_id);
+
+                res.LEC.days.forEach(d => {
+                    $("#lec_" + d).prop("checked", true);
+                });
             }
 
-            // Show modal
-            $("#scheduleModal").modal("show");
-        });
+            // -------- LAB --------
+            if (res.LAB) {
+                $("#lab_time_start").val(res.LAB.time_start);
+                $("#lab_time_end").val(res.LAB.time_end);
+                $("#lab_room_id").val(res.LAB.room_id);
+
+                res.LAB.days.forEach(d => {
+                    $("#lab_" + d).prop("checked", true);
+                });
+            }
+
+            $("#dualScheduleModal").modal("show");
+        },
+        error: function (xhr) {
+            Swal.fire("Error", xhr.responseText, "error");
+        }
+    });
+
+} else {
+    // NEW ENTRY MODE
+    $("#dualScheduleModal").modal("show");
+}
+
+
+
+});
+
 
 
         // ============================
@@ -724,6 +939,152 @@ $("#btnShowMatrix").on("click", function () {
         });
 
     });
+
+
+// =======================================================
+// SAVE LECTURE + LAB SCHEDULE
+// =======================================================
+$("#btnSaveDualSchedule").on("click", function () {
+
+    const offering_id = $("#dual_offering_id").val();
+
+    if (!offering_id) {
+        Swal.fire("Error", "Missing offering reference.", "error");
+        return;
+    }
+
+    function collectDays(prefix) {
+        let days = [];
+        $("." + prefix + "-day:checked").each(function () {
+            days.push($(this).val());
+        });
+        return days;
+    }
+
+    // -----------------------------
+    // LECTURE DATA
+    // -----------------------------
+    const lec = {
+        type: "LEC",
+        room_id: $("#lec_room_id").val(),
+        time_start: $("#lec_time_start").val(),
+        time_end: $("#lec_time_end").val(),
+        days: collectDays("lec")
+    };
+
+    // -----------------------------
+    // LAB DATA
+    // -----------------------------
+    const lab = {
+        type: "LAB",
+        room_id: $("#lab_room_id").val(),
+        time_start: $("#lab_time_start").val(),
+        time_end: $("#lab_time_end").val(),
+        days: collectDays("lab")
+    };
+
+    // -----------------------------
+    // BASIC VALIDATION
+    // -----------------------------
+    function invalidBlock(title, msg) {
+        Swal.fire({
+            icon: "warning",
+            title: title,
+            html: msg,
+            customClass: { popup: 'swal-top' }
+        });
+    }
+
+    if (!lec.room_id || !lec.time_start || !lec.time_end || lec.days.length === 0) {
+        invalidBlock("Lecture Incomplete", "Please complete lecture schedule.");
+        return;
+    }
+
+    if (!lab.room_id || !lab.time_start || !lab.time_end || lab.days.length === 0) {
+        invalidBlock("Laboratory Incomplete", "Please complete laboratory schedule.");
+        return;
+    }
+
+    if (lec.time_end <= lec.time_start) {
+        invalidBlock("Lecture Time Error", "Lecture end time must be later than start time.");
+        return;
+    }
+
+    if (lab.time_end <= lab.time_start) {
+        invalidBlock("Lab Time Error", "Lab end time must be later than start time.");
+        return;
+    }
+
+    // -----------------------------
+    // BUILD PAYLOAD
+    // -----------------------------
+    const payload = {
+        save_dual_schedule: 1,
+        offering_id: offering_id,
+        schedules: [
+            {
+                type: "LEC",
+                room_id: lec.room_id,
+                time_start: lec.time_start,
+                time_end: lec.time_end,
+                days_json: JSON.stringify(lec.days)
+            },
+            {
+                type: "LAB",
+                room_id: lab.room_id,
+                time_start: lab.time_start,
+                time_end: lab.time_end,
+                days_json: JSON.stringify(lab.days)
+            }
+        ]
+    };
+
+    // -----------------------------
+    // AJAX SAVE
+    // -----------------------------
+    $.ajax({
+        url: "../backend/query_class_schedule.php",
+        type: "POST",
+        dataType: "json",
+        data: payload,
+        success: function (res) {
+
+            if (res.status === "conflict") {
+                Swal.fire({
+                    icon: "error",
+                    title: "Schedule Conflict",
+                    html: res.message,
+                    customClass: { popup: 'swal-top' }
+                });
+                return;
+            }
+
+            if (res.status === "ok") {
+                Swal.fire({
+                    icon: "success",
+                    title: "Schedules Saved",
+                    timer: 1200,
+                    showConfirmButton: false
+                });
+
+                $("#dualScheduleModal").modal("hide");
+
+                setTimeout(function () {
+                    loadScheduleTable();
+                }, 300);
+                return;
+            }
+
+            Swal.fire("Error", res.message || "Unknown error.", "error");
+        },
+        error: function (xhr) {
+            Swal.fire("Error", xhr.responseText, "error");
+        }
+    });
+
+});
+
+
 
 
 </script>
