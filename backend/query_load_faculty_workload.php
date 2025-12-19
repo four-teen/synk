@@ -23,10 +23,14 @@ SELECT
     sm.sub_code,
     sm.sub_description,
     sec.section_name,
+    cs.schedule_group_id,
+    cs.schedule_type,
     cs.days_json,
     cs.time_start,
     cs.time_end,
     r.room_code,
+    ps.lec_units,
+    ps.lab_units,
     ps.total_units
 FROM tbl_faculty_workload_sched fw
 JOIN tbl_class_schedule cs ON cs.schedule_id = fw.schedule_id
@@ -39,7 +43,12 @@ WHERE
     fw.faculty_id = ?
 AND fw.ay_id = ?
 AND fw.semester = ?
-ORDER BY sec.section_name, sm.sub_code
+ORDER BY
+    sec.section_name,
+    sm.sub_code,
+    COALESCE(cs.schedule_group_id, cs.schedule_id),
+    FIELD(cs.schedule_type, 'LEC', 'LAB'),
+    cs.time_start
 ";
 
 $stmt = $conn->prepare($sql);
@@ -56,12 +65,14 @@ while ($row = $res->fetch_assoc()) {
         'sub_code'    => $row['sub_code'],
         'desc'        => $row['sub_description'],
         'section'     => $row['section_name'],
+        'type'        => $row['schedule_type'],
+        'group_id'    => $row['schedule_group_id'], // ✅ added
         'days'        => implode(", ", $days),
-        'time'        => date("g:iA", strtotime($row['time_start'])) .
-                         "–" .
-                         date("g:iA", strtotime($row['time_end'])),
+        'time'        => date("g:iA", strtotime($row['time_start'])) . "–" . date("g:iA", strtotime($row['time_end'])),
         'room'        => $row['room_code'],
-        'units'       => $row['total_units']
+        'lec'         => (int)$row['lec_units'],
+        'lab'         => (int)$row['lab_units'],
+        'units'       => (int)$row['total_units']
     ];
 }
 

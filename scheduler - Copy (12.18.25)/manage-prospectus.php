@@ -161,8 +161,8 @@
 
                       while ($r = $prog->fetch_assoc()) {
 
-                          $programName = ucwords(strtolower($r['program_name']));
-                          $programCode = strtoupper($r['program_code']);
+                          $programName = $r['program_name'];
+                          $programCode = $r['program_code'];
                           $major       = trim($r['major']);
 
                           // Build readable label

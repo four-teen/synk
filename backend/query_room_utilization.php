@@ -40,7 +40,10 @@ if (isset($_POST['load_room_schedule'])) {
             cs.days_json,
             sm.sub_code AS subject_code,
             sec.section_name,
-            CONCAT(f.last_name, ', ', f.first_name) AS faculty_name
+            COALESCE(
+                CONCAT(f.last_name, ', ', f.first_name),
+                'TBA'
+            ) AS faculty_name
         FROM tbl_class_schedule cs
         INNER JOIN tbl_rooms r
             ON r.room_id = cs.room_id
@@ -114,7 +117,10 @@ if (isset($_POST['load_all_rooms'])) {
                 cs.time_end,
                 sm.sub_code AS subject_code,
                 sec.section_name,
-                CONCAT(f.last_name, ', ', f.first_name) AS faculty_name
+                COALESCE(
+                    CONCAT(f.last_name, ', ', f.first_name),
+                    'TBA'
+                ) AS faculty_name
             FROM tbl_class_schedule cs
             INNER JOIN tbl_prospectus_offering po
                 ON po.offering_id = cs.offering_id

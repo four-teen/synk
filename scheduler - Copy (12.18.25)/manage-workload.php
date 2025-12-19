@@ -468,30 +468,10 @@ $(document).ready(function () {
                 }
 
                 let rows = "";
-
-                for (let i = 0; i < data.length; i++) {
-
-                    let row = data[i];
-
-                    let typeBadge = row.type === "LAB"
+                data.forEach(row => {
+                    let typeBadge = row.type === 'LAB'
                         ? '<span class="badge bg-label-warning">LAB</span>'
                         : '<span class="badge bg-label-primary">LEC</span>';
-
-                    let curG = row.group_id;
-                    let next = (i + 1 < data.length) ? data[i + 1] : null;
-
-                    // Start of a pair if current group_id exists AND next row has the same group_id
-                    let isStartPair =
-                        row.type === "LEC" &&
-                        curG !== null &&
-                        curG !== "" &&
-                        curG !== 0 &&
-                        next &&
-                        next.group_id == curG;
-
-                    // Second row of the pair if previous row has same group_id
-                    let prev = (i - 1 >= 0) ? data[i - 1] : null;
-                    let isSecondPairRow = (curG !== null && curG !== "" && curG !== 0 && prev && prev.group_id == curG);
 
                     rows += `
                         <tr>
@@ -502,26 +482,9 @@ $(document).ready(function () {
                             <td>${row.days}</td>
                             <td>${row.time}</td>
                             <td>${row.room}</td>
-                    `;
-
-                    // ✅ Only print LEC/LAB/UNITS once for the pair (rowspan=2)
-                    if (isStartPair) {
-                        rows += `
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.lec}</td>
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.lab}</td>
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.units}</td>
-                        `;
-                    } else if (!isSecondPairRow) {
-                        // Not part of a pair → normal display
-                        rows += `
                             <td class="text-center">${row.lec}</td>
                             <td class="text-center">${row.lab}</td>
                             <td class="text-center">${row.units}</td>
-                        `;
-                    }
-                    // else: second row of pair → skip these 3 cells
-
-                    rows += `
                             <td class="text-end">
                                 <button class="btn btn-sm btn-outline-danger btnRemoveWL"
                                         data-id="${row.workload_id}">
@@ -530,10 +493,9 @@ $(document).ready(function () {
                             </td>
                         </tr>
                     `;
-                }
+                });
 
                 $("#workloadTbody").html(rows);
-
                 $("#workloadCard").show();
             },
             "json"
