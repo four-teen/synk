@@ -97,6 +97,13 @@
                 </li>
 
                 <li class="menu-item">
+                    <a href="manage-prospectus-browser.php" class="menu-link">
+                        <div>Prospectus Viewer</div>
+                    </a>
+                </li>
+
+
+                <li class="menu-item">
                     <a href="faculty-workload.php" class="menu-link">
                         <div>Faculty Workload</div>
                     </a>
