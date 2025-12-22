@@ -15,14 +15,94 @@ $collegeId = $_SESSION['college_id'] ?? 0;
 <html lang="en" class="light-style layout-menu-fixed">
 <head>
     <meta charset="utf-8" />
-    <title>Prospectus Browser | Synk</title>
+    <title>Prospectus Builder | Synk</title>
 
     <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
     <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
     <link rel="stylesheet" href="../assets/vendor/css/core.css" />
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
-    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+    <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
+    <link rel="stylesheet"
+      href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+
+    <link rel="stylesheet" type="text/css" href="custom_css.css">
+    <script src="../assets/vendor/js/helpers.js"></script>
+    <script src="../assets/js/config.js"></script>
+<style>
+    /* ======================================================
+       SELECT2 HEIGHT & ALIGNMENT FIX (GLOBAL)
+       Matches Bootstrap .form-select height
+    ====================================================== */
+
+    /* Main single select */
+    .select2-container--default .select2-selection--single {
+        height: calc(2.25rem + 2px);      /* Bootstrap form-select height */
+        padding: 0.375rem 0.75rem;
+        border: 1px solid #d9dee3;
+        border-radius: 0.375rem;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Selected text alignment */
+    .select2-container--default 
+    .select2-selection--single 
+    .select2-selection__rendered {
+        line-height: normal;
+        padding-left: 0;
+        padding-right: 0;
+        color: #566a7f;
+    }
+
+    /* Dropdown arrow alignment */
+    .select2-container--default 
+    .select2-selection--single 
+    .select2-selection__arrow {
+        height: 100%;
+        top: 0;
+    }
+
+    /* Focus state (matches Sneat) */
+    .select2-container--default.select2-container--focus 
+    .select2-selection--single {
+        border-color: #696cff;
+        box-shadow: 0 0 0 0.15rem rgba(105,108,255,.25);
+    }
+
+    /* ======================================================
+       MULTI-SELECT (PREREQUISITES)
+    ====================================================== */
+
+    .select2-container--default .select2-selection--multiple {
+        min-height: calc(2.25rem + 2px);
+        padding: 0.25rem 0.5rem;
+        border: 1px solid #d9dee3;
+        border-radius: 0.375rem;
+    }
+
+    /* Chips (selected items) */
+    .select2-container--default 
+    .select2-selection--multiple 
+    .select2-selection__choice {
+        margin-top: 0.25rem;
+        background-color: #e7e7ff;
+        border: none;
+        color: #696cff;
+        font-size: 0.75rem;
+        border-radius: 0.25rem;
+    }
+
+    /* ======================================================
+       DISABLED STATE
+    ====================================================== */
+
+    .select2-container--default 
+    .select2-selection--single.select2-selection--disabled {
+        background-color: #f5f5f9;
+        cursor: not-allowed;
+    }    
+</style>    
 </head>
 
 <body>
@@ -51,24 +131,52 @@ $collegeId = $_SESSION['college_id'] ?? 0;
 
             <?php
             if ($role === 'admin') {
+                /* ============================================================
+                   LOAD PROGRAMS WITH AT LEAST ONE ENCODED PROSPECTUS SUBJECT
+                   (ADMIN VIEW – ALL COLLEGES)
+                ============================================================ */
+
                 $prog = $conn->query("
-                    SELECT program_id, program_name, program_code, major
-                    FROM tbl_program
-                    WHERE status='active'
-                    ORDER BY program_name, major
+                    SELECT DISTINCT p.program_id, p.program_name, p.program_code, p.major
+                    FROM tbl_program p
+                    WHERE p.status = 'active'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM tbl_prospectus_header h
+                          JOIN tbl_prospectus_year_sem ys
+                            ON ys.prospectus_id = h.prospectus_id
+                          JOIN tbl_prospectus_subjects ps
+                            ON ps.pys_id = ys.pys_id
+                          WHERE h.program_id = p.program_id
+                      )
+                    ORDER BY p.program_name, p.major
                 ");
             } else {
+                /* ============================================================
+                   LOAD PROGRAMS WITH AT LEAST ONE ENCODED PROSPECTUS SUBJECT
+                   (COLLEGE-SCOPED VIEW)
+                ============================================================ */
+
                 $prog = $conn->query("
-                    SELECT program_id, program_name, program_code, major
-                    FROM tbl_program
-                    WHERE status='active'
-                      AND college_id = '$collegeId'
-                    ORDER BY program_name, major
+                    SELECT DISTINCT p.program_id, p.program_name, p.program_code, p.major
+                    FROM tbl_program p
+                    WHERE p.status = 'active'
+                      AND p.college_id = '$collegeId'
+                      AND EXISTS (
+                          SELECT 1
+                          FROM tbl_prospectus_header h
+                          JOIN tbl_prospectus_year_sem ys
+                            ON ys.prospectus_id = h.prospectus_id
+                          JOIN tbl_prospectus_subjects ps
+                            ON ps.pys_id = ys.pys_id
+                          WHERE h.program_id = p.program_id
+                      )
+                    ORDER BY p.program_name, p.major
                 ");
             }
 
             while ($p = $prog->fetch_assoc()) {
-                $label = $p['program_name'];
+                $label = strtoupper($p['program_name']);
                 if ($p['major']) {
                     $label .= ' major in ' . $p['major'];
                 }
@@ -115,9 +223,17 @@ $collegeId = $_SESSION['college_id'] ?? 0;
 </div>
 </div>
 
-<script src="../assets/vendor/libs/jquery/jquery.js"></script>
-<script src="../assets/vendor/js/bootstrap.js"></script>
-<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<!-- JS -->
+    <script src="../assets/vendor/libs/jquery/jquery.js"></script>
+    <script src="../assets/vendor/libs/popper/popper.js"></script>
+    <script src="../assets/vendor/js/bootstrap.js"></script>
+    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
+    <script src="../assets/vendor/js/menu.js"></script>
+    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
+    <script src="../assets/js/main.js"></script>
+    <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
 $('#filterProgram').select2({ width: '100%' });

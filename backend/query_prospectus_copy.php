@@ -7,23 +7,37 @@ if ($_SESSION['role'] !== 'admin') {
     exit;
 }
 
+/* ======================================================
+   LOAD TARGET PROGRAMS (FOR COPY PROSPECTUS)
+   PURPOSE:
+   - Used by Copy Prospectus modal (Target Program)
+   - Admin sees ALL programs
+   - Include MAJOR for label rendering
+====================================================== */
 if (isset($_POST['load_programs'])) {
 
-    $res = $conn->query("
-        SELECT program_id, program_name, program_code
+    $sql = "
+        SELECT
+            program_id,
+            program_name,
+            program_code,
+            major
         FROM tbl_program
-        WHERE status='active'
-        ORDER BY program_name
-    ");
+        WHERE status = 'active'
+        ORDER BY program_name, major
+    ";
+
+    $res = $conn->query($sql);
 
     $data = [];
-    while ($r = $res->fetch_assoc()) {
-        $data[] = $r;
+    while ($row = $res->fetch_assoc()) {
+        $data[] = $row;
     }
 
     echo json_encode($data);
     exit;
 }
+
 
 if (isset($_POST['copy_prospectus'])) {
 

@@ -70,13 +70,87 @@
           z-index: 20000 !important;
       }
 
-.accordion-header {
-    background: #FFF7E6 !important;     /* light beige */
-    border: 1px solid #FFE4C2 !important;
-    border-radius: 6px;
-    padding: 6px 12px;
-    margin-bottom: 6px;
-}
+      .accordion-header {
+          background: #FFF7E6 !important;     /* light beige */
+          border: 1px solid #FFE4C2 !important;
+          border-radius: 6px;
+          padding: 6px 12px;
+          margin-bottom: 6px;
+      }
+
+    /* ======================================================
+       SELECT2 HEIGHT & ALIGNMENT FIX (GLOBAL)
+       Matches Bootstrap .form-select height
+    ====================================================== */
+
+    /* Main single select */
+    .select2-container--default .select2-selection--single {
+        height: calc(2.25rem + 2px);      /* Bootstrap form-select height */
+        padding: 0.375rem 0.75rem;
+        border: 1px solid #d9dee3;
+        border-radius: 0.375rem;
+        display: flex;
+        align-items: center;
+    }
+
+    /* Selected text alignment */
+    .select2-container--default 
+    .select2-selection--single 
+    .select2-selection__rendered {
+        line-height: normal;
+        padding-left: 0;
+        padding-right: 0;
+        color: #566a7f;
+    }
+
+    /* Dropdown arrow alignment */
+    .select2-container--default 
+    .select2-selection--single 
+    .select2-selection__arrow {
+        height: 100%;
+        top: 0;
+    }
+
+    /* Focus state (matches Sneat) */
+    .select2-container--default.select2-container--focus 
+    .select2-selection--single {
+        border-color: #696cff;
+        box-shadow: 0 0 0 0.15rem rgba(105,108,255,.25);
+    }
+
+    /* ======================================================
+       MULTI-SELECT (PREREQUISITES)
+    ====================================================== */
+
+    .select2-container--default .select2-selection--multiple {
+        min-height: calc(2.25rem + 2px);
+        padding: 0.25rem 0.5rem;
+        border: 1px solid #d9dee3;
+        border-radius: 0.375rem;
+    }
+
+    /* Chips (selected items) */
+    .select2-container--default 
+    .select2-selection--multiple 
+    .select2-selection__choice {
+        margin-top: 0.25rem;
+        background-color: #e7e7ff;
+        border: none;
+        color: #696cff;
+        font-size: 0.75rem;
+        border-radius: 0.25rem;
+    }
+
+    /* ======================================================
+       DISABLED STATE
+    ====================================================== */
+
+    .select2-container--default 
+    .select2-selection--single.select2-selection--disabled {
+        background-color: #f5f5f9;
+        cursor: not-allowed;
+    }
+
     </style>
 </head>
 
@@ -788,6 +862,58 @@ function loadYearSem(prospectus_id) {
 $(document).ready(function () {
 
 
+/* ======================================================
+   GLOBAL SELECT2 (UI ONLY)
+   Applies to all visible page selects (non-modal)
+====================================================== */
+$('select.form-select').each(function () {
+
+    // Skip selects that are inside modals
+    if ($(this).closest('.modal').length > 0) return;
+
+    // Prevent double initialization
+    if ($(this).hasClass('select2-hidden-accessible')) return;
+
+    $(this).select2({
+        width: '100%',
+        allowClear: true,
+        placeholder: $(this).find('option:first').text() || 'Select option'
+    });
+});
+
+$('#yearSemModal').on('shown.bs.modal', function () {
+
+    $(this).find('select').each(function () {
+
+        if ($(this).hasClass('select2-hidden-accessible')) return;
+
+        $(this).select2({
+            width: '100%',
+            dropdownParent: $('#yearSemModal'),
+            placeholder: 'Select option',
+            allowClear: true
+        });
+    });
+});
+
+
+// Init Select2 for existing prospectus list
+if ($('#existingProspectusList').hasClass('select2-hidden-accessible')) {
+    $('#existingProspectusList').select2('destroy');
+}
+
+$('#existingProspectusList').select2({
+    width: '100%',
+    allowClear: true,
+    placeholder: 'Select Prospectus',
+    dropdownParent: $('#loadProspectusModal')
+});
+
+
+
+
+
+
 // -------------------------------------------
 // OPEN COPY PROSPECTUS MODAL (ADMIN)
 // -------------------------------------------
@@ -804,16 +930,44 @@ $("#btnCopyProspectus").click(function () {
                 .empty()
                 .append('<option value="">Select Prospectus</option>');
 
-            res.forEach(item => {
-                let label = `${item.program_name} (${item.program_code}) — ${item.cmo_no} — ${item.effective_sy}`;
-                $("#copy_source_prospectus").append(
-                    `<option value="${item.prospectus_id}"
-                             data-cmo="${item.cmo_no}"
-                             data-sy="${item.effective_sy}">
-                        ${label}
-                     </option>`
-                );
-            });
+                res.forEach(item => {
+
+                    // ------------------------------------------
+                    // BUILD PROGRAM LABEL (WITH OPTIONAL MAJOR)
+                    // ------------------------------------------
+                    let programLabel = item.program_name;
+
+                    if (item.major && item.major.trim() !== "") {
+                        programLabel += ` major in ${item.major}`;
+                    }
+
+                    programLabel += ` (${item.program_code})`;
+
+                    let label = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
+
+                    $("#copy_source_prospectus").append(
+                        `<option value="${item.prospectus_id}"
+                                 data-cmo="${item.cmo_no}"
+                                 data-sy="${item.effective_sy}">
+                            ${label}
+                         </option>`
+                    );
+                });
+// ------------------------------------------
+// INIT SELECT2 FOR SOURCE PROSPECTUS
+// ------------------------------------------
+if ($('#copy_source_prospectus').hasClass('select2-hidden-accessible')) {
+    $('#copy_source_prospectus').select2('destroy');
+}
+
+$('#copy_source_prospectus').select2({
+    placeholder: 'Select Prospectus',
+    allowClear: true,
+    width: '100%',
+    dropdownParent: $('#copyProspectusModal')
+});
+
+
         },
         "json"
     );
@@ -827,13 +981,39 @@ $("#btnCopyProspectus").click(function () {
                 .empty()
                 .append('<option value="">Select Program</option>');
 
-            res.forEach(p => {
-                $("#copy_target_program").append(
-                    `<option value="${p.program_id}">
-                        ${p.program_name} (${p.program_code})
-                     </option>`
-                );
-            });
+res.forEach(p => {
+
+    // ------------------------------------------
+    // BUILD TARGET PROGRAM LABEL (WITH MAJOR)
+    // ------------------------------------------
+    let programLabel = p.program_name;
+
+    if (p.major && p.major.trim() !== "") {
+        programLabel += ` major in ${p.major}`;
+    }
+
+    programLabel += ` (${p.program_code})`;
+
+    $("#copy_target_program").append(
+        `<option value="${p.program_id}">
+            ${programLabel}
+         </option>`
+    );
+});
+// ------------------------------------------
+// INIT SELECT2 FOR TARGET PROGRAM
+// ------------------------------------------
+if ($('#copy_target_program').hasClass("select2-hidden-accessible")) {
+    $('#copy_target_program').select2('destroy');
+}
+
+$('#copy_target_program').select2({
+    placeholder: "Select Program",
+    allowClear: true,
+    width: "100%",
+    dropdownParent: $('#copyProspectusModal')
+});
+
         },
         "json"
     );

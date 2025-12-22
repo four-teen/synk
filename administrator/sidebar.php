@@ -97,13 +97,6 @@
                 </li>
 
                 <li class="menu-item">
-                    <a href="manage-prospectus-browser.php" class="menu-link">
-                        <div>Prospectus Viewer</div>
-                    </a>
-                </li>
-
-
-                <li class="menu-item">
                     <a href="faculty-workload.php" class="menu-link">
                         <div>Faculty Workload</div>
                     </a>
@@ -132,7 +125,14 @@
             </a>
 
             <ul class="menu-sub">
+
                 <li class="menu-item">
+                    <a href="manage-prospectus-browser.php" class="menu-link">
+                        <div>Prospectus Viewer</div>
+                    </a>
+                </li>
+
+<!--                 <li class="menu-item">
                     <a href="mwth-balance.php" class="menu-link">
                         <div>MW/TTh Balance</div>
                     </a>
@@ -148,7 +148,7 @@
                     <a href="campus-reports.php" class="menu-link">
                         <div>Campus Reports</div>
                     </a>
-                </li>
+                </li> -->
             </ul>
         </li>
 

@@ -119,49 +119,99 @@ if (isset($_POST['get_all_subjects'])) {
 
 
 // ======================================================
-// LOAD ALL PROSPECTUS FOR DROPDOWN (WITH PROGRAM NAME)
+// LOAD PROSPECTUS LIST (ADMIN: ONLY WITH AT LEAST 1 SUBJECT)
+// PURPOSE:
+// - Used by "Copy Prospectus" modal
+// - Ensures only copy-ready prospectuses appear
+// RULE:
+// - Prospectus must have at least one subject
+// - Admin can see prospectuses from ALL colleges
 // ======================================================
 if (isset($_POST['load_prospectus_list'])) {
 
     $role = $_SESSION['role'] ?? '';
     $myCollege = $_SESSION['college_id'] ?? 0;
 
+    // --------------------------------------------------
+    // ADMIN: All colleges, but ONLY prospectuses
+    //        that already contain at least one subject
+    // --------------------------------------------------
     if ($role === 'admin') {
-        // Admin sees all
-        $sql = "SELECT 
-                    h.prospectus_id,
-                    h.cmo_no,
-                    h.effective_sy,
-                    p.program_name,
-                    p.program_code
-                FROM tbl_prospectus_header h
-                LEFT JOIN tbl_program p ON p.program_id = h.program_id
-                ORDER BY h.prospectus_id DESC";
-    } else {
-        $sql = "SELECT 
-                    h.prospectus_id,
-                    h.cmo_no,
-                    h.effective_sy,
-                    p.program_name,
-                    p.program_code,
-                    p.major
-                FROM tbl_prospectus_header h
-                LEFT JOIN tbl_program p ON p.program_id = h.program_id
-                WHERE p.college_id = '$myCollege'
-                ORDER BY h.prospectus_id DESC";
+
+        $sql = "
+            SELECT DISTINCT
+                h.prospectus_id,
+                h.cmo_no,
+                h.effective_sy,
+                p.program_name,
+                p.program_code,
+                p.major
+            FROM tbl_prospectus_header h
+            INNER JOIN tbl_program p 
+                ON p.program_id = h.program_id
+            WHERE EXISTS (
+                SELECT 1
+                FROM tbl_prospectus_year_sem ys
+                INNER JOIN tbl_prospectus_subjects ps
+                    ON ps.pys_id = ys.pys_id
+                WHERE ys.prospectus_id = h.prospectus_id
+            )
+            ORDER BY h.prospectus_id DESC
+        ";
+
+    }
+    // --------------------------------------------------
+    // NON-ADMIN (Scheduler): Same rule, but college-bound
+    // --------------------------------------------------
+    else {
+
+        $sql = "
+            SELECT DISTINCT
+                h.prospectus_id,
+                h.cmo_no,
+                h.effective_sy,
+                p.program_name,
+                p.program_code,
+                p.major
+            FROM tbl_prospectus_header h
+            INNER JOIN tbl_program p 
+                ON p.program_id = h.program_id
+            WHERE p.college_id = ?
+              AND EXISTS (
+                  SELECT 1
+                  FROM tbl_prospectus_year_sem ys
+                  INNER JOIN tbl_prospectus_subjects ps
+                      ON ps.pys_id = ys.pys_id
+                  WHERE ys.prospectus_id = h.prospectus_id
+              )
+            ORDER BY h.prospectus_id DESC
+        ";
     }
 
-    $result = $conn->query($sql);
+    // --------------------------------------------------
+    // EXECUTE QUERY
+    // --------------------------------------------------
+    if ($role === 'admin') {
+        $stmt = $conn->prepare($sql);
+    } else {
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $myCollege);
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
 
     $data = [];
-
     while ($row = $result->fetch_assoc()) {
         $data[] = $row;
     }
 
+    $stmt->close();
+
     echo json_encode($data);
     exit;
 }
+
 
 
 if (isset($_POST['list_headers'])) {

@@ -490,13 +490,12 @@ if ($isUniversitySummary) {
                   </div>
                   <div class="card-body">
                     <p class="text-muted mb-2">
-                      This section will list all programs and prospectus versions for
+                      List all programs and prospectus versions for
                       <?= $isUniversitySummary ? 'the entire university.' : 'this campus.'; ?>
-                      You can connect it later to <code>tbl_prospectus_header</code> and related tables.
                     </p>
                     <div class="alert alert-info mb-0">
                       <i class="bx bx-info-circle me-1"></i>
-                      Placeholder only for now. Hook this card to your existing Prospectus Builder queries when ready.
+                      <!-- Placeholder only for now. Hook this card to your existing Prospectus Builder queries when ready. -->
                     </div>
                   </div>
                 </div>
@@ -550,11 +549,11 @@ if ($isUniversitySummary) {
                   </div>
                   <div class="card-body">
                     <p class="text-muted mb-2">
-                      Here you can later show top faculty for this campus (e.g., by workload or department).
+                      Show top faculty for this campus (e.g., by workload or department).
                     </p>
                     <div class="alert alert-secondary mb-0">
                       <i class="bx bx-user me-1"></i>
-                      Connect this panel to your faculty assignment tables when ready.
+                      Faculty assignments.
                     </div>
                   </div>
                 </div>

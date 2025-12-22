@@ -84,7 +84,7 @@
      <script src="../assets/js/config.js"></script>
       <style>
 .campus-scroll-area {
-  max-height: 620px;
+  max-height: 700px;
   overflow-y: auto;
   padding-right: 4px;
 }
@@ -277,7 +277,7 @@
 
                 <!-- Expense Overview -->
 <!-- Rooms per Campus Overview -->
-<div class="col-md-6 col-lg-12 order-1 mb-4">
+<div class="col-lg-12 order-1 mb-4">
   <div class="card h-100 shadow-sm">
 
     <div class="card-header d-flex justify-content-between align-items-center">

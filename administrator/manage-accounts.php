@@ -154,7 +154,7 @@
                 <option value="admin">Administrator</option>
                 <option value="scheduler">Scheduler</option>
                 <option value="viewer">Viewer</option>
-                <option value="hrs">HR</option>
+                <option value="hris">HR</option>
                 <option value="vpaa">VPAA</option>
                 <option value="di">DI</option>
               </select>
@@ -235,6 +235,9 @@
                 <option value="admin">Administrator</option>
                 <option value="scheduler">Scheduler</option>
                 <option value="viewer">Viewer</option>
+                <option value="hris">HR</option>
+                <option value="vpaa">VPAA</option>
+                <option value="di">DI</option>
               </select>
             </div>
 
