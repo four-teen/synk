@@ -145,10 +145,15 @@ if (isset($_POST['load_prospectus_list'])) {
                 h.effective_sy,
                 p.program_name,
                 p.program_code,
-                p.major
+                p.major,
+                ca.campus_code
             FROM tbl_prospectus_header h
             INNER JOIN tbl_program p 
                 ON p.program_id = h.program_id
+            INNER JOIN tbl_college c 
+                ON c.college_id = p.college_id
+            INNER JOIN tbl_campus ca 
+                ON ca.campus_id = c.campus_id
             WHERE EXISTS (
                 SELECT 1
                 FROM tbl_prospectus_year_sem ys
@@ -157,7 +162,9 @@ if (isset($_POST['load_prospectus_list'])) {
                 WHERE ys.prospectus_id = h.prospectus_id
             )
             ORDER BY h.prospectus_id DESC
+
         ";
+
 
     }
     // --------------------------------------------------

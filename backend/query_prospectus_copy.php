@@ -12,19 +12,24 @@ if ($_SESSION['role'] !== 'admin') {
    PURPOSE:
    - Used by Copy Prospectus modal (Target Program)
    - Admin sees ALL programs
-   - Include MAJOR for label rendering
+   - Include CAMPUS CODE for identification
 ====================================================== */
 if (isset($_POST['load_programs'])) {
 
     $sql = "
         SELECT
-            program_id,
-            program_name,
-            program_code,
-            major
-        FROM tbl_program
-        WHERE status = 'active'
-        ORDER BY program_name, major
+            p.program_id,
+            p.program_name,
+            p.program_code,
+            p.major,
+            c.campus_code
+        FROM tbl_program p
+        INNER JOIN tbl_college col
+            ON col.college_id = p.college_id
+        INNER JOIN tbl_campus c
+            ON c.campus_id = col.campus_id
+        WHERE p.status = 'active'
+        ORDER BY c.campus_code, p.program_name, p.major
     ";
 
     $res = $conn->query($sql);

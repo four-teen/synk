@@ -201,18 +201,19 @@
                       // ADMIN → can see ALL programs
                       if ($role === 'admin') {
 
-                        $prog = $conn->query("
-                          SELECT 
-                            p.program_id, 
-                            p.program_code, 
-                            p.program_name, 
-                            p.major,
-                            c.college_name
-                          FROM tbl_program p
-                          LEFT JOIN tbl_college c ON p.college_id = c.college_id
-                          WHERE p.status='active'
-                          ORDER BY c.college_name, p.program_name, p.major
-                        ");
+$prog = $conn->query("
+  SELECT 
+    p.program_id, 
+    p.program_code, 
+    p.program_name, 
+    p.major,
+    ca.campus_code
+  FROM tbl_program p
+  INNER JOIN tbl_college c ON p.college_id = c.college_id
+  INNER JOIN tbl_campus ca ON ca.campus_id = c.campus_id
+  WHERE p.status='active'
+  ORDER BY ca.campus_code, p.program_name, p.major
+");
 
                       } 
                       // SCHEDULER → can see ONLY programs under *their* college
@@ -246,9 +247,9 @@
                               $baseLabel = $programName . ' (' . $programCode . ')';
                           }
 
-                          // ADMIN includes college name
+                          // ADMIN includes CAMPUS CODE
                           if ($role === 'admin') {
-                              $label = $r['college_name'] . ' - ' . $baseLabel;
+                              $label = $r['campus_code'] . ' - ' . $baseLabel;
                           } else {
                               $label = $baseLabel;
                           }
@@ -935,15 +936,17 @@ $("#btnCopyProspectus").click(function () {
                     // ------------------------------------------
                     // BUILD PROGRAM LABEL (WITH OPTIONAL MAJOR)
                     // ------------------------------------------
-                    let programLabel = item.program_name;
+let campus = item.campus_code || 'N/A';
 
-                    if (item.major && item.major.trim() !== "") {
-                        programLabel += ` major in ${item.major}`;
-                    }
+let programLabel = item.program_name;
 
-                    programLabel += ` (${item.program_code})`;
+if (item.major && item.major.trim() !== "") {
+    programLabel += ` major in ${item.major}`;
+}
 
-                    let label = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
+programLabel += ` (${item.program_code})`;
+
+let label = `${campus} – ${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
 
                     $("#copy_source_prospectus").append(
                         `<option value="${item.prospectus_id}"
@@ -986,13 +989,13 @@ res.forEach(p => {
     // ------------------------------------------
     // BUILD TARGET PROGRAM LABEL (WITH MAJOR)
     // ------------------------------------------
-    let programLabel = p.program_name;
+let programLabel = `${p.campus_code} – ${p.program_name}`;
 
-    if (p.major && p.major.trim() !== "") {
-        programLabel += ` major in ${p.major}`;
-    }
+if (p.major && p.major.trim() !== "") {
+    programLabel += ` major in ${p.major}`;
+}
 
-    programLabel += ` (${p.program_code})`;
+programLabel += ` (${p.program_code})`;
 
     $("#copy_target_program").append(
         `<option value="${p.program_id}">
@@ -1101,24 +1104,30 @@ $('#ps_sub_id').select2({
                 $("#existingProspectusList").empty()
                     .append(`<option value="">Select Prospectus</option>`);
 
-                    res.forEach(item => {
+/* ======================================================
+   BUILD LOAD PROSPECTUS LABEL (WITH CAMPUS CODE)
+====================================================== */
+res.forEach(item => {
 
-                        let programLabel = '';
+    let programLabel = item.program_name;
 
-                        if (item.major && item.major.trim() !== '') {
-                            programLabel = `${item.program_name} ${item.major} (${item.program_code})`;
-                        } else {
-                            programLabel = `${item.program_name} (${item.program_code})`;
-                        }
+    if (item.major && item.major.trim() !== '') {
+        programLabel += ` major in ${item.major}`;
+    }
 
-                        let finalLabel = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
+    programLabel += ` (${item.program_code})`;
 
-                        $("#existingProspectusList").append(`
-                            <option value="${item.prospectus_id}">
-                                ${finalLabel}
-                            </option>
-                        `);
-                    });
+    let campus = item.campus_code || 'N/A';
+
+    let finalLabel = `${campus} – ${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
+
+    $("#existingProspectusList").append(`
+        <option value="${item.prospectus_id}">
+            ${finalLabel}
+        </option>
+    `);
+});
+
 
             }
         });

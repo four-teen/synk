@@ -136,21 +136,30 @@ $collegeId = $_SESSION['college_id'] ?? 0;
                    (ADMIN VIEW – ALL COLLEGES)
                 ============================================================ */
 
-                $prog = $conn->query("
-                    SELECT DISTINCT p.program_id, p.program_name, p.program_code, p.major
-                    FROM tbl_program p
-                    WHERE p.status = 'active'
-                      AND EXISTS (
-                          SELECT 1
-                          FROM tbl_prospectus_header h
-                          JOIN tbl_prospectus_year_sem ys
-                            ON ys.prospectus_id = h.prospectus_id
-                          JOIN tbl_prospectus_subjects ps
-                            ON ps.pys_id = ys.pys_id
-                          WHERE h.program_id = p.program_id
-                      )
-                    ORDER BY p.program_name, p.major
-                ");
+                    $prog = $conn->query("
+                        SELECT DISTINCT
+                            p.program_id,
+                            p.program_name,
+                            p.program_code,
+                            p.major,
+                            ca.campus_code
+                        FROM tbl_program p
+                        LEFT JOIN tbl_college c
+                            ON c.college_id = p.college_id
+                        LEFT JOIN tbl_campus ca
+                            ON ca.campus_id = c.campus_id
+                        WHERE p.status = 'active'
+                          AND EXISTS (
+                              SELECT 1
+                              FROM tbl_prospectus_header h
+                              JOIN tbl_prospectus_year_sem ys
+                                ON ys.prospectus_id = h.prospectus_id
+                              JOIN tbl_prospectus_subjects ps
+                                ON ps.pys_id = ys.pys_id
+                              WHERE h.program_id = p.program_id
+                          )
+                        ORDER BY ca.campus_code, p.program_name, p.major
+                    ");
             } else {
                 /* ============================================================
                    LOAD PROGRAMS WITH AT LEAST ONE ENCODED PROSPECTUS SUBJECT
@@ -176,13 +185,25 @@ $collegeId = $_SESSION['college_id'] ?? 0;
             }
 
             while ($p = $prog->fetch_assoc()) {
-                $label = strtoupper($p['program_name']);
-                if ($p['major']) {
-                    $label .= ' major in ' . $p['major'];
-                }
-                $label .= ' (' . $p['program_code'] . ')';
+                /* ============================================================
+                   BUILD PROGRAM LABEL (ADMIN – WITH CAMPUS CODE)
+                ============================================================ */
 
-                echo "<option value='{$p['program_id']}'>" . htmlspecialchars($label) . "</option>";
+                $programName = ucwords(strtolower($p['program_name']));
+                $programCode = strtoupper($p['program_code']);
+                $major       = trim($p['major']);
+                $campus      = $p['campus_code'] ?? '?';
+
+                if ($major !== '') {
+                    $baseLabel = $programName . ' major in ' . $major . ' (' . $programCode . ')';
+                } else {
+                    $baseLabel = $programName . ' (' . $programCode . ')';
+                }
+
+                $finalLabel = $campus . ' – ' . $baseLabel;
+
+                echo "<option value='{$p['program_id']}'>" . htmlspecialchars($finalLabel) . "</option>";
+
             }
             ?>
         </select>
