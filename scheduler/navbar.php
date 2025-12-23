@@ -33,6 +33,7 @@
 
       <!-- Username & Role Display -->
       <li class="nav-item lh-1 me-3">
+        <!-- <span class="fw-semibold">ID: <?= $_SESSION['college_id'] ?></span>         -->
         <span class="fw-semibold"><?= $uName ?></span>
         <small class="text-muted ms-1">(<?= $uRole ?>)</small>
       </li>

@@ -154,15 +154,7 @@ if (isset($_POST['load_prospectus_list'])) {
                 ON c.college_id = p.college_id
             INNER JOIN tbl_campus ca 
                 ON ca.campus_id = c.campus_id
-            WHERE EXISTS (
-                SELECT 1
-                FROM tbl_prospectus_year_sem ys
-                INNER JOIN tbl_prospectus_subjects ps
-                    ON ps.pys_id = ys.pys_id
-                WHERE ys.prospectus_id = h.prospectus_id
-            )
             ORDER BY h.prospectus_id DESC
-
         ";
 
 
@@ -184,13 +176,6 @@ if (isset($_POST['load_prospectus_list'])) {
             INNER JOIN tbl_program p 
                 ON p.program_id = h.program_id
             WHERE p.college_id = ?
-              AND EXISTS (
-                  SELECT 1
-                  FROM tbl_prospectus_year_sem ys
-                  INNER JOIN tbl_prospectus_subjects ps
-                      ON ps.pys_id = ys.pys_id
-                  WHERE ys.prospectus_id = h.prospectus_id
-              )
             ORDER BY h.prospectus_id DESC
         ";
     }
