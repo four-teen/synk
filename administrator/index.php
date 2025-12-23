@@ -186,7 +186,7 @@
         </p>
 
         <a href="institutional_report.php" class="btn btn-sm btn-primary">
-          View Full Institutional Report
+          View Full Institutional Reports
         </a>
       </div>
 
