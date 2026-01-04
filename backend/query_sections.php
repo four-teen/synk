@@ -129,17 +129,21 @@ if (isset($_POST['save_sections'])) {
 
     $program_id   = intval($_POST['program_id']);
     $program_code = mysqli_real_escape_string($conn, $_POST['program_code']);
-    $year         = mysqli_real_escape_string($conn, $_POST['year_level']);
+    $year         = intval($_POST['year_level']);
     $count        = intval($_POST['count']);
+    $startIndex   = intval($_POST['start_index'] ?? 0);
 
     $letters = range('A','Z');
 
     for ($i = 0; $i < $count; $i++) {
 
-        $section_name = $year . $letters[$i];           // 1A
-        $full_section = $program_code . " " . $section_name;  // BSCS 1A
+        $idx = $startIndex + $i;
 
-        // Prevent duplicates
+        if (!isset($letters[$idx])) break;
+
+        $section_name = $year . $letters[$idx];       // 1D, 1E
+        $full_section = $program_code . " " . $section_name;
+
         $check = mysqli_query($conn,
             "SELECT section_id FROM tbl_sections
              WHERE program_id='$program_id'
@@ -159,6 +163,7 @@ if (isset($_POST['save_sections'])) {
     echo "success";
     exit;
 }
+
 
 // add near bottom of query_sections.php
 
@@ -182,5 +187,41 @@ if (isset($_POST['load_sections_by_prog_year'])) {
     echo $out;
     exit;
 }
+
+// -------------------------------------------------
+// GET NEXT AVAILABLE SECTION LETTER (ACTIVE ONLY)
+// -------------------------------------------------
+if (isset($_POST['get_next_section_index'])) {
+
+    $program_id = intval($_POST['program_id']);
+    $year_level = intval($_POST['year_level']);
+
+    $sql = "
+        SELECT MAX(ASCII(RIGHT(section_name, 1))) AS max_letter
+        FROM tbl_sections
+        WHERE program_id = ?
+          AND year_level = ?
+          AND status = 'active'
+    ";
+
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $program_id, $year_level);
+    $stmt->execute();
+    $res = $stmt->get_result()->fetch_assoc();
+
+    // If no existing sections, start at A (index 0)
+    $nextIndex = 0;
+
+    if (!empty($res['max_letter'])) {
+        $nextIndex = ($res['max_letter'] - ord('A')) + 1;
+    }
+
+    echo json_encode([
+        "next_index" => $nextIndex
+    ]);
+    exit;
+}
+
+
 
 ?>

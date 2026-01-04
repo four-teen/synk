@@ -22,13 +22,18 @@ $doPrint       = isset($_GET['print']) && $_GET['print'] == '1';
    HELPERS
 ================================ */
 function semesterLabel($sem) {
-    return match((string)$sem) {
-        "1" => "FIRST SEMESTER",
-        "2" => "SECOND SEMESTER",
-        "3" => "MIDYEAR",
-        default => "SEMESTER"
-    };
+    switch ((string)$sem) {
+        case "1":
+            return "FIRST SEMESTER";
+        case "2":
+            return "SECOND SEMESTER";
+        case "3":
+            return "MIDYEAR";
+        default:
+            return "SEMESTER";
+    }
 }
+
 
 /* ===============================
    CAMPUS LABEL

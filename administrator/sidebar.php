@@ -49,6 +49,14 @@
             </a>
 
             <ul class="menu-sub">
+
+                <!-- ACADEMIC SETTINGS (GLOBAL CONTEXT) -->
+                <li class="menu-item">
+                    <a href="academic-settings.php" class="menu-link">
+                        <div>Academic Settings</div>
+                    </a>
+                </li>            
+
                 <li class="menu-item">
                     <a href="manage-campuses.php" class="menu-link">
                         <div>Campuses</div>

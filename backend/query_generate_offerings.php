@@ -24,65 +24,27 @@ try {
     /* ============================
        GET PROGRAM ID
     ============================ */
-    $p = $conn->prepare("
+    $stmt = $conn->prepare("
         SELECT program_id
         FROM tbl_prospectus_header
         WHERE prospectus_id = ?
     ");
-    $p->bind_param("i", $prospectus_id);
-    $p->execute();
-    $program_id = $p->get_result()->fetch_assoc()['program_id'] ?? 0;
+    $stmt->bind_param("i", $prospectus_id);
+    $stmt->execute();
+    $program_id = $stmt->get_result()->fetch_assoc()['program_id'] ?? 0;
+    $stmt->close();
 
     if (!$program_id) {
-        throw new Exception("Invalid prospectus → program not found");
+        throw new Exception("Invalid prospectus");
     }
 
     /* ============================
-       DELETE CLASS SCHEDULES FIRST
-       (Prevent orphan schedules)
-    ============================ */
-    $delSched = $conn->prepare("
-        DELETE cs
-        FROM tbl_class_schedule cs
-        INNER JOIN tbl_prospectus_offering o
-            ON o.offering_id = cs.offering_id
-        WHERE o.prospectus_id = ?
-          AND o.ay_id = ?
-          AND o.semester = ?
-    ");
-
-    $delSched->bind_param(
-        "iii",
-        $prospectus_id,
-        $ay_id,
-        $semester
-    );
-
-    $delSched->execute();
-    $deletedSchedules = $delSched->affected_rows;
-    $delSched->close();
-
-    /* ============================
-       DELETE OLD OFFERINGS
-    ============================ */
-    $del = $conn->prepare("
-        DELETE FROM tbl_prospectus_offering
-        WHERE prospectus_id = ?
-          AND ay_id = ?
-          AND semester = ?
-    ");
-    $del->bind_param("iii", $prospectus_id, $ay_id, $semester);
-    $del->execute();
-    $deleted = $del->affected_rows;
-
-    /* ============================
-       GET SUBJECTS
+       LOAD SUBJECTS (WITH YEAR LEVEL)
     ============================ */
     $sub = $conn->prepare("
         SELECT ps.ps_id, pys.year_level
         FROM tbl_prospectus_year_sem pys
-        INNER JOIN tbl_prospectus_subjects ps
-            ON ps.pys_id = pys.pys_id
+        JOIN tbl_prospectus_subjects ps ON ps.pys_id = pys.pys_id
         WHERE pys.prospectus_id = ?
           AND pys.semester = ?
     ");
@@ -91,13 +53,14 @@ try {
     $subjects = $sub->get_result();
 
     if ($subjects->num_rows === 0) {
-        throw new Exception("No subjects found");
+        throw new Exception("No subjects found for this semester");
     }
 
     /* ============================
-       PREPARE SECTIONS (FILTERED BY YEAR LEVEL)
-       NOTE: This assumes tbl_sections has year_level column
+       PREPARE STATEMENTS
     ============================ */
+
+    // Active sections by year level
     $sec = $conn->prepare("
         SELECT section_id
         FROM tbl_sections
@@ -106,56 +69,129 @@ try {
           AND status = 'active'
     ");
 
-    /* ============================
-       INSERT OFFERINGS
-    ============================ */
+    // Check existing offering
+    $chk = $conn->prepare("
+        SELECT offering_id
+        FROM tbl_prospectus_offering
+        WHERE prospectus_id = ?
+          AND ay_id = ?
+          AND semester = ?
+          AND ps_id = ?
+          AND section_id = ?
+        LIMIT 1
+    ");
+
+    // Insert offering
     $ins = $conn->prepare("
         INSERT INTO tbl_prospectus_offering
         (program_id, prospectus_id, ps_id, year_level, semester, ay_id, section_id, status, date_created)
         VALUES (?, ?, ?, ?, ?, ?, ?, 'pending', NOW())
     ");
 
-$inserted = 0;
+    $inserted = 0;
 
-while ($s = $subjects->fetch_assoc()) {
+    /* ============================
+       ADD MISSING OFFERINGS
+    ============================ */
+    while ($s = $subjects->fetch_assoc()) {
 
-    $yearLevel = (int)$s['year_level'];
+        $yearLevel = (int)$s['year_level'];
 
-    // get ONLY sections that match this subject's year level
-    $sec->bind_param("ii", $program_id, $yearLevel);
-    $sec->execute();
-    $sections = $sec->get_result();
+        $sec->bind_param("ii", $program_id, $yearLevel);
+        $sec->execute();
+        $sections = $sec->get_result();
 
-    // if no sections for that year, skip
-    if ($sections->num_rows === 0) {
-        continue;
+        if ($sections->num_rows === 0) continue;
+
+        while ($secRow = $sections->fetch_assoc()) {
+
+            // Check if offering exists
+            $chk->bind_param(
+                "iiiii",
+                $prospectus_id,
+                $ay_id,
+                $semester,
+                $s['ps_id'],
+                $secRow['section_id']
+            );
+            $chk->execute();
+            $exists = $chk->get_result()->num_rows > 0;
+
+            if ($exists) continue;
+
+            // Insert new offering
+            $ins->bind_param(
+                "iiiiiii",
+                $program_id,
+                $prospectus_id,
+                $s['ps_id'],
+                $yearLevel,
+                $semester,
+                $ay_id,
+                $secRow['section_id']
+            );
+            $ins->execute();
+            $inserted++;
+        }
     }
 
-    while ($secRow = $sections->fetch_assoc()) {
+    /* ============================
+       CLEAN UP INACTIVE SECTIONS
+    ============================ */
 
-        $ins->bind_param(
-            "iiiiiii",
-            $program_id,
-            $prospectus_id,
-            $s['ps_id'],
-            $yearLevel,
-            $semester,
-            $ay_id,
-            $secRow['section_id']
-        );
+    // Get offerings tied to inactive sections (excluding locked)
+    $old = $conn->prepare("
+        SELECT o.offering_id
+        FROM tbl_prospectus_offering o
+        JOIN tbl_sections s ON s.section_id = o.section_id
+        WHERE o.prospectus_id = ?
+          AND o.ay_id = ?
+          AND o.semester = ?
+          AND s.status = 'inactive'
+          AND (o.status IS NULL OR o.status != 'locked')
+    ");
+    $old->bind_param("iii", $prospectus_id, $ay_id, $semester);
+    $old->execute();
+    $oldRes = $old->get_result();
 
-        $ins->execute();
-        $inserted++;
+    $deleted_offerings = 0;
+    $deleted_schedules = 0;
+
+    if ($oldRes->num_rows > 0) {
+
+        // Delete schedules first
+        $delSched = $conn->prepare("
+            DELETE FROM tbl_class_schedule
+            WHERE offering_id = ?
+        ");
+
+        // Delete offering
+        $delOff = $conn->prepare("
+            DELETE FROM tbl_prospectus_offering
+            WHERE offering_id = ?
+        ");
+
+        while ($row = $oldRes->fetch_assoc()) {
+
+            $oid = (int)$row['offering_id'];
+
+            $delSched->bind_param("i", $oid);
+            $delSched->execute();
+            $deleted_schedules += $delSched->affected_rows;
+
+            $delOff->bind_param("i", $oid);
+            $delOff->execute();
+            $deleted_offerings++;
+        }
     }
-}
-
 
     $conn->commit();
 
     echo json_encode([
-        "status"   => "ok",
-        "inserted" => $inserted,
-        "deleted"  => $deleted
+        "status"             => "ok",
+        "inserted"           => $inserted,
+        "deleted_offerings"  => $deleted_offerings,
+        "deleted_schedules"  => $deleted_schedules
     ]);
 
 } catch (Exception $e) {

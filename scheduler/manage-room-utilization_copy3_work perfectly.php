@@ -254,31 +254,6 @@ $college_name = $_SESSION['college_name'] ?? '';
         border-top: 1px solid #e5e7eb;
     }
 
-    /* =====================================================
-    SINGLE ROOM REPORT – FIX TIME COLUMN OVERLAP
-    (WIDER + NO WRAP)
-    ===================================================== */
-    .ru-room-report-table {
-        table-layout: fixed; /* force column widths to apply */
-        width: 100%;
-    }
-
-    .ru-room-report-table th,
-    .ru-room-report-table td {
-        vertical-align: middle;
-    }
-
-    .ru-room-report-table th:nth-child(1),
-    .ru-room-report-table td:nth-child(1) {
-        width: 220px;          /* ✅ wider TIME column */
-        min-width: 220px;
-        white-space: nowrap;   /* ✅ prevent wrapping */
-    }
-
-    .ru-room-report-table td:nth-child(1) {
-        font-size: 0.85rem;    /* optional: makes time clearer */
-    }
-
 
 </style>
 
@@ -543,216 +518,77 @@ function loadRoomSchedule() {
             return;
         }
 
-        // renderRoomTimetable(data);
-        renderRoomReport(data);
+        renderRoomTimetable(data);
     });
 }
 
-/* =====================================================
-   SINGLE ROOM VIEW (REPORT TABLE FORMAT)
-===================================================== */
-function renderRoomReport(data) {
+function renderRoomTimetable(data) {
 
-    /* =====================================================
-    LUNCH BREAK RULE (12:00 PM – 1:00 PM)
-    ===================================================== */
-    const LUNCH_START = 12 * 60; // 12:00 PM
-    const LUNCH_END   = 13 * 60; // 1:00 PM
+    const days = [
+        { key: "M",  label: "Mon" },
+        { key: "T",  label: "Tue" },
+        { key: "W",  label: "Wed" },
+        { key: "TH", label: "Thu" },
+        { key: "F",  label: "Fri" },
+        { key: "S",  label: "Sat" }
+    ];
 
-
-    // Build label (optional but nice UX)
-    const ay = $("#ru_ay").val();
-    const semLabel = $("#ru_semester").val();
-    const roomText = $("#ru_room_id option:selected").text();
-
-    $("#ruRoomLabel").text("Room: " + roomText);
-    $("#ruTermLabel").text("A.Y. " + ay + " • " + semLabel);
-
-    /* =====================================================
-    GROUP BY DAY PATTERN (NORMALIZED)
-    - Forces canonical order: MW, T, Th, TTh, F, S
-    - Fixes cases like ["Th","T"] becoming "ThT" (wrong)
-    ===================================================== */
-    function normalizeDayKey(daysArr) {
-        const order = { "M": 1, "T": 2, "W": 3, "TH": 4, "F": 5, "S": 6 };
-
-        // Normalize raw values -> consistent tokens
-        const cleaned = (daysArr || [])
-            .map(d => (d || "").toUpperCase().trim())   // "Th" -> "TH"
-            .filter(Boolean);
-
-        // Sort by canonical weekday order
-        cleaned.sort((a, b) => (order[a] || 99) - (order[b] || 99));
-
-        // Convert to display-friendly labels
-        // TH should display as "Th"
-        const display = cleaned.map(d => (d === "TH" ? "Th" : d));
-
-        // Join into a single key like MW, TTh
-        return display.join("");
-    }
-
-    /* =====================================================
-    GROUPING RULE (TARGET FORMAT)
-    - Put T, Th, and TTh into ONE bucket: "TTh"
-    - Still keep row prefix per item: T / Th / TTh
-    ===================================================== */
-    let groups = {};
-
-    data.forEach(item => {
-
-        const normalized = normalizeDayKey(item.days_raw); // ex: "T", "Th", "TTh", "MW"
-        const up = normalized.toUpperCase();               // "T", "TH", "TTH", "MW"
-
-        // ✅ Bucket logic:
-        // Any Tue/Thu-related schedule goes under ONE header: "TTh"
-        // (covers T-only, Th-only, and TTh)
-        const bucketKey = (up.includes("T") || up.includes("TH")) ? "TTh" : normalized;
-
-        // keep the row prefix (what appears in TIME column)
-        // T stays T, Th stays Th, TTh stays TTh
-        item._rowPrefix = normalized;
-
-        if (!groups[bucketKey]) groups[bucketKey] = [];
-        groups[bucketKey].push(item);
-    });
-
-
-
-    // Sort each day group by time_start
-    Object.keys(groups).forEach(k => {
-        groups[k].sort((a,b) => a.time_start.localeCompare(b.time_start));
-    });
-
-/* =====================================================
-   INSERT LUNCH BREAK ROW IF GAP EXISTS
-===================================================== */
-Object.keys(groups).forEach(dayKey => {
-
-    const items = groups[dayKey];
-
-    // Check if any class overlaps lunch
-    const hasLunchClass = items.some(it => {
-        const start = timeToMinutes(it.time_start.substring(0,5));
-        const end   = timeToMinutes(it.time_end.substring(0,5));
-        return !(end <= LUNCH_START || start >= LUNCH_END);
-    });
-
-    if (!hasLunchClass) {
-        items.push({
-            _isLunch: true,
-            _rowPrefix: dayKey,
-            time_start: "12:00",
-            time_end: "13:00",
-            subject_code: "",
-            section_name: "",
-            expected_students: "",
-        });
-
-        // Re-sort including lunch
-        items.sort((a,b) => a.time_start.localeCompare(b.time_start));
-    }
-});
-
-
-    // Helper: format time "07:30:00" -> "07:30 AM"
-    function formatTimeStr(t) {
-        // expects "HH:MM:SS" or "HH:MM"
-        const hhmm = t.substring(0,5);
-        const mins = timeToMinutes(hhmm);
-        return minutesToAMPM(mins);
-    }
+    const slots = generateTimeSlots();
 
     let html = `
-    <div class="table-responsive">
-        <table class="table table-bordered table-sm mb-0 ru-room-report-table">
-            <thead class="table-light">
-                <tr>
-                    <th style="width:170px">TIME</th>
-                    <th style="width:120px">COURSE</th>
-                    <th style="width:160px">SECTION</th>
-                    <th style="width:140px" class="text-center">EXPECTED NO.<br>OF STUDENTS</th>
-                    <th>REMARKS</th>
-                </tr>
-            </thead>
-            <tbody>
+    <table class="table table-bordered table-sm mb-0">
+        <thead class="table-light">
+            <tr>
+                <th style="width:90px">TIME</th>
+                ${days.map(d => `<th class="text-center">${d.label}</th>`).join('')}
+            </tr>
+        </thead>
+        <tbody>
     `;
 
-    /* =====================================================
-    DAY BLOCK DISPLAY ORDER (BUCKETS)
-    ===================================================== */
-    const dayOrder = ['MW', 'TTh', 'F', 'S'];
+    slots.forEach(slot => {
 
-    const dayKeys = Object.keys(groups).sort((a, b) => {
-        const ia = dayOrder.indexOf(a);
-        const ib = dayOrder.indexOf(b);
-        return (ia === -1 ? 99 : ia) - (ib === -1 ? 99 : ib);
+        html += `
+        <tr>
+            <td class="ru-time-cell">
+                ${minutesToAMPM(slot.start)}<br>—<br>${minutesToAMPM(slot.end)}
+            </td>
+        `;
+
+        days.forEach(day => {
+
+            let found = data.find(item => {
+                let days = item.days_raw || [];
+                if (!days.includes(day.key)) return false;
+
+                let s = timeToMinutes(item.time_start.substring(0,5));
+                let e = timeToMinutes(item.time_end.substring(0,5));
+
+                return slot.start >= s && slot.start < e;
+            });
+
+            if (found) {
+                let bg = getColorForSubject(found.subject_code);
+html += `
+<td style="background:${bg}" class="text-center">
+    <div class="small fw-semibold">
+        ${found.subject_code} <span class="fw-normal">(${found.section_name})</span>
+    </div>
+    <div class="small text-muted">${found.faculty_name}</div>
+</td>`;
+
+            } else {
+                html += `<td></td>`;
+            }
+        });
+
+        html += `</tr>`;
     });
 
-
-    if (!dayKeys.length) {
-        html += `
-            <tr>
-                <td colspan="5" class="text-center text-muted p-3">
-                    No schedule found
-                </td>
-            </tr>
-        `;
-    } else {
-
-        dayKeys.forEach(dayKey => {
-
-            // Day header row (like MW / TTh)
-            html += `
-                <tr class="table-secondary">
-                    <td colspan="5" class="fw-bold">${dayKey}</td>
-                </tr>
-            `;
-
-groups[dayKey].forEach(item => {
-
-    const timeRange = `${formatTimeStr(item.time_start)}–${formatTimeStr(item.time_end)}`;
-
-    // 🍽 LUNCH BREAK ROW
-    if (item._isLunch) {
-        html += `
-            <tr style="background:#fff3cd;">
-                <td class="fw-semibold">${item._rowPrefix} ${timeRange}</td>
-                <td colspan="3" class="text-center fst-italic text-muted">
-                    Lunch Break
-                </td>
-                <td></td>
-            </tr>
-        `;
-        return;
-    }
-
-    // 🟦 NORMAL CLASS ROW
-    const expected = item.expected_students ?? '';
-
-    html += `
-        <tr>
-            <td>${item._rowPrefix} ${timeRange}</td>
-            <td class="fw-semibold">${item.subject_code}</td>
-            <td>${item.section_name}</td>
-            <td class="text-center">${expected}</td>
-            <td></td>
-        </tr>
-    `;
-});
-
-        });
-    }
-
-    html += `
-            </tbody>
-        </table>
-    </div>
-    `;
+    html += `</tbody></table>`;
 
     $("#roomTimetableWrapper").html(html);
 }
-
 
     /* =====================================================
        TIME HELPERS

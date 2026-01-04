@@ -3,6 +3,69 @@
     ob_start();
     include '../backend/db.php';
 
+    /*
+    |--------------------------------------------------------------------------
+    | LOAD CURRENT ACADEMIC SETTINGS
+    |--------------------------------------------------------------------------
+    */
+    $currentAyId   = null;
+    $currentSem    = null;
+
+    $termRes = $conn->query("
+        SELECT current_ay_id, current_semester
+        FROM tbl_academic_settings
+        LIMIT 1
+    ");
+
+    if ($termRes && $termRes->num_rows > 0) {
+        $termRow     = $termRes->fetch_assoc();
+        $currentAyId = (int)$termRow['current_ay_id'];
+        $currentSem  = (int)$termRow['current_semester'];
+    }
+
+
+    /* =====================================================
+      RESOLVE ACADEMIC TERM LABEL (FOR DISPLAY ONLY)
+    ===================================================== */
+
+    // 1️⃣ Resolve Academic Year label (e.g., 2025–2026)
+    $academicYearLabel = '';
+
+    if ($currentAyId) {
+        $ayStmt = $conn->prepare("
+            SELECT ay
+            FROM tbl_academic_years
+            WHERE ay_id = ?
+            LIMIT 1
+        ");
+        $ayStmt->bind_param("i", $currentAyId);
+        $ayStmt->execute();
+        $ayRes = $ayStmt->get_result();
+
+        if ($ayRow = $ayRes->fetch_assoc()) {
+            $academicYearLabel = $ayRow['ay'];
+        }
+
+        $ayStmt->close();
+    }
+
+    // 2️⃣ Resolve Semester label
+    $semesterLabel = '';
+    if ($currentSem == 1) {
+        $semesterLabel = '1st Semester';
+    } elseif ($currentSem == 2) {
+        $semesterLabel = '2nd Semester';
+    } elseif ($currentSem == 3) {
+        $semesterLabel = 'Midyear';
+    }
+
+    // 3️⃣ Final text used by modals
+    $academicTermText = "AY: {$academicYearLabel} · {$semesterLabel}";
+
+
+
+
+
     if (!isset($_SESSION['user_id'])) {
         header("Location: ../index.php");
         exit;
@@ -37,6 +100,224 @@
     while ($row = $res->fetch_assoc()) {
         $roomData[] = $row;
     }
+    
+/*
+|--------------------------------------------------------------------------
+| FACULTY COUNT PER CAMPUS (CURRENT TERM ONLY)
+|--------------------------------------------------------------------------
+| Source:
+| - tbl_faculty_workload_sched (term-based workload)
+| - resolved via class_schedule → prospectus_offering → sections → program → college → campus
+|--------------------------------------------------------------------------
+*/
+
+$facultyPerCampus = [];
+
+if ($currentAyId && $currentSem) {
+
+    $facultySql = "
+        SELECT
+            camp.campus_id,
+            COUNT(DISTINCT fws.faculty_id) AS faculty_count
+        FROM tbl_faculty_workload_sched fws
+
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fws.schedule_id
+
+        INNER JOIN tbl_prospectus_offering po
+            ON po.offering_id = cs.offering_id
+
+        INNER JOIN tbl_sections s
+            ON s.section_id = po.section_id
+
+        INNER JOIN tbl_program p
+            ON p.program_id = s.program_id
+
+        INNER JOIN tbl_college col
+            ON col.college_id = p.college_id
+
+        INNER JOIN tbl_campus camp
+            ON camp.campus_id = col.campus_id
+
+        WHERE fws.ay_id = ?
+          AND fws.semester = ?
+
+        GROUP BY camp.campus_id
+    ";
+
+    $stmt = $conn->prepare($facultySql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $facultyPerCampus[(int)$row['campus_id']] = (int)$row['faculty_count'];
+    }
+
+    $stmt->close();
+}
+
+/*
+|--------------------------------------------------------------------------
+| TOTAL FACULTY (INSTITUTION-WIDE, CURRENT TERM)
+|--------------------------------------------------------------------------
+| Definition:
+| - Counts DISTINCT faculty_id
+| - From tbl_faculty_workload_sched
+| - Filtered by current academic year and semester
+|--------------------------------------------------------------------------
+*/
+
+$totalFaculty = 0;
+
+if ($currentAyId && $currentSem) {
+
+    $totalFacultySql = "
+        SELECT COUNT(DISTINCT faculty_id) AS total_faculty
+        FROM tbl_faculty_workload_sched
+        WHERE ay_id = ?
+          AND semester = ?
+    ";
+
+    $stmt = $conn->prepare($totalFacultySql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if ($row = $res->fetch_assoc()) {
+        $totalFaculty = (int)$row['total_faculty'];
+    }
+
+    $stmt->close();
+}
+
+/*
+|--------------------------------------------------------------------------
+| TOTAL PROGRAMS OFFERED (CURRENT TERM)
+|--------------------------------------------------------------------------
+| Definition:
+| - DISTINCT programs with at least one offering
+| - Based on tbl_prospectus_offering
+| - Filtered by current academic year and semester
+|--------------------------------------------------------------------------
+*/
+
+$totalPrograms = 0;
+
+if ($currentAyId && $currentSem) {
+
+    $programSql = "
+        SELECT COUNT(DISTINCT p.program_id) AS total_programs
+        FROM tbl_prospectus_offering po
+
+        INNER JOIN tbl_sections s
+            ON s.section_id = po.section_id
+
+        INNER JOIN tbl_program p
+            ON p.program_id = s.program_id
+
+        WHERE po.ay_id = ?
+          AND po.semester = ?
+          AND p.status = 'active'
+    ";
+
+    $stmt = $conn->prepare($programSql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if ($row = $res->fetch_assoc()) {
+        $totalPrograms = (int)$row['total_programs'];
+    }
+
+    $stmt->close();
+}
+
+
+/*
+|--------------------------------------------------------------------------
+| TOTAL ACTIVE SECTIONS (INSTITUTION-WIDE, CURRENT TERM)
+|--------------------------------------------------------------------------
+| Definition:
+| - DISTINCT sections with at least one prospectus offering
+| - Based on tbl_prospectus_offering
+| - Filtered by current academic year and semester
+| - Option A: Offering-based (no schedule/faculty required)
+|--------------------------------------------------------------------------
+*/
+
+$totalSections = 0;
+
+if ($currentAyId && $currentSem) {
+
+    $sectionSql = "
+        SELECT COUNT(DISTINCT s.section_id) AS total_sections
+        FROM tbl_prospectus_offering po
+
+        INNER JOIN tbl_sections s
+            ON s.section_id = po.section_id
+
+        INNER JOIN tbl_program p
+            ON p.program_id = s.program_id
+
+        WHERE po.ay_id = ?
+          AND po.semester = ?
+          AND p.status = 'active'
+    ";
+
+    $stmt = $conn->prepare($sectionSql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if ($row = $res->fetch_assoc()) {
+        $totalSections = (int)$row['total_sections'];
+    }
+
+    $stmt->close();
+}
+
+/*
+|--------------------------------------------------------------------------
+| TOTAL FACULTY WORKLOADS (SCHEDULED CLASSES)
+|--------------------------------------------------------------------------
+| Definition:
+| - Counts class schedules
+| - Includes unassigned faculty
+| - Includes no room
+| - Schedule belongs to an offering
+| - Offering defines ay_id and semester
+|--------------------------------------------------------------------------
+*/
+
+$totalWorkloads = 0;
+
+if ($currentAyId && $currentSem) {
+
+    $workloadSql = "
+        SELECT COUNT(cs.schedule_id) AS total_workloads
+        FROM tbl_class_schedule cs
+        INNER JOIN tbl_prospectus_offering po
+            ON po.offering_id = cs.offering_id
+        WHERE po.ay_id = ?
+          AND po.semester = ?
+    ";
+
+    $stmt = $conn->prepare($workloadSql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if ($row = $res->fetch_assoc()) {
+        $totalWorkloads = (int)$row['total_workloads'];
+    }
+
+    $stmt->close();
+}
+
+
+
+
 
 ?>
 
@@ -79,6 +360,9 @@
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/apex-charts/apex-charts.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
+    <link rel="stylesheet" href="https://cdn.datatables.net/buttons/2.4.2/css/buttons.bootstrap5.min.css">
+
     <script src="../assets/vendor/js/helpers.js"></script>
 
      <script src="../assets/js/config.js"></script>
@@ -136,6 +420,17 @@
   font-size: 1.75rem;
   font-weight: 700;
 }
+
+.cursor-pointer {
+  cursor: pointer;
+}
+
+.kpi-box:hover {
+  transform: translateY(-3px);
+  transition: 0.2s ease;
+  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+}
+
 
       </style>    
   </head>
@@ -231,40 +526,45 @@
               <div class="kpi-icon bg-primary">
                 <i class="bx bx-user-voice"></i>
               </div>
-              <h3 class="kpi-value text-primary mt-2">0</h3>
+              <h3 class="kpi-value text-primary mt-2"><?php echo $totalFaculty; ?></h3>
               <small class="text-muted">Total Faculty</small>
             </div>
           </div>
 
-          <!-- TOTAL PROGRAMS -->
-          <div class="col-md-3 col-6">
-            <div class="kpi-box text-center">
-              <div class="kpi-icon bg-info">
-                <i class="bx bx-book-open"></i>
-              </div>
-              <h3 class="kpi-value text-info mt-2">0</h3>
-              <small class="text-muted">Programs Offered</small>
-            </div>
-          </div>
+<!-- TOTAL PROGRAMS -->
+<div class="col-md-3 col-6">
+  <div class="kpi-box text-center cursor-pointer" id="kpiProgramsOffered">
+    <div class="kpi-icon bg-info">
+      <i class="bx bx-book-open"></i>
+    </div>
+    <h3 class="kpi-value text-info mt-2">5</h3>
+    <small class="text-muted">Programs Offered</small>
+  </div>
+</div>
+
 
           <!-- TOTAL SECTIONS -->
           <div class="col-md-3 col-6">
-            <div class="kpi-box text-center">
+            <div class="kpi-box text-center cursor-pointer">
               <div class="kpi-icon bg-success">
                 <i class="bx bx-group"></i>
               </div>
-              <h3 class="kpi-value text-success mt-2">0</h3>
+              <h3 class="kpi-value text-success mt-2">
+                <?php echo $totalSections; ?>
+              </h3>
               <small class="text-muted">Active Sections</small>
             </div>
           </div>
 
           <!-- TOTAL WORKLOADS -->
           <div class="col-md-3 col-6">
-            <div class="kpi-box text-center">
+            <div class="kpi-box text-center cursor-pointer" id="kpiFacultyWorkloads">
               <div class="kpi-icon bg-warning">
                 <i class="bx bx-calendar"></i>
               </div>
-              <h3 class="kpi-value text-warning mt-2">0</h3>
+              <h3 class="kpi-value text-warning mt-2">
+                <?php echo $totalWorkloads; ?>
+              </h3>
               <small class="text-muted">Faculty Workloads</small>
             </div>
           </div>
@@ -340,7 +640,10 @@
                                 <?php echo $c['campus_name']; ?>
                               </h6>
                               <small class="text-muted">
-                                Faculty: <span class="fw-semibold text-primary">0</span> <!-- placeholder -->
+                                <?php
+                                $facCount = $facultyPerCampus[$c['campus_id']] ?? 0;
+                                ?>
+                                Faculty: <span class="fw-semibold text-primary"><?= $facCount ?></span> <!-- placeholder -->
                               </small>
                             </div>
 
@@ -381,36 +684,9 @@
             <!-- / Content -->
 
             <!-- Footer -->
-            <footer class="content-footer footer bg-footer-theme">
-              <div class="container-xxl d-flex flex-wrap justify-content-between py-2 flex-md-row flex-column">
-                <div class="mb-2 mb-md-0">
-                  ©
-                  <script>
-                    document.write(new Date().getFullYear());
-                  </script>
-                  , made with ❤️ by
-                  <a href="https://themeselection.com" target="_blank" class="footer-link fw-bolder">ThemeSelection</a>
-                </div>
-                <div>
-                  <a href="https://themeselection.com/license/" class="footer-link me-4" target="_blank">License</a>
-                  <a href="https://themeselection.com/" target="_blank" class="footer-link me-4">More Themes</a>
-
-                  <a
-                    href="https://themeselection.com/demo/sneat-bootstrap-html-admin-template/documentation/"
-                    target="_blank"
-                    class="footer-link me-4"
-                    >Documentation</a
-                  >
-
-                  <a
-                    href="https://github.com/themeselection/sneat-html-admin-template-free/issues"
-                    target="_blank"
-                    class="footer-link me-4"
-                    >Support</a
-                  >
-                </div>
-              </div>
-            </footer>
+                        <?php 
+                          include '../footer.php';
+                        ?>
             <!-- / Footer -->
 
             <div class="content-backdrop fade"></div>
@@ -426,6 +702,263 @@
     <!-- / Layout wrapper -->
 
 
+<!-- ======================================================
+     PROGRAMS OFFERED MODAL (KPI DRILL-DOWN)
+====================================================== -->
+<div class="modal fade" id="programsOfferedModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <!-- MODAL HEADER -->
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bx bx-book-open me-2 text-info"></i>
+          Programs Offered
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- MODAL BODY -->
+      <div class="modal-body">
+
+        <!-- TERM CONTEXT -->
+        <div class="alert alert-light border d-flex align-items-center mb-3">
+          <i class="bx bx-calendar me-2 text-primary"></i>
+          <strong class="me-2">Academic Term:</strong>
+          <span id="modalAcademicTerm">
+            2025–2026 · 2nd Semester
+          </span>
+        </div>
+
+        <!-- PROGRAM TABLE -->
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover align-middle">
+
+            <thead class="table-light">
+              <tr>
+                <th>Program Code</th>
+                <th>Program Name</th>
+                <th>Major</th>
+                <th>College</th>
+                <th>Campus</th>
+                <th class="text-center">Sections</th>
+              </tr>
+            </thead>
+
+            <tbody id="programsOfferedTable">
+              <!-- DATA WILL BE INJECTED HERE -->
+              <tr>
+                <td colspan="6" class="text-center text-muted py-4">
+                  <i class="bx bx-loader-circle bx-spin me-1"></i>
+                  Loading programs offered...
+                </td>
+              </tr>
+            </tbody>
+
+          </table>
+        </div>
+
+      </div>
+
+      <!-- MODAL FOOTER -->
+      <div class="modal-footer justify-content-between">
+        <small class="text-muted">
+          *Programs listed here have at least one active section this term.
+        </small>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================
+     ACTIVE SECTIONS MODAL (KPI DRILL-DOWN)
+====================================================== -->
+<div class="modal fade" id="activeSectionsModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <!-- MODAL HEADER -->
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bx bx-group me-2 text-success"></i>
+          Active Sections
+        </h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <!-- MODAL BODY -->
+      <div class="modal-body">
+
+        <!-- TERM CONTEXT -->
+        <div class="alert alert-light border d-flex align-items-center mb-3">
+          <i class="bx bx-calendar me-2 text-primary"></i>
+          <strong class="me-2">Academic Term:</strong>
+          <span id="sectionsAcademicTerm">
+            2025–2026 · 2nd Semester
+          </span>
+        </div>
+
+        <!-- TABLE -->
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover align-middle" id="activeSectionsTable">
+
+            <thead class="table-light">
+              <tr>
+                <th>Section</th>
+                <th>Program</th>
+                <th>College</th>
+                <th>Campus</th>
+                <th class="text-center">Offerings</th>
+              </tr>
+            </thead>
+
+            <tbody>
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">
+                  <i class="bx bx-loader-circle bx-spin me-1"></i>
+                  Loading active sections...
+                </td>
+              </tr>
+            </tbody>
+
+          </table>
+        </div>
+
+      </div>
+
+      <!-- MODAL FOOTER -->
+      <div class="modal-footer justify-content-between">
+        <small class="text-muted">
+          *Sections listed here are offered in the current academic term.
+        </small>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Close
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================
+     SUBJECT OFFERINGS MODAL (LEVEL 3)
+====================================================== -->
+<div class="modal fade" id="sectionOfferingsModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bx bx-book-alt me-2 text-success"></i>
+          Subjects Offered — <span id="sectionTitle"></span>
+        </h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+      <div class="alert alert-light border d-flex align-items-center mb-3">
+        <i class="bx bx-calendar me-2 text-primary"></i>
+        <strong class="me-2">Academic Term:</strong>
+        <span><?= htmlspecialchars($academicTermText) ?></span>
+      </div>
+
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover align-middle" id="sectionOfferingsTable">
+            <thead class="table-light">
+              <tr>
+                <th>Subject Code</th>
+                <th>Subject Title</th>
+                <th class="text-center">Units</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="4" class="text-center text-muted py-4">
+                  <i class="bx bx-loader-circle bx-spin me-1"></i>
+                  Loading subjects...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
+<!-- ======================================================
+     FACULTY WORKLOADS MODAL (KPI C)
+====================================================== -->
+<div class="modal fade" id="facultyWorkloadsModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title">
+          <i class="bx bx-calendar me-2 text-warning"></i>
+          Faculty Workloads (Scheduled Classes)
+        </h5>
+        <button class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+
+        <!-- TERM CONTEXT -->
+        <div class="alert alert-light border d-flex align-items-center mb-3">
+          <i class="bx bx-calendar me-2 text-primary"></i>
+          <strong class="me-2">Academic Term:</strong>
+          <span><?= htmlspecialchars($academicTermText) ?></span>
+        </div>
+
+        <div class="table-responsive">
+          <table class="table table-bordered table-hover align-middle" id="facultyWorkloadsTable">
+            <thead class="table-light">
+              <tr>
+                <th>Subject</th>
+                <th>Section</th>
+                <th>Program</th>
+                <th>College</th>
+                <th>Campus</th>
+                <th>Schedule</th>
+                <th>Room</th>
+                <th>Faculty</th>
+              </tr>
+            </thead>
+            <tbody>
+              <tr>
+                <td colspan="5" class="text-center text-muted py-4">
+                  <i class="bx bx-loader-circle bx-spin me-1"></i>
+                  Loading scheduled classes...
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+      </div>
+
+      <div class="modal-footer">
+        <small class="text-muted">
+          *Includes classes without faculty or room assignment.
+        </small>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 
     <!-- Core JS -->
     <!-- build:js assets/vendor/js/core.js -->
@@ -438,6 +971,19 @@
     <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
     <script src="../assets/js/main.js"></script>
     <script src="../assets/js/dashboards-analytics.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/dataTables.buttons.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.bootstrap5.min.js"></script>
+
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/jszip/3.10.1/jszip.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/pdfmake.min.js"></script>
+    <script src="https://cdnjs.cloudflare.com/ajax/libs/pdfmake/0.2.7/vfs_fonts.js"></script>
+
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.html5.min.js"></script>
+    <script src="https://cdn.datatables.net/buttons/2.4.2/js/buttons.print.min.js"></script>
+
 
 <script>
 document.addEventListener("DOMContentLoaded", function () {
@@ -512,6 +1058,433 @@ markers: {
 
   var chart = new ApexCharts(document.querySelector("#roomsPerCampusChart"), options);
   chart.render();
+
+
+  let programsDataTable = null;
+
+
+  const programsKpi = document.getElementById("kpiProgramsOffered");
+  const tableBody   = document.getElementById("programsOfferedTable");
+
+  if (!programsKpi) return;
+
+  programsKpi.addEventListener("click", function () {
+
+    // Reset table with loading state
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="text-center text-muted py-4">
+          <i class="bx bx-loader-circle bx-spin me-1"></i>
+          Loading programs offered...
+        </td>
+      </tr>
+    `;
+
+    // Show modal
+    const modal = new bootstrap.Modal(
+      document.getElementById("programsOfferedModal")
+    );
+    modal.show();
+
+    // AJAX fetch
+    fetch("../backend/get_programs_offered.php")
+      .then(response => response.json())
+      .then(result => {
+
+        if (result.status !== 'success') {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="6" class="text-center text-danger py-4">
+                Failed to load programs.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        if (result.data.length === 0) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="6" class="text-center text-muted py-4">
+                No programs offered this term.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        // Build rows
+        let rows = '';
+        result.data.forEach(p => {
+          rows += `
+            <tr>
+              <td><strong>${p.program_code}</strong></td>
+              <td>${p.program_name}</td>
+              <td>${p.major ?? '-'}</td>
+              <td>${p.college_name}</td>
+              <td>${p.campus_name}</td>
+              <td class="text-center">
+                <span class="badge bg-primary">${p.section_count}</span>
+              </td>
+            </tr>
+          `;
+        });
+
+        tableBody.innerHTML = rows;
+/* =====================================================
+   DATATABLE-AWARE INITIALIZATION
+===================================================== */
+
+// Destroy old DataTable if exists
+if (programsDataTable) {
+  programsDataTable.destroy();
+}
+
+// Initialize DataTable AFTER rows are ready
+programsDataTable = $('#programsOfferedModal table').DataTable({
+  pageLength: 10,
+  lengthChange: true,
+  searching: true,
+  ordering: true,
+  responsive: true,
+  dom: 'Bfrtip',
+  buttons: [
+    { extend: 'copy',  className: 'btn btn-sm btn-outline-secondary' },
+    { extend: 'excel', className: 'btn btn-sm btn-outline-success' },
+    { extend: 'pdf',   className: 'btn btn-sm btn-outline-danger' },
+    { extend: 'print', className: 'btn btn-sm btn-outline-primary' }
+  ]
+});
+
+
+      })
+      .catch(() => {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="6" class="text-center text-danger py-4">
+              AJAX error occurred.
+            </td>
+          </tr>
+        `;
+      });
+
+  });
+
+/* =====================================================
+   ACTIVE SECTIONS KPI → MODAL → AJAX → DATATABLE
+===================================================== */
+
+let sectionsDataTable = null;
+
+const sectionsKpi = document.querySelector('.kpi-icon.bg-success')?.closest('.kpi-box');
+
+if (sectionsKpi) {
+
+  sectionsKpi.addEventListener("click", function () {
+
+    const tableBody = document.querySelector("#activeSectionsTable tbody");
+
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="5" class="text-center text-muted py-4">
+          <i class="bx bx-loader-circle bx-spin me-1"></i>
+          Loading active sections...
+        </td>
+      </tr>
+    `;
+
+    const modal = new bootstrap.Modal(
+      document.getElementById("activeSectionsModal")
+    );
+    modal.show();
+
+    fetch("../backend/get_active_sections.php")
+      .then(res => res.json())
+      .then(result => {
+
+        if (result.status !== 'success') {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="5" class="text-center text-danger py-4">
+                Failed to load active sections.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        if (result.data.length === 0) {
+          tableBody.innerHTML = `
+            <tr>
+              <td colspan="5" class="text-center text-muted py-4">
+                No active sections this term.
+              </td>
+            </tr>
+          `;
+          return;
+        }
+
+        let rows = '';
+        result.data.forEach(s => {
+          rows += `
+            <tr>
+              <td><strong>${s.section_name}</strong></td>
+              <td>${s.program_code} – ${s.program_name}</td>
+              <td>${s.college_name}</td>
+              <td>${s.campus_name}</td>
+      <td class="text-center">
+        <span
+          class="badge bg-success cursor-pointer offerings-badge"
+          data-section-id="${s.section_id}"
+          data-section-name="${s.section_name}"
+        >
+          ${s.offering_count}
+        </span>
+      </td>
+            </tr>
+          `;
+        });
+
+        tableBody.innerHTML = rows;
+
+        // Datatable re-init
+        if (sectionsDataTable) {
+          sectionsDataTable.destroy();
+        }
+
+        sectionsDataTable = $('#activeSectionsTable').DataTable({
+          pageLength: 10,
+          searching: true,
+          ordering: true,
+          responsive: true,
+          dom: 'Bfrtip',
+          buttons: [
+            { extend: 'copy',  className: 'btn btn-sm btn-outline-secondary' },
+            { extend: 'excel', className: 'btn btn-sm btn-outline-success' },
+            { extend: 'pdf',   className: 'btn btn-sm btn-outline-danger' },
+            { extend: 'print', className: 'btn btn-sm btn-outline-primary' }
+          ]
+        });
+
+      })
+      .catch(() => {
+        tableBody.innerHTML = `
+          <tr>
+            <td colspan="5" class="text-center text-danger py-4">
+              AJAX error occurred.
+            </td>
+          </tr>
+        `;
+      });
+
+  });
+
+}
+
+/* =====================================================
+   LEVEL 3 DRILL-DOWN: SECTION → SUBJECT OFFERINGS
+   -----------------------------------------------------
+   FIX:
+   - Completely resets DataTable state
+   - Prevents old data from persisting
+   - Guarantees fresh data per section
+===================================================== */
+
+let sectionOfferingsDT = null;
+
+$(document)
+  .off("click", ".offerings-badge")
+  .on("click", ".offerings-badge", function () {
+
+    const sectionId   = this.dataset.sectionId;
+    const sectionName = this.dataset.sectionName;
+
+    $("#sectionTitle").text(sectionName);
+
+    const table = $("#sectionOfferingsTable");
+    const tbody = table.find("tbody");
+
+    /* -----------------------------------------
+       🔥 HARD RESET (THIS IS THE KEY)
+    ----------------------------------------- */
+    if ($.fn.DataTable.isDataTable(table)) {
+      table.DataTable().clear().destroy();
+    }
+
+    tbody.empty(); // REMOVE old rows completely
+
+    tbody.html(`
+      <tr>
+        <td colspan="3" class="text-center text-muted py-4">
+          <i class="bx bx-loader-circle bx-spin me-1"></i>
+          Loading subjects...
+        </td>
+      </tr>
+    `);
+
+    new bootstrap.Modal(
+      document.getElementById("sectionOfferingsModal")
+    ).show();
+
+    const CURRENT_AY_ID = <?= (int)$currentAyId ?>;
+    const CURRENT_SEM   = <?= (int)$currentSem ?>;
+
+    fetch(
+      `../backend/get_section_offerings.php?section_id=${sectionId}&ay_id=${CURRENT_AY_ID}&semester=${CURRENT_SEM}`,
+      { cache: "no-store" } // 🔒 prevent browser caching
+    )
+      .then(res => res.json())
+      .then(result => {
+
+        if (result.status !== "success") {
+          tbody.html(`
+            <tr>
+              <td colspan="3" class="text-center text-danger py-4">
+                Failed to load subjects.
+              </td>
+            </tr>
+          `);
+          return;
+        }
+
+        if (!result.data || result.data.length === 0) {
+          tbody.html(`
+            <tr>
+              <td colspan="3" class="text-center text-muted py-4">
+                No subjects found.
+              </td>
+            </tr>
+          `);
+          return;
+        }
+
+        /* -----------------------------------------
+           RENDER FRESH ROWS ONLY
+        ----------------------------------------- */
+        let rows = "";
+        result.data.forEach(r => {
+          rows += `
+            <tr>
+              <td><strong>${r.sub_code}</strong></td>
+              <td>${r.sub_description}</td>
+              <td class="text-center">${r.total_units}</td>
+            </tr>
+          `;
+        });
+
+        tbody.html(rows);
+
+        /* -----------------------------------------
+           RE-INIT DATATABLE (AFTER DATA IS IN DOM)
+        ----------------------------------------- */
+        sectionOfferingsDT = table.DataTable({
+          destroy: true,
+          pageLength: 10,
+          searching: true,
+          ordering: true,
+          responsive: true,
+          dom: "Bfrtip",
+          buttons: ["copy", "excel", "pdf", "print"]
+        });
+
+      })
+      .catch(err => {
+        console.error("Section offerings error:", err);
+        tbody.html(`
+          <tr>
+            <td colspan="3" class="text-center text-danger py-4">
+              Failed to load subjects.
+            </td>
+          </tr>
+        `);
+      });
+
+  });
+
+
+/* =====================================================
+   FACULTY WORKLOADS KPI → MODAL → AJAX
+===================================================== */
+
+let facultyWorkloadsDT = null;
+
+document
+  .getElementById("kpiFacultyWorkloads")
+  .addEventListener("click", function () {
+
+    const table = $("#facultyWorkloadsTable");
+    const tbody = table.find("tbody");
+
+    if ($.fn.DataTable.isDataTable(table)) {
+      table.DataTable().clear().destroy();
+    }
+
+    tbody.html(`
+      <tr>
+        <td colspan="5" class="text-center text-muted py-4">
+          <i class="bx bx-loader-circle bx-spin me-1"></i>
+          Loading scheduled classes...
+        </td>
+      </tr>
+    `);
+
+    new bootstrap.Modal(
+      document.getElementById("facultyWorkloadsModal")
+    ).show();
+
+    fetch(`../backend/get_faculty_workloads.php?ay_id=<?= (int)$currentAyId ?>&semester=<?= (int)$currentSem ?>`)
+      .then(res => res.json())
+      .then(result => {
+
+        if (result.status !== "success") {
+          tbody.html(`
+            <tr>
+              <td colspan="5" class="text-center text-danger py-4">
+                Failed to load workloads.
+              </td>
+            </tr>
+          `);
+          return;
+        }
+
+let rows = "";
+result.data.forEach(r => {
+
+  const schedule = `${r.days_json} · ${r.time_start} – ${r.time_end}`;
+  const room     = r.room_name ?? "TBA";
+  const faculty  = r.faculty_name ?? "Unassigned";
+
+  rows += `
+    <tr>
+      <td><strong>${r.sub_code}</strong></td>
+      <td>${r.section_name}</td>
+      <td>
+        <strong>${r.program_code}</strong><br>
+        <small class="text-muted">${r.program_name}</small>
+      </td>
+      <td>${r.college_name}</td>
+      <td>${r.campus_name}</td>
+      <td>${schedule}</td>
+      <td>${room}</td>
+      <td>${faculty}</td>
+    </tr>
+  `;
+});
+
+        tbody.html(rows);
+
+        facultyWorkloadsDT = table.DataTable({
+          pageLength: 10,
+          ordering: true,
+          order: [[2, 'asc']],
+          dom: "Bfrtip",
+          buttons: ["copy", "excel", "pdf", "print"]
+        });
+
+      });
+
+  });
+
 
 });
 </script>
