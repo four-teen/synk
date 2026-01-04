@@ -27,18 +27,6 @@ if ($campusIdParam === null) {
 $isUniversitySummary = ($campusIdParam === 'all');
 
 // -----------------------------------------
-// OPTIONAL: GET COLLEGE ID (FILTER MODE)
-// -----------------------------------------
-$collegeIdParam = $_GET['college_id'] ?? null;
-$selectedCollegeId = null;
-$selectedCollegeName = null;
-
-if (!$isUniversitySummary && $collegeIdParam !== null && $collegeIdParam !== '') {
-    $selectedCollegeId = (int)$collegeIdParam;
-}
-
-
-// -----------------------------------------
 // LOAD CAMPUS INFO
 // -----------------------------------------
 $campusName = "University Summary";
@@ -68,60 +56,6 @@ if (!$isUniversitySummary) {
     $campusCode = $campusRow['campus_code'];
     $stmt->close();
 }
-
-// -----------------------------------------
-// VALIDATE SELECTED COLLEGE UNDER THIS CAMPUS
-// -----------------------------------------
-if (!$isUniversitySummary && $selectedCollegeId) {
-
-    $stmt = $conn->prepare("
-        SELECT college_id, college_name
-        FROM tbl_college
-        WHERE college_id = ?
-          AND campus_id  = ?
-          AND status     = 'active'
-        LIMIT 1
-    ");
-    $stmt->bind_param("ii", $selectedCollegeId, $campusId);
-    $stmt->execute();
-    $res = $stmt->get_result();
-
-    if ($res->num_rows === 0) {
-        // invalid college for this campus → reset filter safely
-        $selectedCollegeId = null;
-        $selectedCollegeName = null;
-    } else {
-        $row = $res->fetch_assoc();
-        $selectedCollegeName = $row['college_name'];
-    }
-    $stmt->close();
-}
-
-
-
-// -----------------------------------------
-// LOAD COLLEGES UNDER SELECTED CAMPUS
-// -----------------------------------------
-$colleges = [];
-
-if (!$isUniversitySummary) {
-    $stmt = $conn->prepare("
-        SELECT college_id, college_code, college_name
-        FROM tbl_college
-        WHERE campus_id = ?
-          AND status = 'active'
-        ORDER BY college_name ASC
-    ");
-    $stmt->bind_param("i", $campusId);
-    $stmt->execute();
-    $res = $stmt->get_result();
-
-    while ($row = $res->fetch_assoc()) {
-        $colleges[] = $row;
-    }
-    $stmt->close();
-}
-
 
 // -----------------------------------------
 // ROOMS & ROOM-BY-COLLEGE DATA
@@ -165,43 +99,22 @@ if ($isUniversitySummary) {
         ORDER BY c.campus_name, col.college_name, r.room_name
     ";
 } else {
-    // Single campus – chart per college (or rooms for a selected college)
-    if ($selectedCollegeId) {
+    // Single campus – chart per college under this campus
+    $roomQuery = "
+        SELECT 
+            col.college_name AS label,
+            COUNT(r.room_id) AS room_count
+        FROM tbl_rooms r
+        INNER JOIN tbl_college col ON col.college_id = r.college_id
+        WHERE col.campus_id = ?
+        GROUP BY col.college_id
+        ORDER BY col.college_name ASC
+    ";
 
-        // Chart becomes: one line entry for the selected college only
-        $stmt = $conn->prepare("
-            SELECT 
-                col.college_name AS label,
-                COUNT(r.room_id) AS room_count
-            FROM tbl_rooms r
-            INNER JOIN tbl_college col ON col.college_id = r.college_id
-            WHERE col.college_id = ?
-            GROUP BY col.college_id
-            ORDER BY col.college_name ASC
-        ");
-        $stmt->bind_param("i", $selectedCollegeId);
-
-    } else {
-
-        $stmt = $conn->prepare("
-            SELECT 
-                col.college_name AS label,
-                COUNT(r.room_id) AS room_count
-            FROM tbl_rooms r
-            INNER JOIN tbl_college col ON col.college_id = r.college_id
-            WHERE col.campus_id = ?
-            GROUP BY col.college_id
-            ORDER BY col.college_name ASC
-        ");
-        $stmt->bind_param("i", $campusId);
-    }
-
+    $stmt = $conn->prepare($roomQuery);
+    $stmt->bind_param("i", $campusId);
     $stmt->execute();
     $rs = $stmt->get_result();
-
-    $collegeLabels  = [];
-    $collegeRoomCnt = [];
-    $roomCount      = 0;
 
     while ($row = $rs->fetch_assoc()) {
         $collegeLabels[]  = $row['label'];
@@ -210,32 +123,18 @@ if ($isUniversitySummary) {
     }
     $stmt->close();
 
-    if ($selectedCollegeId) {
-        $roomListQuery = "
-            SELECT 
-                r.room_id,
-                r.room_name,
-                r.room_code,
-                col.college_name
-            FROM tbl_rooms r
-            INNER JOIN tbl_college col ON col.college_id = r.college_id
-            WHERE col.college_id = {$selectedCollegeId}
-            ORDER BY col.college_name, r.room_name
-        ";
-    } else {
-        $roomListQuery = "
-            SELECT 
-                r.room_id,
-                r.room_name,
-                r.room_code,
-                col.college_name
-            FROM tbl_rooms r
-            INNER JOIN tbl_college col ON col.college_id = r.college_id
-            WHERE col.campus_id = {$campusId}
-            ORDER BY col.college_name, r.room_name
-        ";
-    }
-
+    // Load list of rooms for this campus
+    $roomListQuery = "
+        SELECT 
+            r.room_id,
+            r.room_name,
+            r.room_code,
+            col.college_name
+        FROM tbl_rooms r
+        INNER JOIN tbl_college col ON col.college_id = r.college_id
+        WHERE col.campus_id = {$campusId}
+        ORDER BY col.college_name, r.room_name
+    ";
 }
 
 // Execute the room list query (for table)
@@ -278,85 +177,36 @@ if ($isUniversitySummary) {
 
 } else {
 
-    // ----------------------------
-    // FACULTY count (campus or college)
-    // ----------------------------
-    if ($selectedCollegeId) {
-        $stmt = $conn->prepare("
-            SELECT COUNT(*) AS cnt
-            FROM tbl_faculty f
-            INNER JOIN tbl_college_faculty cf ON cf.faculty_id = f.faculty_id
-            WHERE cf.college_id = ?
-              AND f.status = 'active'
-              AND cf.status = 'active'
-        ");
-        $stmt->bind_param("i", $selectedCollegeId);
-        $stmt->execute();
-        $facultyCount = (int)$stmt->get_result()->fetch_assoc()['cnt'];
-        $stmt->close();
-    } else {
-        $facultyCount = (int)$conn->query("
-            SELECT COUNT(*) AS cnt
-            FROM tbl_faculty f
-            INNER JOIN tbl_college_faculty cf ON cf.faculty_id = f.faculty_id
-            INNER JOIN tbl_college c ON c.college_id = cf.college_id
-            WHERE c.campus_id = {$campusId}
-              AND f.status = 'active'
-              AND cf.status = 'active'
-        ")->fetch_assoc()['cnt'];
-    }
+    // FACULTY assigned to this campus
+    $facultyCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_faculty f
+        INNER JOIN tbl_college_faculty cf ON cf.faculty_id = f.faculty_id
+        INNER JOIN tbl_college c ON c.college_id = cf.college_id
+        WHERE c.campus_id = {$campusId}
+          AND f.status = 'active'
+          AND cf.status = 'active'
+    ")->fetch_assoc()['cnt'];
 
-    // ----------------------------
-    // PROGRAM count (campus or college)
-    // ----------------------------
-    if ($selectedCollegeId) {
-        $stmt = $conn->prepare("
-            SELECT COUNT(*) AS cnt
-            FROM tbl_program p
-            WHERE p.college_id = ?
-              AND p.status = 'active'
-        ");
-        $stmt->bind_param("i", $selectedCollegeId);
-        $stmt->execute();
-        $programCount = (int)$stmt->get_result()->fetch_assoc()['cnt'];
-        $stmt->close();
-    } else {
-        $programCount = (int)$conn->query("
-            SELECT COUNT(*) AS cnt
-            FROM tbl_program p
-            INNER JOIN tbl_college c ON c.college_id = p.college_id
-            WHERE c.campus_id = {$campusId}
-              AND p.status = 'active'
-        ")->fetch_assoc()['cnt'];
-    }
+    // PROGRAMS under this campus (via college)
+    $programCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_program p
+        INNER JOIN tbl_college c ON c.college_id = p.college_id
+        WHERE c.campus_id = {$campusId}
+          AND p.status = 'active'
+    ")->fetch_assoc()['cnt'];
 
-    // ----------------------------
-    // SECTION count (campus or college)
-    // ----------------------------
-    if ($selectedCollegeId) {
-        $stmt = $conn->prepare("
-            SELECT COUNT(*) AS cnt
-            FROM tbl_sections s
-            INNER JOIN tbl_program p ON p.program_id = s.program_id
-            WHERE p.college_id = ?
-              AND s.status = 'active'
-        ");
-        $stmt->bind_param("i", $selectedCollegeId);
-        $stmt->execute();
-        $sectionCount = (int)$stmt->get_result()->fetch_assoc()['cnt'];
-        $stmt->close();
-    } else {
-        $sectionCount = (int)$conn->query("
-            SELECT COUNT(*) AS cnt
-            FROM tbl_sections s
-            INNER JOIN tbl_program p ON p.program_id = s.program_id
-            INNER JOIN tbl_college c ON c.college_id = p.college_id
-            WHERE c.campus_id = {$campusId}
-              AND s.status = 'active'
-        ")->fetch_assoc()['cnt'];
-    }
+    // SECTIONS under this campus (via program → college → campus)
+    $sectionCount = $conn->query("
+        SELECT COUNT(*) AS cnt
+        FROM tbl_sections s
+        INNER JOIN tbl_program p ON p.program_id = s.program_id
+        INNER JOIN tbl_college c ON c.college_id = p.college_id
+        WHERE c.campus_id = {$campusId}
+          AND s.status = 'active'
+    ")->fetch_assoc()['cnt'];
 }
-
 
 
 
@@ -503,78 +353,6 @@ if ($isUniversitySummary) {
                   </div>
                 </div>
 
-<!-- COLLEGES UNDER THIS CAMPUS -->
-<div class="card shadow-sm mb-4">
-  <div class="card-header">
-    <p class="card-section-title mb-1">Colleges</p>
-    <h5 class="m-0">
-      Academic Units Under
-      <?= $isUniversitySummary ? 'All Campuses' : htmlspecialchars($campusName) . ' Campus'; ?>
-    </h5>
-  </div>
-
-  <div class="card-body">
-    <!--
-      GUI PURPOSE:
-      - Introduce colleges as the PRIMARY decision layer
-      - This is GUI-only (no backend filtering yet)
-      - Clicking a college will later refine KPIs, rooms, programs, and faculty
-    -->
-
-    <!-- RESET OPTION -->
-    <div class="mb-3">
-<a
-  href="campus_dashboard.php?campus_id=<?= urlencode($campusIdParam); ?>"
-  class="badge <?= !$selectedCollegeId ? 'bg-secondary text-white' : 'bg-label-secondary'; ?>"
-  style="text-decoration:none;"
->
-  All Colleges
-</a>
-
-    </div>
-
-    <!-- COLLEGE BADGES (TEMPORARY GUI DATA) -->
-<div class="d-flex flex-wrap gap-2">
-
-  <?php if ($isUniversitySummary): ?>
-    <span class="badge bg-secondary">
-      Colleges are shown per campus
-    </span>
-
-  <?php elseif (count($colleges) === 0): ?>
-    <span class="badge bg-secondary">
-      No colleges recorded for this campus
-    </span>
-
-  <?php else: ?>
-    <?php foreach ($colleges as $col): ?>
-      <?php
-      $isActive = ($selectedCollegeId && (int)$selectedCollegeId === (int)$col['college_id']);
-      ?>
-
-      <a
-        href="campus_dashboard.php?campus_id=<?= urlencode($campusIdParam); ?>&college_id=<?= (int)$col['college_id']; ?>"
-        class="badge <?= $isActive ? 'bg-primary text-white' : 'bg-label-primary'; ?>"
-        style="cursor:pointer; text-decoration:none;"
-        title="College Code: <?= htmlspecialchars($col['college_code']); ?>"
-      >
-        <i class="bx bx-buildings me-1"></i>
-        <?= htmlspecialchars($col['college_name']); ?>
-      </a>
-
-    <?php endforeach; ?>
-  <?php endif; ?>
-
-</div>
-
-
-    <small class="text-muted d-block mt-3">
-      Select a college to focus dashboard metrics, rooms, programs, and faculty assignments.
-    </small>
-  </div>
-</div>
-
-
                 <!-- KPI ROW -->
                 <div class="card shadow-sm mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center pb-2">
@@ -606,7 +384,7 @@ if ($isUniversitySummary) {
                           <div class="kpi-icon bg-info">
                             <i class="bx bx-book-open"></i>
                           </div>
-                          <h3 class="kpi-value text-info mt-2"><?= (int)$programCount; ?></h3>
+                          <h3 class="kpi-value text-info mt-2">0</h3>
                           <small class="text-muted">Programs Offered</small>
                         </div>
                       </div>
@@ -617,7 +395,7 @@ if ($isUniversitySummary) {
                           <div class="kpi-icon bg-success">
                             <i class="bx bx-group"></i>
                           </div>
-                          <h3 class="kpi-value text-success mt-2"><?= (int)$sectionCount; ?></h3>
+                          <h3 class="kpi-value text-success mt-2">0</h3>
                           <small class="text-muted">Active Sections</small>
                         </div>
                       </div>
@@ -674,7 +452,7 @@ if ($isUniversitySummary) {
                             <?php if (count($rooms) === 0): ?>
                               <tr>
                                 <td colspan="<?= $isUniversitySummary ? 5 : 4; ?>" class="text-center text-muted">
-                                  No rooms recorded for this college yet.
+                                  No rooms recorded for this campus yet.
                                 </td>
                               </tr>
                             <?php else: ?>
