@@ -258,19 +258,36 @@ body.swal2-shown .modal {
 <select id="prospectus_id" class="form-select">
 <option value="">Select...</option>
 <?php
-$q = $conn->query("
-  SELECT h.prospectus_id, h.effective_sy,
-         p.program_code, p.program_name
-  FROM tbl_prospectus_header h
-  JOIN tbl_program p ON p.program_id = h.program_id
-  WHERE p.college_id = '{$_SESSION['college_id']}'
-  ORDER BY p.program_name
-");
-while ($r = $q->fetch_assoc()) {
-  echo "<option value='{$r['prospectus_id']}'>
-        {$r['program_code']} — {$r['program_name']} (SY {$r['effective_sy']})
-        </option>";
-}
+  $q = $conn->query("
+    SELECT
+      h.prospectus_id,
+      h.effective_sy,
+      p.program_code,
+      p.program_name,
+      p.major
+    FROM tbl_prospectus_header h
+    JOIN tbl_program p ON p.program_id = h.program_id
+    WHERE p.college_id = '{$_SESSION['college_id']}'
+    ORDER BY p.program_name, p.major
+  ");
+  while ($r = $q->fetch_assoc()) {
+
+      $label = $r['program_code'] . " — " . $r['program_name'];
+
+      // ✅ Append major ONLY if it exists
+      if (!empty($r['major'])) {
+          $label .= " major in " . $r['major'];
+      }
+
+      $label .= " (SY " . $r['effective_sy'] . ")";
+
+      echo "
+          <option value='{$r['prospectus_id']}'>
+              {$label}
+          </option>
+      ";
+  }
+
 ?>
 </select>
 </div>

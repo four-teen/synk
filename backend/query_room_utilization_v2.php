@@ -33,9 +33,6 @@ if (isset($_POST['load_room_schedule'])) {
         exit;
     }
 
-    /* ==========================================================
-    SINGLE ROOM SCHEDULE (ADD ROOM CAPACITY)
-    ========================================================== */
     $sql = "
         SELECT
             cs.time_start,
@@ -46,8 +43,7 @@ if (isset($_POST['load_room_schedule'])) {
             COALESCE(
                 CONCAT(f.last_name, ', ', f.first_name),
                 'TBA'
-            ) AS faculty_name,
-            r.capacity AS expected_students
+            ) AS faculty_name
         FROM tbl_class_schedule cs
         INNER JOIN tbl_rooms r
             ON r.room_id = cs.room_id
@@ -66,9 +62,9 @@ if (isset($_POST['load_room_schedule'])) {
         LEFT JOIN tbl_faculty f
             ON f.faculty_id = fws.faculty_id
         WHERE cs.room_id = ?
-        AND ay.ay = ?
-        AND po.semester = ?
-        AND r.college_id = ?
+          AND ay.ay = ?
+          AND po.semester = ?
+          AND r.college_id = ?
         ORDER BY cs.time_start
     ";
 

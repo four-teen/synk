@@ -220,8 +220,8 @@ $(document).ready(function () {
     }
 
     Swal.fire({
-      title: "Generate Offerings?",
-      text: "This will replace existing offerings for this AY & Semester.",
+      title: "Sync Offerings?",
+      text: "This will synchronize offerings based on current active sections.",
       icon: "question",
       showCancelButton: true,
       confirmButtonText: "Proceed"
@@ -253,7 +253,7 @@ $(document).ready(function () {
           Swal.fire({
             icon: "success",
             title: "Done!",
-            text: `Inserted: ${out.inserted}, Deleted: ${out.deleted}`,
+            text: `Added: ${out.inserted}, Removed: ${out.deleted_offerings}`,
             timer: 1500,
             showConfirmButton: false
           });

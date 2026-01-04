@@ -159,6 +159,8 @@ $college_name = $col['college_name'];
 
 <script>
 
+let sectionStartIndex = 0;
+
 // DELETE SECTION
 $(document).on("click", ".btnDeleteSection", function () {
 
@@ -269,30 +271,55 @@ $("#btnGenerate").click(function () {
     let program_id   = $("#program_id").val();
     let program_code = $("#program_id option:selected").data("code");
     let year         = $("#year_level").val();
-    let count        = $("#section_count").val();
+    let count        = parseInt($("#section_count").val());
 
     if (!program_id || !year || count <= 0) {
         Swal.fire("Missing Data", "Please fill all fields.", "warning");
         return;
     }
 
-    let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
-    $("#previewList").html("");
+    $.post("../backend/query_sections.php", {
+        get_next_section_index: 1,
+        program_id: program_id,
+        year_level: year
+    }, function (res) {
 
-    for (let i = 0; i < count; i++) {
-        let letter = letters[i];
-        let section_name = year + letter;
-        let full_section = program_code + " " + section_name;
+        let data = JSON.parse(res);
+let startIndex = parseInt(data.next_index || 0);
+sectionStartIndex = startIndex; // ✅ ONLY HERE
 
-        $("#previewList").append(`
-            <li class="list-group-item d-flex justify-content-between">
-                ${full_section}
-                <span class="badge bg-primary">${section_name}</span>
-            </li>
-        `);
-    }
+        let letters = "ABCDEFGHIJKLMNOPQRSTUVWXYZ".split("");
+        $("#previewList").html("");
 
-    $("#previewCard").slideDown();
+        for (let i = 0; i < count; i++) {
+
+            let idx = startIndex + i;
+
+            if (idx >= letters.length) {
+                Swal.fire(
+                    "Limit Reached",
+                    "Maximum section limit (A-Z) reached for this year.",
+                    "warning"
+                );
+                break;
+            }
+
+            let letter = letters[idx];
+            let section_name = year + letter;
+            let full_section = program_code + " " + section_name;
+
+            $("#previewList").append(`
+                <li class="list-group-item d-flex justify-content-between">
+                    ${full_section}
+                    <span class="badge bg-primary">${section_name}</span>
+                </li>
+            `);
+        }
+
+        $("#previewCard").slideDown();
+
+    });
+
 });
 
 // Save Sections
@@ -309,7 +336,8 @@ $("#btnSaveSections").click(function () {
         program_id: program_id,
         program_code: program_code,
         year_level: year,
-        count: count
+        count: count,
+        start_index: sectionStartIndex  // ✅ IMPORTANT
     },
     function(response){
 
