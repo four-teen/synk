@@ -97,62 +97,6 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         .select2-selection__rendered {
             line-height: 42px !important;
         }
-
-        /* =====================================================
-        FACULTY LOAD STATUS STYLES
-        ===================================================== */
-        .load-normal {
-            background-color: #e7f5ef;
-            color: #0f5132;
-            font-weight: 600;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .load-high {
-            background-color: #fff3cd;
-            color: #664d03;
-            font-weight: 700;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .load-over {
-            background-color: #f8d7da;
-            color: #842029;
-            font-weight: 800;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        /* PRINT */
-        @media print {
-            body * {
-                visibility: hidden;
-            }
-
-            #printHeader {
-                display: block !important;
-            }
-            #workloadCard,
-            #workloadCard * {
-                visibility: visible;
-            }
-
-            #workloadCard {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-            }
-
-            .btn,
-            .badge,
-            .select2-container {
-                display: none !important;
-            }
-        }
-
     </style>
 </head>
 
@@ -225,33 +169,15 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         </div>
     </div>
 <div class="card mt-4" id="workloadCard" style="display:none;">
-<div class="card-header d-flex justify-content-between align-items-center">
-    <div>
-        <h5 class="m-0">Current Faculty Workload</h5>
-        <small class="text-muted">
-            Classes already assigned for this term
-        </small>
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="m-0">Current Faculty Workload</h5>
+            <small class="text-muted">
+                Classes already assigned for this term
+            </small>
+        </div>
     </div>
 
-    <!-- ✅ PRINT BUTTON (VISIBLE NOW) -->
-    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-        <i class="bx bx-printer me-1"></i> Print Workload
-    </button>
-</div>
-
-<!-- PRINT HEADER (VISIBLE ONLY ON PRINT) -->
-<div id="printHeader" class="mb-3" style="display:none;">
-    <h5 class="mb-1 fw-bold">FACULTY WORKLOAD SUMMARY</h5>
-    <div class="text-muted" style="font-size:0.9rem;">
-        <div><strong>College:</strong> <?= htmlspecialchars($college_name) ?></div>
-        <div><strong>Faculty:</strong> <span id="printFacultyName"></span></div>
-        <div><strong>Term:</strong> <span id="printTerm"></span></div>
-        <div><strong>Date Generated:</strong> <?= date("F d, Y") ?></div>
-    </div>
-    <hr>
-</div>
-
-    
     <div class="table-responsive">
         <table class="table table-hover table-sm mb-0">
             <thead class="table-light">
@@ -283,9 +209,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             <th class="text-center" id="totalLEC">0</th>
             <th class="text-center" id="totalLAB">0</th>
             <th class="text-center" id="totalUNIT">0</th>
-            <th class="text-center" id="totalLOADCell">
-                <span id="totalLOAD">0.00</span>
-            </th>
+            <th class="text-center fw-bold" id="totalLOAD">0.00</th>
             <th></th>
         </tr>
     </tfoot>            
@@ -370,18 +294,6 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             </div>
             <span id="wlSummaryTotal" class="badge bg-label-primary"></span>
         </div>
-        <!-- PRINT HEADER -->
-        <div id="printHeader" class="mb-3" style="display:none;">
-            <h5 class="mb-1 fw-bold">FACULTY WORKLOAD SUMMARY</h5>
-            <div class="text-muted" style="font-size:0.9rem;">
-                <div><strong>College:</strong> <?= htmlspecialchars($college_name) ?></div>
-                <div><strong>Faculty:</strong> <span id="printFacultyName"></span></div>
-                <div><strong>Term:</strong> <span id="printTerm"></span></div>
-                <div><strong>Date Generated:</strong> <?= date("F d, Y") ?></div>
-            </div>
-            <hr>
-        </div>
-
         <div class="table-responsive">
             <table class="table table-hover table-sm mb-0">
                 <thead class="table-light">
@@ -404,6 +316,10 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             </table>
         </div>
     </div>
+
+
+
+
 
 
     <!-- FACULTY TIMETABLE VIEW -->
@@ -683,41 +599,7 @@ $(document).ready(function () {
 $("#totalLEC").text(totalLEC);
 $("#totalLAB").text(totalLAB);
 $("#totalUNIT").text(totalUNIT);
-// =========================================================
-// LOAD STATUS UI (POLICY-CORRECT)
-// =========================================================
-let loadClass = "load-high";       // default = UNDERLOAD (yellow)
-let loadLabel = "Underload";
-
-if (totalLOAD >= 18 && totalLOAD <= 21) {
-    loadClass = "load-normal";     // green
-    loadLabel = "Normal Load";
-} else if (totalLOAD > 21) {
-    loadClass = "load-over";       // red
-    loadLabel = "Overload";
-}
-
-
-$("#totalLEC").text(totalLEC);
-$("#totalLAB").text(totalLAB);
-$("#totalUNIT").text(totalUNIT);
-
-$("#totalLOADCell").html(`
-    <span class="${loadClass}">
-        ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
-    </span>
-`);
-
-// ===============================
-// PRINT HEADER VALUES
-// ===============================
-$("#printFacultyName").text(
-    $("#faculty_id option:selected").text()
-);
-
-$("#printTerm").text(
-    $("#fw_semester").val() + " Semester, A.Y. " + $("#fw_ay").val()
-);
+$("#totalLOAD").text(totalLOAD.toFixed(2));
 
 
                 $("#workloadCard").show();

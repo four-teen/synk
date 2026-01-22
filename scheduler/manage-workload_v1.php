@@ -3,15 +3,6 @@ session_start();
 ob_start();
 include '../backend/db.php';
 
-/* =====================================================
-   WORKLOAD COMPUTATION CONFIG
-   NOTE:
-   - 1 LAB unit = 3 contact hours
-   - Each contact hour × LAB_LOAD_MULTIPLIER
-   - This is intentionally hardcoded for now
-   - Future: move to settings table
-===================================================== */
-
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
     exit;
@@ -97,62 +88,6 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         .select2-selection__rendered {
             line-height: 42px !important;
         }
-
-        /* =====================================================
-        FACULTY LOAD STATUS STYLES
-        ===================================================== */
-        .load-normal {
-            background-color: #e7f5ef;
-            color: #0f5132;
-            font-weight: 600;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .load-high {
-            background-color: #fff3cd;
-            color: #664d03;
-            font-weight: 700;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .load-over {
-            background-color: #f8d7da;
-            color: #842029;
-            font-weight: 800;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        /* PRINT */
-        @media print {
-            body * {
-                visibility: hidden;
-            }
-
-            #printHeader {
-                display: block !important;
-            }
-            #workloadCard,
-            #workloadCard * {
-                visibility: visible;
-            }
-
-            #workloadCard {
-                position: absolute;
-                left: 0;
-                top: 0;
-                width: 100%;
-            }
-
-            .btn,
-            .badge,
-            .select2-container {
-                display: none !important;
-            }
-        }
-
     </style>
 </head>
 
@@ -225,33 +160,15 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         </div>
     </div>
 <div class="card mt-4" id="workloadCard" style="display:none;">
-<div class="card-header d-flex justify-content-between align-items-center">
-    <div>
-        <h5 class="m-0">Current Faculty Workload</h5>
-        <small class="text-muted">
-            Classes already assigned for this term
-        </small>
+    <div class="card-header d-flex justify-content-between align-items-center">
+        <div>
+            <h5 class="m-0">Current Faculty Workload</h5>
+            <small class="text-muted">
+                Classes already assigned for this term
+            </small>
+        </div>
     </div>
 
-    <!-- ✅ PRINT BUTTON (VISIBLE NOW) -->
-    <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
-        <i class="bx bx-printer me-1"></i> Print Workload
-    </button>
-</div>
-
-<!-- PRINT HEADER (VISIBLE ONLY ON PRINT) -->
-<div id="printHeader" class="mb-3" style="display:none;">
-    <h5 class="mb-1 fw-bold">FACULTY WORKLOAD SUMMARY</h5>
-    <div class="text-muted" style="font-size:0.9rem;">
-        <div><strong>College:</strong> <?= htmlspecialchars($college_name) ?></div>
-        <div><strong>Faculty:</strong> <span id="printFacultyName"></span></div>
-        <div><strong>Term:</strong> <span id="printTerm"></span></div>
-        <div><strong>Date Generated:</strong> <?= date("F d, Y") ?></div>
-    </div>
-    <hr>
-</div>
-
-    
     <div class="table-responsive">
         <table class="table table-hover table-sm mb-0">
             <thead class="table-light">
@@ -266,32 +183,13 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                     <th class="text-center">LEC</th>
                     <th class="text-center">LAB</th>
                     <th class="text-center">Units</th>
-                    <th class="text-center">Faculty Load</th>
                     <th class="text-end">Action</th>
                 </tr>
             </thead>
 
             <tbody id="workloadTbody"></tbody>
-    <!-- ✅ TABLE FOOTER -->
-    <tfoot class="table-light">
-        <tr>
-            <!-- Span first 7 columns -->
-            <th colspan="7" class="text-end fw-semibold">
-                TOTAL
-            </th>
-
-            <th class="text-center" id="totalLEC">0</th>
-            <th class="text-center" id="totalLAB">0</th>
-            <th class="text-center" id="totalUNIT">0</th>
-            <th class="text-center" id="totalLOADCell">
-                <span id="totalLOAD">0.00</span>
-            </th>
-            <th></th>
-        </tr>
-    </tfoot>            
         </table>
     </div>
-    
 </div>
 <!-- SCHEDULED CLASSES CARD -->
 <div class="card mb-4 mt-4" id="scheduledClassCard" style="display:none;">
@@ -370,18 +268,6 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             </div>
             <span id="wlSummaryTotal" class="badge bg-label-primary"></span>
         </div>
-        <!-- PRINT HEADER -->
-        <div id="printHeader" class="mb-3" style="display:none;">
-            <h5 class="mb-1 fw-bold">FACULTY WORKLOAD SUMMARY</h5>
-            <div class="text-muted" style="font-size:0.9rem;">
-                <div><strong>College:</strong> <?= htmlspecialchars($college_name) ?></div>
-                <div><strong>Faculty:</strong> <span id="printFacultyName"></span></div>
-                <div><strong>Term:</strong> <span id="printTerm"></span></div>
-                <div><strong>Date Generated:</strong> <?= date("F d, Y") ?></div>
-            </div>
-            <hr>
-        </div>
-
         <div class="table-responsive">
             <table class="table table-hover table-sm mb-0">
                 <thead class="table-light">
@@ -404,6 +290,10 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             </table>
         </div>
     </div>
+
+
+
+
 
 
     <!-- FACULTY TIMETABLE VIEW -->
@@ -558,18 +448,6 @@ $(document).ready(function () {
     ========================================================= */
     function loadWorkloadList() {
 
-        /* =========================================================
-        TOTAL WORKLOAD ACCUMULATORS
-        - Use group_id to avoid double counting LEC+LAB pairs
-        ========================================================= */
-        let totalLEC   = 0;
-        let totalLAB   = 0;
-        let totalUNIT  = 0;
-        let totalLOAD  = 0;
-
-        let countedGroups = new Set();
-
-
         if (!currentAyId || !currentSemesterNum) return;
 
         let faculty_id = $("#faculty_id").val();
@@ -594,22 +472,6 @@ $(document).ready(function () {
                 for (let i = 0; i < data.length; i++) {
 
                     let row = data[i];
-
-                    /* =====================================================
-                    TOTAL COMPUTATION (COUNT ONCE PER SUBJECT)
-                    ===================================================== */
-                    let gid = row.group_id ?? row.workload_id;
-
-                    // If not yet counted, add to totals
-                    if (!countedGroups.has(gid)) {
-                        countedGroups.add(gid);
-
-                        totalLEC  += Number(row.lec) || 0;
-                        totalLAB  += Number(row.lab) || 0;
-                        totalUNIT += Number(row.units) || 0;
-                        totalLOAD += Number(row.faculty_load) || 0;
-                    }
-
 
                     let typeBadge = row.type === "LAB"
                         ? '<span class="badge bg-label-warning">LAB</span>'
@@ -648,9 +510,6 @@ $(document).ready(function () {
                             <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.lec}</td>
                             <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.lab}</td>
                             <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.units}</td>
-                            <td class="text-center fw-semibold" rowspan="2" style="vertical-align: middle;">
-                                ${row.faculty_load}
-                            </td>
                         `;
                     } else if (!isSecondPairRow) {
                         // Not part of a pair → normal display
@@ -658,8 +517,6 @@ $(document).ready(function () {
                             <td class="text-center">${row.lec}</td>
                             <td class="text-center">${row.lab}</td>
                             <td class="text-center">${row.units}</td>
-                            <td class="text-center fw-semibold">${row.faculty_load}</td>
-
                         `;
                     }
                     // else: second row of pair → skip these 3 cells
@@ -676,49 +533,6 @@ $(document).ready(function () {
                 }
 
                 $("#workloadTbody").html(rows);
-
-                /* =========================================================
-                DISPLAY TOTALS
-                ========================================================= */
-$("#totalLEC").text(totalLEC);
-$("#totalLAB").text(totalLAB);
-$("#totalUNIT").text(totalUNIT);
-// =========================================================
-// LOAD STATUS UI (POLICY-CORRECT)
-// =========================================================
-let loadClass = "load-high";       // default = UNDERLOAD (yellow)
-let loadLabel = "Underload";
-
-if (totalLOAD >= 18 && totalLOAD <= 21) {
-    loadClass = "load-normal";     // green
-    loadLabel = "Normal Load";
-} else if (totalLOAD > 21) {
-    loadClass = "load-over";       // red
-    loadLabel = "Overload";
-}
-
-
-$("#totalLEC").text(totalLEC);
-$("#totalLAB").text(totalLAB);
-$("#totalUNIT").text(totalUNIT);
-
-$("#totalLOADCell").html(`
-    <span class="${loadClass}">
-        ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
-    </span>
-`);
-
-// ===============================
-// PRINT HEADER VALUES
-// ===============================
-$("#printFacultyName").text(
-    $("#faculty_id option:selected").text()
-);
-
-$("#printTerm").text(
-    $("#fw_semester").val() + " Semester, A.Y. " + $("#fw_ay").val()
-);
-
 
                 $("#workloadCard").show();
             },

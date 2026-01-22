@@ -11,6 +11,17 @@ if (!isset($_SESSION['user_id'])) {
     echo json_encode([]);
     exit;
 }
+/* =====================================================
+   COLLEGE CONTEXT (SCHEDULER SCOPE)
+===================================================== */
+if (!isset($_SESSION['college_id'])) {
+    echo json_encode([]);
+    exit;
+}
+
+$college_id = (int) $_SESSION['college_id'];
+
+
 
 /* =====================================================
    INPUTS
@@ -80,14 +91,22 @@ SELECT
     ps.lec_units   AS hours_lec,
     ps.lab_units   AS hours_lab
 FROM tbl_class_schedule cs
-JOIN tbl_prospectus_offering o ON o.offering_id = cs.offering_id
-JOIN tbl_sections sec ON sec.section_id = o.section_id
-JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
-JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
+JOIN tbl_prospectus_offering o 
+    ON o.offering_id = cs.offering_id
+JOIN tbl_program p
+    ON p.program_id = o.program_id          -- 🔴 COLLEGE OWNER
+JOIN tbl_sections sec 
+    ON sec.section_id = o.section_id
+JOIN tbl_prospectus_subjects ps 
+    ON ps.ps_id = o.ps_id
+JOIN tbl_subject_masterlist sm 
+    ON sm.sub_id = ps.sub_id
+LEFT JOIN tbl_rooms r 
+    ON r.room_id = cs.room_id
 WHERE
     o.ay_id = ?
 AND o.semester = ?
+AND p.college_id = ?                         -- 🔴 COLLEGE FILTER
 AND cs.schedule_id NOT IN (
     SELECT fw.schedule_id
     FROM tbl_faculty_workload_sched fw
@@ -103,9 +122,10 @@ ORDER BY
 
 $stmt = $conn->prepare($sql);
 $stmt->bind_param(
-    "iiii",
+    "iiiii",
     $ay_id,
     $semester,
+    $college_id,
     $ay_id,
     $semester
 );
