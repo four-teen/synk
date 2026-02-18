@@ -10,7 +10,18 @@ include 'db.php';
  - college_id
 */
 
-$college_id = intval($_POST['college_id'] ?? 0);
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
+    echo "<div class='text-danger text-center'>Unauthorized access.</div>";
+    exit;
+}
+
+$csrf_token = $_POST['csrf_token'] ?? '';
+if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf_token)) {
+    echo "<div class='text-danger text-center'>CSRF validation failed.</div>";
+    exit;
+}
+
+$college_id = (int)($_SESSION['college_id'] ?? 0);
 
 $prospectus_id = isset($_POST['prospectus_id']) ? (int)$_POST['prospectus_id'] : 0;
 $ay_id         = isset($_POST['ay_id']) ? (int)$_POST['ay_id'] : 0;
@@ -22,7 +33,7 @@ if (!$prospectus_id || !$ay_id || !$semester) {
     exit;
 }
 
-if (!$college_id) {
+if ($college_id <= 0) {
     echo "<div class='text-danger text-center'>Invalid college context.</div>";
     exit;
 }

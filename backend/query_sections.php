@@ -1,80 +1,76 @@
 <?php
-    session_start();
-    ob_start();
-    include '../backend/db.php';
+/**
+ * ======================================================================
+ * Backend Handler : Sections (AJAX)
+ * File Path       : synk/backend/query_sections.php
+ * ======================================================================
+ * HANDLES:
+ * - load_grouped_sections (filtered by college + ay_id + semester)
+ * - get_next_section_index (scope-aware)
+ * - save_sections (scope-aware + duplicate-safe)
+ * - delete_section (college-safe)
+ * ======================================================================
+ */
 
-    if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
-        echo "unauthorized";
-        exit;
-    }
+session_start();
+include 'db.php';
 
-
-// -------------------------------------------------
-// DELETE SINGLE SECTION
-// -------------------------------------------------
-if (isset($_POST['delete_section'])) {
-
-    $section_id = intval($_POST['section_id']);
-
-    // Validate section belongs to scheduler's college
-    $college_id = $_SESSION['college_id'];
-
-    $check = mysqli_query($conn, "
-        SELECT s.section_id 
-        FROM tbl_sections s
-        JOIN tbl_program p ON s.program_id = p.program_id
-        WHERE s.section_id = '$section_id'
-        AND p.college_id = '$college_id'
-    ");
-
-    if (mysqli_num_rows($check) == 0) {
-        echo "forbidden";
-        exit;
-    }
-
-    $delete = mysqli_query($conn, "
-        DELETE FROM tbl_sections 
-        WHERE section_id = '$section_id'
-    ");
-
-    echo $delete ? "success" : "error";
-    exit;
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'scheduler') {
+    exit('forbidden');
 }
 
+$college_id = (int)($_SESSION['college_id'] ?? 0);
 
-// -------------------------------------------------
-// LOAD GROUPED SECTIONS (FOR DISPLAY IN CARDS)
-// -------------------------------------------------
+/* =========================================================
+   1) LOAD GROUPED SECTIONS (BY PROGRAM) — scope-aware
+========================================================= */
 if (isset($_POST['load_grouped_sections'])) {
 
-    $college_id = $_SESSION['college_id'];
+    $ay_id    = isset($_POST['ay_id']) ? (int)$_POST['ay_id'] : 0;
+    $semester = isset($_POST['semester']) ? (int)$_POST['semester'] : 0;
+
+    if ($ay_id <= 0 || $semester <= 0) {
+        echo json_encode([]);
+        exit;
+    }
 
     $sql = "
-        SELECT s.*, p.program_code, p.program_name
+        SELECT
+            s.section_id,
+            s.year_level,
+            s.section_name,
+            s.full_section,
+            s.status,
+            p.program_code,
+            p.program_name
         FROM tbl_sections s
-        JOIN tbl_program p ON s.program_id = p.program_id
-        WHERE p.college_id = '$college_id'
-        ORDER BY p.program_code, s.year_level, s.section_name
+        JOIN tbl_program p ON p.program_id = s.program_id
+        WHERE p.college_id = ?
+          AND s.ay_id = ?
+          AND s.semester = ?
+        ORDER BY p.program_code ASC, s.year_level ASC, s.section_name ASC
     ";
 
-    $run = mysqli_query($conn, $sql);
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("iii", $college_id, $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
 
     $grouped = [];
 
-    while ($r = mysqli_fetch_assoc($run)) {
+    while ($row = $res->fetch_assoc()) {
+        $programLabel = $row['program_code'] . " — " . $row['program_name'];
 
-        $program_title = $r['program_code'] . " — " . $r['program_name'];
-
-        if (!isset($grouped[$program_title])) {
-            $grouped[$program_title] = [];
+        if (!isset($grouped[$programLabel])) {
+            $grouped[$programLabel] = [];
         }
 
-        $grouped[$program_title][] = [
-            "section_id"   => $r['section_id'],   // ← add this
-            "year_level"   => $r['year_level'],
-            "section_name" => $r['section_name'],
-            "full_section" => $r['full_section'],
-            "status"       => $r['status']
+        $grouped[$programLabel][] = [
+            'section_id'    => (int)$row['section_id'],
+            'year_level'    => $row['year_level'],
+            'section_name'  => $row['section_name'],
+            'full_section'  => $row['full_section'],
+            'status'        => $row['status']
         ];
     }
 
@@ -82,146 +78,193 @@ if (isset($_POST['load_grouped_sections'])) {
     exit;
 }
 
+/* =========================================================
+   2) GET NEXT SECTION INDEX (A-Z) — scope-aware
+========================================================= */
+if (isset($_POST['get_next_section_index'])) {
 
-// -------------------------------------------------
-// LOAD EXISTING SECTIONS LIST
-// -------------------------------------------------
-if (isset($_POST['load_sections'])) {
+    $program_id = isset($_POST['program_id']) ? (int)$_POST['program_id'] : 0;
+    $year_level = isset($_POST['year_level']) ? (int)$_POST['year_level'] : 0;
+    $ay_id      = isset($_POST['ay_id']) ? (int)$_POST['ay_id'] : 0;
+    $semester   = isset($_POST['semester']) ? (int)$_POST['semester'] : 0;
 
-    $college_id = $_SESSION['college_id'];
-
-    $sql = "
-        SELECT s.*, p.program_code 
-        FROM tbl_sections s
-        JOIN tbl_program p ON s.program_id = p.program_id
-        WHERE p.college_id = '$college_id'
-        ORDER BY p.program_code, s.year_level, s.section_name
-    ";
-
-    $run = mysqli_query($conn, $sql);
-    $i = 1;
-    $rows = "";
-
-    while ($r = mysqli_fetch_assoc($run)) {
-
-        $rows .= "
-            <tr>
-                <td>{$i}</td>
-                <td>{$r['program_code']}</td>
-                <td>{$r['year_level']}</td>
-                <td>{$r['section_name']}</td>
-                <td>{$r['full_section']}</td>
-                <td><span class='badge bg-success'>{$r['status']}</span></td>
-            </tr>
-        ";
-        $i++;
+    if ($program_id <= 0 || $year_level <= 0 || $ay_id <= 0 || $semester <= 0) {
+        echo json_encode(['next_index' => 0]);
+        exit;
     }
 
-    echo $rows;
-    exit;
-}
+    // SECURITY: ensure program belongs to this college
+    $chk = $conn->prepare("SELECT 1 FROM tbl_program WHERE program_id=? AND college_id=? LIMIT 1");
+    $chk->bind_param("ii", $program_id, $college_id);
+    $chk->execute();
+    $chkRes = $chk->get_result();
+    if ($chkRes->num_rows === 0) {
+        echo json_encode(['next_index' => 0]);
+        exit;
+    }
 
+    $stmt = $conn->prepare("
+        SELECT section_name
+        FROM tbl_sections
+        WHERE program_id = ?
+          AND ay_id = ?
+          AND semester = ?
+          AND year_level = ?
+    ");
+    $stmt->bind_param("iiii", $program_id, $ay_id, $semester, $year_level);
+    $stmt->execute();
+    $res = $stmt->get_result();
 
-// -------------------------------------------------
-// SAVE SECTIONS
-// -------------------------------------------------
-if (isset($_POST['save_sections'])) {
+    $maxIndex = 0; // 0 = start at A
 
-    $program_id   = intval($_POST['program_id']);
-    $program_code = mysqli_real_escape_string($conn, $_POST['program_code']);
-    $year         = intval($_POST['year_level']);
-    $count        = intval($_POST['count']);
-    $startIndex   = intval($_POST['start_index'] ?? 0);
+    while ($row = $res->fetch_assoc()) {
+        $name = (string)$row['section_name']; // e.g., 1A
+        $letter = strtoupper(substr($name, -1)); // A
 
-    $letters = range('A','Z');
-
-    for ($i = 0; $i < $count; $i++) {
-
-        $idx = $startIndex + $i;
-
-        if (!isset($letters[$idx])) break;
-
-        $section_name = $year . $letters[$idx];       // 1D, 1E
-        $full_section = $program_code . " " . $section_name;
-
-        $check = mysqli_query($conn,
-            "SELECT section_id FROM tbl_sections
-             WHERE program_id='$program_id'
-             AND year_level='$year'
-             AND section_name='$section_name'"
-        );
-
-        if (mysqli_num_rows($check) == 0) {
-
-            mysqli_query($conn,
-                "INSERT INTO tbl_sections (program_id, year_level, section_name, full_section)
-                 VALUES ('$program_id', '$year', '$section_name', '$full_section')"
-            );
+        if ($letter >= 'A' && $letter <= 'Z') {
+            $idx = ord($letter) - ord('A') + 1; // A=>1, B=>2...
+            if ($idx > $maxIndex) $maxIndex = $idx;
         }
     }
 
-    echo "success";
+    // next index should be maxIndex (A already used => start from B)
+    echo json_encode(['next_index' => $maxIndex]);
     exit;
 }
 
+/* =========================================================
+   3) SAVE SECTIONS — scope-aware + duplicate-safe
+========================================================= */
+if (isset($_POST['save_sections'])) {
 
-// add near bottom of query_sections.php
+    $program_id   = isset($_POST['program_id']) ? (int)$_POST['program_id'] : 0;
+    $program_code = trim($_POST['program_code'] ?? '');
+    $ay_id        = isset($_POST['ay_id']) ? (int)$_POST['ay_id'] : 0;
+    $semester     = isset($_POST['semester']) ? (int)$_POST['semester'] : 0;
+    $year_level   = isset($_POST['year_level']) ? (int)$_POST['year_level'] : 0;
+    $count        = isset($_POST['count']) ? (int)$_POST['count'] : 0;
+    $start_index  = isset($_POST['start_index']) ? (int)$_POST['start_index'] : 0;
 
-if (isset($_POST['load_sections_by_prog_year'])) {
-
-    $program_id = intval($_POST['program_id']);
-    $year_level = intval($_POST['year_level']);
-
-    $out = "<option value=''>Select Section</option>";
-
-    $sql = "SELECT section_id, section_name 
-            FROM tbl_sections 
-            WHERE program_id='$program_id' AND year_level='$year_level' 
-            ORDER BY section_name";
-
-    $run = mysqli_query($conn, $sql);
-    while ($r = mysqli_fetch_assoc($run)) {
-        $out .= "<option value='{$r['section_id']}'>{$r['section_name']}</option>";
+    if ($program_id <= 0 || $ay_id <= 0 || $semester <= 0 || $year_level <= 0 || $count <= 0) {
+        exit("Missing required data.");
     }
 
-    echo $out;
-    exit;
-}
+    if ($semester < 1 || $semester > 3) {
+        exit("Invalid semester value.");
+    }
 
-// -------------------------------------------------
-// GET NEXT AVAILABLE SECTION LETTER (ACTIVE ONLY)
-// -------------------------------------------------
-if (isset($_POST['get_next_section_index'])) {
+    // SECURITY: ensure program belongs to this college
+    $chk = $conn->prepare("SELECT 1 FROM tbl_program WHERE program_id=? AND college_id=? LIMIT 1");
+    $chk->bind_param("ii", $program_id, $college_id);
+    $chk->execute();
+    $chkRes = $chk->get_result();
+    if ($chkRes->num_rows === 0) {
+        exit("forbidden");
+    }
 
-    $program_id = intval($_POST['program_id']);
-    $year_level = intval($_POST['year_level']);
+    $letters = range('A', 'Z');
 
-    $sql = "
-        SELECT MAX(ASCII(RIGHT(section_name, 1))) AS max_letter
+    // Build intended section_names
+    $sectionNames = [];
+    for ($i = 0; $i < $count; $i++) {
+        $idx = $start_index + $i;
+        if (!isset($letters[$idx])) break;
+        $sectionNames[] = $year_level . $letters[$idx]; // e.g., 1A
+    }
+
+    if (count($sectionNames) === 0) {
+        exit("No sections to save.");
+    }
+
+    // Pre-check duplicates within the same scope
+    $placeholders = implode(',', array_fill(0, count($sectionNames), '?'));
+    $types = str_repeat('s', count($sectionNames));
+
+    $dupSql = "
+        SELECT COUNT(*) AS cnt
         FROM tbl_sections
         WHERE program_id = ?
+          AND ay_id = ?
+          AND semester = ?
           AND year_level = ?
-          AND status = 'active'
+          AND section_name IN ($placeholders)
     ";
 
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ii", $program_id, $year_level);
-    $stmt->execute();
-    $res = $stmt->get_result()->fetch_assoc();
+    $dupStmt = $conn->prepare($dupSql);
 
-    // If no existing sections, start at A (index 0)
-    $nextIndex = 0;
+    // bind params dynamically
+    $bindTypes = "iiii" . $types;
+    $params = array_merge([$bindTypes, $program_id, $ay_id, $semester, $year_level], $sectionNames);
 
-    if (!empty($res['max_letter'])) {
-        $nextIndex = ($res['max_letter'] - ord('A')) + 1;
+    // php 7+ dynamic bind
+    $tmp = [];
+    foreach ($params as $k => $v) $tmp[$k] = &$params[$k];
+    call_user_func_array([$dupStmt, 'bind_param'], $tmp);
+
+    $dupStmt->execute();
+    $dupRes = $dupStmt->get_result();
+    $dupRow = $dupRes->fetch_assoc();
+    if ((int)$dupRow['cnt'] > 0) {
+        exit("Duplicate detected: Some sections already exist in this Academic Year + Semester scope.");
     }
 
-    echo json_encode([
-        "next_index" => $nextIndex
-    ]);
-    exit;
+    // Insert all (transaction)
+    $conn->begin_transaction();
+
+    try {
+        $ins = $conn->prepare("
+            INSERT INTO tbl_sections
+                (program_id, ay_id, semester, year_level, section_name, full_section, status)
+            VALUES
+                (?, ?, ?, ?, ?, ?, 'active')
+        ");
+
+        foreach ($sectionNames as $sn) {
+            $full = $program_code . " " . $sn;
+
+            $ins->bind_param("iiiiss", $program_id, $ay_id, $semester, $year_level, $sn, $full);
+            $ins->execute();
+        }
+
+        $conn->commit();
+        exit("success");
+
+    } catch (Exception $e) {
+        $conn->rollback();
+        exit("Error saving sections: " . $e->getMessage());
+    }
 }
 
+/* =========================================================
+   4) DELETE SECTION — safe by college ownership
+========================================================= */
+if (isset($_POST['delete_section'])) {
 
+    $section_id = isset($_POST['section_id']) ? (int)$_POST['section_id'] : 0;
+    if ($section_id <= 0) exit("error");
 
-?>
+    // Ensure section belongs to a program under this college
+    $chk = $conn->prepare("
+        SELECT 1
+        FROM tbl_sections s
+        JOIN tbl_program p ON p.program_id = s.program_id
+        WHERE s.section_id = ?
+          AND p.college_id = ?
+        LIMIT 1
+    ");
+    $chk->bind_param("ii", $section_id, $college_id);
+    $chk->execute();
+    $chkRes = $chk->get_result();
+
+    if ($chkRes->num_rows === 0) {
+        exit("forbidden");
+    }
+
+    $del = $conn->prepare("DELETE FROM tbl_sections WHERE section_id = ? LIMIT 1");
+    $del->bind_param("i", $section_id);
+
+    if ($del->execute()) exit("success");
+    exit("error");
+}
+
+exit("invalid");

@@ -4,6 +4,96 @@ ob_start();
 
 include '../backend/db.php';
 
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
+    echo "ERROR|Unauthorized access.";
+    exit;
+}
+
+$role = $_SESSION['role'];
+$myCollege = intval($_SESSION['college_id'] ?? 0);
+if (!in_array($role, ['admin', 'scheduler'], true)) {
+    echo "ERROR|Unauthorized access.";
+    exit;
+}
+
+$write_actions = [
+    'save_header',
+    'save_year_sem',
+    'save_prospectus_subject',
+    'delete_prospectus_subject',
+    'delete_year_sem',
+    'update_prospectus_subject'
+];
+$requires_csrf = false;
+foreach ($write_actions as $action) {
+    if (isset($_POST[$action])) {
+        $requires_csrf = true;
+        break;
+    }
+}
+
+if ($requires_csrf) {
+    $csrf_token = $_POST['csrf_token'] ?? '';
+    if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf_token)) {
+        echo "ERROR|CSRF validation failed.";
+        exit;
+    }
+}
+
+function can_access_prospectus($conn, $prospectus_id, $role, $myCollege) {
+    if ($prospectus_id <= 0) return false;
+    if ($role === 'admin') return true;
+    $sql = "SELECT h.prospectus_id
+            FROM tbl_prospectus_header h
+            INNER JOIN tbl_program p ON p.program_id = h.program_id
+            WHERE h.prospectus_id = ?
+              AND p.college_id = ?
+            LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $prospectus_id, $myCollege);
+    $stmt->execute();
+    $ok = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $ok;
+}
+
+function can_access_pys($conn, $pys_id, $role, $myCollege) {
+    if ($pys_id <= 0) return false;
+    if ($role === 'admin') return true;
+    $sql = "SELECT y.pys_id
+            FROM tbl_prospectus_year_sem y
+            INNER JOIN tbl_prospectus_header h ON h.prospectus_id = y.prospectus_id
+            INNER JOIN tbl_program p ON p.program_id = h.program_id
+            WHERE y.pys_id = ?
+              AND p.college_id = ?
+            LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $pys_id, $myCollege);
+    $stmt->execute();
+    $ok = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $ok;
+}
+
+function can_access_ps($conn, $ps_id, $role, $myCollege) {
+    if ($ps_id <= 0) return false;
+    if ($role === 'admin') return true;
+    $sql = "SELECT ps.ps_id
+            FROM tbl_prospectus_subjects ps
+            INNER JOIN tbl_prospectus_year_sem y ON y.pys_id = ps.pys_id
+            INNER JOIN tbl_prospectus_header h ON h.prospectus_id = y.prospectus_id
+            INNER JOIN tbl_program p ON p.program_id = h.program_id
+            WHERE ps.ps_id = ?
+              AND p.college_id = ?
+            LIMIT 1";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("ii", $ps_id, $myCollege);
+    $stmt->execute();
+    $ok = $stmt->get_result()->num_rows > 0;
+    $stmt->close();
+    return $ok;
+}
+
 // ======================================================
 // EDIT SUBJECT ADDED TO PROSPECTUS
 // ======================================================
@@ -11,6 +101,7 @@ if (isset($_POST['load_subject_for_edit'])) {
 
     $ps_id = intval($_POST['ps_id'] ?? 0);
     if ($ps_id <= 0) { echo json_encode([]); exit; }
+    if (!can_access_ps($conn, $ps_id, $role, $myCollege)) { echo json_encode([]); exit; }
 
     $sql = "SELECT ps_id, sub_id, lec_units, lab_units, total_units, sort_order, prerequisites, prerequisite_sub_ids
             FROM tbl_prospectus_subjects
@@ -42,6 +133,17 @@ if (isset($_POST['update_prospectus_subject'])) {
         echo "ERROR|Invalid input|Please select a subject.";
         exit;
     }
+    if (!can_access_ps($conn, $ps_id, $role, $myCollege)) {
+        echo "ERROR|Unauthorized subject access.|Update blocked.";
+        exit;
+    }
+    if ($lec < 0 || $lab < 0 || $total < 0 || $sort < 1) {
+        echo "ERROR|Invalid input|Units and sort order are invalid.";
+        exit;
+    }
+    if ($total < ($lec + $lab)) {
+        $total = $lec + $lab;
+    }
 
     $sql = "UPDATE tbl_prospectus_subjects
             SET sub_id = ?, lec_units = ?, lab_units = ?, total_units = ?, sort_order = ?,
@@ -71,27 +173,38 @@ if (isset($_POST['delete_year_sem'])) {
         echo "ERROR|Invalid Year/Sem reference.";
         exit;
     }
+    if (!can_access_pys($conn, $pys_id, $role, $myCollege)) {
+        echo "ERROR|Unauthorized Year/Sem access.";
+        exit;
+    }
 
     global $conn;
 
-    // Delete all subject mappings under this PYS
-    $sql = "DELETE FROM tbl_prospectus_subjects WHERE pys_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $pys_id);
-    $stmt->execute();
-    $stmt->close();
+    $conn->begin_transaction();
+    try {
+        // Delete all subject mappings under this PYS
+        $sql = "DELETE FROM tbl_prospectus_subjects WHERE pys_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $pys_id);
+        $stmt->execute();
+        $stmt->close();
 
-    // Delete the Year/Sem record itself
-    $sql = "DELETE FROM tbl_prospectus_year_sem WHERE pys_id = ?";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $pys_id);
-    $ok = $stmt->execute();
-    $stmt->close();
+        // Delete the Year/Sem record itself
+        $sql = "DELETE FROM tbl_prospectus_year_sem WHERE pys_id = ?";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("i", $pys_id);
+        $ok = $stmt->execute();
+        $stmt->close();
 
-    if ($ok) {
+        if (!$ok) {
+            throw new Exception("Unable to delete Year & Semester.");
+        }
+
+        $conn->commit();
         echo "OK|Year & Semester removed successfully.";
-    } else {
-        echo "ERROR|Unable to delete Year & Semester.";
+    } catch (Exception $e) {
+        $conn->rollback();
+        echo "ERROR|" . $e->getMessage();
     }
     exit;
 }
@@ -154,6 +267,12 @@ if (isset($_POST['load_prospectus_list'])) {
                 ON c.college_id = p.college_id
             INNER JOIN tbl_campus ca 
                 ON ca.campus_id = c.campus_id
+            WHERE EXISTS (
+                SELECT 1
+                FROM tbl_prospectus_year_sem ys
+                INNER JOIN tbl_prospectus_subjects ps ON ps.pys_id = ys.pys_id
+                WHERE ys.prospectus_id = h.prospectus_id
+            )
             ORDER BY h.prospectus_id DESC
         ";
 
@@ -176,6 +295,12 @@ if (isset($_POST['load_prospectus_list'])) {
             INNER JOIN tbl_program p 
                 ON p.program_id = h.program_id
             WHERE p.college_id = ?
+              AND EXISTS (
+                SELECT 1
+                FROM tbl_prospectus_year_sem ys
+                INNER JOIN tbl_prospectus_subjects ps ON ps.pys_id = ys.pys_id
+                WHERE ys.prospectus_id = h.prospectus_id
+              )
             ORDER BY h.prospectus_id DESC
         ";
     }
@@ -238,6 +363,10 @@ if (isset($_POST['load_header'])) {
         echo "ERROR|Invalid prospectus ID";
         exit;
     }
+    if (!can_access_prospectus($conn, $prospectus_id, $role, $myCollege)) {
+        echo "ERROR|Unauthorized prospectus access";
+        exit;
+    }
 
     global $conn;
 
@@ -251,7 +380,9 @@ if (isset($_POST['load_header'])) {
 
     if ($stmt->fetch()) {
         $stmt->close();
-
+        $cmo_no = str_replace('|', '/', $cmo_no);
+        $effective_sy = str_replace('|', '/', $effective_sy);
+        $remarks = str_replace('|', '/', (string)$remarks);
         echo "OK|$program_id|$cmo_no|$effective_sy|$remarks";
     } else {
         $stmt->close();
@@ -300,8 +431,24 @@ if (isset($_POST['save_header'])) {
         echo "ERROR|0|Missing required fields (Program, CMO No, Effectivity SY).";
         exit;
     }
+    if (strpos($cmo_no, '|') !== false || strpos($effective_sy, '|') !== false || strpos($remarks, '|') !== false) {
+        echo "ERROR|0|Pipe character (|) is not allowed.";
+        exit;
+    }
 
     global $conn;
+
+    if ($role === 'scheduler') {
+        $chk = $conn->prepare("SELECT program_id FROM tbl_program WHERE program_id = ? AND college_id = ? LIMIT 1");
+        $chk->bind_param("ii", $program_id, $myCollege);
+        $chk->execute();
+        $allowed = $chk->get_result()->num_rows > 0;
+        $chk->close();
+        if (!$allowed) {
+            echo "ERROR|0|Unauthorized program selection.";
+            exit;
+        }
+    }
 
     // Check if this header already exists
     $sql = "SELECT prospectus_id 
@@ -358,6 +505,10 @@ if (isset($_POST['save_year_sem'])) {
 
     if ($prospectus_id <= 0 || $year_level === '' || $semester === '') {
         echo "ERROR|0|Missing prospectus, year level, or semester.";
+        exit;
+    }
+    if (!can_access_prospectus($conn, $prospectus_id, $role, $myCollege)) {
+        echo "ERROR|0|Unauthorized prospectus access.";
         exit;
     }
 
@@ -434,6 +585,17 @@ if (isset($_POST['save_prospectus_subject'])) {
         echo "ERROR|0|Missing Year/Sem (pys_id) or Subject.";
         exit;
     }
+    if (!can_access_pys($conn, $pys_id, $role, $myCollege)) {
+        echo "ERROR|0|Unauthorized Year/Sem access.";
+        exit;
+    }
+    if ($lec_units < 0 || $lab_units < 0 || $total_units < 0 || $sort_order < 1) {
+        echo "ERROR|0|Invalid units or sort order.";
+        exit;
+    }
+    if ($total_units < ($lec_units + $lab_units)) {
+        $total_units = $lec_units + $lab_units;
+    }
 
     global $conn;
 
@@ -507,6 +669,10 @@ if (isset($_POST['delete_prospectus_subject'])) {
         echo "ERROR|Invalid subject reference.";
         exit;
     }
+    if (!can_access_ps($conn, $ps_id, $role, $myCollege)) {
+        echo "ERROR|Unauthorized subject access.";
+        exit;
+    }
 
     global $conn;
 
@@ -535,6 +701,10 @@ if (isset($_POST['load_year_sem'])) {
 
     if ($prospectus_id <= 0) {
         echo '<p class="text-muted">No prospectus selected.</p>';
+        exit;
+    }
+    if (!can_access_prospectus($conn, $prospectus_id, $role, $myCollege)) {
+        echo '<p class="text-muted">Unauthorized prospectus access.</p>';
         exit;
     }
 
@@ -582,6 +752,8 @@ if (isset($_POST['load_year_sem'])) {
         $sub_res = $sub_stmt->get_result();
 
         $rows_html       = '';
+        $total_lec_sum   = 0;
+        $total_lab_sum   = 0;
         $total_units_sum = 0;
         $ctr             = 1;
 
@@ -589,6 +761,8 @@ if (isset($_POST['load_year_sem'])) {
                 $lecu   = (int)$s['lec_units'];
                 $labu   = (int)$s['lab_units'];
                 $t_units = isset($s['total_units']) ? (int)$s['total_units'] : ($lecu + $labu);
+                $total_lec_sum += $lecu;
+                $total_lab_sum += $labu;
                 $total_units_sum += $t_units;
 
                 $ps_id   = $s['ps_id'];
@@ -705,7 +879,9 @@ if (isset($_POST['load_year_sem'])) {
                   </tbody>
                   <tfoot>
                     <tr>
-                      <th colspan="5" class="text-end">Total Units</th>
+                      <th colspan="3" class="text-end">Totals</th>
+                      <th class="text-center"><?= $total_lec_sum ?></th>
+                      <th class="text-center"><?= $total_lab_sum ?></th>
                       <th class="text-center"><?= $total_units_sum ?></th>
                       <th colspan="2"></th>
                     </tr>

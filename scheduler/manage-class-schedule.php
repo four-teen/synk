@@ -8,6 +8,11 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     exit;
 }
 
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
 /* ==============================
    BUILD ROOM OPTIONS (UI USE)
 ============================== */
@@ -98,6 +103,18 @@ body.swal2-shown .modal {
     text-align: center;
     font-size: 0.85rem;
     min-height: 48px;
+}
+
+.schedule-group-card {
+    border: 1px solid #c9d3ea;
+    border-radius: 10px;
+}
+
+.schedule-group-header {
+    background: #e9f0ff;
+    border-bottom: 2px solid #b8c8ea;
+    color: #1f2a44;
+    font-weight: 700;
 }
 
 .matrix-vacant {
@@ -258,7 +275,7 @@ body.swal2-shown .modal {
 <select id="prospectus_id" class="form-select">
 <option value="">Select...</option>
 <?php
-  $q = $conn->query("
+  $prosStmt = $conn->prepare("
     SELECT
       h.prospectus_id,
       h.effective_sy,
@@ -267,9 +284,13 @@ body.swal2-shown .modal {
       p.major
     FROM tbl_prospectus_header h
     JOIN tbl_program p ON p.program_id = h.program_id
-    WHERE p.college_id = '{$_SESSION['college_id']}'
+    WHERE p.college_id = ?
     ORDER BY p.program_name, p.major
   ");
+  $prosCollegeId = (int)$_SESSION['college_id'];
+  $prosStmt->bind_param("i", $prosCollegeId);
+  $prosStmt->execute();
+  $q = $prosStmt->get_result();
   while ($r = $q->fetch_assoc()) {
 
       $label = $r['program_code'] . " — " . $r['program_name'];
@@ -326,7 +347,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 </div>
 
-<!-- TABLE -->
+<!-- LIST -->
 <div class="card">
     <div class="card-header">
         <div class="d-flex justify-content-between align-items-center">
@@ -343,28 +364,10 @@ while ($ay = $ayQ->fetch_assoc()) {
         </div>
     </div>
 
-    <div class="table-responsive p-3">
-    <table class="table table-bordered table-hover" id="scheduleTable">
-        <thead>
-        <tr>
-            <th>Section</th>
-            <th>Subject</th>
-            <th>Description</th>
-            <th>Days</th>
-            <th>Time</th>
-            <th>Room</th>
-            <th>Status</th>
-            <th>Action</th>
-        </tr>
-        </thead>
-        <tbody>
-            <tr>
-                <td colspan="10" class="text-center text-muted">
-                Select filters and click <strong>Load Classes</strong>.
-                </td>
-            </tr>
-        </tbody>
-    </table>
+    <div class="p-3" id="scheduleListContainer">
+      <div class="text-center text-muted py-4">
+        Select filters and click <strong>Load Classes</strong>.
+      </div>
     </div>
 </div>
 
@@ -599,6 +602,32 @@ while ($ay = $ayQ->fetch_assoc()) {
     <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
+    const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
+
+    $.ajaxPrefilter(function (options) {
+      const method = (options.type || options.method || "GET").toUpperCase();
+      if (method !== "POST") return;
+
+      if (typeof options.data === "string") {
+        const tokenPair = "csrf_token=" + encodeURIComponent(CSRF_TOKEN);
+        options.data = options.data ? (options.data + "&" + tokenPair) : tokenPair;
+        return;
+      }
+
+      if (Array.isArray(options.data)) {
+        options.data.push({ name: "csrf_token", value: CSRF_TOKEN });
+        return;
+      }
+
+      if ($.isPlainObject(options.data)) {
+        options.data.csrf_token = CSRF_TOKEN;
+        return;
+      }
+
+      if (!options.data) {
+        options.data = { csrf_token: CSRF_TOKEN };
+      }
+    });
 
     function buildDayButtons(containerId, prefix) {
       const days = ['M','T','W','Th','F','S'];
@@ -617,7 +646,6 @@ while ($ay = $ayQ->fetch_assoc()) {
     }
 
 
-    const COLLEGE_ID = <?= (int)$_SESSION['college_id'] ?>;
     function loadScheduleTable() {
 
         const pid = $("#prospectus_id").val();
@@ -634,8 +662,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         }
 
         // Show loading state
-        $("#scheduleTable tbody").html(
-            "<tr><td colspan='10' class='text-center text-muted'>Loading classes...</td></tr>"
+        $("#scheduleListContainer").html(
+            "<div class='text-center text-muted py-4'>Loading classes...</div>"
         );
 
         $.post(
@@ -646,11 +674,11 @@ while ($ay = $ayQ->fetch_assoc()) {
                 semester: sem
             },
             function (rows) {
-                $("#scheduleTable tbody").html(rows);
+                $("#scheduleListContainer").html(rows);
             }
         ).fail(function (xhr) {
-            $("#scheduleTable tbody").html(
-                "<tr><td colspan='10' class='text-center text-danger'>Failed to load classes.</td></tr>"
+            $("#scheduleListContainer").html(
+                "<div class='text-center text-danger py-4'>Failed to load classes.</div>"
             );
             console.error(xhr.responseText);
         });
@@ -694,8 +722,7 @@ $("#btnShowMatrix").on("click", function () {
     {
       prospectus_id: pid,
       ay_id: ay,
-      semester: sem,
-      college_id: COLLEGE_ID   // ✅ FIX HERE
+      semester: sem
     },
     function (html) {
       $("#matrixContainer").html(html);
@@ -1086,7 +1113,7 @@ success: function (res) {
             showConfirmButton: false
         });
 
-        $("#scheduleModal").modal("hide");
+        $("#dualScheduleModal").modal("hide");
 
         setTimeout(function () {
             loadScheduleTable();

@@ -210,7 +210,6 @@ if (isset($_POST['login'])) {
 
     <!-- Core JS -->
     <!-- build:js assets/vendor/js/core.js -->
-    <script src="https://code.jquery.com/jquery-3.7.1.min.js"></script>
     <script src="assets/vendor/libs/jquery/jquery.js"></script>
     <script src="assets/vendor/libs/popper/popper.js"></script>
     <script src="assets/vendor/js/bootstrap.js"></script>

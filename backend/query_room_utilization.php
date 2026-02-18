@@ -10,7 +10,7 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
 $college_id = (int)$_SESSION['college_id'];
 
 /* ==========================================================
-   MAP SEMESTER LABEL → DB VALUE
+   MAP SEMESTER LABEL -> DB VALUE
 ========================================================== */
 function mapSemester($s) {
     if ($s === '1st') return '1';
@@ -33,9 +33,6 @@ if (isset($_POST['load_room_schedule'])) {
         exit;
     }
 
-    /* ==========================================================
-    SINGLE ROOM SCHEDULE (ADD ROOM CAPACITY)
-    ========================================================== */
     $sql = "
         SELECT
             cs.time_start,
@@ -103,78 +100,97 @@ if (isset($_POST['load_all_rooms'])) {
 
     $rooms = [];
 
-    $roomQ = $conn->query("
+    // Load all active rooms first so rooms without schedules still appear.
+    $roomStmt = $conn->prepare("
         SELECT room_id, room_code
         FROM tbl_rooms
-        WHERE college_id = $college_id
+        WHERE college_id = ?
           AND status = 'active'
         ORDER BY room_code
     ");
+    $roomStmt->bind_param("i", $college_id);
+    $roomStmt->execute();
+    $roomRes = $roomStmt->get_result();
 
-    while ($r = $roomQ->fetch_assoc()) {
-
-        $groups = [];
-
-        $sql = "
-            SELECT
-                cs.time_start,
-                cs.time_end,
-                cs.days_json,
-                sm.sub_code AS subject_code,
-                sec.full_section AS section_name,
-                COALESCE(
-                    CONCAT(f.last_name, ', ', f.first_name),
-                    'TBA'
-                ) AS faculty_name
-            FROM tbl_class_schedule cs
-            INNER JOIN tbl_prospectus_offering po
-                ON po.offering_id = cs.offering_id
-            INNER JOIN tbl_prospectus_subjects ps
-                ON ps.ps_id = po.ps_id
-            INNER JOIN tbl_subject_masterlist sm
-                ON sm.sub_id = ps.sub_id
-            INNER JOIN tbl_sections sec
-                ON sec.section_id = po.section_id
-            INNER JOIN tbl_academic_years ay
-                ON ay.ay_id = po.ay_id
-            LEFT JOIN tbl_faculty_workload_sched fws
-                ON fws.schedule_id = cs.schedule_id
-            LEFT JOIN tbl_faculty f
-                ON f.faculty_id = fws.faculty_id
-            WHERE cs.room_id = ?
-              AND ay.ay = ?
-              AND po.semester = ?
-            ORDER BY cs.time_start
-        ";
-
-        $stmt = $conn->prepare($sql);
-        $stmt->bind_param("iss", $r['room_id'], $ay, $semester);
-        $stmt->execute();
-
-        $rs = $stmt->get_result();
-        while ($row = $rs->fetch_assoc()) {
-
-            // Decode days_json → array (ex: ["M","W"])
-            $days = json_decode($row['days_json'], true) ?: [];
-
-            // Normalize day pattern key (MW, TTh, F, etc.)
-            $dayKey = implode('', $days);
-
-            if (!isset($groups[$dayKey])) {
-                $groups[$dayKey] = [];
-            }
-
-            $groups[$dayKey][] = $row;
-        }
-
-        $rooms[] = [
-            "room_id"   => $r['room_id'],
+    while ($r = $roomRes->fetch_assoc()) {
+        $rooms[(int)$r['room_id']] = [
+            "room_id"   => (int)$r['room_id'],
             "room_code" => $r['room_code'],
-            "groups"    => $groups
+            "groups"    => []
         ];
     }
 
-    echo json_encode($rooms);
+    if (empty($rooms)) {
+        echo json_encode([]);
+        exit;
+    }
+
+    // Single query for all rooms (replaces query-per-room).
+    $schedSql = "
+        SELECT
+            cs.room_id,
+            cs.time_start,
+            cs.time_end,
+            cs.days_json,
+            sm.sub_code AS subject_code,
+            sec.full_section AS section_name,
+            COALESCE(
+                CONCAT(f.last_name, ', ', f.first_name),
+                'TBA'
+            ) AS faculty_name
+        FROM tbl_class_schedule cs
+        INNER JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        INNER JOIN tbl_prospectus_offering po
+            ON po.offering_id = cs.offering_id
+        INNER JOIN tbl_prospectus_subjects ps
+            ON ps.ps_id = po.ps_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        INNER JOIN tbl_sections sec
+            ON sec.section_id = po.section_id
+        INNER JOIN tbl_academic_years ay
+            ON ay.ay_id = po.ay_id
+        LEFT JOIN tbl_faculty_workload_sched fws
+            ON fws.schedule_id = cs.schedule_id
+        LEFT JOIN tbl_faculty f
+            ON f.faculty_id = fws.faculty_id
+        WHERE r.college_id = ?
+          AND r.status = 'active'
+          AND ay.ay = ?
+          AND po.semester = ?
+        ORDER BY r.room_code, cs.time_start
+    ";
+
+    $schedStmt = $conn->prepare($schedSql);
+    $schedStmt->bind_param("iss", $college_id, $ay, $semester);
+    $schedStmt->execute();
+    $schedRes = $schedStmt->get_result();
+
+    while ($row = $schedRes->fetch_assoc()) {
+        $roomId = (int)$row['room_id'];
+        if (!isset($rooms[$roomId])) {
+            continue;
+        }
+
+        $days = json_decode($row['days_json'], true) ?: [];
+        $dayKey = implode('', $days);
+
+        if (!isset($rooms[$roomId]['groups'][$dayKey])) {
+            $rooms[$roomId]['groups'][$dayKey] = [];
+        }
+
+        $rooms[$roomId]['groups'][$dayKey][] = [
+            "time_start"   => $row['time_start'],
+            "time_end"     => $row['time_end'],
+            "days_json"    => $row['days_json'],
+            "subject_code" => $row['subject_code'],
+            "section_name" => $row['section_name'],
+            "faculty_name" => $row['faculty_name']
+        ];
+    }
+
+    echo json_encode(array_values($rooms));
     exit;
 }
 

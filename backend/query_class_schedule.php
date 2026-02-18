@@ -16,6 +16,24 @@ function respond($status, $message = "", $extra = []) {
     exit;
 }
 
+if ($_SERVER['REQUEST_METHOD'] !== 'POST') {
+    respond("error", "Invalid request method.");
+}
+
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
+    respond("error", "Unauthorized access.");
+}
+
+$csrf_token = $_POST['csrf_token'] ?? '';
+if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csrf_token)) {
+    respond("error", "CSRF validation failed.");
+}
+
+$college_id = (int)($_SESSION['college_id'] ?? 0);
+if ($college_id <= 0) {
+    respond("error", "Missing college context.");
+}
+
 /* =====================================================
    HELPERS
 ===================================================== */
@@ -32,19 +50,33 @@ function time_overlap($s1, $e1, $s2, $e2) {
     return ($s1 < $e2) && ($e1 > $s2);
 }
 
+function mark_offering_scheduled($conn, $offering_id) {
+    $upd = $conn->prepare("
+        UPDATE tbl_prospectus_offering
+        SET status = 'scheduled'
+        WHERE offering_id = ?
+          AND (status IS NULL OR status != 'locked')
+    ");
+    $upd->bind_param("i", $offering_id);
+    $upd->execute();
+    $upd->close();
+}
+
 /* =====================================================
    LOAD OFFERING CONTEXT
 ===================================================== */
-function load_context($conn, $offering_id) {
+function load_context($conn, $offering_id, $college_id) {
     $sql = "
         SELECT o.section_id, o.ay_id, o.semester, sec.section_name
         FROM tbl_prospectus_offering o
         JOIN tbl_sections sec ON sec.section_id = o.section_id
+        JOIN tbl_program p ON p.program_id = o.program_id
         WHERE o.offering_id = ?
+          AND p.college_id = ?
         LIMIT 1
     ";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $offering_id);
+    $stmt->bind_param("ii", $offering_id, $college_id);
     $stmt->execute();
     return $stmt->get_result()->fetch_assoc();
 }
@@ -121,12 +153,15 @@ if (isset($_POST['load_dual_schedule'])) {
     $sql = "
         SELECT schedule_type, schedule_group_id,
                room_id, days_json, time_start, time_end
-        FROM tbl_class_schedule
-        WHERE offering_id = ?
+        FROM tbl_class_schedule cs
+        JOIN tbl_prospectus_offering o ON o.offering_id = cs.offering_id
+        JOIN tbl_program p ON p.program_id = o.program_id
+        WHERE cs.offering_id = ?
+          AND p.college_id = ?
         ORDER BY schedule_type
     ";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $offering_id);
+    $stmt->bind_param("ii", $offering_id, $college_id);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -171,7 +206,7 @@ if (isset($_POST['save_schedule'])) {
     if ($time_end <= $time_start)
         respond("error","End time must be later than start time.");
 
-    $ctx = load_context($conn, $offering_id);
+    $ctx = load_context($conn, $offering_id, $college_id);
     if (!$ctx) respond("error","Offering not found.");
 
     check_conflict($conn, $ctx, $offering_id, $room_id, $time_start, $time_end, $days, "LEC");
@@ -200,6 +235,7 @@ if (isset($_POST['save_schedule'])) {
     );
     $stmt->execute();
 
+    mark_offering_scheduled($conn, $offering_id);
     respond("ok","Lecture schedule saved.");
 }
 
@@ -214,7 +250,7 @@ if (isset($_POST['save_dual_schedule'])) {
     if (!$offering_id || empty($schedules))
         respond("error","Invalid dual schedule.");
 
-    $ctx = load_context($conn, $offering_id);
+    $ctx = load_context($conn, $offering_id, $college_id);
     if (!$ctx) respond("error","Offering not found.");
 
     // Normalize
@@ -279,5 +315,6 @@ if (isset($_POST['save_dual_schedule'])) {
         $stmt->execute();
     }
 
+    mark_offering_scheduled($conn, $offering_id);
     respond("ok","Lecture and Laboratory schedules saved.");
 }

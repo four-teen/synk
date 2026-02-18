@@ -400,45 +400,8 @@ $(document).ready(function(){
             console.error("Faculty load chart error:", xhr.responseText);
         }
     });
-
-
-$.ajax({
-    url: "../backend/dashboard_counts.php",
-    type: "POST",
-    dataType: "json",
-
-    success: function(res) {
-        console.log("Dashboard Output:", res);  // 💥 CHECK HERE
-    },
-
-    error: function(xhr) {
-        console.error("AJAX ERROR:", xhr.responseText);
-    }
 });
 
-
-    loadDashboardCounts();
-
-});
-
-function loadDashboardCounts() {
-
-$.ajax({
-    url: "../backend/dashboard_counts.php",
-    type: "POST",
-    dataType: "json",
-
-    success: function(res) {
-        console.log("Dashboard Output:", res);  // 💥 CHECK HERE
-    },
-
-    error: function(xhr) {
-        console.error("AJAX ERROR:", xhr.responseText);
-    }
-});
-
-}
- 
 $(document).ready(function () {
 
     function animateCount(elementId, target) {

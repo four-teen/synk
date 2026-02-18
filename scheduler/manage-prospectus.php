@@ -2,6 +2,21 @@
     session_start();
     ob_start();
     include '../backend/db.php';
+
+    if (!isset($_SESSION['user_id'])) {
+        header("Location: ../index.php");
+        exit;
+    }
+
+    if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'scheduler'], true)) {
+        header("Location: ../index.php");
+        exit;
+    }
+
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+    $csrf_token = $_SESSION['csrf_token'];
 ?>
 <!DOCTYPE html>
 <html
@@ -121,8 +136,9 @@
                     <option value="">Select Program</option>
 
                     <?php
-                      $role = $_SESSION['role'];
-                      $myCollege = $_SESSION['college_id'];
+                      $role = $_SESSION['role'] ?? '';
+                      $myCollege = intval($_SESSION['college_id'] ?? 0);
+                      $prog = false;
 
                       // ADMIN → can see ALL programs
                       if ($role === 'admin') {
@@ -142,7 +158,7 @@
 
                       } 
                       // SCHEDULER → can see ONLY programs under *their* college
-                      else if ($role === 'scheduler') {
+                      else if ($role === 'scheduler' && $myCollege > 0) {
 
                       $prog = $conn->query("
                         SELECT 
@@ -157,6 +173,10 @@
                           AND p.college_id = '$myCollege'
                         ORDER BY p.program_name, p.major
                       ");
+                      }
+
+                      if (!$prog) {
+                          $prog = $conn->query("SELECT program_id, program_code, program_name, major, '' AS college_name FROM tbl_program WHERE 1=0");
                       }
 
                       while ($r = $prog->fetch_assoc()) {
@@ -499,6 +519,33 @@
 
 <script>
 
+const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
+
+$.ajaxPrefilter(function (options) {
+    const method = (options.type || options.method || "GET").toUpperCase();
+    if (method !== "POST") return;
+
+    if (typeof options.data === "string") {
+        const tokenPair = "csrf_token=" + encodeURIComponent(CSRF_TOKEN);
+        options.data = options.data ? (options.data + "&" + tokenPair) : tokenPair;
+        return;
+    }
+
+    if (Array.isArray(options.data)) {
+        options.data.push({ name: "csrf_token", value: CSRF_TOKEN });
+        return;
+    }
+
+    if ($.isPlainObject(options.data)) {
+        options.data.csrf_token = CSRF_TOKEN;
+        return;
+    }
+
+    if (!options.data) {
+        options.data = { csrf_token: CSRF_TOKEN };
+    }
+});
+
 // ===============================
 // EDIT SUBJECTS
 // ===============================
@@ -575,7 +622,13 @@ $(document).on("click", ".btnEditSubject", function () {
       { load_subject_for_edit: 1, ps_id: ps_id },
       function(resp){
 
-        let item = JSON.parse(resp);
+        let item = {};
+        try {
+          item = JSON.parse(resp);
+        } catch (e) {
+          Swal.fire("Error", "Invalid response while loading subject.", "error");
+          return;
+        }
 
         $("#edit_sub_id").val(item.sub_id).trigger("change");
         $("#edit_lec_units").val(item.lec_units);
@@ -603,7 +656,12 @@ function loadPrerequisiteOptionsEdit(prospectus_id) {
   return $.post("../backend/query_prospectus.php",
     { get_all_subjects: 1, prospectus_id },
     function(res){
-      let data = JSON.parse(res);
+      let data = [];
+      try {
+        data = JSON.parse(res);
+      } catch (e) {
+        data = [];
+      }
       let select = $("#edit_prerequisites");
       select.empty();
 
@@ -637,7 +695,12 @@ function loadPrerequisiteOptions(prospectus_id) {
         "../backend/query_prospectus.php",
         { get_all_subjects: 1, prospectus_id },
         function(res) {
-            let data = JSON.parse(res);
+            let data = [];
+            try {
+                data = JSON.parse(res);
+            } catch (e) {
+                data = [];
+            }
             let select = $("#ps_prerequisites");
 
             select.empty();
@@ -775,6 +838,9 @@ $('#ps_sub_id').select2({
                         `);
                     });
 
+            },
+            error: function () {
+                Swal.fire("Error", "Unable to load prospectus list.", "error");
             }
         });
     });
@@ -840,11 +906,11 @@ $('#ps_sub_id').select2({
                 let msg = parts[2];
 
                 Swal.fire({
-                    icon: status === "OK" ? "success" : "error",
+                    icon: (status === "OK" || status === "EXISTING") ? "success" : "error",
                     title: msg
                 });
 
-                if (status === "OK") {
+                if (status === "OK" || status === "EXISTING") {
                     $("#prospectus_id").val(id);
                     $("#ys_prospectus_id").val(id);
                     $("#yearSemCard").show();
