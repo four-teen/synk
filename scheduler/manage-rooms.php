@@ -7,8 +7,37 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     exit;
 }
 
-$college_id = $_SESSION['college_id'];
-$college_name = $_SESSION['college_name'];
+$college_id = (int)($_SESSION['college_id'] ?? 0);
+$college_name = $_SESSION['college_name'] ?? '';
+$campus_id = 0;
+
+$campusQ = $conn->prepare("SELECT campus_id FROM tbl_college WHERE college_id = ? LIMIT 1");
+$campusQ->bind_param("i", $college_id);
+$campusQ->execute();
+$campusRow = $campusQ->get_result()->fetch_assoc();
+if ($campusRow) {
+    $campus_id = (int)$campusRow['campus_id'];
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+$csrf_token = $_SESSION['csrf_token'];
+
+$ayOptions = [];
+$ayQ = $conn->query("SELECT ay_id, ay FROM tbl_academic_years WHERE status='active' ORDER BY ay DESC");
+while ($ay = $ayQ->fetch_assoc()) {
+    $ayOptions[] = $ay;
+}
+
+$collegeOptions = [];
+$cQ = $conn->prepare("SELECT college_id, college_name FROM tbl_college WHERE status='active' AND campus_id = ? ORDER BY college_name");
+$cQ->bind_param("i", $campus_id);
+$cQ->execute();
+$cRes = $cQ->get_result();
+while ($c = $cRes->fetch_assoc()) {
+    $collegeOptions[] = $c;
+}
 ?>
 
 <!DOCTYPE html>
@@ -24,8 +53,7 @@ $college_name = $_SESSION['college_name'];
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
     <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-    <link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
 
     <link rel="stylesheet" type="text/css" href="custom_css.css">
     <script src="../assets/vendor/js/helpers.js"></script>
@@ -36,8 +64,6 @@ $college_name = $_SESSION['college_name'];
             padding-top: 0.5rem !important;
             padding-bottom: 0.5rem !important;
         }
-
-
     </style>
 </head>
 
@@ -52,23 +78,50 @@ $college_name = $_SESSION['college_name'];
 <div class="content-wrapper">
 <div class="container-xxl flex-grow-1 container-p-y">
 
-    <!-- Header -->
     <div class="d-flex justify-content-between align-items-center mb-3">
         <h4 class="fw-bold">
             <i class="bx bx-building-house me-2"></i>
-            Room Management <small class="text-muted">(<?= $college_name ?>)</small>
+            Room Management <small class="text-muted">(<?= htmlspecialchars($college_name) ?>)</small>
         </h4>
 
-        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRoomModal">
+        <button class="btn btn-primary" data-bs-toggle="modal" data-bs-target="#addRoomModal" id="btnOpenAddRoom">
             <i class="bx bx-plus"></i> Add Room
         </button>
     </div>
 
-    <!-- Table -->
+    <div class="card mb-3">
+        <div class="card-header">
+            <h5 class="m-0">Academic Context</h5>
+            <small class="text-muted">Room access and sharing are controlled by Academic Year + Semester.</small>
+        </div>
+        <div class="card-body">
+            <div class="row g-3">
+                <div class="col-md-6">
+                    <label class="form-label">Academic Year</label>
+                    <select id="ay_id" class="form-select">
+                        <option value="">Select...</option>
+                        <?php foreach ($ayOptions as $ay): ?>
+                            <option value="<?= (int)$ay['ay_id'] ?>"><?= htmlspecialchars($ay['ay']) ?></option>
+                        <?php endforeach; ?>
+                    </select>
+                </div>
+                <div class="col-md-6">
+                    <label class="form-label">Semester</label>
+                    <select id="semester" class="form-select">
+                        <option value="">Select...</option>
+                        <option value="1">First Semester</option>
+                        <option value="2">Second Semester</option>
+                        <option value="3">Midyear</option>
+                    </select>
+                </div>
+            </div>
+        </div>
+    </div>
+
     <div class="card">
         <div class="card-header">
             <h5 class="m-0">Room List</h5>
-            <small class="text-muted">All rooms under <?= $college_name ?>.</small>
+            <small class="text-muted">Rooms accessible to <?= htmlspecialchars($college_name) ?> in selected AY + Semester.</small>
         </div>
 
         <div class="table-responsive p-3">
@@ -78,6 +131,9 @@ $college_name = $_SESSION['college_name'];
                         <th>#</th>
                         <th>Room Code</th>
                         <th>Room Name</th>
+                        <th>Owner Code</th>
+                        <th>Access</th>
+                        <th>Shared With</th>
                         <th>Type</th>
                         <th>Capacity</th>
                         <th class="text-end">Actions</th>
@@ -95,7 +151,6 @@ $college_name = $_SESSION['college_name'];
 
 </div>
 
-<!-- ADD ROOM MODAL -->
 <div class="modal fade" id="addRoomModal">
   <div class="modal-dialog modal-md modal-dialog-centered">
     <div class="modal-content">
@@ -107,7 +162,6 @@ $college_name = $_SESSION['college_name'];
 
       <div class="modal-body">
         <form id="addRoomForm">
-          
           <div class="mb-3">
             <label class="form-label">Room Code <span class="text-danger">*</span></label>
             <input type="text" name="room_code" class="form-control" required placeholder="e.g., CCS-101">
@@ -132,6 +186,15 @@ $college_name = $_SESSION['college_name'];
             <input type="number" name="capacity" class="form-control" value="0">
           </div>
 
+          <div class="mb-3">
+            <label class="form-label">Shared With Colleges (this term)</label>
+            <select name="shared_colleges[]" id="add_shared_colleges" class="form-select" multiple>
+              <?php foreach ($collegeOptions as $c): ?>
+                <?php if ((int)$c['college_id'] === $college_id) continue; ?>
+                <option value="<?= (int)$c['college_id'] ?>"><?= htmlspecialchars($c['college_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
         </form>
       </div>
 
@@ -144,7 +207,6 @@ $college_name = $_SESSION['college_name'];
   </div>
 </div>
 
-<!-- EDIT ROOM MODAL -->
 <div class="modal fade" id="editRoomModal">
   <div class="modal-dialog modal-md modal-dialog-centered">
     <div class="modal-content">
@@ -156,7 +218,6 @@ $college_name = $_SESSION['college_name'];
 
       <div class="modal-body">
         <form id="editRoomForm">
-
           <input type="hidden" id="edit_room_id" name="room_id">
 
           <div class="mb-3">
@@ -183,6 +244,15 @@ $college_name = $_SESSION['college_name'];
             <input type="number" id="edit_room_capacity" name="capacity" class="form-control">
           </div>
 
+          <div class="mb-3">
+            <label class="form-label">Shared With Colleges (this term)</label>
+            <select name="shared_colleges[]" id="edit_shared_colleges" class="form-select" multiple>
+              <?php foreach ($collegeOptions as $c): ?>
+                <?php if ((int)$c['college_id'] === $college_id) continue; ?>
+                <option value="<?= (int)$c['college_id'] ?>"><?= htmlspecialchars($c['college_name']) ?></option>
+              <?php endforeach; ?>
+            </select>
+          </div>
         </form>
       </div>
 
@@ -195,27 +265,46 @@ $college_name = $_SESSION['college_name'];
   </div>
 </div>
 
-
-<!-- JS -->
-    <script src="../assets/vendor/libs/jquery/jquery.js"></script>
-    <script src="../assets/vendor/libs/popper/popper.js"></script>
-    <script src="../assets/vendor/js/bootstrap.js"></script>
-    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
-    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-    <script src="../assets/vendor/js/menu.js"></script>
-    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
-    <script src="../assets/js/main.js"></script>
-    <script src="../assets/js/dashboards-analytics.js"></script>
+<script src="../assets/vendor/libs/jquery/jquery.js"></script>
+<script src="../assets/vendor/libs/popper/popper.js"></script>
+<script src="../assets/vendor/js/bootstrap.js"></script>
+<script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+<script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+<script src="../assets/vendor/js/menu.js"></script>
+<script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
+<script src="../assets/js/main.js"></script>
+<script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
 let roomTable;
+const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
+
+function getTermOrWarn() {
+    const ay_id = $("#ay_id").val();
+    const semester = $("#semester").val();
+    if (!ay_id || !semester) {
+        Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+        return null;
+    }
+    return { ay_id, semester };
+}
 
 $(document).ready(function () {
+    $('#add_shared_colleges').select2({
+        width: '100%',
+        placeholder: "Select colleges...",
+        dropdownParent: $('#addRoomModal')
+    });
 
-    // 1️⃣ Initialize DataTable FIRST (no ajax!)
+    $('#edit_shared_colleges').select2({
+        width: '100%',
+        placeholder: "Select colleges...",
+        dropdownParent: $('#editRoomModal')
+    });
+
     roomTable = $('#roomTable').DataTable({
         paging: true,
         searching: true,
@@ -224,43 +313,73 @@ $(document).ready(function () {
         pageLength: 10,
         responsive: true,
         columnDefs: [
-            { orderable: false, targets: -1 }, // Actions column
+            { orderable: false, targets: -1 },
             { className: "text-end", targets: -1 }
         ]
     });
 
-    // 2️⃣ Load initial data
-    loadRooms();
+    $("#ay_id, #semester").on("change", function () {
+        if ($("#ay_id").val() && $("#semester").val()) {
+            loadRooms();
+        } else {
+            roomTable.clear().draw();
+        }
+    });
+
+    $("#btnOpenAddRoom").on("click", function () {
+        const term = getTermOrWarn();
+        if (!term) {
+            $("#addRoomModal").modal("hide");
+            return;
+        }
+    });
 });
 
-
-// ==========================
-// LOAD ROOMS (HTML rows)
-// ==========================
 function loadRooms() {
-    $.post('../backend/query_rooms.php', { load_rooms: 1 }, function (data) {
+    const term = getTermOrWarn();
+    if (!term) return;
 
-        // Clear DataTable safely
-        roomTable.clear().draw();
+    $.post('../backend/query_rooms.php', {
+        load_rooms: 1,
+        ay_id: term.ay_id,
+        semester: term.semester,
+        csrf_token: CSRF_TOKEN
+    }, function (data) {
+        const raw = (data || '').toString().trim();
 
-        // Inject new rows
-        $('#roomTable tbody').html(data);
+        if (raw === 'schema_missing') {
+            roomTable.clear().draw();
+            Swal.fire('Setup Required', 'Run backend/sql/phase3_room_term_sharing.sql first.', 'warning');
+            return;
+        }
 
-        // Re-register rows to DataTable
-        roomTable.rows.add($('#roomTable tbody tr')).draw();
+        if (raw === 'missing_term') {
+            roomTable.clear().draw();
+            return;
+        }
+
+        roomTable.clear();
+        if (raw !== '') {
+            const $tmp = $('<tbody>').html(raw);
+            const $validRows = $tmp.find('tr').filter(function () {
+                return $(this).children('td,th').length === 9;
+            });
+            if ($validRows.length > 0) {
+                roomTable.rows.add($validRows);
+            }
+        }
+        roomTable.draw();
     });
 }
 
-
-// ==========================
-// SAVE ROOM (MODAL STAYS OPEN)
-// ==========================
 $("#btnSaveRoom").click(function () {
+    const term = getTermOrWarn();
+    if (!term) return;
 
     $.post('../backend/query_rooms.php',
-        $("#addRoomForm").serialize() + "&save_room=1",
+        $("#addRoomForm").serialize() +
+        `&save_room=1&ay_id=${encodeURIComponent(term.ay_id)}&semester=${encodeURIComponent(term.semester)}&csrf_token=${encodeURIComponent(CSRF_TOKEN)}`,
         function(res) {
-
             if (res === "duplicate") {
                 Swal.fire({
                     icon: "warning",
@@ -284,38 +403,35 @@ $("#btnSaveRoom").click(function () {
                 });
 
                 $("#addRoomForm")[0].reset();
+                $("#add_shared_colleges").val(null).trigger("change");
                 loadRooms();
             }
         }
     );
 });
 
-
-
-// ==========================
-// OPEN EDIT MODAL
-// ==========================
 $(document).on("click", ".btnEdit", function () {
-
     $("#edit_room_id").val($(this).data("id"));
     $("#edit_room_code").val($(this).data("code"));
     $("#edit_room_name").val($(this).data("name"));
     $("#edit_room_type").val($(this).data("type"));
     $("#edit_room_capacity").val($(this).data("capacity"));
 
+    const sharedRaw = ($(this).data("shared-colleges") || "").toString();
+    const sharedArr = sharedRaw ? sharedRaw.split(",") : [];
+    $("#edit_shared_colleges").val(sharedArr).trigger("change");
+
     $("#editRoomModal").modal("show");
 });
 
-
-// ==========================
-// UPDATE ROOM
-// ==========================
 $("#btnUpdateRoom").click(function () {
+    const term = getTermOrWarn();
+    if (!term) return;
 
     $.post('../backend/query_rooms.php',
-        $("#editRoomForm").serialize() + "&update_room=1",
+        $("#editRoomForm").serialize() +
+        `&update_room=1&ay_id=${encodeURIComponent(term.ay_id)}&semester=${encodeURIComponent(term.semester)}&csrf_token=${encodeURIComponent(CSRF_TOKEN)}`,
         function(res) {
-
             if (res === "duplicate") {
                 Swal.fire("Duplicate!", "Room code already exists.", "warning");
                 return;
@@ -334,17 +450,15 @@ $("#btnUpdateRoom").click(function () {
     );
 });
 
-
-// ==========================
-// DELETE ROOM
-// ==========================
 $(document).on("click", ".btnDelete", function () {
+    const term = getTermOrWarn();
+    if (!term) return;
 
     let id = $(this).data("id");
 
     Swal.fire({
         title: "Are you sure?",
-        text: "This room will be permanently deleted.",
+        text: "Room access for the selected AY and Semester will be removed.",
         icon: "warning",
         showCancelButton: true,
         confirmButtonColor: "#d33",
@@ -352,15 +466,18 @@ $(document).on("click", ".btnDelete", function () {
         confirmButtonText: "Delete",
         target: document.body
     }).then((result) => {
-
         if (result.isConfirmed) {
-
             $.post('../backend/query_rooms.php',
-                { delete_room: 1, room_id: id },
+                {
+                    delete_room: 1,
+                    room_id: id,
+                    ay_id: term.ay_id,
+                    semester: term.semester,
+                    csrf_token: CSRF_TOKEN
+                },
                 function(res) {
-
                     if (res === "success") {
-                        Swal.fire("Deleted!", "Room removed successfully.", "success");
+                        Swal.fire("Removed!", "Room access removed for selected term.", "success");
                         loadRooms();
                     }
                 }
@@ -368,10 +485,7 @@ $(document).on("click", ".btnDelete", function () {
         }
     });
 });
-
-
 </script>
-
 
 </body>
 </html>

@@ -18,23 +18,6 @@ $csrf_token = $_SESSION['csrf_token'];
 ============================== */
 $roomOptions = "";
 
-$college_id = (int)$_SESSION['college_id'];
-
-$roomQ = $conn->prepare("
-    SELECT room_id, room_name
-    FROM tbl_rooms
-    WHERE college_id = ?
-      AND status = 'active'
-    ORDER BY room_name
-");
-$roomQ->bind_param("i", $college_id);
-$roomQ->execute();
-$roomRes = $roomQ->get_result();
-
-while ($r = $roomRes->fetch_assoc()) {
-    $roomOptions .= "<option value='{$r['room_id']}'>{$r['room_name']}</option>";
-}
-
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -430,24 +413,6 @@ while ($ay = $ayQ->fetch_assoc()) {
     <div class="mb-3">
     <select id="sched_room_id" class="form-select">
     <option value="">Select room...</option>
-    <?php
-        $college_id = (int)$_SESSION['college_id'];
-
-        $rQ = $conn->prepare("
-            SELECT room_id, room_name
-            FROM tbl_rooms
-            WHERE college_id = ?
-              AND status = 'active'
-            ORDER BY room_name
-        ");
-        $rQ->bind_param("i", $college_id);
-        $rQ->execute();
-        $res = $rQ->get_result();
-
-        while ($r = $res->fetch_assoc()) {
-            echo "<option value='{$r['room_id']}'>{$r['room_name']}</option>";
-        }
-    ?>
     </select>
     </div>
 
@@ -513,7 +478,6 @@ while ($ay = $ayQ->fetch_assoc()) {
             <label class="form-label">Room</label>
             <select id="lec_room_id" class="form-select">
               <option value="">Select lecture room...</option>
-              <?= $roomOptions ?? '' ?>
             </select>
           </div>
         </div>
@@ -543,7 +507,6 @@ while ($ay = $ayQ->fetch_assoc()) {
             <label class="form-label">Room</label>
             <select id="lab_room_id" class="form-select">
               <option value="">Select laboratory room...</option>
-              <?= $roomOptions ?? '' ?>
             </select>
           </div>
         </div>
@@ -645,6 +608,87 @@ while ($ay = $ayQ->fetch_assoc()) {
       $("#" + containerId).html(html);
     }
 
+    let termRoomCacheKey = "";
+    let termRoomCache = [];
+
+    function escapeHtml(text) {
+        return String(text || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+    }
+
+    function applyTermRoomOptions(rooms) {
+        const list = Array.isArray(rooms) ? rooms : [];
+        const optionsHtml = list.map(r =>
+            `<option value="${parseInt(r.room_id, 10)}">${escapeHtml(r.label)}</option>`
+        ).join("");
+
+        $("#sched_room_id").html(`<option value="">Select room...</option>${optionsHtml}`);
+        $("#lec_room_id").html(`<option value="">Select lecture room...</option>${optionsHtml}`);
+        $("#lab_room_id").html(`<option value="">Select laboratory room...</option>${optionsHtml}`);
+    }
+
+    function clearTermRoomOptions() {
+        applyTermRoomOptions([]);
+        termRoomCache = [];
+        termRoomCacheKey = "";
+    }
+
+    function loadTermRoomOptions(forceReload = false) {
+        const dfd = $.Deferred();
+        const ay = $("#ay_id").val();
+        const sem = $("#semester").val();
+
+        if (!ay || !sem) {
+            clearTermRoomOptions();
+            dfd.reject("missing_term");
+            return dfd.promise();
+        }
+
+        const key = `${ay}-${sem}`;
+        if (!forceReload && key === termRoomCacheKey && termRoomCache.length > 0) {
+            applyTermRoomOptions(termRoomCache);
+            dfd.resolve(termRoomCache);
+            return dfd.promise();
+        }
+
+        $.ajax({
+            url: "../backend/load_term_room_options.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                ay_id: ay,
+                semester: sem
+            },
+            success: function (res) {
+                if (!res || res.status !== "ok") {
+                    clearTermRoomOptions();
+                    dfd.reject((res && res.message) ? res.message : "Failed to load rooms.");
+                    return;
+                }
+
+                termRoomCacheKey = key;
+                termRoomCache = Array.isArray(res.rooms) ? res.rooms : [];
+                if (termRoomCache.length === 0) {
+                    applyTermRoomOptions([]);
+                    dfd.reject("No rooms are available for selected AY and Semester.");
+                    return;
+                }
+                applyTermRoomOptions(termRoomCache);
+                dfd.resolve(termRoomCache);
+            },
+            error: function () {
+                clearTermRoomOptions();
+                dfd.reject("Failed to load rooms.");
+            }
+        });
+
+        return dfd.promise();
+    }
+
 
     function loadScheduleTable() {
 
@@ -666,22 +710,25 @@ while ($ay = $ayQ->fetch_assoc()) {
             "<div class='text-center text-muted py-4'>Loading classes...</div>"
         );
 
-        $.post(
-            "../backend/load_class_offerings.php",
-            {
-                prospectus_id: pid,
-                ay_id: ay,
-                semester: sem
-            },
-            function (rows) {
-                $("#scheduleListContainer").html(rows);
-            }
-        ).fail(function (xhr) {
-            $("#scheduleListContainer").html(
-                "<div class='text-center text-danger py-4'>Failed to load classes.</div>"
-            );
-            console.error(xhr.responseText);
-        });
+        loadTermRoomOptions(true)
+            .always(function () {
+                $.post(
+                    "../backend/load_class_offerings.php",
+                    {
+                        prospectus_id: pid,
+                        ay_id: ay,
+                        semester: sem
+                    },
+                    function (rows) {
+                        $("#scheduleListContainer").html(rows);
+                    }
+                ).fail(function (xhr) {
+                    $("#scheduleListContainer").html(
+                        "<div class='text-center text-danger py-4'>Failed to load classes.</div>"
+                    );
+                    console.error(xhr.responseText);
+                });
+            });
     }
 
     // BUTTON BINDING
@@ -692,6 +739,13 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     // ===============================================================
     $(document).ready(function () {
+
+$("#ay_id, #semester").on("change", function () {
+  clearTermRoomOptions();
+  if ($("#ay_id").val() && $("#semester").val()) {
+    loadTermRoomOptions(true);
+  }
+});
 
 
 $("#btnShowMatrix").on("click", function () {
@@ -785,9 +839,16 @@ $(document).on("click", ".btn-schedule", function () {
 
         if (btn.data("time-start")) $("#sched_time_start").val(btn.data("time-start"));
         if (btn.data("time-end"))   $("#sched_time_end").val(btn.data("time-end"));
-        if (btn.data("room-id"))    $("#sched_room_id").val(btn.data("room-id")).trigger("change");
 
-        $("#scheduleModal").modal("show");
+        const selectedRoomId = btn.data("room-id") ? String(btn.data("room-id")) : "";
+        loadTermRoomOptions(false).done(function () {
+            if (selectedRoomId !== "") {
+                $("#sched_room_id").val(selectedRoomId);
+            }
+            $("#scheduleModal").modal("show");
+        }).fail(function (message) {
+            Swal.fire("Room Setup Issue", message || "No room is available for selected AY and Semester.", "warning");
+        });
         return;
     }
 
@@ -831,7 +892,6 @@ if (isEditMode) {
             if (res.LEC) {
                 $("#lec_time_start").val(res.LEC.time_start);
                 $("#lec_time_end").val(res.LEC.time_end);
-                $("#lec_room_id").val(res.LEC.room_id);
 
                 res.LEC.days.forEach(d => {
                     $("#lec_" + d).prop("checked", true);
@@ -842,14 +902,23 @@ if (isEditMode) {
             if (res.LAB) {
                 $("#lab_time_start").val(res.LAB.time_start);
                 $("#lab_time_end").val(res.LAB.time_end);
-                $("#lab_room_id").val(res.LAB.room_id);
 
                 res.LAB.days.forEach(d => {
                     $("#lab_" + d).prop("checked", true);
                 });
             }
 
-            $("#dualScheduleModal").modal("show");
+            loadTermRoomOptions(false).done(function () {
+                if (res.LEC && res.LEC.room_id) {
+                    $("#lec_room_id").val(String(res.LEC.room_id));
+                }
+                if (res.LAB && res.LAB.room_id) {
+                    $("#lab_room_id").val(String(res.LAB.room_id));
+                }
+                $("#dualScheduleModal").modal("show");
+            }).fail(function (message) {
+                Swal.fire("Room Setup Issue", message || "No room is available for selected AY and Semester.", "warning");
+            });
         },
         error: function (xhr) {
             Swal.fire("Error", xhr.responseText, "error");
@@ -858,7 +927,11 @@ if (isEditMode) {
 
 } else {
     // NEW ENTRY MODE
-    $("#dualScheduleModal").modal("show");
+    loadTermRoomOptions(false).done(function () {
+        $("#dualScheduleModal").modal("show");
+    }).fail(function (message) {
+        Swal.fire("Room Setup Issue", message || "No room is available for selected AY and Semester.", "warning");
+    });
 }
 
 

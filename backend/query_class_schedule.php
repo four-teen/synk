@@ -81,6 +81,33 @@ function load_context($conn, $offering_id, $college_id) {
     return $stmt->get_result()->fetch_assoc();
 }
 
+function room_access_table_exists($conn) {
+    $q = $conn->query("SHOW TABLES LIKE 'tbl_room_college_access'");
+    return $q && $q->num_rows > 0;
+}
+
+function room_is_accessible_in_term($conn, $room_id, $college_id, $ay_id, $semester) {
+    if (!room_access_table_exists($conn)) {
+        return false;
+    }
+
+    $sql = "
+        SELECT 1
+        FROM tbl_room_college_access acc
+        INNER JOIN tbl_rooms r ON r.room_id = acc.room_id
+        WHERE acc.room_id = ?
+          AND acc.college_id = ?
+          AND acc.ay_id = ?
+          AND acc.semester = ?
+          AND r.status = 'active'
+        LIMIT 1
+    ";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("iiii", $room_id, $college_id, $ay_id, $semester);
+    $stmt->execute();
+    return $stmt->get_result()->num_rows > 0;
+}
+
 /* =====================================================
    STANDARD CONFLICT CHECK (SECTION + ROOM)
    - ignores same offering_id
@@ -209,6 +236,10 @@ if (isset($_POST['save_schedule'])) {
     $ctx = load_context($conn, $offering_id, $college_id);
     if (!$ctx) respond("error","Offering not found.");
 
+    if (!room_is_accessible_in_term($conn, $room_id, $college_id, (int)$ctx['ay_id'], (int)$ctx['semester'])) {
+        respond("error", "Selected room is not available for this Academic Year and Semester.");
+    }
+
     check_conflict($conn, $ctx, $offering_id, $room_id, $time_start, $time_end, $days, "LEC");
 
     // EDIT SAFE
@@ -278,6 +309,12 @@ if (isset($_POST['save_dual_schedule'])) {
     }
 
     // EXTERNAL CHECK
+    foreach ($norm as $n) {
+        if (!room_is_accessible_in_term($conn, (int)$n['room'], $college_id, (int)$ctx['ay_id'], (int)$ctx['semester'])) {
+            respond("error", "{$n['type']} room is not available for this Academic Year and Semester.");
+        }
+    }
+
     foreach ($norm as $n) {
         check_conflict(
             $conn,$ctx,$offering_id,

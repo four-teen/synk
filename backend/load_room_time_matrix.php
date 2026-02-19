@@ -53,19 +53,28 @@ while ($start < $end) {
 }
 
 /* =========================================================
-   2. LOAD ACTIVE ROOMS (✅ COLLEGE FILTER – SAFE)
+   2. LOAD TERM-ACCESSIBLE ROOMS
 ========================================================= */
 $rooms = [];
 
+$hasAccessTable = $conn->query("SHOW TABLES LIKE 'tbl_room_college_access'");
+if (!$hasAccessTable || $hasAccessTable->num_rows === 0) {
+    echo "<div class='text-muted text-center'>Room access table is missing.</div>";
+    exit;
+}
+
 $roomsStmt = $conn->prepare("
-    SELECT room_id, room_name
-    FROM tbl_rooms
-    WHERE status = 'active'
-      AND college_id = ?
-    ORDER BY room_name
+    SELECT DISTINCT r.room_id, r.room_name
+    FROM tbl_room_college_access acc
+    INNER JOIN tbl_rooms r ON r.room_id = acc.room_id
+    WHERE acc.college_id = ?
+      AND acc.ay_id = ?
+      AND acc.semester = ?
+      AND r.status = 'active'
+    ORDER BY r.room_name
 ");
 
-$roomsStmt->bind_param("i", $college_id);
+$roomsStmt->bind_param("iii", $college_id, $ay_id, $semester);
 $roomsStmt->execute();
 $roomsQ = $roomsStmt->get_result();
 
