@@ -27,13 +27,16 @@ if (!$faculty_id || !$ay_id || !$semester) {
 /* =====================================================
    WORKLOAD COMPUTATION CONFIG
    NOTE:
-   - tbl_prospectus_subjects.lec_units = lecture units
-   - tbl_prospectus_subjects.lab_units = LAB HOURS (not lab units)
+   - Some datasets store tbl_prospectus_subjects.lab_units as LAB credit units
+   - Some datasets store tbl_prospectus_subjects.lab_units as LAB contact hours
    - Faculty Load Rule:
-       LEC load = lec_units
-       LAB load = lab_hours × LAB_LOAD_MULTIPLIER
+     LEC load = lec_units
+      LAB load:
+        if LAB is credit units => (lab_units × LAB_CONTACT_HOURS_PER_UNIT) × LAB_LOAD_MULTIPLIER
+        else (already hours)    => lab_units × LAB_LOAD_MULTIPLIER
 ===================================================== */
 define('LAB_LOAD_MULTIPLIER', 0.75);
+define('LAB_CONTACT_HOURS_PER_UNIT', 3.0);
 
 /* =====================================================
    MAIN QUERY
@@ -41,6 +44,7 @@ define('LAB_LOAD_MULTIPLIER', 0.75);
 $sql = "
 SELECT
     fw.workload_id,
+    o.offering_id,
     cs.schedule_group_id      AS group_id,
     cs.schedule_type          AS type,
 
@@ -107,21 +111,29 @@ while ($row = $res->fetch_assoc()) {
     /* ---------------------------
        Faculty Load Computation
        IMPORTANT:
-       - lab_units from DB is actually LAB HOURS
+       - dataset-aware handling for lab_units (credit vs hours)
     --------------------------- */
     $lec_units = (float) $row['lec_units'];
-    $lab_hours = (float) $row['lab_units']; // ✅ hours
+    $lab_value = (float) $row['lab_units'];
+    $total_units = (float) $row['total_units'];
 
+    // If lec + lab == total_units, lab is likely credit unit(s), not hours.
+    $lab_is_credit = ($lab_value > 0) && (abs(($lec_units + $lab_value) - $total_units) < 0.0001);
+
+    $lab_hours = $lab_is_credit
+        ? ($lab_value * LAB_CONTACT_HOURS_PER_UNIT)
+        : $lab_value;
+
+    $lab_teaching_load = $lab_hours * LAB_LOAD_MULTIPLIER;
     $lec_load = $lec_units;
-    $lab_load = $lab_hours * LAB_LOAD_MULTIPLIER;
-
-    $faculty_load = round($lec_load + $lab_load, 2);
+    $faculty_load = round($lec_load + $lab_teaching_load, 2);
 
     /* ---------------------------
        Push row
     --------------------------- */
     $data[] = [
         'workload_id'  => (int)$row['workload_id'],
+        'offering_id'  => (int)$row['offering_id'],
         'group_id'     => $row['group_id'],
         'sub_code'     => $row['sub_code'],
         'desc'         => $row['desc'],
@@ -131,7 +143,8 @@ while ($row = $res->fetch_assoc()) {
         'time'         => $time,
         'room'         => $row['room'] ?? '',
         'lec'          => $lec_units,
-        'lab'          => $lab_hours,              // (optional: rename to lab_hours in UI later)
+        'lab'          => round($lab_hours, 2),
+        'lab_load'     => round($lab_teaching_load, 2),
         'units'        => (int)$row['total_units'],
         'faculty_load' => $faculty_load
     ];

@@ -419,6 +419,9 @@ while ($ay = $ayQ->fetch_assoc()) {
     </div>
 
     <div class="modal-footer">
+    <button class="btn btn-outline-danger me-auto d-none" id="btnClearSchedule">
+    <i class="bx bx-trash me-1"></i> Clear Schedule
+    </button>
     <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
     <button class="btn btn-primary" id="btnSaveSchedule">
     <i class="bx bx-save me-1"></i> Save Class Schedule
@@ -514,6 +517,9 @@ while ($ay = $ayQ->fetch_assoc()) {
       </div>
 
       <div class="modal-footer">
+        <button class="btn btn-outline-danger me-auto d-none" id="btnClearDualSchedule">
+          <i class="bx bx-trash me-1"></i> Clear Schedule
+        </button>
         <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
         <button class="btn btn-primary" id="btnSaveDualSchedule">
           <i class="bx bx-save me-1"></i> Save Lecture & Lab
@@ -731,6 +737,61 @@ while ($ay = $ayQ->fetch_assoc()) {
             });
     }
 
+    function clearScheduleForOffering(offeringId, subjectLabel) {
+        if (!offeringId) {
+            Swal.fire("Error", "Missing offering reference.", "error");
+            return;
+        }
+
+        const label = subjectLabel || "this class";
+
+        Swal.fire({
+            icon: "warning",
+            title: "Clear Schedule?",
+            html: `This will remove all saved schedules for <b>${escapeHtml(label)}</b>.`,
+            showCancelButton: true,
+            confirmButtonText: "Yes, clear it",
+            cancelButtonText: "Cancel",
+            allowOutsideClick: false,
+            customClass: { popup: "swal-top" }
+        }).then(function (result) {
+            if (!result.isConfirmed) return;
+
+            $.ajax({
+                url: "../backend/query_class_schedule.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    clear_schedule: 1,
+                    offering_id: offeringId
+                },
+                success: function (res) {
+                    if (res.status === "ok") {
+                        Swal.fire({
+                            icon: "success",
+                            title: "Schedule Cleared",
+                            timer: 1200,
+                            showConfirmButton: false
+                        });
+
+                        $("#scheduleModal").modal("hide");
+                        $("#dualScheduleModal").modal("hide");
+
+                        setTimeout(function () {
+                            loadScheduleTable();
+                        }, 300);
+                        return;
+                    }
+
+                    Swal.fire("Error", res.message || "Failed to clear schedule.", "error");
+                },
+                error: function (xhr) {
+                    Swal.fire("Error", xhr.responseText || "Failed to clear schedule.", "error");
+                }
+            });
+        });
+    }
+
     // BUTTON BINDING
     $("#btnLoadSchedule").on("click", function () {
         loadScheduleTable();
@@ -820,6 +881,11 @@ $(document).on("click", ".btn-schedule", function () {
         $("#sched_offering_id").val(offeringId);
         $("#sched_subject_label").text(subjectLabel);
         $("#sched_section_label").text("Section: " + section);
+        $("#btnClearSchedule")
+            .data("offering-id", offeringId)
+            .data("subject-label", subjectLabel)
+            .toggleClass("d-none", !isEditMode);
+        $("#btnClearDualSchedule").addClass("d-none");
 
         // Reset fields
         $(".sched-day").prop("checked", false);
@@ -858,6 +924,11 @@ $(document).on("click", ".btn-schedule", function () {
 $("#dual_offering_id").val(offeringId);
 $("#dual_subject_label").text(subjectLabel);
 $("#dual_section_label").text("Section: " + section);
+$("#btnClearDualSchedule")
+    .data("offering-id", offeringId)
+    .data("subject-label", subjectLabel)
+    .toggleClass("d-none", !isEditMode);
+$("#btnClearSchedule").addClass("d-none");
 
 // Build day buttons first
 buildDayButtons("lec_days", "lec");
@@ -939,6 +1010,20 @@ if (isEditMode) {
 });
 
 
+
+$("#btnClearSchedule").on("click", function () {
+    clearScheduleForOffering(
+        $(this).data("offering-id"),
+        $(this).data("subject-label")
+    );
+});
+
+$("#btnClearDualSchedule").on("click", function () {
+    clearScheduleForOffering(
+        $(this).data("offering-id"),
+        $(this).data("subject-label")
+    );
+});
 
 // ============================
 // SAVE CLASS SCHEDULE

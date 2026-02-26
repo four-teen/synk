@@ -64,17 +64,126 @@ while ($f = mysqli_fetch_assoc($f_run)) {
     <script src="../assets/js/config.js"></script>
 
     <style>
-        .fw-summary-label { 
-            font-size: 0.85rem; 
-            color: #6c757d; 
+        .fw-summary-label {
+            font-size: 0.85rem;
+            color: #6c757d;
         }
-        .day-btn.active { 
-            background-color: #696cff; 
-            color:#fff; 
+
+        .table-sm td {
+            padding-top: 0.5rem !important;
+            padding-bottom: 0.5rem !important;
         }
-        .table-sm td { 
-            padding-top: .4rem!important; 
-            padding-bottom: .4rem!important; 
+
+        #facultyAlert .alert {
+            background: #eaf8ff;
+            border-color: #cbeaf8;
+            color: #1a7da8;
+        }
+
+        .workload-card {
+            border: 1px solid #dbe5f1;
+            box-shadow: 0 2px 8px rgba(18, 38, 63, 0.05);
+        }
+
+        .workload-table thead th {
+            font-size: 0.76rem;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #5f728b;
+            border-bottom: 1px solid #dbe4ef;
+            white-space: nowrap;
+        }
+
+        .workload-table tbody td {
+            color: #5c6f88;
+            border-color: #e7edf5;
+            vertical-align: middle;
+        }
+
+        .workload-table tfoot th {
+            color: #5f728b;
+            border-top: 2px solid #d7e1ec;
+            background: #f9fbfd;
+            vertical-align: middle;
+        }
+
+        .workload-code {
+            font-weight: 700;
+            color: #5b6f86;
+            white-space: nowrap;
+        }
+
+        .workload-desc {
+            color: #5f728b;
+            text-transform: uppercase;
+        }
+
+        .workload-days,
+        .workload-time,
+        .workload-room {
+            white-space: nowrap;
+        }
+
+        .type-pill {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            min-width: 42px;
+            padding: 2px 8px;
+            border-radius: 6px;
+            font-size: 0.72rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+        }
+
+        .type-pill.lec {
+            background: #e8e9ff;
+            color: #5d68f4;
+        }
+
+        .type-pill.lab {
+            background: #fff0cf;
+            color: #c98900;
+        }
+
+        .btn-delete-workload {
+            border-color: #ff5f4d;
+            color: #ff5f4d;
+            line-height: 1;
+        }
+
+        .btn-delete-workload:hover {
+            background: #ff5f4d;
+            color: #fff;
+        }
+
+        .total-label {
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+        }
+
+        .load-pill {
+            font-weight: 700;
+            padding: 4px 10px;
+            border-radius: 7px;
+            white-space: nowrap;
+            display: inline-block;
+        }
+
+        .load-normal {
+            background-color: #e7f5ef;
+            color: #0f5132;
+        }
+
+        .load-high {
+            background-color: #fff3cd;
+            color: #664d03;
+        }
+
+        .load-over {
+            background-color: #f8d7da;
+            color: #842029;
         }
 
         /* Increase Select2 height to match normal inputs */
@@ -87,42 +196,13 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             border-radius: 6px;
         }
 
-        /* Adjust arrow alignment */
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 42px !important;
             right: 10px !important;
         }
 
-        /* Placeholder fix */
         .select2-selection__rendered {
             line-height: 42px !important;
-        }
-
-        /* =====================================================
-        FACULTY LOAD STATUS STYLES
-        ===================================================== */
-        .load-normal {
-            background-color: #e7f5ef;
-            color: #0f5132;
-            font-weight: 600;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .load-high {
-            background-color: #fff3cd;
-            color: #664d03;
-            font-weight: 700;
-            padding: 4px 8px;
-            border-radius: 6px;
-        }
-
-        .load-over {
-            background-color: #f8d7da;
-            color: #842029;
-            font-weight: 800;
-            padding: 4px 8px;
-            border-radius: 6px;
         }
 
         /* PRINT */
@@ -134,6 +214,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             #printHeader {
                 display: block !important;
             }
+
             #workloadCard,
             #workloadCard * {
                 visibility: visible;
@@ -224,7 +305,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
 
         </div>
     </div>
-<div class="card mt-4" id="workloadCard" style="display:none;">
+<div class="card mt-4 workload-card" id="workloadCard" style="display:none;">
 <div class="card-header d-flex justify-content-between align-items-center">
     <div>
         <h5 class="m-0">Current Faculty Workload</h5>
@@ -253,21 +334,24 @@ while ($f = mysqli_fetch_assoc($f_run)) {
 
     
     <div class="table-responsive">
-        <table class="table table-hover table-sm mb-0">
+        <table class="table table-hover table-sm mb-0 workload-table">
             <thead class="table-light">
                 <tr>
-                    <th>Course No.</th>
-                    <th>Description</th>
-                    <th>Section</th>
-                    <th>Type</th>
-                    <th>Days</th>
-                    <th>Time</th>
-                    <th>Room</th>
-                    <th class="text-center">LEC</th>
-                    <th class="text-center">LAB</th>
-                    <th class="text-center">Units</th>
-                    <th class="text-center">Faculty Load</th>
-                    <th class="text-end">Action</th>
+                    <th rowspan="2">Course No.</th>
+                    <th rowspan="2">Description</th>
+                    <th rowspan="2">Section</th>
+                    <th rowspan="2">Type</th>
+                    <th rowspan="2">Days</th>
+                    <th rowspan="2">Time</th>
+                    <th rowspan="2">Room</th>
+                    <th rowspan="2" class="text-center">Unit</th>
+                    <th colspan="2" class="text-center">No. of Hours</th>
+                    <th rowspan="2" class="text-center">Faculty Load</th>
+                    <th rowspan="2" class="text-end">Action</th>
+                </tr>
+                <tr>
+                    <th class="text-center">Lec</th>
+                    <th class="text-center">Lab</th>
                 </tr>
             </thead>
 
@@ -276,13 +360,13 @@ while ($f = mysqli_fetch_assoc($f_run)) {
     <tfoot class="table-light">
         <tr>
             <!-- Span first 7 columns -->
-            <th colspan="7" class="text-end fw-semibold">
-                TOTAL
+            <th colspan="7" class="text-end fw-semibold total-label">
+                Teaching Load
             </th>
 
+            <th class="text-center" id="totalUNIT">0</th>
             <th class="text-center" id="totalLEC">0</th>
             <th class="text-center" id="totalLAB">0</th>
-            <th class="text-center" id="totalUNIT">0</th>
             <th class="text-center" id="totalLOADCell">
                 <span id="totalLOAD">0.00</span>
             </th>
@@ -309,7 +393,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             <input type="text"
                    id="scheduleSearch"
                    class="form-control"
-                   placeholder="🔍 Search by course no, description, section, room, or days...">
+                   placeholder="Search by course no, description, section, room, or days...">
         </div>
 
         <div class="col-md-4">
@@ -359,67 +443,6 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         </button>
     </div>
 </div>
-
-
-    <!-- EXISTING WORKLOAD TABLE -->
-    <div class="card" id="workloadListCard" style="display:none;">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="m-0">Current Workload</h5>
-                <small class="text-muted">Based on selected faculty, semester, and A.Y.</small>
-            </div>
-            <span id="wlSummaryTotal" class="badge bg-label-primary"></span>
-        </div>
-        <!-- PRINT HEADER -->
-        <div id="printHeader" class="mb-3" style="display:none;">
-            <h5 class="mb-1 fw-bold">FACULTY WORKLOAD SUMMARY</h5>
-            <div class="text-muted" style="font-size:0.9rem;">
-                <div><strong>College:</strong> <?= htmlspecialchars($college_name) ?></div>
-                <div><strong>Faculty:</strong> <span id="printFacultyName"></span></div>
-                <div><strong>Term:</strong> <span id="printTerm"></span></div>
-                <div><strong>Date Generated:</strong> <?= date("F d, Y") ?></div>
-            </div>
-            <hr>
-        </div>
-
-        <div class="table-responsive">
-            <table class="table table-hover table-sm mb-0">
-                <thead class="table-light">
-                    <tr>
-                        <th>#</th>
-                        <th>Course No.</th>
-                        <th>Course Description</th>
-                        <th>Section</th>
-                        <th>Days</th>
-                        <th>Time</th>
-                        <th>Room</th>
-                        <th>Unit</th>
-                        <th>Lec</th>
-                        <th>Lab</th>
-                        <th>Load</th>
-                        <th class="text-end">Actions</th>
-                    </tr>
-                </thead>
-                <tbody id="wl_tbody"></tbody>
-            </table>
-        </div>
-    </div>
-
-
-    <!-- FACULTY TIMETABLE VIEW -->
-    <div class="card mt-4" id="facultyTimetableCard" style="display:none;">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="m-0">Faculty Timetable</h5>
-                <small class="text-muted">Visual schedule for the selected faculty, A.Y., and semester.</small>
-            </div>
-        </div>
-        <div class="card-body p-0">
-            <div id="facultyTimetableWrapper" class="table-responsive"></div>
-        </div>
-    </div>
-
-
 </div>
 
 <?php include '../footer.php'; ?>
@@ -469,6 +492,25 @@ $(document).ready(function () {
         "Midyear": 3
     };
 
+    function escapeHtml(value) {
+        return String(value ?? "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+    }
+
+    function toNumber(value) {
+        const n = Number(value);
+        return Number.isFinite(n) ? n : 0;
+    }
+
+    function formatNumber(value) {
+        const n = toNumber(value);
+        return Number.isInteger(n) ? String(n) : n.toFixed(2);
+    }
+
     /* =========================================================
        LOAD SCHEDULED CLASSES
     ========================================================= */
@@ -481,6 +523,7 @@ $(document).ready(function () {
         if (!faculty_id || !ay_text || !semester_ui) return;
 
         $("#scheduledClassCard").show();
+        $("#checkAllSchedules").prop("checked", false);
         $("#scheduledClassTbody").html(`
             <tr>
                 <td colspan="10" class="text-center text-muted">
@@ -506,6 +549,7 @@ $(document).ready(function () {
                 }
 
                 if (data.length === 0) {
+                    $("#checkAllSchedules").prop("checked", false);
                     $("#scheduledClassTbody").html(`
                         <tr>
                             <td colspan="10" class="text-center text-muted">
@@ -544,6 +588,7 @@ $(document).ready(function () {
     }
 
     function showInvalid() {
+        $("#checkAllSchedules").prop("checked", false);
         $("#scheduledClassTbody").html(`
             <tr>
                 <td colspan="10" class="text-danger text-center">
@@ -553,22 +598,28 @@ $(document).ready(function () {
         `);
     }
 
+    $(document).on("change", "#checkAllSchedules", function () {
+        $(".chkSchedule").prop("checked", $(this).is(":checked"));
+    });
+
+    $(document).on("change", ".chkSchedule", function () {
+        const total = $(".chkSchedule").length;
+        const checked = $(".chkSchedule:checked").length;
+        $("#checkAllSchedules").prop("checked", total > 0 && total === checked);
+    });
+
     /* =========================================================
        LOAD FACULTY WORKLOAD LIST
     ========================================================= */
     function loadWorkloadList() {
 
-        /* =========================================================
-        TOTAL WORKLOAD ACCUMULATORS
-        - Use group_id to avoid double counting LEC+LAB pairs
-        ========================================================= */
         let totalLEC   = 0;
         let totalLAB   = 0;
         let totalUNIT  = 0;
         let totalLOAD  = 0;
 
-        let countedGroups = new Set();
-
+        /* Count one load row per offering (LEC+LAB should count once). */
+        const countedOfferings = new Set();
 
         if (!currentAyId || !currentSemesterNum) return;
 
@@ -585,6 +636,11 @@ $(document).ready(function () {
             function (data) {
 
                 if (!Array.isArray(data) || data.length === 0) {
+                    $("#workloadTbody").html("");
+                    $("#totalLEC").text("0");
+                    $("#totalLAB").text("0");
+                    $("#totalUNIT").text("0");
+                    $("#totalLOADCell").html(`<span class="load-pill load-high">0.00 <small>(UNDERLOAD)</small></span>`);
                     $("#workloadCard").hide();
                     return;
                 }
@@ -595,78 +651,67 @@ $(document).ready(function () {
 
                     let row = data[i];
 
-                    /* =====================================================
-                    TOTAL COMPUTATION (COUNT ONCE PER SUBJECT)
-                    ===================================================== */
-                    let gid = row.group_id ?? row.workload_id;
-
-                    // If not yet counted, add to totals
-                    if (!countedGroups.has(gid)) {
-                        countedGroups.add(gid);
-
-                        totalLEC  += Number(row.lec) || 0;
-                        totalLAB  += Number(row.lab) || 0;
-                        totalUNIT += Number(row.units) || 0;
-                        totalLOAD += Number(row.faculty_load) || 0;
+                    const offeringKey = String(row.offering_id ?? ("w" + row.workload_id));
+                    if (!countedOfferings.has(offeringKey)) {
+                        countedOfferings.add(offeringKey);
+                        totalLEC  += toNumber(row.lec);
+                        totalLAB  += toNumber(row.lab);
+                        totalUNIT += toNumber(row.units);
+                        totalLOAD += toNumber(row.faculty_load);
                     }
 
+                    const type = String(row.type || "").toUpperCase();
+                    const typeBadge = type === "LAB"
+                        ? '<span class="type-pill lab">LAB</span>'
+                        : '<span class="type-pill lec">LEC</span>';
 
-                    let typeBadge = row.type === "LAB"
-                        ? '<span class="badge bg-label-warning">LAB</span>'
-                        : '<span class="badge bg-label-primary">LEC</span>';
-
-                    let curG = row.group_id;
+                    let curOffering = row.offering_id ?? null;
                     let next = (i + 1 < data.length) ? data[i + 1] : null;
-
-                    // Start of a pair if current group_id exists AND next row has the same group_id
-                    let isStartPair =
-                        row.type === "LEC" &&
-                        curG !== null &&
-                        curG !== "" &&
-                        curG !== 0 &&
-                        next &&
-                        next.group_id == curG;
-
-                    // Second row of the pair if previous row has same group_id
                     let prev = (i - 1 >= 0) ? data[i - 1] : null;
-                    let isSecondPairRow = (curG !== null && curG !== "" && curG !== 0 && prev && prev.group_id == curG);
+
+                    let isStartPair =
+                        type === "LEC" &&
+                        curOffering !== null &&
+                        next &&
+                        String(next.offering_id ?? "") === String(curOffering);
+
+                    let isSecondPairRow =
+                        curOffering !== null &&
+                        prev &&
+                        String(prev.offering_id ?? "") === String(curOffering);
 
                     rows += `
                         <tr>
-                            <td>${row.sub_code}</td>
-                            <td>${row.desc}</td>
-                            <td>${row.section}</td>
-                            <td>${typeBadge}</td>
-                            <td>${row.days}</td>
-                            <td>${row.time}</td>
-                            <td>${row.room}</td>
+                            <td class="workload-code">${escapeHtml(row.sub_code)}</td>
+                            <td class="workload-desc">${escapeHtml(row.desc)}</td>
+                            <td>${escapeHtml(row.section)}</td>
+                            <td class="text-center">${typeBadge}</td>
+                            <td class="workload-days">${escapeHtml(row.days)}</td>
+                            <td class="workload-time">${escapeHtml(row.time)}</td>
+                            <td class="workload-room">${escapeHtml(row.room)}</td>
                     `;
 
-                    // ✅ Only print LEC/LAB/UNITS once for the pair (rowspan=2)
                     if (isStartPair) {
                         rows += `
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.lec}</td>
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.lab}</td>
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${row.units}</td>
+                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.units)}</td>
+                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lec)}</td>
+                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lab)}</td>
                             <td class="text-center fw-semibold" rowspan="2" style="vertical-align: middle;">
-                                ${row.faculty_load}
+                                ${toNumber(row.faculty_load).toFixed(2)}
                             </td>
                         `;
                     } else if (!isSecondPairRow) {
-                        // Not part of a pair → normal display
                         rows += `
-                            <td class="text-center">${row.lec}</td>
-                            <td class="text-center">${row.lab}</td>
-                            <td class="text-center">${row.units}</td>
-                            <td class="text-center fw-semibold">${row.faculty_load}</td>
-
+                            <td class="text-center">${formatNumber(row.units)}</td>
+                            <td class="text-center">${formatNumber(row.lec)}</td>
+                            <td class="text-center">${formatNumber(row.lab)}</td>
+                            <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
                         `;
                     }
-                    // else: second row of pair → skip these 3 cells
 
                     rows += `
                             <td class="text-end">
-                                <button class="btn btn-sm btn-outline-danger btnRemoveWL"
+                                <button class="btn btn-sm btn-delete-workload btnRemoveWL"
                                         data-id="${row.workload_id}">
                                     <i class="bx bx-trash"></i>
                                 </button>
@@ -677,48 +722,27 @@ $(document).ready(function () {
 
                 $("#workloadTbody").html(rows);
 
-                /* =========================================================
-                DISPLAY TOTALS
-                ========================================================= */
-$("#totalLEC").text(totalLEC);
-$("#totalLAB").text(totalLAB);
-$("#totalUNIT").text(totalUNIT);
-// =========================================================
-// LOAD STATUS UI (POLICY-CORRECT)
-// =========================================================
-let loadClass = "load-high";       // default = UNDERLOAD (yellow)
-let loadLabel = "Underload";
+                let loadClass = "load-high";
+                let loadLabel = "UNDERLOAD";
+                if (totalLOAD >= 18 && totalLOAD <= 21) {
+                    loadClass = "load-normal";
+                    loadLabel = "NORMAL LOAD";
+                } else if (totalLOAD > 21) {
+                    loadClass = "load-over";
+                    loadLabel = "OVERLOAD";
+                }
 
-if (totalLOAD >= 18 && totalLOAD <= 21) {
-    loadClass = "load-normal";     // green
-    loadLabel = "Normal Load";
-} else if (totalLOAD > 21) {
-    loadClass = "load-over";       // red
-    loadLabel = "Overload";
-}
+                $("#totalLEC").text(formatNumber(totalLEC));
+                $("#totalLAB").text(formatNumber(totalLAB));
+                $("#totalUNIT").text(formatNumber(totalUNIT));
+                $("#totalLOADCell").html(`
+                    <span class="load-pill ${loadClass}">
+                        ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
+                    </span>
+                `);
 
-
-$("#totalLEC").text(totalLEC);
-$("#totalLAB").text(totalLAB);
-$("#totalUNIT").text(totalUNIT);
-
-$("#totalLOADCell").html(`
-    <span class="${loadClass}">
-        ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
-    </span>
-`);
-
-// ===============================
-// PRINT HEADER VALUES
-// ===============================
-$("#printFacultyName").text(
-    $("#faculty_id option:selected").text()
-);
-
-$("#printTerm").text(
-    $("#fw_semester").val() + " Semester, A.Y. " + $("#fw_ay").val()
-);
-
+                $("#printFacultyName").text($("#faculty_id option:selected").text());
+                $("#printTerm").text($("#fw_semester").val() + " A.Y. " + $("#fw_ay").val());
 
                 $("#workloadCard").show();
             },
@@ -828,19 +852,34 @@ $("#printTerm").text(
                 schedule_ids: schedule_ids
             },
             function (res) {
+                if (!res || typeof res !== "object") {
+                    Swal.fire("Error", "Invalid response from server.", "error");
+                    return;
+                }
 
                 if (res.status === "success") {
                     Swal.fire(
                         "Applied",
-                        res.inserted + " class(es) added to workload.",
+                        res.message || (res.inserted + " class(es) added to workload."),
                         "success"
                     );
-
                     loadScheduledClasses();
                     loadWorkloadList();
-                } else {
-                    Swal.fire("Error", res.message, "error");
+                    return;
                 }
+
+                if (res.status === "partial" || res.status === "conflict") {
+                    Swal.fire({
+                        icon: res.status === "partial" ? "warning" : "error",
+                        title: res.status === "partial" ? "Partially Applied" : "Faculty Conflict",
+                        html: res.message || "Selected classes conflict with this faculty's existing load."
+                    });
+                    loadScheduledClasses();
+                    loadWorkloadList();
+                    return;
+                }
+
+                Swal.fire("Error", res.message || "Failed to apply workload.", "error");
             },
             "json"
         );

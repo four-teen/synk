@@ -210,9 +210,46 @@ if (isset($_POST['load_dual_schedule'])) {
 }
 
 /* =====================================================
+   CLEAR SCHEDULE (LECTURE + LAB)
+===================================================== */
+if (isset($_POST['clear_schedule'])) {
+
+    $offering_id = (int)($_POST['offering_id'] ?? 0);
+    if (!$offering_id) respond("error", "Missing offering reference.");
+
+    $ctx = load_context($conn, $offering_id, $college_id);
+    if (!$ctx) respond("error", "Offering not found.");
+
+    $del = $conn->prepare("
+        DELETE FROM tbl_class_schedule
+        WHERE offering_id = ?
+    ");
+    $del->bind_param("i", $offering_id);
+    $del->execute();
+    $deleted = max(0, (int)$del->affected_rows);
+    $del->close();
+
+    $upd = $conn->prepare("
+        UPDATE tbl_prospectus_offering
+        SET status = 'pending'
+        WHERE offering_id = ?
+          AND (status IS NULL OR status != 'locked')
+    ");
+    $upd->bind_param("i", $offering_id);
+    $upd->execute();
+    $upd->close();
+
+    respond(
+        "ok",
+        $deleted > 0 ? "Schedule cleared." : "No existing schedule to clear.",
+        ["deleted" => $deleted]
+    );
+}
+
+/* =====================================================
    VALIDATE REQUEST
 ===================================================== */
-if (!isset($_POST['save_schedule']) && !isset($_POST['save_dual_schedule'])) {
+if (!isset($_POST['save_schedule']) && !isset($_POST['save_dual_schedule']) && !isset($_POST['clear_schedule'])) {
     respond("error","Invalid request.");
 }
 
