@@ -4,7 +4,16 @@ include 'db.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
+    http_response_code(403);
+    echo json_encode(["error" => "Unauthorized"]);
+    exit;
+}
+
+$role = $_SESSION['role'];
+$myCollege = (int)($_SESSION['college_id'] ?? 0);
+
+if (!in_array($role, ['admin', 'scheduler'], true)) {
     http_response_code(403);
     echo json_encode(["error" => "Unauthorized"]);
     exit;
@@ -16,11 +25,33 @@ if ($pid <= 0) {
     exit;
 }
 
+if ($role === 'scheduler') {
+    $accessSql = "
+        SELECT h.prospectus_id
+        FROM tbl_prospectus_header h
+        INNER JOIN tbl_program p ON p.program_id = h.program_id
+        WHERE h.prospectus_id = ?
+          AND p.college_id = ?
+        LIMIT 1
+    ";
+    $accessStmt = $conn->prepare($accessSql);
+    $accessStmt->bind_param("ii", $pid, $myCollege);
+    $accessStmt->execute();
+    $hasAccess = $accessStmt->get_result()->num_rows > 0;
+    $accessStmt->close();
+
+    if (!$hasAccess) {
+        http_response_code(403);
+        echo json_encode(["error" => "Unauthorized prospectus access"]);
+        exit;
+    }
+}
+
 /* ===========================
    1) HEADER INFO
 =========================== */
 $hsql = "
-    SELECT h.prospectus_id, h.cmo_no, h.effective_sy,
+    SELECT h.prospectus_id, h.program_id, h.cmo_no, h.effective_sy,
            p.program_name, p.program_code, p.major
     FROM tbl_prospectus_header h
     LEFT JOIN tbl_program p ON p.program_id = h.program_id

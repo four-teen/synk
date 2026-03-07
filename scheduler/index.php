@@ -2,6 +2,7 @@
 session_start();
 ob_start();
 include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../index.php");
@@ -18,52 +19,8 @@ if (!isset($_SESSION['college_id']) || $_SESSION['college_id'] === null) {
     exit;
 }
 
-$currentAyId = null;
-$currentSem = null;
-
-$termRes = $conn->query("
-    SELECT current_ay_id, current_semester
-    FROM tbl_academic_settings
-    LIMIT 1
-");
-
-if ($termRes && $termRes->num_rows > 0) {
-    $termRow = $termRes->fetch_assoc();
-    $currentAyId = (int) $termRow['current_ay_id'];
-    $currentSem = (int) $termRow['current_semester'];
-}
-
-$academicYearLabel = '';
-
-if ($currentAyId) {
-    $ayStmt = $conn->prepare("
-        SELECT ay
-        FROM tbl_academic_years
-        WHERE ay_id = ?
-        LIMIT 1
-    ");
-    $ayStmt->bind_param("i", $currentAyId);
-    $ayStmt->execute();
-    $ayRes = $ayStmt->get_result();
-
-    if ($ayRow = $ayRes->fetch_assoc()) {
-        $academicYearLabel = $ayRow['ay'];
-    }
-
-    $ayStmt->close();
-}
-
-$semesterLabel = '';
-if ($currentSem === 1) {
-    $semesterLabel = '1st Semester';
-} elseif ($currentSem === 2) {
-    $semesterLabel = '2nd Semester';
-} elseif ($currentSem === 3) {
-    $semesterLabel = 'Midyear';
-}
-
-$termParts = array_filter([$academicYearLabel, $semesterLabel]);
-$academicTermText = !empty($termParts) ? implode(' - ', $termParts) : 'Current academic term';
+$currentTerm = synk_fetch_current_academic_term($conn);
+$academicTermText = $currentTerm['term_text'];
 
 $collegeName = htmlspecialchars($_SESSION['college_name'] ?? 'Assigned College', ENT_QUOTES, 'UTF-8');
 $schedulerName = htmlspecialchars($_SESSION['username'] ?? 'Scheduler', ENT_QUOTES, 'UTF-8');
@@ -295,7 +252,7 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                                 </div>
                                 <h3 class="kpi-value text-primary mt-2" id="countPrograms">--</h3>
                                 <small class="text-muted">Programs</small>
-                                <div class="metric-note">Active degree offerings</div>
+                                <div class="metric-note">Programs with offerings this term</div>
                               </div>
                             </div>
 
@@ -305,8 +262,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                                   <i class="bx bx-user-voice"></i>
                                 </div>
                                 <h3 class="kpi-value text-success mt-2" id="countFaculty">--</h3>
-                                <small class="text-muted">Faculty</small>
-                                <div class="metric-note">College roster assigned</div>
+                                <small class="text-muted">Assigned Faculty</small>
+                                <div class="metric-note">With workload in the active term</div>
                               </div>
                             </div>
 
@@ -316,8 +273,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                                   <i class="bx bx-detail"></i>
                                 </div>
                                 <h3 class="kpi-value text-info mt-2" id="countProspectus">--</h3>
-                                <small class="text-muted">Prospectus Items</small>
-                                <div class="metric-note">Subjects mapped for planning</div>
+                                <small class="text-muted">Class Offerings</small>
+                                <div class="metric-note">Generated for the active term</div>
                               </div>
                             </div>
 
@@ -370,7 +327,7 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                                 <i class="bx bx-book-bookmark"></i>
                               </div>
                               <div>
-                                <h6 class="mb-1 fw-bold text-dark">Prospectus Builder</h6>
+                                <h6 class="mb-1 fw-bold text-dark">Prospectus Viewer</h6>
                                 <small class="text-muted">Review subjects by year and semester</small>
                               </div>
                             </div>
@@ -439,11 +396,11 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                             <span class="badge bg-primary rounded-pill" id="summaryPrograms">--</span>
                           </li>
                           <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span class="fw-semibold">Faculty roster</span>
+                            <span class="fw-semibold">Faculty with workload</span>
                             <span class="badge bg-success rounded-pill" id="summaryFaculty">--</span>
                           </li>
                           <li class="list-group-item d-flex justify-content-between align-items-center">
-                            <span class="fw-semibold">Prospectus subjects</span>
+                            <span class="fw-semibold">Class offerings</span>
                             <span class="badge bg-info rounded-pill" id="summaryProspectus">--</span>
                           </li>
                           <li class="list-group-item d-flex justify-content-between align-items-center">

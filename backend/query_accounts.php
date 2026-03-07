@@ -1,15 +1,205 @@
 <?php
-require_once "db.php";
+session_start();
 
-// ------------------------------------------------------------
-// LOAD ACCOUNTS
-// ------------------------------------------------------------
+require_once 'db.php';
+require_once 'auth_config.php';
+require_once 'auth_useraccount.php';
+
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    http_response_code(403);
+    echo 'unauthorized';
+    exit;
+}
+
+$authSettings = synk_auth_settings();
+$allowedDomain = (string)($authSettings['allowed_domain'] ?? 'sksu.edu.ph');
+
+function query_accounts_provider_badge(?string $provider): string
+{
+    $provider = strtolower(trim((string)$provider));
+    if ($provider === 'google') {
+        return "<span class='badge bg-label-primary'>GOOGLE</span>";
+    }
+
+    return "<span class='badge bg-label-secondary'>LEGACY</span>";
+}
+
+function query_accounts_supported_role(string $role): bool
+{
+    return in_array($role, synk_supported_module_roles(), true);
+}
+
+function query_accounts_supported_roles_sql(mysqli $conn): string
+{
+    $supportedRoles = [];
+
+    foreach (synk_supported_module_roles() as $role) {
+        $supportedRoles[] = "'" . $conn->real_escape_string($role) . "'";
+    }
+
+    return implode(', ', $supportedRoles);
+}
+
+function query_accounts_role_label(string $role): string
+{
+    if ($role === 'admin') {
+        return 'Administrator';
+    }
+
+    if ($role === 'scheduler') {
+        return 'Scheduler';
+    }
+
+    return strtoupper($role);
+}
+
+function query_accounts_build_insert(mysqli $conn, array $payload): array
+{
+    $columns = ['username', 'email', 'password', 'role', 'status'];
+    $placeholders = ['?', '?', '?', '?', '?'];
+    $types = 'sssss';
+    $values = [
+        $payload['username'],
+        $payload['email'],
+        $payload['password'],
+        $payload['role'],
+        $payload['status'],
+    ];
+
+    $columns[] = 'college_id';
+    if ($payload['college_id'] === null) {
+        $placeholders[] = 'NULL';
+    } else {
+        $placeholders[] = '?';
+        $types .= 'i';
+        $values[] = $payload['college_id'];
+    }
+
+    if (synk_useraccount_has_column($conn, 'auth_provider')) {
+        $columns[] = 'auth_provider';
+        $placeholders[] = '?';
+        $types .= 's';
+        $values[] = 'google';
+    }
+
+    if (synk_useraccount_has_column($conn, 'google_email_verified')) {
+        $columns[] = 'google_email_verified';
+        $placeholders[] = '?';
+        $types .= 'i';
+        $values[] = 0;
+    }
+
+    if (synk_useraccount_has_column($conn, 'last_google_name')) {
+        $columns[] = 'last_google_name';
+        $placeholders[] = '?';
+        $types .= 's';
+        $values[] = $payload['username'];
+    }
+
+    $sql = "INSERT INTO tbl_useraccount (" . implode(', ', $columns) . ")
+            VALUES (" . implode(', ', $placeholders) . ")";
+
+    return [$sql, $types, $values];
+}
+
+function query_accounts_build_update(mysqli $conn, array $payload): array
+{
+    $assignments = [
+        'username = ?',
+        'email = ?',
+        'role = ?',
+        'status = ?',
+    ];
+    $types = 'ssss';
+    $values = [
+        $payload['username'],
+        $payload['email'],
+        $payload['role'],
+        $payload['status'],
+    ];
+
+    if ($payload['college_id'] === null) {
+        $assignments[] = 'college_id = NULL';
+    } else {
+        $assignments[] = 'college_id = ?';
+        $types .= 'i';
+        $values[] = $payload['college_id'];
+    }
+
+    if (synk_useraccount_has_column($conn, 'auth_provider')) {
+        $assignments[] = 'auth_provider = ?';
+        $types .= 's';
+        $values[] = 'google';
+    }
+
+    if (synk_useraccount_has_column($conn, 'google_sub')) {
+        $assignments[] = 'google_sub = NULL';
+    }
+
+    if (synk_useraccount_has_column($conn, 'google_email_verified')) {
+        $assignments[] = 'google_email_verified = ?';
+        $types .= 'i';
+        $values[] = 0;
+    }
+
+    if (synk_useraccount_has_column($conn, 'last_google_name')) {
+        $assignments[] = 'last_google_name = ?';
+        $types .= 's';
+        $values[] = $payload['username'];
+    }
+
+    $types .= 'i';
+    $values[] = $payload['user_id'];
+
+    $sql = "UPDATE tbl_useraccount
+            SET " . implode(', ', $assignments) . "
+            WHERE user_id = ?";
+
+    return [$sql, $types, $values];
+}
+
+function query_accounts_validate_payload(array $input, string $allowedDomain, bool $requireUserId = false): array
+{
+    $payload = [
+        'user_id' => (int)($input['user_id'] ?? 0),
+        'username' => trim((string)($input['username'] ?? '')),
+        'email' => synk_normalize_email((string)($input['email'] ?? '')),
+        'role' => trim((string)($input['role'] ?? '')),
+        'status' => trim((string)($input['status'] ?? 'active')),
+        'college_id' => ($input['college_id'] ?? '') === '' ? null : (int)$input['college_id'],
+        'password' => synk_build_placeholder_password(),
+    ];
+
+    if (($requireUserId && $payload['user_id'] <= 0) || $payload['username'] === '' || $payload['email'] === '' || $payload['role'] === '') {
+        return ['error' => 'missing'];
+    }
+
+    if (!query_accounts_supported_role($payload['role'])) {
+        return ['error' => 'invalid_role'];
+    }
+
+    if (!in_array($payload['status'], ['active', 'inactive'], true)) {
+        return ['error' => 'invalid_status'];
+    }
+
+    if (!synk_is_allowed_email_domain($payload['email'], $allowedDomain)) {
+        return ['error' => 'invalid_domain'];
+    }
+
+    if ($payload['role'] === 'scheduler' && $payload['college_id'] === null) {
+        return ['error' => 'need_college'];
+    }
+
+    return ['payload' => $payload];
+}
+
 if (isset($_POST['load_accounts'])) {
-
+    $fields = ['u.*', 'c.college_code', 'c.college_name'];
     $sql = "
-        SELECT u.*, c.college_code, c.college_name
+        SELECT " . implode(', ', $fields) . "
         FROM tbl_useraccount u
         LEFT JOIN tbl_college c ON u.college_id = c.college_id
+        WHERE u.role IN (" . query_accounts_supported_roles_sql($conn) . ")
         ORDER BY u.user_id DESC
     ";
 
@@ -17,19 +207,15 @@ if (isset($_POST['load_accounts'])) {
     $i = 1;
 
     while ($row = $res->fetch_assoc()) {
+        $roleLabel = query_accounts_role_label($row['role']);
+        $providerBadge = query_accounts_provider_badge($row['auth_provider'] ?? 'legacy');
 
-        // Role label
-        $roleLabel = strtoupper($row['role']);
-
-        // College label
-        $collegeLabel = "";
         if (!empty($row['college_id']) && !empty($row['college_name'])) {
-            $collegeLabel = $row['college_code'] . " - " . $row['college_name'];
+            $collegeLabel = htmlspecialchars($row['college_code'] . ' - ' . $row['college_name'], ENT_QUOTES, 'UTF-8');
         } else {
             $collegeLabel = "<span class='text-muted'>N/A</span>";
         }
 
-        // Status badge
         $badge = ($row['status'] === 'active')
             ? "<span class='badge bg-success'>ACTIVE</span>"
             : "<span class='badge bg-secondary'>INACTIVE</span>";
@@ -37,19 +223,20 @@ if (isset($_POST['load_accounts'])) {
         echo "
         <tr>
           <td>{$i}</td>
-          <td>" . htmlspecialchars($row['username']) . "</td>
-          <td>" . htmlspecialchars($row['email']) . "</td>
-          <td>" . htmlspecialchars($roleLabel) . "</td>
-          <td>" . (is_string($collegeLabel) ? $collegeLabel : htmlspecialchars($collegeLabel)) . "</td>
+          <td>" . htmlspecialchars($row['username'], ENT_QUOTES, 'UTF-8') . "</td>
+          <td>" . htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8') . "</td>
+          <td>{$providerBadge}</td>
+          <td>" . htmlspecialchars($roleLabel, ENT_QUOTES, 'UTF-8') . "</td>
+          <td>{$collegeLabel}</td>
           <td>{$badge}</td>
           <td class='text-end text-nowrap'>
             <button class='btn btn-sm btn-warning btnEditAccount'
                 data-id='{$row['user_id']}'
-                data-username=\"" . htmlspecialchars($row['username'], ENT_QUOTES) . "\"
-                data-email=\"" . htmlspecialchars($row['email'], ENT_QUOTES) . "\"
-                data-role='{$row['role']}'
-                data-college='" . ($row['college_id'] ?? "") . "'
-                data-status='{$row['status']}'>
+                data-username=\"" . htmlspecialchars($row['username'], ENT_QUOTES, 'UTF-8') . "\"
+                data-email=\"" . htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8') . "\"
+                data-role='" . htmlspecialchars($row['role'], ENT_QUOTES, 'UTF-8') . "'
+                data-college='" . ($row['college_id'] ?? '') . "'
+                data-status='" . htmlspecialchars($row['status'], ENT_QUOTES, 'UTF-8') . "'>
               <i class='bx bx-edit-alt'></i>
             </button>
 
@@ -67,187 +254,78 @@ if (isset($_POST['load_accounts'])) {
     exit;
 }
 
-
-// ------------------------------------------------------------
-// SAVE NEW ACCOUNT
-// ------------------------------------------------------------
 if (isset($_POST['save_account'])) {
-
-    $username = trim($_POST['username'] ?? '');
-    $email    = trim($_POST['email']    ?? '');
-    $password = trim($_POST['password'] ?? '');
-    $role     = $_POST['role'] ?? '';
-    $status   = $_POST['status'] ?? 'active';
-    $college_id = $_POST['college_id'] ?? '';
-
-    if ($username === '' || $email === '' || $password === '' || $role === '') {
-        echo "missing";
+    $validation = query_accounts_validate_payload($_POST, $allowedDomain, false);
+    if (isset($validation['error'])) {
+        echo $validation['error'];
         exit;
     }
 
-    if ($role === 'scheduler' && $college_id === '') {
-        echo "need_college";
+    $payload = $validation['payload'];
+
+    $q = $conn->prepare("SELECT user_id FROM tbl_useraccount WHERE email = ? LIMIT 1");
+    $q->bind_param("s", $payload['email']);
+    $q->execute();
+    $q->store_result();
+    if ($q->num_rows > 0) {
+        $q->close();
+        echo 'dup_email';
         exit;
     }
+    $q->close();
 
-    // Check duplicates
-    $q1 = $conn->prepare("SELECT user_id FROM tbl_useraccount WHERE username = ?");
-    $q1->bind_param("s", $username);
-    $q1->execute();
-    $q1->store_result();
-    if ($q1->num_rows > 0) {
-        echo "dup_username";
-        $q1->close();
-        exit;
-    }
-    $q1->close();
-
-    $q2 = $conn->prepare("SELECT user_id FROM tbl_useraccount WHERE email = ?");
-    $q2->bind_param("s", $email);
-    $q2->execute();
-    $q2->store_result();
-    if ($q2->num_rows > 0) {
-        echo "dup_email";
-        $q2->close();
-        exit;
-    }
-    $q2->close();
-
-    $hashed = password_hash($password, PASSWORD_DEFAULT);
-
-    if ($college_id === '') {
-        $college_id = null;
-    }
-
-    $stmt = $conn->prepare("
-        INSERT INTO tbl_useraccount (username, email, password, role, college_id, status)
-        VALUES (?, ?, ?, ?, ?, ?)
-    ");
-    $stmt->bind_param(
-        "ssssis",
-        $username,
-        $email,
-        $hashed,
-        $role,
-        $college_id,
-        $status
-    );
+    [$sql, $types, $values] = query_accounts_build_insert($conn, $payload);
+    $stmt = $conn->prepare($sql);
+    synk_stmt_bind_params($stmt, $types, $values);
     $stmt->execute();
     $stmt->close();
 
-    echo "success";
+    echo 'success';
     exit;
 }
 
-
-// ------------------------------------------------------------
-// UPDATE ACCOUNT
-// ------------------------------------------------------------
 if (isset($_POST['update_account'])) {
-
-    $user_id  = (int)($_POST['user_id'] ?? 0);
-    $username = trim($_POST['username'] ?? '');
-    $email    = trim($_POST['email']    ?? '');
-    $password = trim($_POST['password'] ?? '');
-    $role     = $_POST['role'] ?? '';
-    $status   = $_POST['status'] ?? 'active';
-    $college_id = $_POST['college_id'] ?? '';
-
-    if ($username === '' || $email === '' || $role === '') {
-        echo "missing";
+    $validation = query_accounts_validate_payload($_POST, $allowedDomain, true);
+    if (isset($validation['error'])) {
+        echo $validation['error'];
         exit;
     }
 
-    if ($role === 'scheduler' && $college_id === '') {
-        echo "need_college";
+    $payload = $validation['payload'];
+
+    $q = $conn->prepare("SELECT user_id FROM tbl_useraccount WHERE email = ? AND user_id <> ? LIMIT 1");
+    $q->bind_param("si", $payload['email'], $payload['user_id']);
+    $q->execute();
+    $q->store_result();
+    if ($q->num_rows > 0) {
+        $q->close();
+        echo 'dup_email';
         exit;
     }
+    $q->close();
 
-    // Check duplicate username
-    $q1 = $conn->prepare("SELECT user_id FROM tbl_useraccount WHERE username = ? AND user_id <> ?");
-    $q1->bind_param("si", $username, $user_id);
-    $q1->execute();
-    $q1->store_result();
-    if ($q1->num_rows > 0) {
-        echo "dup_username";
-        $q1->close();
-        exit;
-    }
-    $q1->close();
-
-    // Check duplicate email
-    $q2 = $conn->prepare("SELECT user_id FROM tbl_useraccount WHERE email = ? AND user_id <> ?");
-    $q2->bind_param("si", $email, $user_id);
-    $q2->execute();
-    $q2->store_result();
-    if ($q2->num_rows > 0) {
-        echo "dup_email";
-        $q2->close();
-        exit;
-    }
-    $q2->close();
-
-    if ($college_id === '') {
-        $college_id = null;
-    }
-
-    // Build update query
-    if ($password !== '') {
-        $hashed = password_hash($password, PASSWORD_DEFAULT);
-        $stmt = $conn->prepare("
-            UPDATE tbl_useraccount
-            SET username=?, email=?, password=?, role=?, college_id=?, status=?
-            WHERE user_id=?
-        ");
-        $stmt->bind_param(
-            "ssssisi",
-            $username,
-            $email,
-            $hashed,
-            $role,
-            $college_id,
-            $status,
-            $user_id
-        );
-    } else {
-        $stmt = $conn->prepare("
-            UPDATE tbl_useraccount
-            SET username=?, email=?, role=?, college_id=?, status=?
-            WHERE user_id=?
-        ");
-        $stmt->bind_param(
-            "sssisi",
-            $username,
-            $email,
-            $role,
-            $college_id,
-            $status,
-            $user_id
-        );
-    }
-
+    [$sql, $types, $values] = query_accounts_build_update($conn, $payload);
+    $stmt = $conn->prepare($sql);
+    synk_stmt_bind_params($stmt, $types, $values);
     $stmt->execute();
     $stmt->close();
 
-    echo "success";
+    echo 'success';
     exit;
 }
 
-
-// ------------------------------------------------------------
-// DELETE ACCOUNT
-// ------------------------------------------------------------
 if (isset($_POST['delete_account'])) {
+    $userId = (int)($_POST['user_id'] ?? 0);
+    if ($userId <= 0) {
+        echo 'missing';
+        exit;
+    }
 
-    $user_id = (int)($_POST['user_id'] ?? 0);
-
-    $stmt = $conn->prepare("DELETE FROM tbl_useraccount WHERE user_id=?");
-    $stmt->bind_param("i", $user_id);
+    $stmt = $conn->prepare("DELETE FROM tbl_useraccount WHERE user_id = ?");
+    $stmt->bind_param("i", $userId);
     $stmt->execute();
     $stmt->close();
 
-    echo "deleted";
+    echo 'deleted';
     exit;
 }
-
-?>

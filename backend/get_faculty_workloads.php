@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/offering_scope_helper.php';
 header('Content-Type: application/json');
 
 /*
@@ -24,6 +25,8 @@ if (!$ay_id || !$semester) {
     exit;
 }
 
+$liveOfferingJoins = synk_live_offering_join_sql('po', 's', 'ps', 'pys', 'ph');
+
 $sql = "
 SELECT
   sm.sub_code,
@@ -41,9 +44,7 @@ FROM tbl_class_schedule cs
 
 INNER JOIN tbl_prospectus_offering po
   ON po.offering_id = cs.offering_id
-
-INNER JOIN tbl_sections s
-  ON s.section_id = po.section_id
+{$liveOfferingJoins}
 
 INNER JOIN tbl_program p
   ON p.program_id = s.program_id
@@ -53,9 +54,6 @@ INNER JOIN tbl_college col
 
 INNER JOIN tbl_campus camp
   ON camp.campus_id = col.campus_id
-
-INNER JOIN tbl_prospectus_subjects ps
-  ON ps.ps_id = po.ps_id
 
 INNER JOIN tbl_subject_masterlist sm
   ON sm.sub_id = ps.sub_id

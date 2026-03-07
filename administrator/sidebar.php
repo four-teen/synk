@@ -1,6 +1,7 @@
 <?php
 $sidebarCurrentPage = basename($_SERVER['PHP_SELF'] ?? '');
 $sidebarActiveKey = 'dashboard';
+$sidebarOpenGroupKey = 'access_term_control';
 
 $sidebarSections = [
     [
@@ -15,116 +16,172 @@ $sidebarSections = [
                 'description' => 'Institution-wide scheduling analytics',
                 'pages' => ['index.php'],
             ],
-            [
-                'key' => 'institutional_report',
-                'href' => 'institutional_report.php',
-                'icon_bg' => 'bg-label-info',
-                'icon' => 'bx-bar-chart-alt-2',
-                'title' => 'Institutional Reports',
-                'description' => 'View campus and academic summaries',
-                'pages' => ['institutional_report.php', 'report_academic_operations.php', 'campus_dashboard.php'],
-            ],
         ],
     ],
     [
-        'label' => 'Management',
-        'items' => [
+        'label' => 'Administration Workflow',
+        'groups' => [
             [
-                'key' => 'accounts',
-                'href' => 'manage-accounts.php',
-                'icon_bg' => 'bg-label-info',
-                'icon' => 'bx-user',
-                'title' => 'User Accounts',
-                'description' => 'Manage administrators and scheduler access',
-                'pages' => ['manage-accounts.php'],
+                'key' => 'access_term_control',
+                'icon_bg' => 'bg-label-primary',
+                'icon' => 'bx-shield-quarter',
+                'title' => 'Access and Term Control',
+                'description' => 'Manage account access and define the active academic term',
+                'badge' => 'Core Control',
+                'items' => [
+                    [
+                        'key' => 'accounts',
+                        'href' => 'manage-accounts.php',
+                        'icon_bg' => 'bg-label-info',
+                        'icon' => 'bx-user',
+                        'title' => 'User Accounts',
+                        'description' => 'Manage administrators and scheduler access',
+                        'pages' => ['manage-accounts.php'],
+                    ],
+                    [
+                        'key' => 'academic_settings',
+                        'href' => 'academic-settings.php',
+                        'icon_bg' => 'bg-label-success',
+                        'icon' => 'bx-calendar-event',
+                        'title' => 'Academic Settings',
+                        'description' => 'Set the active academic year and semester',
+                        'pages' => ['academic-settings.php'],
+                    ],
+                ],
             ],
             [
-                'key' => 'academic_settings',
-                'href' => 'academic-settings.php',
-                'icon_bg' => 'bg-label-success',
-                'icon' => 'bx-calendar-event',
-                'title' => 'Academic Settings',
-                'description' => 'Set the active academic year and semester',
-                'pages' => ['academic-settings.php'],
-            ],
-            [
-                'key' => 'campuses',
-                'href' => 'manage-campuses.php',
+                'key' => 'institution_setup',
                 'icon_bg' => 'bg-label-success',
                 'icon' => 'bx-buildings',
-                'title' => 'Campuses',
-                'description' => 'Maintain campus records and locations',
-                'pages' => ['manage-campuses.php'],
+                'title' => 'Institution Setup',
+                'description' => 'Maintain the institution structure before scheduling begins',
+                'badge' => 'Structure',
+                'items' => [
+                    [
+                        'key' => 'campuses',
+                        'href' => 'manage-campuses.php',
+                        'icon_bg' => 'bg-label-success',
+                        'icon' => 'bx-buildings',
+                        'title' => 'Campuses',
+                        'description' => 'Maintain campus records and locations',
+                        'pages' => ['manage-campuses.php'],
+                    ],
+                    [
+                        'key' => 'colleges',
+                        'href' => 'manage-colleges.php',
+                        'icon_bg' => 'bg-label-warning',
+                        'icon' => 'bx-library',
+                        'title' => 'Colleges',
+                        'description' => 'Organize college structures',
+                        'pages' => ['manage-colleges.php'],
+                    ],
+                    [
+                        'key' => 'programs',
+                        'href' => 'manage-programs.php',
+                        'icon_bg' => 'bg-label-secondary',
+                        'icon' => 'bx-book-content',
+                        'title' => 'Programs',
+                        'description' => 'Configure degree and course offerings',
+                        'pages' => ['manage-programs.php'],
+                    ],
+                    [
+                        'key' => 'designations',
+                        'href' => 'manage-designations.php',
+                        'icon_bg' => 'bg-label-info',
+                        'icon' => 'bx-id-card',
+                        'title' => 'Designation List',
+                        'description' => 'Maintain designation names and corresponding unit values',
+                        'pages' => ['manage-designations.php'],
+                    ],
+                    [
+                        'key' => 'faculty',
+                        'href' => 'manage-faculty.php',
+                        'icon_bg' => 'bg-label-primary',
+                        'icon' => 'bx-user-voice',
+                        'title' => 'Faculty Masterlist',
+                        'description' => 'Manage faculty records and profiles',
+                        'pages' => ['manage-faculty.php'],
+                    ],
+                ],
             ],
             [
-                'key' => 'colleges',
-                'href' => 'manage-colleges.php',
+                'key' => 'curriculum_reporting',
                 'icon_bg' => 'bg-label-warning',
-                'icon' => 'bx-library',
-                'title' => 'Colleges',
-                'description' => 'Organize college structures',
-                'pages' => ['manage-colleges.php'],
-            ],
-            [
-                'key' => 'programs',
-                'href' => 'manage-programs.php',
-                'icon_bg' => 'bg-label-secondary',
-                'icon' => 'bx-book-content',
-                'title' => 'Programs',
-                'description' => 'Configure degree and course offerings',
-                'pages' => ['manage-programs.php'],
-            ],
-            [
-                'key' => 'subjects',
-                'href' => 'manage-subject-masterlist.php',
-                'icon_bg' => 'bg-label-danger',
-                'icon' => 'bx-notepad',
-                'title' => 'Subject Catalog',
-                'description' => 'Maintain the institutional subject masterlist',
-                'pages' => ['manage-subject-masterlist.php'],
-            ],
-            [
-                'key' => 'faculty',
-                'href' => 'manage-faculty.php',
-                'icon_bg' => 'bg-label-primary',
-                'icon' => 'bx-user-voice',
-                'title' => 'Faculty Masterlist',
-                'description' => 'Manage faculty records and profiles',
-                'pages' => ['manage-faculty.php'],
-            ],
-        ],
-    ],
-    [
-        'label' => 'Scheduling',
-        'items' => [
-            [
-                'key' => 'prospectus_builder',
-                'href' => 'manage-prospectus.php',
-                'icon_bg' => 'bg-label-primary',
-                'icon' => 'bx-book-bookmark',
-                'title' => 'Prospectus Builder',
-                'description' => 'Build curriculum flow by year and term',
-                'pages' => ['manage-prospectus.php'],
-            ],
-            [
-                'key' => 'prospectus_viewer',
-                'href' => 'manage-prospectus-browser.php',
-                'icon_bg' => 'bg-label-info',
-                'icon' => 'bx-search-alt-2',
-                'title' => 'Prospectus Viewer',
-                'description' => 'Review published prospectus structures',
-                'pages' => ['manage-prospectus-browser.php', 'view-prospectus.php'],
+                'icon' => 'bx-book-reader',
+                'title' => 'Curriculum and Reporting',
+                'description' => 'Prepare curriculum structures and review institutional outputs',
+                'badge' => 'Analytics',
+                'items' => [
+                    [
+                        'key' => 'subjects',
+                        'href' => 'manage-subject-masterlist.php',
+                        'icon_bg' => 'bg-label-danger',
+                        'icon' => 'bx-notepad',
+                        'title' => 'Subject Catalog',
+                        'description' => 'Maintain the institutional subject masterlist',
+                        'pages' => ['manage-subject-masterlist.php'],
+                    ],
+                    [
+                        'key' => 'prospectus_builder',
+                        'href' => 'manage-prospectus.php',
+                        'icon_bg' => 'bg-label-primary',
+                        'icon' => 'bx-book-bookmark',
+                        'title' => 'Prospectus Builder',
+                        'description' => 'Build curriculum flow by year and term',
+                        'pages' => ['manage-prospectus.php'],
+                    ],
+                    [
+                        'key' => 'prospectus_viewer',
+                        'href' => 'manage-prospectus-browser.php',
+                        'icon_bg' => 'bg-label-info',
+                        'icon' => 'bx-search-alt-2',
+                        'title' => 'Prospectus Viewer',
+                        'description' => 'Review published prospectus structures',
+                        'pages' => ['manage-prospectus-browser.php', 'view-prospectus.php'],
+                    ],
+                    [
+                        'key' => 'institutional_report',
+                        'href' => 'institutional_report.php',
+                        'icon_bg' => 'bg-label-info',
+                        'icon' => 'bx-bar-chart-alt-2',
+                        'title' => 'Institutional Reports',
+                        'description' => 'View campus and academic summaries',
+                        'pages' => ['institutional_report.php', 'report_academic_operations.php', 'campus_dashboard.php'],
+                    ],
+                ],
             ],
         ],
     ],
 ];
 
+$sidebarMatchFound = false;
+
 foreach ($sidebarSections as $section) {
-    foreach ($section['items'] as $item) {
+    foreach (($section['items'] ?? []) as $item) {
         if (in_array($sidebarCurrentPage, $item['pages'], true)) {
             $sidebarActiveKey = $item['key'];
-            break 2;
+            $sidebarMatchFound = true;
+            break;
         }
+    }
+
+    if ($sidebarMatchFound) {
+        break;
+    }
+
+    foreach (($section['groups'] ?? []) as $group) {
+        foreach ($group['items'] as $item) {
+            if (in_array($sidebarCurrentPage, $item['pages'], true)) {
+                $sidebarActiveKey = $item['key'];
+                $sidebarOpenGroupKey = $group['key'];
+                $sidebarMatchFound = true;
+                break 2;
+            }
+        }
+    }
+
+    if ($sidebarMatchFound) {
+        break;
     }
 }
 ?>
@@ -197,20 +254,65 @@ foreach ($sidebarSections as $section) {
 
   <style>
     #layout-menu .sidebar-action-card {
+      --sidebar-card-radius: 0.75rem;
+      position: relative;
       display: flex;
       align-items: center;
       gap: 0.65rem;
       padding: 0.72rem 0.78rem;
       margin: 0.42rem 0.2rem;
       border: 1px solid #e4e8f0;
-      border-radius: 0.75rem;
+      border-radius: var(--sidebar-card-radius);
       background: #ffffff;
       transition: all 0.2s ease;
       white-space: normal;
+      overflow: visible;
+      isolation: isolate;
+    }
+
+    #layout-menu .sidebar-action-card::before,
+    #layout-menu .sidebar-subcard::before {
+      content: "";
+      position: absolute;
+      top: 0;
+      left: 0;
+      width: 0.34rem;
+      height: 0.34rem;
+      border-radius: 999px;
+      background: radial-gradient(
+        circle,
+        rgba(255, 221, 186, 0.98) 0%,
+        rgba(244, 149, 63, 0.96) 38%,
+        rgba(179, 83, 15, 0.88) 62%,
+        rgba(179, 83, 15, 0) 100%
+      );
+      box-shadow:
+        0 0 4px rgba(201, 104, 28, 0.8),
+        0 0 8px rgba(201, 104, 28, 0.3);
+      opacity: 0;
+      offset-anchor: center;
+      offset-path: inset(0.5px round calc(var(--sidebar-card-radius) - 0.5px));
+      offset-distance: 0%;
+      animation: sidebar-border-orbit 4s linear infinite paused;
+      transition: opacity 0.2s ease;
+      pointer-events: none;
+      z-index: 3;
+    }
+
+    #layout-menu .sidebar-action-card:hover::before,
+    #layout-menu .sidebar-subcard:hover::before {
+      opacity: 1;
+      animation-play-state: running;
+    }
+
+    #layout-menu .sidebar-action-card > *,
+    #layout-menu .sidebar-subcard > * {
+      position: relative;
+      z-index: 2;
     }
 
     #layout-menu .sidebar-action-card:hover {
-      border-color: #c8d0e0;
+      border-color: #d7b693;
       box-shadow: 0 6px 14px rgba(51, 71, 103, 0.09);
       transform: translateY(-1px);
     }
@@ -218,6 +320,22 @@ foreach ($sidebarSections as $section) {
     #layout-menu .sidebar-action-card.active {
       border-color: #696cff;
       background: #f6f7ff;
+    }
+
+    #layout-menu .menu-item.open > .sidebar-group-card,
+    #layout-menu .sidebar-group-card.is-open {
+      border-color: #d5dbff;
+      background: #f8f9ff;
+    }
+
+    #layout-menu .sidebar-group-card {
+      padding-right: 2.1rem;
+    }
+
+    #layout-menu .sidebar-group-card::after {
+      right: 0.9rem;
+      color: #6b778c;
+      z-index: 2;
     }
 
     #layout-menu .sidebar-action-icon {
@@ -249,6 +367,92 @@ foreach ($sidebarSections as $section) {
       color: #8391a7;
       line-height: 0.92rem;
     }
+
+    #layout-menu .sidebar-group-badge {
+      display: inline-flex;
+      margin-top: 0.35rem;
+      padding: 0.16rem 0.42rem;
+      border-radius: 999px;
+      background: #eef2ff;
+      color: #5561d7;
+      font-size: 0.66rem;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+    }
+
+    #layout-menu .sidebar-submenu {
+      gap: 0.28rem;
+      padding: 0.35rem 0.1rem 0.45rem;
+      margin: 0 0.2rem 0.45rem;
+    }
+
+    #layout-menu .sidebar-submenu .menu-item {
+      width: 100%;
+    }
+
+    #layout-menu .sidebar-subcard {
+      --sidebar-card-radius: 0.72rem;
+      position: relative;
+      display: flex;
+      align-items: center;
+      gap: 0.58rem;
+      padding: 0.62rem 0.75rem;
+      border-radius: var(--sidebar-card-radius);
+      border: 1px solid transparent;
+      background: #f8fafc;
+      white-space: normal;
+      transition: all 0.2s ease;
+      overflow: visible;
+      isolation: isolate;
+    }
+
+    #layout-menu .sidebar-subcard:hover {
+      background: #ffffff;
+      border-color: #d7b693;
+    }
+
+    #layout-menu .sidebar-submenu .menu-item.active > .sidebar-subcard {
+      border-color: #696cff;
+      background: #f6f7ff;
+      box-shadow: 0 6px 14px rgba(105, 108, 255, 0.12);
+    }
+
+    #layout-menu .sidebar-subicon {
+      width: 28px;
+      height: 28px;
+      border-radius: 9px;
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      flex: 0 0 28px;
+      font-size: 0.92rem;
+    }
+
+    #layout-menu .sidebar-subcontent {
+      min-width: 0;
+    }
+
+    #layout-menu .sidebar-subtitle {
+      font-size: 0.8rem;
+      font-weight: 600;
+      line-height: 1rem;
+      color: #364152;
+    }
+
+    #layout-menu .sidebar-subdesc {
+      display: block;
+      margin-top: 0.12rem;
+      font-size: 0.69rem;
+      color: #8391a7;
+      line-height: 0.88rem;
+    }
+
+    @keyframes sidebar-border-orbit {
+      to {
+        offset-distance: 100%;
+      }
+    }
   </style>
 
   <div class="menu-inner-shadow"></div>
@@ -259,8 +463,8 @@ foreach ($sidebarSections as $section) {
         <span class="menu-header-text"><?php echo htmlspecialchars($section['label'], ENT_QUOTES, 'UTF-8'); ?></span>
       </li>
 
-      <?php foreach ($section['items'] as $item): ?>
-        <li class="menu-item px-2">
+      <?php foreach (($section['items'] ?? []) as $item): ?>
+        <li class="menu-item px-2<?php echo $sidebarActiveKey === $item['key'] ? ' active' : ''; ?>">
           <a
             href="<?php echo htmlspecialchars($item['href'], ENT_QUOTES, 'UTF-8'); ?>"
             class="menu-link sidebar-action-card<?php echo $sidebarActiveKey === $item['key'] ? ' active' : ''; ?>"
@@ -273,6 +477,55 @@ foreach ($sidebarSections as $section) {
               <small class="sidebar-action-sub"><?php echo htmlspecialchars($item['description'], ENT_QUOTES, 'UTF-8'); ?></small>
             </div>
           </a>
+        </li>
+      <?php endforeach; ?>
+
+      <?php foreach (($section['groups'] ?? []) as $group): ?>
+        <?php
+          $groupHasActiveItem = false;
+
+          foreach ($group['items'] as $groupItem) {
+              if ($sidebarActiveKey === $groupItem['key']) {
+                  $groupHasActiveItem = true;
+                  break;
+              }
+          }
+
+          $groupIsOpen = $sidebarOpenGroupKey === $group['key'];
+        ?>
+        <li class="menu-item px-2<?php echo $groupHasActiveItem ? ' active' : ''; ?><?php echo $groupIsOpen ? ' open' : ''; ?>">
+          <a
+            href="javascript:void(0);"
+            class="menu-link menu-toggle sidebar-action-card sidebar-group-card<?php echo $groupHasActiveItem ? ' active' : ''; ?><?php echo $groupIsOpen ? ' is-open' : ''; ?>"
+          >
+            <span class="sidebar-action-icon <?php echo htmlspecialchars($group['icon_bg'], ENT_QUOTES, 'UTF-8'); ?>">
+              <i class="bx <?php echo htmlspecialchars($group['icon'], ENT_QUOTES, 'UTF-8'); ?>"></i>
+            </span>
+            <div class="sidebar-action-content">
+              <div class="sidebar-action-title"><?php echo htmlspecialchars($group['title'], ENT_QUOTES, 'UTF-8'); ?></div>
+              <small class="sidebar-action-sub"><?php echo htmlspecialchars($group['description'], ENT_QUOTES, 'UTF-8'); ?></small>
+              <span class="sidebar-group-badge"><?php echo htmlspecialchars($group['badge'], ENT_QUOTES, 'UTF-8'); ?></span>
+            </div>
+          </a>
+
+          <ul class="menu-sub sidebar-submenu">
+            <?php foreach ($group['items'] as $item): ?>
+              <li class="menu-item<?php echo $sidebarActiveKey === $item['key'] ? ' active' : ''; ?>">
+                <a
+                  href="<?php echo htmlspecialchars($item['href'], ENT_QUOTES, 'UTF-8'); ?>"
+                  class="menu-link sidebar-subcard"
+                >
+                  <span class="sidebar-subicon <?php echo htmlspecialchars($item['icon_bg'], ENT_QUOTES, 'UTF-8'); ?>">
+                    <i class="bx <?php echo htmlspecialchars($item['icon'], ENT_QUOTES, 'UTF-8'); ?>"></i>
+                  </span>
+                  <div class="sidebar-subcontent">
+                    <div class="sidebar-subtitle"><?php echo htmlspecialchars($item['title'], ENT_QUOTES, 'UTF-8'); ?></div>
+                    <small class="sidebar-subdesc"><?php echo htmlspecialchars($item['description'], ENT_QUOTES, 'UTF-8'); ?></small>
+                  </div>
+                </a>
+              </li>
+            <?php endforeach; ?>
+          </ul>
         </li>
       <?php endforeach; ?>
     <?php endforeach; ?>

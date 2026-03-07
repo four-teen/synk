@@ -2,6 +2,7 @@
 session_start();
 ob_start();
 include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
@@ -10,6 +11,17 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
 
 $college_id   = $_SESSION['college_id'];
 $college_name = $_SESSION['college_name'] ?? '';
+$currentTerm = synk_fetch_current_academic_term($conn);
+$defaultAyLabel = (string)$currentTerm['ay_label'];
+$defaultSemesterUi = '';
+
+if ((int)$currentTerm['semester'] === 1) {
+    $defaultSemesterUi = '1st';
+} elseif ((int)$currentTerm['semester'] === 2) {
+    $defaultSemesterUi = '2nd';
+} elseif ((int)$currentTerm['semester'] === 3) {
+    $defaultSemesterUi = 'Midyear';
+}
 
 ?>
 <!DOCTYPE html>
@@ -328,7 +340,8 @@ $college_name = $_SESSION['college_name'] ?? '';
                             $ay = mysqli_query($conn, "SELECT ay FROM tbl_academic_years ORDER BY ay ASC");
                             while ($r = mysqli_fetch_assoc($ay)) {
                                 $ayval = htmlspecialchars($r['ay']);
-                                echo "<option value='{$ayval}'>{$ayval}</option>";
+                                $selected = ($r['ay'] === $defaultAyLabel) ? " selected" : "";
+                                echo "<option value='{$ayval}'{$selected}>{$ayval}</option>";
                             }
                         ?>
                     </select>
@@ -337,9 +350,9 @@ $college_name = $_SESSION['college_name'] ?? '';
                 <div class="col-md-3">
                     <label class="form-label fw-semibold">Semester</label>
                     <select id="ru_semester" class="form-select">
-                        <option value="1st">1st Semester</option>
-                        <option value="2nd">2nd Semester</option>
-                        <option value="Midyear">Midyear</option>
+                        <option value="1st"<?= $defaultSemesterUi === '1st' ? ' selected' : '' ?>>1st Semester</option>
+                        <option value="2nd"<?= $defaultSemesterUi === '2nd' ? ' selected' : '' ?>>2nd Semester</option>
+                        <option value="Midyear"<?= $defaultSemesterUi === 'Midyear' ? ' selected' : '' ?>>Midyear</option>
                     </select>
                 </div>
 

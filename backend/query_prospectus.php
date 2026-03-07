@@ -38,6 +38,11 @@ if ($requires_csrf) {
         echo "ERROR|CSRF validation failed.";
         exit;
     }
+
+    if ($role !== 'admin') {
+        echo "ERROR|Administrator access required.";
+        exit;
+    }
 }
 
 function can_access_prospectus($conn, $prospectus_id, $role, $myCollege) {

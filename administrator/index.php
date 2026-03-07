@@ -370,7 +370,9 @@ if ($currentAyId && $currentSem) {
 .campus-scroll-area {
   max-height: 700px;
   overflow-y: auto;
-  padding-right: 4px;
+  padding-left: 1.5rem;
+  padding-right: 1.5rem;
+  scrollbar-gutter: stable;
 }
 
 .campus-card {

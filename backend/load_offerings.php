@@ -2,6 +2,7 @@
 //../backend/load_offerings.php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/offering_scope_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
     echo "<tr><td colspan='7' class='text-center text-danger'>Unauthorized access.</td></tr>";
@@ -29,6 +30,8 @@ if (!$prospectus_id || !$ay_id || !$semester) {
     exit;
 }
 
+$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+
 $sql = "
 SELECT
     o.offering_id,
@@ -48,15 +51,13 @@ SELECT
         ELSE 'pending'
     END AS display_status
 FROM tbl_prospectus_offering o
-JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+{$liveOfferingJoins}
 JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
 JOIN tbl_program p ON p.program_id = o.program_id
-LEFT JOIN tbl_sections sec ON sec.section_id = o.section_id
 WHERE o.prospectus_id = ?
   AND o.ay_id = ?
   AND o.semester = ?
   AND p.college_id = ?
-  AND o.section_id IS NOT NULL
 ORDER BY sec.section_name, sm.sub_code
 ";
 

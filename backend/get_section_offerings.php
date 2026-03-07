@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/offering_scope_helper.php';
 header('Content-Type: application/json');
 
 /* =====================================================
@@ -31,18 +32,15 @@ if (!$section_id || !$ay_id || !$semester) {
 /* ------------------------------
    MAIN QUERY
 -------------------------------- */
+$liveOfferingJoins = synk_live_offering_join_sql('po', 's', 'ps', 'pys', 'ph');
+
 $sql = "
 SELECT
     sm.sub_code,
     sm.sub_description,
     ps.total_units
 FROM tbl_prospectus_offering po
-
-INNER JOIN tbl_sections s
-    ON s.section_id = po.section_id
-
-INNER JOIN tbl_prospectus_subjects ps
-    ON ps.ps_id = po.ps_id
+{$liveOfferingJoins}
 
 INNER JOIN tbl_subject_masterlist sm
     ON sm.sub_id = ps.sub_id

@@ -1,22 +1,103 @@
-<?php 
-    session_start();
-    ob_start();
-    include '../backend/db.php';
+<?php
+session_start();
+ob_start();
+include '../backend/db.php';
 
-    if (!isset($_SESSION['user_id'])) {
-        header("Location: ../index.php");
-        exit;
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'scheduler') {
+    header("Location: ../index.php");
+    exit;
+}
+
+$collegeId = (int)($_SESSION['college_id'] ?? 0);
+$collegeName = (string)($_SESSION['college_name'] ?? 'Assigned College');
+
+if ($collegeId <= 0) {
+    echo "Scheduler error: missing college assignment.";
+    exit;
+}
+
+$programOptions = [];
+$programStmt = $conn->prepare("
+    SELECT
+        program_id,
+        program_code,
+        program_name,
+        major
+    FROM tbl_program
+    WHERE college_id = ?
+      AND status = 'active'
+    ORDER BY program_name ASC, major ASC, program_code ASC
+");
+$programStmt->bind_param("i", $collegeId);
+$programStmt->execute();
+$programRes = $programStmt->get_result();
+
+while ($row = $programRes->fetch_assoc()) {
+    $programId = (int)$row['program_id'];
+    $major = trim((string)($row['major'] ?? ''));
+    $programOptions[] = [
+        'program_id' => $programId,
+        'program_code' => (string)$row['program_code'],
+        'program_name' => (string)$row['program_name'],
+        'major' => $major
+    ];
+}
+$programStmt->close();
+
+$prospectusVersionsByProgram = [];
+foreach ($programOptions as $program) {
+    $prospectusVersionsByProgram[(string)$program['program_id']] = [];
+}
+
+$versionStmt = $conn->prepare("
+    SELECT
+        h.prospectus_id,
+        h.program_id,
+        h.cmo_no,
+        h.effective_sy,
+        COUNT(DISTINCT ys.pys_id) AS term_count,
+        COUNT(ps.ps_id) AS subject_count
+    FROM tbl_prospectus_header h
+    INNER JOIN tbl_program p
+        ON p.program_id = h.program_id
+    LEFT JOIN tbl_prospectus_year_sem ys
+        ON ys.prospectus_id = h.prospectus_id
+    LEFT JOIN tbl_prospectus_subjects ps
+        ON ps.pys_id = ys.pys_id
+    WHERE p.college_id = ?
+      AND p.status = 'active'
+    GROUP BY
+        h.prospectus_id,
+        h.program_id,
+        h.cmo_no,
+        h.effective_sy
+    ORDER BY h.effective_sy DESC, h.prospectus_id DESC
+");
+$versionStmt->bind_param("i", $collegeId);
+$versionStmt->execute();
+$versionRes = $versionStmt->get_result();
+
+while ($row = $versionRes->fetch_assoc()) {
+    $programKey = (string)((int)$row['program_id']);
+    if (!array_key_exists($programKey, $prospectusVersionsByProgram)) {
+        continue;
     }
 
-    if (!isset($_SESSION['role']) || !in_array($_SESSION['role'], ['admin', 'scheduler'], true)) {
-        header("Location: ../index.php");
-        exit;
-    }
+    $prospectusVersionsByProgram[$programKey][] = [
+        'prospectus_id' => (int)$row['prospectus_id'],
+        'cmo_no' => (string)$row['cmo_no'],
+        'effective_sy' => (string)$row['effective_sy'],
+        'term_count' => (int)$row['term_count'],
+        'subject_count' => (int)$row['subject_count'],
+        'label' => trim((string)$row['effective_sy']) !== ''
+            ? ('SY ' . (string)$row['effective_sy'] . ' - ' . (string)$row['cmo_no'])
+            : (string)$row['cmo_no']
+    ];
+}
+$versionStmt->close();
 
-    if (empty($_SESSION['csrf_token'])) {
-        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
-    }
-    $csrf_token = $_SESSION['csrf_token'];
+$programOptionsJson = json_encode($programOptions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+$prospectusVersionsJson = json_encode($prospectusVersionsByProgram, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 ?>
 <!DOCTYPE html>
 <html
@@ -28,1115 +109,626 @@
   data-template="vertical-menu-template-free"
 >
 <head>
-    <meta charset="utf-8" />
-    <meta
-        name="viewport"
-        content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
-    />
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0"
+  />
 
-    <title>Prospectus Builder | Synk</title>
+  <title>Prospectus Information | Synk</title>
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
-    <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
-    <link rel="stylesheet" href="../assets/vendor/css/core.css" />
-    <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
-    <link rel="stylesheet" href="../assets/css/demo.css" />
-    <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
-    <link rel="stylesheet"
-      href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+  <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+  <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
+  <link rel="stylesheet" href="../assets/vendor/css/core.css" />
+  <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
+  <link rel="stylesheet" href="../assets/css/demo.css" />
+  <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
+  <link
+    rel="stylesheet"
+    href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css"
+  />
+  <link rel="stylesheet" type="text/css" href="custom_css.css" />
 
-    <link rel="stylesheet" type="text/css" href="custom_css.css">
-    <script src="../assets/vendor/js/helpers.js"></script>
-    <script src="../assets/js/config.js"></script>
+  <script src="../assets/vendor/js/helpers.js"></script>
+  <script src="../assets/js/config.js"></script>
 
-    <style>
-      .prospectus-header-label {
-        font-size: 0.85rem;
-        text-transform: uppercase;
-        color: #888;
-        letter-spacing: 0.04em;
+  <style>
+    .prospectus-note {
+      border: 1px solid #d9e7d7;
+      background: #f6fbf5;
+      color: #48624b;
+      border-radius: 14px;
+      padding: 14px 18px;
+    }
+
+    .prospectus-note strong {
+      color: #2d4c31;
+    }
+
+    .sheet-card {
+      border: 1px solid #dde5f0;
+      border-radius: 22px;
+      background:
+        linear-gradient(180deg, rgba(246, 250, 255, 0.96) 0%, rgba(255, 255, 255, 1) 100%);
+      box-shadow: 0 18px 38px rgba(67, 89, 113, 0.08);
+    }
+
+    .sheet-head {
+      text-align: center;
+      padding-bottom: 1.75rem;
+      border-bottom: 1px solid #e4ebf3;
+      margin-bottom: 1.75rem;
+    }
+
+    .sheet-kicker {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.35rem;
+      padding: 0.35rem 0.85rem;
+      border-radius: 999px;
+      background: #eef5ea;
+      color: #537043;
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      font-weight: 700;
+    }
+
+    .sheet-title {
+      margin-top: 1rem;
+      margin-bottom: 0.35rem;
+      font-size: 1.6rem;
+      font-weight: 800;
+      color: #243246;
+      line-height: 1.25;
+    }
+
+    .sheet-subtitle {
+      color: #6b7c93;
+      font-size: 0.96rem;
+    }
+
+    .sheet-meta {
+      display: flex;
+      justify-content: center;
+      flex-wrap: wrap;
+      gap: 0.75rem;
+      margin-top: 1rem;
+    }
+
+    .sheet-meta-pill {
+      padding: 0.45rem 0.8rem;
+      border-radius: 999px;
+      background: #f3f6fb;
+      color: #55667f;
+      font-size: 0.82rem;
+      font-weight: 600;
+    }
+
+    .year-block + .year-block {
+      margin-top: 1.75rem;
+    }
+
+    .year-banner {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      margin-bottom: 1rem;
+      padding: 0.75rem 1rem;
+      border-radius: 14px;
+      background: linear-gradient(90deg, #f5f8ec 0%, #eef5ff 100%);
+      border: 1px solid #dfe8cf;
+    }
+
+    .year-banner-title {
+      font-size: 1rem;
+      font-weight: 800;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #37465d;
+    }
+
+    .year-banner-note {
+      color: #70829a;
+      font-size: 0.8rem;
+    }
+
+    .semester-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 1rem;
+    }
+
+    .semester-card {
+      border: 1px solid #dfe7f1;
+      border-radius: 16px;
+      background: #fff;
+      overflow: hidden;
+    }
+
+    .semester-card.midyear {
+      grid-column: 1 / -1;
+    }
+
+    .semester-head {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      padding: 0.8rem 1rem;
+      background: #edf6e8;
+      border-bottom: 1px solid #dbe6d2;
+    }
+
+    .semester-title {
+      margin: 0;
+      font-size: 0.9rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      color: #4e6541;
+    }
+
+    .semester-badge {
+      background: #ffffff;
+      color: #5f738f;
+      border-radius: 999px;
+      padding: 0.25rem 0.65rem;
+      font-size: 0.76rem;
+      font-weight: 700;
+    }
+
+    .semester-table {
+      width: 100%;
+      margin: 0;
+      border-collapse: collapse;
+      font-size: 0.84rem;
+    }
+
+    .semester-table th,
+    .semester-table td {
+      padding: 0.55rem 0.65rem;
+      border-bottom: 1px solid #eef2f7;
+      vertical-align: top;
+    }
+
+    .semester-table thead th {
+      background: #f8fafc;
+      color: #5c6e86;
+      font-size: 0.73rem;
+      text-transform: uppercase;
+      letter-spacing: 0.05em;
+      font-weight: 700;
+    }
+
+    .semester-table tbody tr:last-child td {
+      border-bottom: 0;
+    }
+
+    .semester-table tfoot th,
+    .semester-table tfoot td {
+      background: #fafcf6;
+      border-top: 1px solid #dbe6d2;
+      border-bottom: 0;
+      font-weight: 700;
+      color: #50636f;
+    }
+
+    .col-code {
+      width: 124px;
+      white-space: nowrap;
+      font-weight: 700;
+      color: #32455e;
+    }
+
+    .col-num {
+      width: 52px;
+      text-align: center;
+      white-space: nowrap;
+    }
+
+    .col-prereq {
+      width: 120px;
+      color: #61748a;
+    }
+
+    .empty-semester {
+      padding: 1.25rem 1rem;
+      color: #7d8da3;
+      font-size: 0.88rem;
+      text-align: center;
+      background: #fbfcfe;
+    }
+
+    .state-alert {
+      border-radius: 14px;
+      margin-bottom: 0;
+    }
+
+    @media (max-width: 991.98px) {
+      .semester-grid {
+        grid-template-columns: 1fr;
       }
-      .accordion-button span.badge {
-        font-size: 0.75rem;
-      }
-      .table-prospectus td {
-        padding-top: 0.4rem !important;
-        padding-bottom: 0.4rem !important;
+
+      .semester-card.midyear {
+        grid-column: auto;
       }
 
-      .swal2-container {
-          z-index: 20000 !important;
+      .sheet-card .card-body {
+        padding: 1.25rem !important;
       }
 
-      /* Smaller and cleaner SweetAlert */
-      .swal2-popup {
-          font-size: 0.85rem !important;
-          padding: 1.2rem !important;
-          border-radius: 12px !important;
+      .sheet-title {
+        font-size: 1.28rem;
       }
-
-      /* Green loader bar */
-      .swal2-timer-progress-bar {
-          background: #28a745 !important; /* Bootstrap success green */
-      }
-
-      /* Ensure alert stays on top of modal */
-      .swal2-container {
-          z-index: 20000 !important;
-      }
-
-.accordion-header {
-    background: #FFF7E6 !important;     /* light beige */
-    border: 1px solid #FFE4C2 !important;
-    border-radius: 6px;
-    padding: 6px 12px;
-    margin-bottom: 6px;
-}
-    </style>
+    }
+  </style>
 </head>
 
 <body>
-<div class="layout-wrapper layout-content-navbar">
-  <div class="layout-container">
+  <div class="layout-wrapper layout-content-navbar">
+    <div class="layout-container">
+      <?php include 'sidebar.php'; ?>
 
-    <?php include 'sidebar.php'; ?>
+      <div class="layout-page">
+        <?php include 'navbar.php'; ?>
 
-    <div class="layout-page">
-
-      <?php include 'navbar.php'; ?>
-
-      <div class="content-wrapper">
-
-        <div class="container-xxl flex-grow-1 container-p-y">
-
-          <!-- TITLE -->
-          <div class="d-flex justify-content-between align-items-center mb-4">
-            <h4 class="fw-bold mb-0">
-              <i class="bx bx-spreadsheet me-2"></i> Prospectus Builder
-            </h4>
-          </div>
-
-          <!-- ===================== -->
-          <!-- PROSPECTUS HEADER     -->
-          <!-- ===================== -->
-          <div class="card mb-4">
-            <div class="card-header">
-              <h5 class="mb-0">Prospectus Information</h5>
-              <small class="text-muted">Select program and define CMO + Effectivity</small>
-            </div>
-            <div class="card-body">
-
-              <form id="prospectusHeaderForm" class="row g-3 align-items-end">
-                <input type="hidden" id="prospectus_id" name="prospectus_id">
-
-                <!-- Program -->
-                <div class="col-md-5">
-                  <label class="form-label prospectus-header-label">Program</label>
-                  <select class="form-select" name="program_id" id="program_id" required>
-                    <option value="">Select Program</option>
-
-                    <?php
-                      $role = $_SESSION['role'] ?? '';
-                      $myCollege = intval($_SESSION['college_id'] ?? 0);
-                      $prog = false;
-
-                      // ADMIN → can see ALL programs
-                      if ($role === 'admin') {
-
-                        $prog = $conn->query("
-                          SELECT 
-                            p.program_id, 
-                            p.program_code, 
-                            p.program_name, 
-                            p.major,
-                            c.college_name
-                          FROM tbl_program p
-                          LEFT JOIN tbl_college c ON p.college_id = c.college_id
-                          WHERE p.status='active'
-                          ORDER BY c.college_name, p.program_name, p.major
-                        ");
-
-                      } 
-                      // SCHEDULER → can see ONLY programs under *their* college
-                      else if ($role === 'scheduler' && $myCollege > 0) {
-
-                      $prog = $conn->query("
-                        SELECT 
-                          p.program_id, 
-                          p.program_code, 
-                          p.program_name, 
-                          p.major,
-                          c.college_name
-                        FROM tbl_program p
-                        LEFT JOIN tbl_college c ON p.college_id = c.college_id
-                        WHERE p.status='active'
-                          AND p.college_id = '$myCollege'
-                        ORDER BY p.program_name, p.major
-                      ");
-                      }
-
-                      if (!$prog) {
-                          $prog = $conn->query("SELECT program_id, program_code, program_name, major, '' AS college_name FROM tbl_program WHERE 1=0");
-                      }
-
-                      while ($r = $prog->fetch_assoc()) {
-
-                          $programName = $r['program_name'];
-                          $programCode = $r['program_code'];
-                          $major       = trim($r['major']);
-
-                          // Build readable label
-                          if ($major !== '') {
-                              $baseLabel = $programName . ' major in ' . $major . ' (' . $programCode . ')';
-                          } else {
-                              $baseLabel = $programName . ' (' . $programCode . ')';
-                          }
-
-                          // ADMIN includes college name
-                          if ($role === 'admin') {
-                              $label = $r['college_name'] . ' - ' . $baseLabel;
-                          } else {
-                              $label = $baseLabel;
-                          }
-
-                          echo "<option value='{$r['program_id']}'>" . htmlspecialchars($label) . "</option>";
-                      }
-
-                    ?>
-
-                  </select>
-                </div>
-
-
-                <!-- CMO No -->
-                <div class="col-md-3">
-                  <label class="form-label prospectus-header-label">CMO Number</label>
-                  <input type="text" class="form-control" name="cmo_no" id="cmo_no"
-                         placeholder="e.g., CMO 25, Series of 2015" required>
-                </div>
-
-                <!-- Effectivity SY -->
-                <div class="col-md-2">
-                  <label class="form-label prospectus-header-label">Effectivity SY</label>
-                  <input type="text" class="form-control" name="effective_sy" id="effective_sy"
-                         placeholder="e.g., 2018-2019" required>
-                </div>
-
-<div class="col-md-2 text-end">
-  <button type="button" id="btnSaveHeader" class="btn btn-success w-100 mb-1">
-    <i class="bx bx-save"></i> Save New
-  </button>
-
-  <button type="button" id="btnLoadHeader" class="btn btn-primary w-100">
-    <i class="bx bx-search"></i> Load Existing
-  </button>
-</div>
-
-              </form>
-
-            </div>
-          </div>
-
-          <!-- ===================== -->
-          <!-- YEAR / SEM SECTIONS   -->
-          <!-- ===================== -->
-          <div class="card" id="yearSemCard" style="display:none;">
-            <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="content-wrapper">
+          <div class="container-xxl flex-grow-1 container-p-y">
+            <div class="d-flex justify-content-between align-items-center mb-4">
               <div>
-                <h5 class="mb-0">Year & Semester Structure</h5>
-                <small class="text-muted">Manage subjects per year and semester</small>
+                <h4 class="fw-bold mb-1">
+                  <i class="bx bx-book-bookmark me-2"></i> Prospectus Information
+                </h4>
+                <p class="text-muted mb-0">Review existing prospectus records for programs under <?= htmlspecialchars($collegeName) ?>.</p>
               </div>
-              <button class="btn btn-outline-primary btn-sm" data-bs-toggle="modal" data-bs-target="#yearSemModal">
-                <i class="bx bx-plus"></i> Add Year / Semester
-              </button>
             </div>
 
-            <div class="card-body">
-              <div class="accordion" id="yearSemAccordion">
-                <!-- Dynamic items via AJAX -->
+            <div class="card mb-4">
+              <div class="card-header">
+                <h5 class="mb-0">Prospectus Selector</h5>
+                <small class="text-muted">Choose a program first, then select the available prospectus version.</small>
+              </div>
+              <div class="card-body">
+                <div class="row g-3">
+                  <div class="col-md-6">
+                    <label for="program_id" class="form-label text-uppercase small fw-semibold text-muted">Program</label>
+                    <select id="program_id" class="form-select">
+                      <option value="">Select Program</option>
+                      <?php foreach ($programOptions as $program): ?>
+                        <?php
+                          $label = $program['program_name'];
+                          if ($program['major'] !== '') {
+                              $label .= ' major in ' . $program['major'];
+                          }
+                          $label .= ' (' . $program['program_code'] . ')';
+                        ?>
+                        <option value="<?= (int)$program['program_id'] ?>"><?= htmlspecialchars($label) ?></option>
+                      <?php endforeach; ?>
+                    </select>
+                  </div>
+
+                  <div class="col-md-6">
+                    <label for="prospectus_version" class="form-label text-uppercase small fw-semibold text-muted">Prospectus Version</label>
+                    <select id="prospectus_version" class="form-select" disabled>
+                      <option value="">Select Program First</option>
+                    </select>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div id="prospectusState" class="alert alert-info state-alert">
+              Select a program to view its existing prospectus.
+            </div>
+
+            <div id="prospectusViewer" class="d-none">
+              <div class="card sheet-card">
+                <div class="card-body p-4 p-lg-5">
+                  <div class="sheet-head">
+                    <div class="sheet-title" id="sheetProgramTitle">Program Prospectus</div>
+                    <div class="sheet-subtitle" id="sheetProgramSubtitle"><?= htmlspecialchars($collegeName) ?></div>
+                    <div class="sheet-meta" id="sheetMeta"></div>
+                  </div>
+
+                  <div id="sheetContent"></div>
+                </div>
               </div>
             </div>
           </div>
 
+          <?php include '../footer.php'; ?>
+
+          <div class="content-backdrop fade"></div>
         </div>
-
-        <?php include '../footer.php'; ?>
-
-        <div class="content-backdrop fade"></div>
-      </div>
-
-    </div>
-  </div>
-
-  <div class="layout-overlay layout-menu-toggle"></div>
-</div>
-
-<!-- ====================================== -->
-<!-- MODAL: ADD YEAR / SEMESTER             -->
-<!-- ====================================== -->
-<div class="modal fade" id="yearSemModal" tabindex="-1">
-  <div class="modal-dialog modal-sm modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Add Year & Semester</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body">
-        <form id="yearSemForm">
-          <input type="hidden" name="prospectus_id" id="ys_prospectus_id">
-
-          <div class="mb-3">
-            <label class="form-label">Year Level</label>
-            <select name="year_level" class="form-select" required>
-              <option value="">Select</option>
-              <option value="1">First Year</option>
-              <option value="2">Second Year</option>
-              <option value="3">Third Year</option>
-              <option value="4">Fourth Year</option>
-            </select>
-          </div>
-
-          <div class="mb-3">
-            <label class="form-label">Semester</label>
-            <select name="semester" class="form-select" required>
-              <option value="">Select</option>
-              <option value="1">First Semester</option>
-              <option value="2">Second Semester</option>
-              <option value="3">Summer</option>
-            </select>
-          </div>
-
-        </form>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnSaveYearSem">Save</button>
       </div>
     </div>
+
+    <div class="layout-overlay layout-menu-toggle"></div>
   </div>
-</div>
 
-<!-- ====================================== -->
-<!-- MODAL: ADD SUBJECT TO YEAR/SEM         -->
-<!-- ====================================== -->
-<div class="modal fade" id="subjectModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Add Subject to Prospectus</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
+  <script src="../assets/vendor/libs/jquery/jquery.js"></script>
+  <script src="../assets/vendor/libs/popper/popper.js"></script>
+  <script src="../assets/vendor/js/bootstrap.js"></script>
+  <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
+  <script src="../assets/vendor/js/menu.js"></script>
+  <script src="../assets/js/main.js"></script>
 
-      <div class="modal-body">
-        <form id="prospectusSubjectForm">
-          <input type="hidden" name="pys_id" id="ps_pys_id">
+  <script>
+    const COLLEGE_NAME = <?= json_encode($collegeName) ?>;
+    const PROGRAM_OPTIONS = <?= $programOptionsJson ?: '[]' ?>;
+    const PROSPECTUS_VERSIONS_BY_PROGRAM = <?= $prospectusVersionsJson ?: '{}' ?>;
 
-          <!-- MAIN SUBJECT -->
-          <div class="mb-3">
-            <label class="form-label">Subject</label>
-            <select name="sub_id" id="ps_sub_id" class="form-select" required>
-              <option value="">Select Subject</option>
-              <?php
-                $sub = $conn->query("
-                  SELECT sub_id, sub_code, sub_description
-                  FROM tbl_subject_masterlist
-                  WHERE status='active'
-                  ORDER BY sub_code
-                ");
-                while ($s = $sub->fetch_assoc()) {
-                  $label = $s['sub_code'] . ' - ' . $s['sub_description'];
-                  echo "<option value='{$s['sub_id']}'>" . htmlspecialchars($label) . "</option>";
-                }
-              ?>
-            </select>
-          </div>
+    function escapeHtml(value) {
+      return String(value ?? '')
+        .replace(/&/g, '&amp;')
+        .replace(/</g, '&lt;')
+        .replace(/>/g, '&gt;')
+        .replace(/"/g, '&quot;')
+        .replace(/'/g, '&#39;');
+    }
 
-          <!-- UNITS -->
-          <div class="row">
-              <div class="col-md-3 mb-3">
-                  <label class="form-label">Lec</label>
-                  <input type="number" name="lec_units" id="ps_lec_units"
-                         class="form-control calc-units" min="0" value="0">
-              </div>
+    function yearLabel(year) {
+      const num = Number(year);
+      if (num === 1) return 'First Year';
+      if (num === 2) return 'Second Year';
+      if (num === 3) return 'Third Year';
+      if (num === 4) return 'Fourth Year';
+      return `Year ${escapeHtml(year)}`;
+    }
 
-              <div class="col-md-3 mb-3">
-                  <label class="form-label">Lab</label>
-                  <input type="number" name="lab_units" id="ps_lab_units"
-                         class="form-control calc-units" min="0" value="0">
-              </div>
+    function semesterLabel(semester) {
+      const num = Number(semester);
+      if (num === 1) return '1st Semester';
+      if (num === 2) return '2nd Semester';
+      if (num === 3) return 'Midyear';
+      return `Semester ${escapeHtml(semester)}`;
+    }
 
-              <div class="col-md-3 mb-3">
-                  <label class="form-label">Total Units</label>
-                  <input type="number" name="total_units" id="ps_total_units"
-                         class="form-control" min="0" value="0">
-              </div>
+    function showState(type, message) {
+      const state = $('#prospectusState');
+      const typeClassMap = {
+        info: 'alert-info',
+        warning: 'alert-warning',
+        danger: 'alert-danger',
+        success: 'alert-success'
+      };
 
-              <div class="col-md-3 mb-3">
-                  <label class="form-label">Sort Order</label>
-                  <input type="number" name="sort_order" id="ps_sort_order"
-                         class="form-control" min="1" value="1">
-              </div>
-          </div>
+      state
+        .removeClass('alert-info alert-warning alert-danger alert-success')
+        .addClass(typeClassMap[type] || 'alert-info')
+        .html(message)
+        .show();
 
+      $('#prospectusViewer').addClass('d-none');
+    }
 
-          <!-- PRE-REQUISITE SUBJECTS -->
-          <div class="mb-3">
-            <label class="form-label">Pre-requisite Subjects</label>
-            <select name="prerequisites[]" 
-                    id="ps_prerequisites" 
-                    class="form-select js-prereq-multiple" 
-                    multiple="multiple">
-              <!-- options will be populated by AJAX (loadPrerequisiteOptions) -->
-            </select>
-          </div>
-        </form>
-      </div>
+    function getProgramRecord(programId) {
+      const numericProgramId = Number(programId);
+      return PROGRAM_OPTIONS.find(program => Number(program.program_id) === numericProgramId) || null;
+    }
 
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnSaveProspectusSubject">Save</button>
-      </div>
-    </div>
-  </div>
-</div>
+    function populateProspectusVersions(programId) {
+      const select = $('#prospectus_version');
+      const versions = PROSPECTUS_VERSIONS_BY_PROGRAM[String(programId)] || [];
 
+      select.empty();
 
-
-<div class="modal fade" id="loadProspectusModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Load Prospectus</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body">
-        <label class="form-label">Select Prospectus</label>
-        <select id="existingProspectusList" class="form-select">
-          <option value="">Loading...</option>
-        </select>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnLoadSelectedProspectus">Load</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-<!-- ====================================== -->
-<!-- MODAL: EDIT SUBJECT (NEW / SEPARATE)   -->
-<!-- ====================================== -->
-<div class="modal fade" id="editSubjectModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Edit Prospectus Subject</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-
-      <div class="modal-body">
-        <form id="editProspectusSubjectForm">
-          <input type="hidden" name="ps_id" id="edit_ps_id">
-
-          <!-- SUBJECT (editable) -->
-          <div class="mb-3">
-            <label class="form-label">Subject</label>
-            <select name="sub_id" id="edit_sub_id" class="form-select" required>
-              <option value="">Select Subject</option>
-              <?php
-                $sub = $conn->query("
-                  SELECT sub_id, sub_code, sub_description
-                  FROM tbl_subject_masterlist
-                  WHERE status='active'
-                  ORDER BY sub_code
-                ");
-                while ($s = $sub->fetch_assoc()) {
-                  $label = $s['sub_code'] . ' - ' . $s['sub_description'];
-                  echo "<option value='{$s['sub_id']}'>" . htmlspecialchars($label) . "</option>";
-                }
-              ?>
-            </select>
-          </div>
-
-          <!-- UNITS -->
-          <div class="row">
-            <div class="col-md-3 mb-3">
-              <label class="form-label">Lec</label>
-              <input type="number" name="lec_units" id="edit_lec_units" class="form-control" min="0" value="0">
-            </div>
-
-            <div class="col-md-3 mb-3">
-              <label class="form-label">Lab</label>
-              <input type="number" name="lab_units" id="edit_lab_units" class="form-control" min="0" value="0">
-            </div>
-
-            <div class="col-md-3 mb-3">
-              <label class="form-label">Total Units</label>
-              <input type="number" name="total_units" id="edit_total_units" class="form-control" min="0" value="0">
-            </div>
-
-            <div class="col-md-3 mb-3">
-              <label class="form-label">Sort Order</label>
-              <input type="number" name="sort_order" id="edit_sort_order" class="form-control" min="1" value="1">
-            </div>
-          </div>
-
-          <!-- PREREQUISITES -->
-          <div class="mb-3">
-            <label class="form-label">Pre-requisite Subjects</label>
-            <select name="prerequisites[]" id="edit_prerequisites" class="form-select" multiple="multiple">
-              <!-- will be populated via AJAX (same pattern) -->
-            </select>
-          </div>
-        </form>
-      </div>
-
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnUpdateProspectusSubject">Update</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-
-
-<!-- JS -->
-    <script src="../assets/vendor/libs/jquery/jquery.js"></script>
-    <script src="../assets/vendor/libs/popper/popper.js"></script>
-    <script src="../assets/vendor/js/bootstrap.js"></script>
-    <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
-    <script src="../assets/vendor/js/menu.js"></script>
-    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
-    <script src="../assets/js/main.js"></script>
-    <script src="../assets/js/dashboards-analytics.js"></script>
-
-
-<script>
-
-const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
-
-$.ajaxPrefilter(function (options) {
-    const method = (options.type || options.method || "GET").toUpperCase();
-    if (method !== "POST") return;
-
-    if (typeof options.data === "string") {
-        const tokenPair = "csrf_token=" + encodeURIComponent(CSRF_TOKEN);
-        options.data = options.data ? (options.data + "&" + tokenPair) : tokenPair;
+      if (!programId) {
+        select.append('<option value="">Select Program First</option>');
+        select.prop('disabled', true).trigger('change.select2');
+        showState('info', 'Select a program to view its existing prospectus.');
         return;
-    }
+      }
 
-    if (Array.isArray(options.data)) {
-        options.data.push({ name: "csrf_token", value: CSRF_TOKEN });
+      if (versions.length === 0) {
+        select.append('<option value="">No Prospectus Available</option>');
+        select.prop('disabled', true).trigger('change.select2');
+        showState(
+          'warning',
+          'No prospectus is available for the selected program. Prospectus creation is handled in the Administrator module.'
+        );
         return;
+      }
+
+      versions.forEach((version, index) => {
+        const selected = index === 0 ? ' selected' : '';
+        select.append(
+          `<option value="${version.prospectus_id}"${selected}>${escapeHtml(version.label)}</option>`
+        );
+      });
+
+      select.prop('disabled', false).trigger('change.select2');
+      loadProspectusView(select.val());
     }
 
-    if ($.isPlainObject(options.data)) {
-        options.data.csrf_token = CSRF_TOKEN;
+    function buildSemesterTable(rows, semester) {
+      const safeRows = Array.isArray(rows) ? rows : [];
+      let totalLec = 0;
+      let totalLab = 0;
+      let totalUnits = 0;
+
+      if (safeRows.length === 0) {
+        return `
+          <div class="semester-card${Number(semester) === 3 ? ' midyear' : ''}">
+            <div class="semester-head">
+              <h6 class="semester-title">${escapeHtml(semesterLabel(semester))}</h6>
+              <span class="semester-badge">0 Subjects</span>
+            </div>
+            <div class="empty-semester">No subjects listed for this semester.</div>
+          </div>
+        `;
+      }
+
+      const bodyRows = safeRows.map(row => {
+        const lec = Number(row.lec_units) || 0;
+        const lab = Number(row.lab_units) || 0;
+        const units = Number(row.total_units) || 0;
+
+        totalLec += lec;
+        totalLab += lab;
+        totalUnits += units;
+
+        return `
+          <tr>
+            <td class="col-code">${escapeHtml(row.sub_code)}</td>
+            <td>${escapeHtml(row.sub_description)}</td>
+            <td class="col-num">${lec}</td>
+            <td class="col-num">${lab}</td>
+            <td class="col-num">${units}</td>
+            <td class="col-prereq">${escapeHtml(row.prerequisites || 'None')}</td>
+          </tr>
+        `;
+      }).join('');
+
+      return `
+        <div class="semester-card${Number(semester) === 3 ? ' midyear' : ''}">
+          <div class="semester-head">
+            <h6 class="semester-title">${escapeHtml(semesterLabel(semester))}</h6>
+            <span class="semester-badge">${safeRows.length} Subject${safeRows.length === 1 ? '' : 's'}</span>
+          </div>
+          <div class="table-responsive">
+            <table class="semester-table">
+              <thead>
+                <tr>
+                  <th>Course Code</th>
+                  <th>Course Title</th>
+                  <th class="col-num">Lec</th>
+                  <th class="col-num">Lab</th>
+                  <th class="col-num">Unit</th>
+                  <th>Pre-Requisite</th>
+                </tr>
+              </thead>
+              <tbody>${bodyRows}</tbody>
+              <tfoot>
+                <tr>
+                  <th colspan="2" class="text-end">Total</th>
+                  <td class="col-num">${totalLec}</td>
+                  <td class="col-num">${totalLab}</td>
+                  <td class="col-num">${totalUnits}</td>
+                  <td>Units</td>
+                </tr>
+              </tfoot>
+            </table>
+          </div>
+        </div>
+      `;
+    }
+
+    function renderProspectus(data) {
+      const header = data.header || {};
+      const structure = data.structure || {};
+      const subjects = data.subjects || {};
+      const programRecord = getProgramRecord(header.program_id);
+
+      const titleParts = [];
+      if (header.program_name) titleParts.push(header.program_name);
+      if (header.major) titleParts.push(`major in ${header.major}`);
+
+      $('#sheetProgramTitle').text(titleParts.join(' ') || 'Program Prospectus');
+      $('#sheetProgramSubtitle').text(COLLEGE_NAME);
+
+      $('#sheetMeta').html(`
+        <span class="sheet-meta-pill"><strong>Program Code:</strong> ${escapeHtml(header.program_code || (programRecord ? programRecord.program_code : '-'))}</span>
+        <span class="sheet-meta-pill"><strong>CMO:</strong> ${escapeHtml(header.cmo_no || '-')}</span>
+        <span class="sheet-meta-pill"><strong>Effectivity:</strong> ${escapeHtml(header.effective_sy || '-')}</span>
+      `);
+
+      const yearKeys = Array.from(
+        new Set([
+          ...Object.keys(structure || {}),
+          ...Object.keys(subjects || {})
+        ])
+      ).sort((a, b) => Number(a) - Number(b));
+
+      if (yearKeys.length === 0) {
+        showState('warning', 'This prospectus has no year and semester structure yet.');
         return;
+      }
+
+      const layoutHtml = yearKeys.map((yearKey) => {
+        const yearStructure = structure[yearKey] || {};
+        const yearSubjects = subjects[yearKey] || {};
+        const hasMidyear = Boolean(yearStructure['3']) || Boolean(yearSubjects['3']);
+
+        return `
+          <section class="year-block">
+            <div class="year-banner">
+              <div class="year-banner-title">${escapeHtml(yearLabel(yearKey))}</div>
+              <div class="year-banner-note">Curriculum breakdown by semester</div>
+            </div>
+            <div class="semester-grid">
+              ${buildSemesterTable(yearSubjects['1'] || [], 1)}
+              ${buildSemesterTable(yearSubjects['2'] || [], 2)}
+              ${hasMidyear ? buildSemesterTable(yearSubjects['3'] || [], 3) : ''}
+            </div>
+          </section>
+        `;
+      }).join('');
+
+      $('#sheetContent').html(layoutHtml);
+      $('#prospectusViewer').removeClass('d-none');
+      $('#prospectusState').hide();
     }
 
-    if (!options.data) {
-        options.data = { csrf_token: CSRF_TOKEN };
-    }
-});
+    async function loadProspectusView(prospectusId) {
+      if (!prospectusId) {
+        showState('info', 'Select a prospectus version to review.');
+        return;
+      }
 
-// ===============================
-// EDIT SUBJECTS
-// ===============================
+      showState('info', 'Loading prospectus information...');
 
-$("#btnUpdateProspectusSubject").click(function () {
+      try {
+        const response = await fetch(`../backend/query_view_prospectus.php?prospectus_id=${encodeURIComponent(prospectusId)}`, {
+          credentials: 'same-origin'
+        });
 
-  let prereqIds = $("#edit_prerequisites").val() || [];
-  let prereqJson = prereqIds.length ? JSON.stringify(prereqIds) : null;
+        const data = await response.json();
 
-  let prereqText = $("#edit_prerequisites option:selected")
-    .map(function(){ return $(this).text().split(" - ")[0].trim(); })
-    .get()
-    .filter(v => v !== "")
-    .join(", ");
-
-  let payload = $("#editProspectusSubjectForm").serializeArray();
-
-  // remove prerequisites[] array entries
-  payload = payload.filter(x => x.name !== "prerequisites[]");
-
-  // add both formats like your add flow
-  payload.push({ name: "prerequisites", value: prereqText });
-  payload.push({ name: "prerequisite_sub_ids", value: prereqJson });
-  payload.push({ name: "update_prospectus_subject", value: 1 });
-
-  $.post("../backend/query_prospectus.php", payload, function(res){
-
-    let parts = res.split("|");
-    if (parts[0] !== "OK") {
-      Swal.fire("Error", parts[1] || "Update failed", "error");
-      return;
-    }
-
-    Swal.fire({
-      icon: "success",
-      title: "Updated!",
-      text: parts[2] || "Subject updated successfully.",
-      timer: 1200,
-      timerProgressBar: true,
-      showConfirmButton: false,
-      heightAuto: false
-    });
-
-    $("#editSubjectModal").modal("hide");
-    loadYearSem($("#prospectus_id").val());
-  });
-
-});
-
-
-$(document).on("click", ".btnEditSubject", function () {
-
-  let ps_id = $(this).data("ps");
-  let prospectus_id = $("#prospectus_id").val();
-
-  $("#edit_ps_id").val(ps_id);
-
-  // load options first, then load row and select
-  loadPrerequisiteOptionsEdit(prospectus_id).then(() => {
-
-    // init select2 multi (avoid duplicates)
-    if ($('#edit_prerequisites').hasClass("select2-hidden-accessible")) {
-      $('#edit_prerequisites').select2('destroy');
-    }
-
-    $('#edit_prerequisites').select2({
-      placeholder: "Select prerequisite subjects",
-      allowClear: true,
-      width: "100%",
-      dropdownParent: $('#editSubjectModal')
-    });
-
-    $.post("../backend/query_prospectus.php",
-      { load_subject_for_edit: 1, ps_id: ps_id },
-      function(resp){
-
-        let item = {};
-        try {
-          item = JSON.parse(resp);
-        } catch (e) {
-          Swal.fire("Error", "Invalid response while loading subject.", "error");
+        if (!response.ok || data.error) {
+          showState('danger', escapeHtml(data.error || 'Unable to load prospectus information.'));
           return;
         }
 
-        $("#edit_sub_id").val(item.sub_id).trigger("change");
-        $("#edit_lec_units").val(item.lec_units);
-        $("#edit_lab_units").val(item.lab_units);
-        $("#edit_total_units").val(item.total_units);
-        $("#edit_sort_order").val(item.sort_order);
-
-        // prerequisites selected IDs (JSON)
-        let prereqIds = [];
-        try {
-          prereqIds = item.prerequisite_sub_ids ? JSON.parse(item.prerequisite_sub_ids) : [];
-        } catch(e) { prereqIds = []; }
-
-        $("#edit_prerequisites").val(prereqIds).trigger("change");
-
-        $("#editSubjectModal").modal("show");
+        renderProspectus(data);
+      } catch (error) {
+        showState('danger', 'Unable to load prospectus information.');
       }
-    );
-  });
+    }
 
-});
-
-
-function loadPrerequisiteOptionsEdit(prospectus_id) {
-  return $.post("../backend/query_prospectus.php",
-    { get_all_subjects: 1, prospectus_id },
-    function(res){
-      let data = [];
-      try {
-        data = JSON.parse(res);
-      } catch (e) {
-        data = [];
-      }
-      let select = $("#edit_prerequisites");
-      select.empty();
-
-      data.forEach(sub => {
-        select.append(`<option value="${sub.sub_id}">${sub.sub_code} - ${sub.sub_description}</option>`);
+    $(document).ready(function () {
+      $('#program_id').select2({
+        placeholder: 'Select Program',
+        width: '100%'
       });
-    }
-  );
-}
 
-$('#edit_sub_id').select2({
-  placeholder: "Select Subject",
-  allowClear: true,
-  width: "100%",
-  dropdownParent: $('#editSubjectModal')
-});
-
-
-// ===============================
-// END EDIT SUBJECTS
-// ===============================
-
-let lastOpenedPys = null;
-
-$(document).on("shown.bs.collapse", ".accordion-collapse", function () {
-    lastOpenedPys = $(this).attr("id"); // example: collapse12
-});
-
-function loadPrerequisiteOptions(prospectus_id) {
-    return $.post(
-        "../backend/query_prospectus.php",
-        { get_all_subjects: 1, prospectus_id },
-        function(res) {
-            let data = [];
-            try {
-                data = JSON.parse(res);
-            } catch (e) {
-                data = [];
-            }
-            let select = $("#ps_prerequisites");
-
-            select.empty();
-
-            data.forEach(sub => {
-                select.append(
-                    `<option value="${sub.sub_id}">
-                        ${sub.sub_code} - ${sub.sub_description}
-                    </option>`
-                );
-            });
-        }
-    );
-}
-
-// -----------------------------
-// DELETE YEAR SEMESTER
-// -----------------------------
-$(document).on("click", ".btnDeleteYearSem", function () {
-    let pys_id = $(this).data("pys");
-
-    Swal.fire({
-        title: "Delete Year & Semester?",
-        html: "<small>This will permanently remove this year/semester <br> and all subjects under it.</small>",
-        icon: "warning",
-        showCancelButton: true,
-        confirmButtonColor: "#d33",
-        cancelButtonColor: "#aaa",
-        confirmButtonText: "Yes, delete it",
-    }).then((result) => {
-        if (result.isConfirmed) {
-            $.post("../backend/query_prospectus.php", {
-                delete_year_sem: 1,
-                pys_id: pys_id
-            }, function (res) {
-
-                let parts = res.split("|");
-                let status = parts[0];
-                let msg = parts[1];
-
-                if (status === "OK") {
-                    Swal.fire({
-                        icon: "success",
-                        title: msg,
-                        timer: 1200,
-                        showConfirmButton: false,
-                    });
-
-                    loadYearSem($("#prospectus_id").val());
-                } else {
-                    Swal.fire("Error", msg, "error");
-                }
-            });
-        }
-    });
-});
-
-
-// -----------------------------
-// GLOBAL FUNCTION (must be here)
-// -----------------------------
-// function loadYearSem(prospectus_id) {
-//     console.log("Loading Year/Sem for ID:", prospectus_id);
-
-//     $.post(
-//         "../backend/query_prospectus.php",
-//         { load_year_sem: 1, prospectus_id: prospectus_id },
-//         function (html) {
-//             $("#yearSemAccordion").html(html);
-//         }
-//     );
-// }
-function loadYearSem(prospectus_id) {
-    $.post(
-        "../backend/query_prospectus.php",
-        { load_year_sem: 1, prospectus_id: prospectus_id },
-        function (html) {
-            $("#yearSemAccordion").html(html);
-
-            // Re-open the previously opened section
-            if (lastOpenedPys) {
-                $("#" + lastOpenedPys).collapse("show");
-            }
-        }
-    );
-}
-
-// -----------------------------
-// DOCUMENT READY
-// -----------------------------
-$(document).ready(function () {
-
-// Initialize SUBJECT dropdown as single-select Select2
-$('#ps_sub_id').select2({
-    placeholder: "Select Subject",
-    allowClear: true,
-    width: "100%",
-    dropdownParent: $('#subjectModal')
-});
-
-    // Make globally accessible
-    window.loadYearSem = loadYearSem;
-
-    // -------------------------------------------
-    // OPEN MODAL + LOAD PROSPECTUS LIST
-    // -------------------------------------------
-    $("#btnLoadHeader").click(function () {
-        $("#loadProspectusModal").modal("show");
-
-        $.ajax({
-            url: "../backend/query_prospectus.php",
-            type: "POST",
-            data: { load_prospectus_list: 1 },
-            dataType: "json",
-            success: function (res) {
-                $("#existingProspectusList").empty()
-                    .append(`<option value="">Select Prospectus</option>`);
-
-                    res.forEach(item => {
-
-                        let programLabel = '';
-
-                        if (item.major && item.major.trim() !== '') {
-                            programLabel = `${item.program_name} ${item.major} (${item.program_code})`;
-                        } else {
-                            programLabel = `${item.program_name} (${item.program_code})`;
-                        }
-
-                        let finalLabel = `${programLabel} — ${item.cmo_no} — ${item.effective_sy}`;
-
-                        $("#existingProspectusList").append(`
-                            <option value="${item.prospectus_id}">
-                                ${finalLabel}
-                            </option>
-                        `);
-                    });
-
-            },
-            error: function () {
-                Swal.fire("Error", "Unable to load prospectus list.", "error");
-            }
-        });
-    });
-
-    // -------------------------------------------
-    // LOAD SELECTED PROSPECTUS HEADER
-    // -------------------------------------------
-    $("#btnLoadSelectedProspectus").click(function () {
-
-        let pid = $("#existingProspectusList").val();
-        if (!pid) return;
-
-        $.post("../backend/query_prospectus.php",
-            { load_header: 1, prospectus_id: pid },
-            function (res) {
-
-                let parts = res.split("|");
-
-                if (parts[0] !== "OK") {
-                    Swal.fire("Error", parts[1], "error");
-                    return;
-                }
-
-                // Populate fields
-                $("#prospectus_id").val(pid);
-                $("#ys_prospectus_id").val(pid);
-                $("#program_id").val(parts[1]);
-                $("#cmo_no").val(parts[2]);
-                $("#effective_sy").val(parts[3]);
-
-                Swal.fire({
-                    icon: "success",
-                    title: "Loaded!",
-                    text: "Prospectus loaded successfully.",
-                    timer: 1000,
-                    timerProgressBar: true,
-                    showConfirmButton: false,
-                    heightAuto: false
-                });
-
-
-                $("#loadProspectusModal").modal("hide");
-                $("#yearSemCard").show();
-
-                loadYearSem(pid);
-            }
-        );
-    });
-
-    // -------------------------------------------
-    // SAVE NEW PROSPECTUS HEADER
-    // -------------------------------------------
-    $("#btnSaveHeader").click(function () {
-
-        $.post(
-            "../backend/query_prospectus.php",
-            $("#prospectusHeaderForm").serialize() + "&save_header=1",
-            function (res) {
-
-                let parts = res.split("|");
-                let status = parts[0];
-                let id = parts[1];
-                let msg = parts[2];
-
-                Swal.fire({
-                    icon: (status === "OK" || status === "EXISTING") ? "success" : "error",
-                    title: msg
-                });
-
-                if (status === "OK" || status === "EXISTING") {
-                    $("#prospectus_id").val(id);
-                    $("#ys_prospectus_id").val(id);
-                    $("#yearSemCard").show();
-                    loadYearSem(id);
-                }
-            }
-        );
-    });
-
-    // -------------------------------------------
-    // SAVE NEW YEAR / SEM ENTRY
-    // -------------------------------------------
-    $("#btnSaveYearSem").click(function () {
-
-        $.post(
-            "../backend/query_prospectus.php",
-            $("#yearSemForm").serialize() + "&save_year_sem=1",
-            function (res) {
-
-                let parts = res.split("|");
-                let status = parts[0];
-                let msg = parts[2];
-
-                if (status === "ERROR") {
-                    Swal.fire("Error", msg, "error");
-                    return;
-                }
-
-                if (status === "EXISTS") {
-                    Swal.fire("Notice", msg, "info");
-                    $("#yearSemModal").modal("hide");
-                    return;
-                }
-
-                Swal.fire("Success", msg, "success");
-                $("#yearSemModal").modal("hide");
-
-                loadYearSem($("#prospectus_id").val());
-            }
-        );
-    });
-
-// -------------------------------------------
-// OPEN ADD SUBJECT MODAL
-// -------------------------------------------
-$(document).on("click", ".btnAddSubject", function () {
-
-    let pys = $(this).data("pys");
-    console.log("PYS SENT:", pys);   // ← ADD THIS
-    // $("#ps_pys_id").val(pys);
-    $('#subjectModal').find('#ps_pys_id').val(pys);
-
-    // Load prerequisite options (AJAX)
-    loadPrerequisiteOptions($("#prospectus_id").val()).then(() => {
-
-    // Destroy previous Select2 to avoid duplicate initialization
-    if ($('#ps_prerequisites').hasClass("select2-hidden-accessible")) {
-        $('#ps_prerequisites').select2('destroy');
-    }
-
-    // Initialize Select2 normally
-    $('#ps_prerequisites').select2({
-        placeholder: "Select prerequisite subjects",
-        allowClear: true,
-        width: "100%",
-        dropdownParent: $('#subjectModal')
-    });
-
-        });
-
-        $("#subjectModal").modal("show");
-    });
-
-// Destroy old Select2 (avoid duplicate instances)
-if ($('#ps_sub_id').hasClass("select2-hidden-accessible")) {
-    $('#ps_sub_id').select2('destroy');
-}
-
-// Reinitialize as single select
-$('#ps_sub_id').select2({
-    placeholder: "Select Subject",
-    allowClear: true,
-    width: "100%",
-    dropdownParent: $('#subjectModal')
-});
-
-// Clear previous value
-$('#ps_sub_id').val('').trigger('change');
-
-
-
-    // -------------------------------------------
-    // SAVE SUBJECT
-    // -------------------------------------------
-$("#btnSaveProspectusSubject").click(function () {
-
-    // Get all form values manually
-    let form = $('#subjectModal').find('#prospectusSubjectForm');
-    let formData = form.serializeArray();
-
-// Get selected prerequisite IDs
-let prereqIds = $("#ps_prerequisites").val() || [];   // array of sub_id
-
-// JSON version (for DB logic)
-let prereqJson = prereqIds.length ? JSON.stringify(prereqIds) : null;
-
-// Human-readable string (for display)
-let prereqText = $("#ps_prerequisites option:selected")
-    .map(function () {
-        // get only sub_code AND clean spaces
-        return $(this)
-            .text()
-            .split(" - ")[0]
-            .trim();   // ✅ REMOVE leading/trailing spaces
-    })
-    .get()
-    .filter(v => v !== "")   // ✅ safety: remove empty
-    .join(", ");             // ✅ consistent spacing
-
-
-// Remove old prerequisites[] entry
-formData = formData.filter(item => item.name !== "prerequisites[]");
-
-// Add display string
-formData.push({ name: "prerequisites", value: prereqText });
-
-// Add JSON ID list
-formData.push({ name: "prerequisite_sub_ids", value: prereqJson });
-
-// Save flag
-formData.push({ name: "save_prospectus_subject", value: 1 });
-
-    $.post("../backend/query_prospectus.php", formData, function (res) {
-
-        console.log("Subject Save Response:", res);
-
-        let parts = res.split("|");
-        let status = parts[0];
-        let msg = parts[2];
-
-        if (status === "ERROR") {
-            Swal.fire("Error", msg, "error");
-            return;
-        }
-
-        if (status === "EXISTS") {
-            Swal.fire("Warning", msg, "warning");
-            return;
-        }
-
-      if (status === "OK") {
-          Swal.fire({
-              icon: "success",
-              title: "Saved Successfully!",
-              text: msg,
-              timer: 1200,
-              timerProgressBar: true,
-              showConfirmButton: false,
-              heightAuto: false,
-          });
-
-          // Reload year/semester subject list
-          loadYearSem($("#prospectus_id").val());
-
-          // Clear subject & prerequisites
-          $("#ps_sub_id").val("").trigger("change");
-          $("#ps_prerequisites").val([]).trigger("change");
-
-          // ✅ Increment sort order automatically
-          let currentSort = parseInt($("#ps_sort_order").val()) || 1;
-          $("#ps_sort_order").val(currentSort + 1);
-
-          // ✅ Focus back to subject dropdown
-          setTimeout(() => {
-              $("#ps_sub_id").select2("open"); // or .focus() if not select2
-          }, 200);
+      $('#prospectus_version').select2({
+        placeholder: 'Select Prospectus Version',
+        width: '100%'
+      });
+
+      $('#program_id').on('change', function () {
+        populateProspectusVersions($(this).val());
+      });
+
+      $('#prospectus_version').on('change', function () {
+        loadProspectusView($(this).val());
+      });
+
+      if (PROGRAM_OPTIONS.length === 0) {
+        $('#program_id').prop('disabled', true).trigger('change.select2');
+        showState('warning', 'No active programs are currently assigned to your scheduler college.');
+        return;
       }
 
+      if (PROGRAM_OPTIONS.length === 1) {
+        $('#program_id').val(String(PROGRAM_OPTIONS[0].program_id)).trigger('change');
+      }
     });
-
-});
-
-    // -------------------------------------------
-    // DELETE SUBJECT
-    // -------------------------------------------
-    $(document).on("click", ".btnDeleteSubject", function () {
-
-        let ps_id = $(this).data("ps");
-
-        Swal.fire({
-            title: "Remove subject?",
-            text: "This will permanently remove the subject.",
-            icon: "warning",
-            showCancelButton: true,
-            confirmButtonColor: "#d33",
-            cancelButtonColor: "#aaa",
-            confirmButtonText: "Yes, remove it"
-        }).then((result) => {
-
-            if (result.isConfirmed) {
-
-                $.post(
-                    "../backend/query_prospectus.php",
-                    { delete_prospectus_subject: 1, ps_id: ps_id },
-                    function (res) {
-
-                        let parts = res.split("|");
-                        let status = parts[0];
-                        let msg = parts[1];
-
-                        if (status === "OK") {
-                            Swal.fire("Removed", msg, "success");
-                            loadYearSem($("#prospectus_id").val());
-                        } else {
-                            Swal.fire("Error", msg, "error");
-                        }
-                    }
-                );
-            }
-        });
-    });
-
-});
-</script>
-
-
-
+  </script>
 </body>
 </html>

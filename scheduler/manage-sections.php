@@ -14,6 +14,7 @@
 session_start();
 ob_start();
 include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
@@ -29,15 +30,9 @@ $col = mysqli_fetch_assoc(mysqli_query(
 ));
 $college_name = $col['college_name'] ?? '';
 
-// Default AY/Semester from academic settings (if available)
-$default_ay_id = 0;
-$default_semester = 0;
-$settingsQ = $conn->query("SELECT current_ay_id, current_semester FROM tbl_academic_settings LIMIT 1");
-if ($settingsQ && $settingsQ->num_rows > 0) {
-    $settingsRow = $settingsQ->fetch_assoc();
-    $default_ay_id = (int)($settingsRow['current_ay_id'] ?? 0);
-    $default_semester = (int)($settingsRow['current_semester'] ?? 0);
-}
+$currentTerm = synk_fetch_current_academic_term($conn);
+$default_ay_id = (int)$currentTerm['ay_id'];
+$default_semester = (int)$currentTerm['semester'];
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -60,23 +55,603 @@ if ($settingsQ && $settingsQ->num_rows > 0) {
     <script src="../assets/js/config.js"></script>
 
     <style>
-        #previewCard { display:none; }
-        #groupedSections { display:none; } /* hidden until user loads AY+Sem */
-        .year-level-card {
-            border: 1px solid #cfd6ea;
-            border-radius: .5rem;
-            box-shadow: 0 1px 2px rgba(67, 89, 113, 0.08);
+        body {
+            background:
+                radial-gradient(circle at top left, rgba(105, 108, 255, 0.08), transparent 28%),
+                linear-gradient(180deg, #f5f7fc 0%, #f8fbff 52%, #eff4fb 100%);
         }
+
+        #previewCard { display:none; }
+        #groupedSections {
+            display:none;
+            margin-top: 1.25rem;
+        }
+
+        .sections-page-header {
+            display: flex;
+            align-items: flex-end;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 1.25rem;
+        }
+
+        .sections-page-eyebrow {
+            display: inline-flex;
+            align-items: center;
+            gap: .4rem;
+            margin-bottom: .55rem;
+            color: #5d6ad6;
+            font-size: .76rem;
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+        }
+
+        .sections-page-title {
+            margin: 0;
+            color: #223053;
+            font-size: 1.9rem;
+            font-weight: 800;
+            letter-spacing: -.03em;
+        }
+
+        .sections-page-title small {
+            color: #6c7d95 !important;
+            font-size: 1rem;
+            font-weight: 600;
+        }
+
+        .sections-page-copy {
+            margin: .45rem 0 0;
+            max-width: 700px;
+            color: #6c7d95;
+            font-size: .95rem;
+            line-height: 1.6;
+        }
+
+        .sections-page-badge {
+            display: inline-flex;
+            align-items: center;
+            gap: .55rem;
+            padding: .7rem .95rem;
+            border: 1px solid #dbe4f2;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.76);
+            color: #52667f;
+            font-size: .78rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            white-space: nowrap;
+            box-shadow: 0 12px 26px rgba(67, 89, 113, 0.08);
+        }
+
+        .sections-page-badge i {
+            font-size: 1rem;
+            color: #696cff;
+        }
+
+        .sections-panel {
+            border: 1px solid #e1e8f2;
+            border-radius: 1.1rem;
+            background: rgba(255, 255, 255, 0.94);
+            box-shadow: 0 14px 32px rgba(67, 89, 113, 0.08);
+            overflow: hidden;
+        }
+
+        .sections-panel .card-body {
+            padding: 1.45rem 1.5rem 1.5rem;
+        }
+
+        .panel-heading {
+            display: flex;
+            align-items: flex-start;
+            gap: .95rem;
+            margin-bottom: 1.2rem;
+        }
+
+        .panel-heading-icon {
+            width: 46px;
+            height: 46px;
+            border-radius: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 1.15rem;
+            flex: 0 0 46px;
+            box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.4);
+        }
+
+        .panel-title {
+            margin: 0;
+            color: #223053;
+            font-size: 1.14rem;
+            font-weight: 800;
+        }
+
+        .panel-subtitle {
+            margin: .3rem 0 0;
+            color: #6c7d95;
+            font-size: .9rem;
+            line-height: 1.55;
+        }
+
+        .generator-heading {
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .generator-meta {
+            display: inline-flex;
+            align-items: center;
+            gap: .5rem;
+            padding: .55rem .8rem;
+            border-radius: 999px;
+            background: #f2f5ff;
+            color: #5867d8;
+            font-size: .75rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .generator-meta i {
+            font-size: .95rem;
+        }
+
+        .sections-panel .form-label {
+            color: #5c6d84;
+            font-size: .74rem;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .sections-panel .form-control,
+        .sections-panel .form-select {
+            min-height: 3rem;
+            border-color: #d7e0ec;
+            border-radius: .9rem;
+            background-color: #fbfcff;
+            box-shadow: none;
+        }
+
+        .sections-panel .form-control:focus,
+        .sections-panel .form-select:focus {
+            border-color: #8ca0ff;
+            background-color: #ffffff;
+            box-shadow: 0 0 0 .2rem rgba(105, 108, 255, 0.14);
+        }
+
+        .generator-actions {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-top: 1.2rem;
+        }
+
+        .generator-hint {
+            color: #6c7d95;
+            font-size: .85rem;
+            line-height: 1.5;
+        }
+
+        .generator-submit {
+            min-height: 3rem;
+            padding-inline: 1.15rem;
+            border-radius: .9rem;
+            font-weight: 700;
+            box-shadow: 0 12px 22px rgba(105, 108, 255, 0.24);
+            transition: transform .18s ease, box-shadow .18s ease;
+        }
+
+        .generator-submit:hover,
+        .generator-submit:focus {
+            transform: translateY(-1px);
+            box-shadow: 0 16px 28px rgba(105, 108, 255, 0.28);
+        }
+
+        .program-cards-grid {
+            display: grid;
+            gap: 1.35rem;
+        }
+
+        .program-card {
+            border: 1px solid #dde6f2;
+            border-radius: 1.2rem;
+            background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+            box-shadow: 0 18px 36px rgba(67, 89, 113, 0.08);
+            overflow: hidden;
+        }
+
+        .program-card-header {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: 1.3rem 1.35rem 1.15rem;
+            border-bottom: 1px solid #ebf0f7;
+            background: linear-gradient(135deg, #f8faff 0%, #eef4ff 100%);
+        }
+
+        .program-card-identity {
+            display: flex;
+            align-items: flex-start;
+            gap: .95rem;
+            min-width: 0;
+        }
+
+        .program-card-code {
+            min-width: 3.5rem;
+            height: 3.5rem;
+            padding: 0 .75rem;
+            border-radius: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: linear-gradient(135deg, #696cff 0%, #8475ff 100%);
+            color: #ffffff;
+            font-size: .95rem;
+            font-weight: 800;
+            letter-spacing: .03em;
+            box-shadow: 0 14px 22px rgba(105, 108, 255, 0.24);
+        }
+
+        .program-card-title {
+            margin: 0;
+            color: #223053;
+            font-size: 1.16rem;
+            font-weight: 800;
+            line-height: 1.28;
+        }
+
+        .program-card-subtitle {
+            margin-top: .32rem;
+            color: #6c7d95;
+            font-size: .85rem;
+            line-height: 1.5;
+        }
+
+        .program-card-metric {
+            min-width: 8.3rem;
+            padding: .7rem .9rem;
+            border: 1px solid #dce5f4;
+            border-radius: .95rem;
+            background: rgba(255, 255, 255, 0.88);
+            text-align: right;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+        }
+
+        .program-card-metric-label {
+            display: block;
+            color: #7a8aa2;
+            font-size: .7rem;
+            font-weight: 700;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .program-card-metric-value {
+            display: block;
+            margin-top: .15rem;
+            color: #5667d6;
+            font-size: 1.4rem;
+            font-weight: 800;
+            letter-spacing: -.03em;
+        }
+
+        .program-card-body {
+            padding: 1.2rem 1.35rem 1.35rem;
+        }
+
+        .year-stack {
+            display: grid;
+            gap: 1rem;
+        }
+
+        .year-level-card {
+            border: 1px solid #dbe4f2;
+            border-radius: 1rem;
+            background: #ffffff;
+            box-shadow: 0 10px 20px rgba(67, 89, 113, 0.05);
+            overflow: hidden;
+        }
+
         .year-level-card .year-header {
-            background: linear-gradient(90deg, #eef3ff 0%, #e8f0ff 100%);
-            border-bottom: 1px solid #cfd6ea;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            padding: .95rem 1rem;
+            border-bottom: 1px solid #e8eef7;
+            background: linear-gradient(90deg, #f5f8ff 0%, #edf4ff 100%);
             color: #223053;
         }
-        .section-chip {
-            border: 1px solid #d4dced;
-            border-radius: .5rem;
-            padding: .5rem .6rem;
-            background: #fcfdff;
+
+        .year-title-wrap {
+            min-width: 0;
+        }
+
+        .year-title-kicker {
+            display: block;
+            color: #7b8ba4;
+            font-size: .68rem;
+            font-weight: 700;
+            letter-spacing: .1em;
+            text-transform: uppercase;
+        }
+
+        .year-title-text {
+            display: block;
+            margin-top: .15rem;
+            color: #223053;
+            font-size: 1rem;
+            font-weight: 800;
+        }
+
+        .year-count {
+            display: inline-flex;
+            align-items: center;
+            padding: .4rem .7rem;
+            border: 1px solid #d5dfef;
+            border-radius: 999px;
+            background: #ffffff;
+            color: #5d7086;
+            font-size: .74rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: .04em;
+            white-space: nowrap;
+        }
+
+        .year-sections-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(240px, 1fr));
+            gap: .9rem;
+            padding: 1rem;
+        }
+
+        .section-tile {
+            display: flex;
+            align-items: flex-start;
+            justify-content: space-between;
+            gap: .9rem;
+            min-height: 7rem;
+            padding: .95rem;
+            border: 1px solid #e2e8f2;
+            border-radius: 1rem;
+            background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+            box-shadow: 0 8px 18px rgba(67, 89, 113, 0.06);
+        }
+
+        .section-tile-main {
+            display: flex;
+            align-items: flex-start;
+            gap: .75rem;
+            min-width: 0;
+        }
+
+        .section-avatar {
+            width: 2.8rem;
+            height: 2.8rem;
+            border-radius: .95rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            flex: 0 0 2.8rem;
+            background: linear-gradient(135deg, #eef3ff 0%, #e2eaff 100%);
+            color: #475ad8;
+            font-size: .95rem;
+            font-weight: 800;
+            letter-spacing: .03em;
+        }
+
+        .section-code {
+            color: #223053;
+            font-size: 1rem;
+            font-weight: 800;
+            line-height: 1.2;
+        }
+
+        .section-fullcode {
+            margin-top: .25rem;
+            color: #6c7d95;
+            font-size: .82rem;
+            line-height: 1.45;
+            word-break: break-word;
+        }
+
+        .section-meta {
+            margin-top: .38rem;
+            color: #8a97aa;
+            font-size: .73rem;
+            font-weight: 600;
+            letter-spacing: .02em;
+        }
+
+        .section-tile-actions {
+            display: flex;
+            flex-direction: column;
+            align-items: flex-end;
+            gap: .6rem;
+            flex: 0 0 auto;
+        }
+
+        .section-status-badge {
+            display: inline-flex;
+            align-items: center;
+            padding: .34rem .62rem;
+            border-radius: 999px;
+            font-size: .68rem;
+            font-weight: 800;
+            letter-spacing: .08em;
+            text-transform: uppercase;
+        }
+
+        .section-status-active {
+            background: #e8f7ef;
+            color: #1f8d4b;
+        }
+
+        .section-status-inactive {
+            background: #eef2f7;
+            color: #6a7a90;
+        }
+
+        .section-delete-btn {
+            width: 2.25rem;
+            height: 2.25rem;
+            border: 0;
+            border-radius: .8rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #fff2ef;
+            color: #ff5a36;
+            box-shadow: inset 0 0 0 1px #ffd7ce;
+            transition: transform .18s ease, background-color .18s ease, box-shadow .18s ease;
+        }
+
+        .section-delete-btn:hover,
+        .section-delete-btn:focus {
+            transform: translateY(-1px);
+            background: #ffe7e1;
+            box-shadow: inset 0 0 0 1px #ffcabd, 0 8px 16px rgba(255, 90, 54, 0.14);
+        }
+
+        .sections-state {
+            padding: 2.2rem 1.4rem;
+            border: 1px dashed #d4deec;
+            border-radius: 1.1rem;
+            background: rgba(255, 255, 255, 0.86);
+            text-align: center;
+            box-shadow: 0 12px 24px rgba(67, 89, 113, 0.05);
+        }
+
+        .sections-state-icon {
+            width: 3.2rem;
+            height: 3.2rem;
+            margin: 0 auto .9rem;
+            border-radius: 1rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #eef3ff;
+            color: #5f70df;
+            font-size: 1.35rem;
+        }
+
+        .sections-state-title {
+            color: #223053;
+            font-size: 1.05rem;
+            font-weight: 800;
+        }
+
+        .sections-state-text {
+            margin-top: .4rem;
+            color: #6c7d95;
+            font-size: .9rem;
+            line-height: 1.55;
+        }
+
+        .sections-preview-list {
+            max-height: 320px;
+            overflow: auto;
+            display: grid;
+            gap: .75rem;
+            text-align: left;
+            padding-right: .15rem;
+        }
+
+        .sections-preview-item {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: .8rem;
+            padding: .85rem .95rem;
+            border: 1px solid #e0e8f3;
+            border-radius: .95rem;
+            background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+        }
+
+        .sections-preview-name {
+            color: #223053;
+            font-size: .95rem;
+            font-weight: 700;
+            line-height: 1.35;
+        }
+
+        .sections-preview-sub {
+            margin-top: .18rem;
+            color: #7788a1;
+            font-size: .76rem;
+            font-weight: 600;
+            letter-spacing: .03em;
+            text-transform: uppercase;
+        }
+
+        .sections-preview-chip {
+            display: inline-flex;
+            align-items: center;
+            padding: .42rem .68rem;
+            border-radius: 999px;
+            background: #eef3ff;
+            color: #4f61d8;
+            font-size: .78rem;
+            font-weight: 800;
+            letter-spacing: .04em;
+        }
+
+        @media (max-width: 991.98px) {
+            .sections-page-header,
+            .generator-heading,
+            .generator-actions,
+            .program-card-header {
+                flex-direction: column;
+                align-items: stretch;
+            }
+
+            .sections-page-title {
+                font-size: 1.65rem;
+            }
+
+            .sections-page-badge,
+            .generator-meta,
+            .program-card-metric {
+                align-self: flex-start;
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .sections-panel .card-body,
+            .program-card-header,
+            .program-card-body {
+                padding: 1.1rem;
+            }
+
+            .year-level-card .year-header,
+            .section-tile {
+                padding: .9rem;
+            }
+
+            .year-level-card .year-header,
+            .section-tile,
+            .section-tile-main {
+                flex-direction: column;
+                align-items: flex-start;
+            }
+
+            .section-tile-actions {
+                flex-direction: row;
+                align-items: center;
+            }
+
+            .year-sections-grid {
+                grid-template-columns: 1fr;
+                padding: .9rem;
+            }
         }
     </style>
 </head>
@@ -92,22 +667,41 @@ if ($settingsQ && $settingsQ->num_rows > 0) {
 <div class="content-wrapper">
 <div class="container-xxl flex-grow-1 container-p-y">
 
-    <h4 class="fw-bold mb-3">
-        <i class="bx bx-layer me-2"></i> Section Generator
-        <small class="text-muted">(<?= htmlspecialchars($college_name) ?>)</small>
-    </h4>
+    <div class="sections-page-header">
+        <div>
+            <div class="sections-page-eyebrow">
+                <i class="bx bx-grid-alt"></i>
+                Scheduler Workspace
+            </div>
+            <h4 class="sections-page-title">
+                Section Generator
+                <small>(<?= htmlspecialchars($college_name) ?>)</small>
+            </h4>
+            <p class="sections-page-copy">
+                Build section sets by academic context, review them per program, and manage year-level groupings from a cleaner card-based workspace.
+            </p>
+        </div>
+        <div class="sections-page-badge">
+            <i class="bx bx-layout"></i>
+            Program Section Cards
+        </div>
+    </div>
 
     <!-- ===============================
          AY + SEMESTER FILTER (REQUIRED)
          Manual load (Q3 = B)
     ================================ -->
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="m-0">Academic Context</h5>
-            <small class="text-muted">Select Academic Year and Semester before loading or generating sections.</small>
-        </div>
-
+    <div class="card sections-panel mb-4">
         <div class="card-body">
+            <div class="panel-heading">
+                <div class="panel-heading-icon bg-label-primary">
+                    <i class="bx bx-calendar-event"></i>
+                </div>
+                <div>
+                    <h5 class="panel-title">Academic Context</h5>
+                    <p class="panel-subtitle">Select Academic Year and Semester before loading or generating sections.</p>
+                </div>
+            </div>
             <div class="row g-3 align-items-end">
 
                 <div class="col-md-6">
@@ -115,7 +709,7 @@ if ($settingsQ && $settingsQ->num_rows > 0) {
                     <select id="ay_id" class="form-select">
                         <option value="">Select...</option>
                         <?php
-                            $ayQ = $conn->query("SELECT ay_id, ay FROM tbl_academic_years WHERE status='active' ORDER BY ay DESC");
+                            $ayQ = $conn->query("SELECT ay_id, ay FROM tbl_academic_years ORDER BY ay DESC");
                             while ($ay = $ayQ->fetch_assoc()) {
                                 $selected = ((int)$ay['ay_id'] === $default_ay_id) ? " selected" : "";
                                 echo "<option value='".(int)$ay['ay_id']."'{$selected}>".htmlspecialchars($ay['ay'])."</option>";
@@ -141,13 +735,23 @@ if ($settingsQ && $settingsQ->num_rows > 0) {
     <!-- ===============================
          GENERATOR FORM
     ================================ -->
-    <div class="card mb-4">
-        <div class="card-header">
-            <h5 class="m-0">Create Sections</h5>
-            <small class="text-muted">Generate sections for a program and year level (scoped by AY + Semester).</small>
-        </div>
-
+    <div class="card sections-panel mb-4">
         <div class="card-body">
+            <div class="panel-heading generator-heading">
+                <div class="d-flex align-items-start gap-3">
+                    <div class="panel-heading-icon bg-label-info">
+                        <i class="bx bx-layer-plus"></i>
+                    </div>
+                    <div>
+                        <h5 class="panel-title">Create Sections</h5>
+                        <p class="panel-subtitle">Generate sections for a program and year level within the selected academic scope.</p>
+                    </div>
+                </div>
+                <div class="generator-meta">
+                    <i class="bx bx-target-lock"></i>
+                    Scoped by AY + Semester
+                </div>
+            </div>
 
             <div class="row g-3">
 
@@ -191,9 +795,14 @@ if ($settingsQ && $settingsQ->num_rows > 0) {
 
             </div>
 
-            <button class="btn btn-primary mt-3" id="btnGenerate">
-                <i class="bx bx-cog"></i> Generate Preview
-            </button>
+            <div class="generator-actions">
+                <div class="generator-hint">
+                    Preview new sections first, then confirm the save when the generated list looks correct.
+                </div>
+                <button class="btn btn-primary generator-submit" id="btnGenerate" type="button">
+                    <i class="bx bx-cog me-1"></i> Generate Preview
+                </button>
+            </div>
 
         </div>
     </div>
@@ -284,6 +893,66 @@ function yearLevelLabel(year) {
     return `Year ${y}`;
 }
 
+function escapeHtml(value) {
+    return String(value ?? "").replace(/[&<>"']/g, function(char) {
+        const map = {
+            '&': '&amp;',
+            '<': '&lt;',
+            '>': '&gt;',
+            '"': '&quot;',
+            "'": '&#39;'
+        };
+        return map[char];
+    });
+}
+
+function parseProgramLabel(program) {
+    const text = String(program || "").trim();
+    const parts = text.split(/\s+[—-]\s+/);
+
+    if (parts.length > 1) {
+        const code = parts.shift().trim();
+        return {
+            code: code,
+            title: parts.join(" - ").trim() || code
+        };
+    }
+
+    return {
+        code: text || "Program",
+        title: text || "Program"
+    };
+}
+
+function normalizeProgramText(value) {
+    return String(value || "")
+        .replace(/\s+[^\x20-\x7E]+\s+/g, " - ")
+        .replace(/\s{2,}/g, " ")
+        .trim();
+}
+
+parseProgramLabel = function(program) {
+    const text = normalizeProgramText(program);
+    const parts = text.split(/\s+-\s+/);
+
+    if (parts.length > 1) {
+        const code = parts.shift().trim();
+        return {
+            code: code,
+            title: parts.join(" - ").trim() || code
+        };
+    }
+
+    return {
+        code: text || "Program",
+        title: text || "Program"
+    };
+};
+
+$("#program_id option").each(function () {
+    $(this).text(normalizeProgramText($(this).text()));
+});
+
 /* =========================
    DELETE SECTION
 ========================= */
@@ -336,8 +1005,12 @@ function loadGroupedSections() {
     if (!ctx) return;
 
     $("#groupedSections").show().html(`
-        <div class="text-center text-muted py-4">
-            Loading sections...
+        <div class="sections-state">
+            <div class="sections-state-icon">
+                <div class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></div>
+            </div>
+            <div class="sections-state-title">Loading section cards</div>
+            <div class="sections-state-text">Preparing the selected program and year-level groups.</div>
         </div>
     `);
 
@@ -362,14 +1035,26 @@ function loadGroupedSections() {
             const programs = Object.keys(data);
             if (programs.length === 0) {
                 $("#groupedSections").html(`
-                    <div class="alert alert-info">
-                        No sections found for the selected Academic Year and Semester.
+                    <div class="sections-state">
+                        <div class="sections-state-icon">
+                            <i class="bx bx-folder-open"></i>
+                        </div>
+                        <div class="sections-state-title">No sections found</div>
+                        <div class="sections-state-text">
+                            There are no saved sections for the selected Academic Year and Semester yet.
+                        </div>
                     </div>
                 `);
                 return;
             }
 
+            html += `<div class="program-cards-grid">`;
+
             for (let program in data) {
+                const programMeta = parseProgramLabel(program);
+                const programSubtitle = programMeta.title === programMeta.code
+                    ? "Program sections grouped by year level."
+                    : `${programMeta.code} program sections grouped by year level.`;
                 const byYear = {};
                 data[program].forEach((s) => {
                     const y = String(s.year_level || "");
@@ -379,59 +1064,81 @@ function loadGroupedSections() {
                 const yearKeys = Object.keys(byYear).sort((a, b) => Number(a) - Number(b));
 
                 html += `
-                    <div class="card mb-4">
-                        <div class="card-header d-flex justify-content-between align-items-center">
-                            <h5 class="m-0">${program}</h5>
-                            <span class="badge bg-label-primary">Total Sections: ${data[program].length}</span>
+                    <div class="program-card">
+                        <div class="program-card-header">
+                            <div class="program-card-identity">
+                                <div class="program-card-code">${escapeHtml(programMeta.code)}</div>
+                                <div class="min-w-0">
+                                    <h5 class="program-card-title">${escapeHtml(programMeta.title)}</h5>
+                                    <div class="program-card-subtitle">
+                                        ${escapeHtml(programSubtitle)}
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="program-card-metric">
+                                <span class="program-card-metric-label">Total Sections</span>
+                                <span class="program-card-metric-value">${data[program].length}</span>
+                            </div>
                         </div>
-                        <div class="card-body">
+                        <div class="program-card-body">
+                            <div class="year-stack">
                 `;
 
                 yearKeys.forEach((year) => {
                     const rows = byYear[year];
+                    const sectionCountLabel = `${rows.length} ${rows.length === 1 ? 'section' : 'sections'}`;
                     html += `
-                        <div class="year-level-card mb-3">
-                            <div class="year-header px-3 py-2 d-flex justify-content-between align-items-center">
-                                <strong>${yearLevelLabel(year)}</strong>
-                                <span class="badge bg-label-secondary">${rows.length} section(s)</span>
+                        <div class="year-level-card">
+                            <div class="year-header">
+                                <div class="year-title-wrap">
+                                    <span class="year-title-kicker">Year Level</span>
+                                    <span class="year-title-text">${yearLevelLabel(year)}</span>
+                                </div>
+                                <span class="year-count">${sectionCountLabel}</span>
                             </div>
-                            <div class="p-3">
-                                <div class="row g-2">
+                            <div class="year-sections-grid">
                     `;
 
                     rows.forEach((s) => {
-                        const statusClass = (s.status === 'active') ? 'bg-success' : 'bg-secondary';
-                        const shortCode = String(s.section_name || "").replace(String(year), "");
+                        const normalizedStatus = String(s.status || 'inactive').toLowerCase();
+                        const statusClass = normalizedStatus === 'active' ? 'section-status-active' : 'section-status-inactive';
+                        const sectionName = String(s.section_name || '');
+                        const shortCode = sectionName.replace(new RegExp(`^${String(year)}`), "") || sectionName;
+                        const fullSection = String(s.full_section || sectionName || '');
                         html += `
-                            <div class="col-12 col-sm-6 col-lg-4">
-                                <div class="section-chip d-flex justify-content-between align-items-center">
-                                    <div>
-                                        <div class="fw-semibold">${shortCode || s.section_name}</div>
-                                        <div class="small text-muted">${s.full_section}</div>
+                                <div class="section-tile">
+                                    <div class="section-tile-main">
+                                        <div class="section-avatar">${escapeHtml(shortCode || sectionName)}</div>
+                                        <div class="min-w-0">
+                                            <div class="section-code">${escapeHtml(sectionName || fullSection)}</div>
+                                            <div class="section-fullcode">${escapeHtml(fullSection)}</div>
+                                            <div class="section-meta">Ready for ${escapeHtml(yearLevelLabel(year))}</div>
+                                        </div>
                                     </div>
-                                    <div class="d-flex align-items-center gap-2">
-                                        <span class="badge ${statusClass}">${s.status}</span>
-                                        <button class="btn btn-sm btn-danger btnDeleteSection" data-id="${s.section_id}" title="Delete">
+                                    <div class="section-tile-actions">
+                                        <span class="section-status-badge ${statusClass}">${escapeHtml(normalizedStatus)}</span>
+                                        <button class="section-delete-btn btnDeleteSection" data-id="${Number(s.section_id)}" title="Delete section" type="button">
                                             <i class="bx bx-trash"></i>
                                         </button>
                                     </div>
                                 </div>
-                            </div>
                         `;
                     });
 
                     html += `
-                                </div>
                             </div>
                         </div>
                     `;
                 });
 
                 html += `
+                            </div>
                         </div>
                     </div>
                 `;
             }
+
+            html += `</div>`;
 
             $("#groupedSections").html(html);
 
@@ -499,12 +1206,15 @@ $("#btnGenerate").click(function () {
             return;
         }
 
-        let previewHtml = `<div class="text-start" style="max-height:300px;overflow:auto;">`;
+        let previewHtml = `<div class="sections-preview-list">`;
         previewRows.forEach((r) => {
             previewHtml += `
-                <div class="d-flex justify-content-between align-items-center border rounded px-2 py-2 mb-2">
-                    <span>${r.full_section}</span>
-                    <span class="badge bg-primary">${r.section_name}</span>
+                <div class="sections-preview-item">
+                    <div>
+                        <div class="sections-preview-name">${escapeHtml(r.full_section)}</div>
+                        <div class="sections-preview-sub">${escapeHtml(yearLevelLabel(year))}</div>
+                    </div>
+                    <span class="sections-preview-chip">${escapeHtml(r.section_name)}</span>
                 </div>
             `;
         });
@@ -553,15 +1263,31 @@ $("#ay_id, #semester").on("change", function () {
         loadGroupedSections();
     } else {
         $("#groupedSections").show().html(`
-            <div class="alert alert-info">
-                Select Academic Year and Semester to view sections.
+            <div class="sections-state">
+                <div class="sections-state-icon">
+                    <i class="bx bx-filter-alt"></i>
+                </div>
+                <div class="sections-state-title">Select academic context</div>
+                <div class="sections-state-text">Choose Academic Year and Semester to view section cards.</div>
             </div>
         `);
     }
 });
 
 // Initial auto-load if defaults are already selected
-if ($("#ay_id").val() && $("#semester").val()) loadGroupedSections();
+if ($("#ay_id").val() && $("#semester").val()) {
+    loadGroupedSections();
+} else {
+    $("#groupedSections").show().html(`
+        <div class="sections-state">
+            <div class="sections-state-icon">
+                <i class="bx bx-filter-alt"></i>
+            </div>
+            <div class="sections-state-title">Select academic context</div>
+            <div class="sections-state-text">Choose Academic Year and Semester to view section cards.</div>
+        </div>
+    `);
+}
 </script>
 
 </body>

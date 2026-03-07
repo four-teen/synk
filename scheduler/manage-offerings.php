@@ -2,6 +2,7 @@
 session_start();
 ob_start();
 include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../index.php");
@@ -22,6 +23,9 @@ if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
 $csrf_token = $_SESSION['csrf_token'];
+$currentTerm = synk_fetch_current_academic_term($conn);
+$default_ay_id = (int)$currentTerm['ay_id'];
+$default_semester = (int)$currentTerm['semester'];
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -115,13 +119,13 @@ $csrf_token = $_SESSION['csrf_token'];
                     <?php
                     $ayQuery = $conn->query("
                         SELECT ay_id, ay 
-                        FROM tbl_academic_years 
-                        WHERE status = 'active'
-                        ORDER BY ay ASC
+                        FROM tbl_academic_years
+                        ORDER BY ay DESC
                     ");
 
                     while ($ayRow = $ayQuery->fetch_assoc()) {
-                        echo '<option value="'.$ayRow['ay_id'].'">'.htmlspecialchars($ayRow['ay']).'</option>';
+                        $selected = ((int)$ayRow['ay_id'] === $default_ay_id) ? ' selected' : '';
+                        echo '<option value="'.$ayRow['ay_id'].'"'.$selected.'>'.htmlspecialchars($ayRow['ay']).'</option>';
                     }
                     ?>
                   </select>
@@ -133,9 +137,9 @@ $csrf_token = $_SESSION['csrf_token'];
                   <select id="semester" class="form-select">
                     <option value="">Select...</option>
                     <!-- IMPORTANT: values are 1 / 2 / 3 matching tbl_prospectus_year_sem.semester -->
-                    <option value="1">First Semester</option>
-                    <option value="2">Second Semester</option>
-                    <option value="3">Midyear</option>
+                    <option value="1"<?= $default_semester === 1 ? ' selected' : '' ?>>First Semester</option>
+                    <option value="2"<?= $default_semester === 2 ? ' selected' : '' ?>>Second Semester</option>
+                    <option value="3"<?= $default_semester === 3 ? ' selected' : '' ?>>Midyear</option>
                   </select>
                 </div>
 
@@ -346,7 +350,15 @@ $('#semester').on('change', tryAutoLoadOfferings);
         <div><strong>Subject Rows:</strong> ${summary.total_subject_rows ?? 0}</div>
         <div><strong>Active Sections:</strong> ${summary.total_active_sections ?? 0}</div>
         <div><strong>Potential Offerings:</strong> ${summary.potential_offerings ?? 0}</div>
+        <div><strong>Existing Rows:</strong> ${summary.total_existing_rows ?? 0}</div>
+        <div><strong>Live Synced Rows:</strong> ${summary.current_synced_rows ?? 0}</div>
+        <div><strong>Out-of-Scope Retained:</strong> ${summary.out_of_scope_existing ?? 0}</div>
+        <div><strong>Out-of-Scope with Schedule:</strong> ${summary.out_of_scope_scheduled ?? 0}</div>
     `;
+
+    if ((summary.duplicate_pairs ?? 0) > 0) {
+      html += `<div><strong>Duplicate Pairs:</strong> ${summary.duplicate_pairs}</div>`;
+    }
 
     if (blockers.length) {
       html += `<hr class="my-2"><div class="text-danger"><strong>Blockers:</strong><ul class="mb-0">`;
@@ -390,8 +402,8 @@ $('#semester').on('change', tryAutoLoadOfferings);
 
         Swal.fire({
           icon: "success",
-          title: "Done!",
-          text: `Added: ${out.inserted}, Removed: ${out.deleted_offerings}, Kept (Scheduled): ${out.protected_scheduled || 0}`,
+          title: "Sync Complete",
+          text: `Added: ${out.inserted}, Synced Existing: ${out.synced_existing || 0}, Retained Hidden: ${out.retained_out_of_scope || 0}`,
           confirmButtonText: "Done"
         }).then(() => {
           loadOfferings(pid, ay, sem);

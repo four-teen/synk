@@ -2,6 +2,8 @@
 session_start();
 ob_start();
 include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
+require_once '../backend/offering_scope_helper.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
@@ -9,13 +11,14 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
 }
 
 $collegeId = $_SESSION['college_id'] ?? null;
+$currentTerm = synk_fetch_current_academic_term($conn);
 
 /* ===============================
    GET FILTERS
 ================================ */
 $prospectus_id = $_GET['prospectus_id'] ?? '';
-$ay_id         = $_GET['ay_id'] ?? '';
-$semester      = $_GET['semester'] ?? '';
+$ay_id         = $_GET['ay_id'] ?? (string)$currentTerm['ay_id'];
+$semester      = $_GET['semester'] ?? (string)$currentTerm['semester'];
 $doPrint       = isset($_GET['print']) && $_GET['print'] == '1';
 
 /* ===============================
@@ -163,7 +166,7 @@ while ($r = $q->fetch_assoc()) {
 <select name="ay_id" class="form-select" required>
 <option value="">Select...</option>
 <?php
-$ayQ = $conn->query("SELECT ay_id, ay FROM tbl_academic_years WHERE status='active'");
+$ayQ = $conn->query("SELECT ay_id, ay FROM tbl_academic_years ORDER BY ay DESC");
 while ($ay = $ayQ->fetch_assoc()) {
     $sel = ($ay_id == $ay['ay_id']) ? "selected" : "";
     echo "<option value='{$ay['ay_id']}' $sel>{$ay['ay']}</option>";
@@ -199,6 +202,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 <?php
 if ($prospectus_id && $ay_id && $semester):
 
+$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+
 $sql = "
 SELECT
   sm.sub_code,
@@ -209,8 +214,7 @@ SELECT
   cs.time_end,
   r.room_name
 FROM tbl_prospectus_offering o
-JOIN tbl_sections sec ON sec.section_id = o.section_id
-JOIN tbl_prospectus_subjects ps ON ps.ps_id = o.ps_id
+{$liveOfferingJoins}
 JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
 LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
 LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id

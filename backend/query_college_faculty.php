@@ -1,170 +1,565 @@
 <?php
 session_start();
 ob_start();
-include 'db.php';
 
-// Ensure scheduler or admin is allowed (optional)
-// if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
-//     echo json_encode(["status" => "unauthorized"]);
-//     exit;
-// }
+require_once 'db.php';
+require_once __DIR__ . '/academic_term_helper.php';
+require_once __DIR__ . '/offering_scope_helper.php';
 
-// ======================================================================
-// LOAD FACULTY ASSIGNED IN A COLLEGE
-// ======================================================================
+header('Content-Type: application/json');
+
+function query_college_faculty_designation_style(int $designationId, string $designationName): string
+{
+    $designationName = trim($designationName);
+    if ($designationName === '') {
+        return '';
+    }
+
+    $seed = ($designationId > 0) ? $designationId : (int)sprintf('%u', crc32(strtolower($designationName)));
+    $hue = (($seed * 47) + 17) % 360;
+
+    return "background-color:hsla({$hue}, 78%, 91%, 0.95);color:hsla({$hue}, 72%, 32%, 1);border-color:hsla({$hue}, 68%, 78%, 1);";
+}
+
+function query_college_faculty_describe_columns(mysqli $conn, string $tableName): array
+{
+    $columns = [];
+    $result = $conn->query("SHOW COLUMNS FROM `{$tableName}`");
+
+    if (!($result instanceof mysqli_result)) {
+        return $columns;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $fieldName = strtolower((string)($row['Field'] ?? ''));
+        if ($fieldName !== '') {
+            $columns[$fieldName] = $row;
+        }
+    }
+
+    return $columns;
+}
+
+function query_college_faculty_schema_info(mysqli $conn): array
+{
+    $facultyColumns = query_college_faculty_describe_columns($conn, 'tbl_faculty');
+    $assignmentColumns = query_college_faculty_describe_columns($conn, 'tbl_college_faculty');
+
+    $designationTableResult = $conn->query("SHOW TABLES LIKE 'tbl_designation'");
+    $hasDesignationTable = ($designationTableResult instanceof mysqli_result && $designationTableResult->num_rows > 0);
+    $designationColumns = $hasDesignationTable
+        ? query_college_faculty_describe_columns($conn, 'tbl_designation')
+        : [];
+
+    $designationTextColumn = null;
+    foreach (['designation', 'designation_name'] as $candidate) {
+        if (isset($facultyColumns[$candidate])) {
+            $designationTextColumn = $candidate;
+            break;
+        }
+    }
+
+    return [
+        'has_middle_name' => isset($facultyColumns['middle_name']),
+        'has_ext_name' => isset($facultyColumns['ext_name']),
+        'has_designation_id' => isset($facultyColumns['designation_id']),
+        'designation_text_column' => $designationTextColumn,
+        'designation_table_exists' => $hasDesignationTable,
+        'designation_table_has_name' => isset($designationColumns['designation_name']),
+        'assignment_has_ay_id' => isset($assignmentColumns['ay_id']),
+        'assignment_has_semester' => isset($assignmentColumns['semester']),
+    ];
+}
+
+function query_college_faculty_term_ready(array $schema): bool
+{
+    return $schema['assignment_has_ay_id'] && $schema['assignment_has_semester'];
+}
+
+function query_college_faculty_bind_params(mysqli_stmt $stmt, string $types, array &$params): bool
+{
+    if ($types === '' || count($params) === 0) {
+        return true;
+    }
+
+    $bindParams = [$types];
+    foreach ($params as $index => &$value) {
+        $bindParams[] = &$value;
+    }
+
+    return call_user_func_array([$stmt, 'bind_param'], $bindParams);
+}
+
+function query_college_faculty_format_name(array $row): string
+{
+    $fullName = trim((string)($row['last_name'] ?? '')) . ', ' . trim((string)($row['first_name'] ?? ''));
+
+    $middleName = trim((string)($row['middle_name'] ?? ''));
+    if ($middleName !== '') {
+        $fullName .= ' ' . strtoupper(substr($middleName, 0, 1)) . '.';
+    }
+
+    $extName = trim((string)($row['ext_name'] ?? ''));
+    if ($extName !== '') {
+        $fullName .= ', ' . $extName;
+    }
+
+    return trim($fullName, " ,");
+}
+
 if (isset($_POST['load_college_faculty'])) {
+    $college_id = (int)($_POST['college_id'] ?? 0);
+    $page = max(1, (int)($_POST['page'] ?? 1));
+    $pageSize = (int)($_POST['page_size'] ?? 20);
+    $pageSize = max(10, min(50, $pageSize));
+    $offset = ($page - 1) * $pageSize;
+    $search = trim((string)($_POST['search'] ?? ''));
 
-    $college_id = intval($_POST['college_id'] ?? 0);
-    $response = [];
+    $currentTerm = synk_fetch_current_academic_term($conn);
+    $currentAyId = (int)$currentTerm['ay_id'];
+    $currentSemester = (int)$currentTerm['semester'];
+
+    $response = [
+        'status' => 'success',
+        'data' => [],
+        'pagination' => [
+            'page' => $page,
+            'page_size' => $pageSize,
+            'total' => 0,
+            'has_more' => false,
+        ],
+        'term' => [
+            'ay_id' => $currentAyId,
+            'semester' => $currentSemester,
+            'ay_label' => (string)($currentTerm['ay_label'] ?? ''),
+            'semester_label' => (string)($currentTerm['semester_label'] ?? ''),
+            'term_text' => (string)($currentTerm['term_text'] ?? 'Current academic term'),
+        ],
+    ];
 
     if ($college_id <= 0) {
-        echo json_encode([]);
+        echo json_encode($response);
         exit;
     }
 
-    $sql = "
-        SELECT 
-            cf.college_faculty_id,
-            f.faculty_id,
-            f.last_name,
-            f.first_name,
-            f.middle_name,
-            f.ext_name,
-            cf.status,
-            cf.date_created
+    $schema = query_college_faculty_schema_info($conn);
+    $termReady = query_college_faculty_term_ready($schema);
+
+    $selectParts = [
+        'cf.college_faculty_id',
+        'f.faculty_id',
+        'f.last_name',
+        'f.first_name',
+        $schema['has_middle_name'] ? 'f.middle_name' : 'NULL AS middle_name',
+        $schema['has_ext_name'] ? 'f.ext_name' : 'NULL AS ext_name',
+        "LOWER(TRIM(cf.status)) AS status",
+    ];
+
+    $joinSql = '';
+    $designationNameExpr = "''";
+    $facultyDesignationExpr = 'NULL';
+
+    if ($schema['designation_text_column'] !== null) {
+        $designationColumn = $schema['designation_text_column'];
+        $facultyDesignationExpr = "NULLIF(TRIM(f.`{$designationColumn}`), '')";
+    }
+
+    if ($schema['has_designation_id']) {
+        $selectParts[] = 'f.designation_id';
+    } else {
+        $selectParts[] = 'NULL AS designation_id';
+    }
+
+    if (
+        $schema['has_designation_id']
+        && $schema['designation_table_exists']
+        && $schema['designation_table_has_name']
+    ) {
+        $joinSql .= "\n        LEFT JOIN tbl_designation d ON d.designation_id = f.designation_id";
+        $designationNameExpr = "COALESCE(NULLIF(TRIM(d.designation_name), ''), {$facultyDesignationExpr}, '')";
+    } elseif ($facultyDesignationExpr !== 'NULL') {
+        $designationNameExpr = "COALESCE({$facultyDesignationExpr}, '')";
+    }
+
+    $selectParts[] = "{$designationNameExpr} AS designation_name";
+
+    $nameSearchExpr = "CONCAT_WS(' ', f.last_name, f.first_name, "
+        . ($schema['has_middle_name'] ? 'f.middle_name' : 'NULL')
+        . ', '
+        . ($schema['has_ext_name'] ? 'f.ext_name' : 'NULL')
+        . ')';
+
+    $whereParts = ['cf.college_id = ?'];
+    $whereParams = [$college_id];
+    $whereTypes = 'i';
+
+    if ($termReady && $currentAyId > 0 && $currentSemester > 0) {
+        $whereParts[] = '((cf.ay_id = ? AND cf.semester = ?) OR (cf.ay_id IS NULL AND cf.semester IS NULL))';
+        $whereParams[] = $currentAyId;
+        $whereParams[] = $currentSemester;
+        $whereTypes .= 'ii';
+    }
+
+    if ($search !== '') {
+        $like = '%' . $search . '%';
+        $whereParts[] = "(
+            {$nameSearchExpr} LIKE ?
+            OR {$designationNameExpr} LIKE ?
+            OR cf.status LIKE ?
+        )";
+        $whereParams[] = $like;
+        $whereParams[] = $like;
+        $whereParams[] = $like;
+        $whereTypes .= 'sss';
+    }
+
+    $baseTableSql = "
         FROM tbl_college_faculty cf
-        INNER JOIN tbl_faculty f ON cf.faculty_id = f.faculty_id
-        WHERE cf.college_id = ?
-          AND cf.status = 'active'
-        ORDER BY f.last_name ASC
+        INNER JOIN tbl_faculty f ON cf.faculty_id = f.faculty_id{$joinSql}
+    ";
+    $whereSql = 'WHERE ' . implode(' AND ', $whereParts);
+
+    $countSql = "SELECT COUNT(*) AS total {$baseTableSql} {$whereSql}";
+    $countStmt = $conn->prepare($countSql);
+
+    if (!($countStmt instanceof mysqli_stmt)) {
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Unable to prepare faculty count query.',
+        ]);
+        exit;
+    }
+
+    query_college_faculty_bind_params($countStmt, $whereTypes, $whereParams);
+    $countStmt->execute();
+    $countResult = $countStmt->get_result();
+    $totalRows = 0;
+
+    if ($countResult instanceof mysqli_result) {
+        $countRow = $countResult->fetch_assoc();
+        $totalRows = (int)($countRow['total'] ?? 0);
+    }
+
+    $countStmt->close();
+
+    $assignedSelect = '0 AS assigned_count';
+    $assignedJoinSql = '';
+    $assignedParams = [];
+    $assignedTypes = '';
+
+    if ($currentAyId > 0 && $currentSemester > 0) {
+        $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+        $assignedSelect = 'COALESCE(term_assignments.assigned_count, 0) AS assigned_count';
+        $assignedJoinSql = "
+        LEFT JOIN (
+            SELECT
+                fw.faculty_id,
+                COUNT(DISTINCT fw.schedule_id) AS assigned_count
+            FROM tbl_faculty_workload_sched fw
+            INNER JOIN tbl_class_schedule cs ON cs.schedule_id = fw.schedule_id
+            INNER JOIN tbl_prospectus_offering o ON o.offering_id = cs.offering_id
+            {$liveOfferingJoins}
+            INNER JOIN tbl_program p ON p.program_id = o.program_id
+            WHERE fw.ay_id = ?
+              AND fw.semester = ?
+              AND o.ay_id = ?
+              AND o.semester = ?
+              AND p.college_id = ?
+            GROUP BY fw.faculty_id
+        ) term_assignments ON term_assignments.faculty_id = f.faculty_id";
+        $assignedParams = [$currentAyId, $currentSemester, $currentAyId, $currentSemester, $college_id];
+        $assignedTypes = 'iiiii';
+    }
+
+    $dataSql = "
+        SELECT
+            " . implode(",\n            ", $selectParts) . ",
+            {$assignedSelect}
+        {$baseTableSql}
+        {$assignedJoinSql}
+        {$whereSql}
+        ORDER BY
+            CASE WHEN LOWER(TRIM(cf.status)) = 'active' THEN 0 ELSE 1 END,
+            f.last_name ASC,
+            f.first_name ASC,
+            f.faculty_id ASC
+        LIMIT ? OFFSET ?
     ";
 
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $college_id);
-    $stmt->execute();
-    $result = $stmt->get_result();
+    $dataStmt = $conn->prepare($dataSql);
 
-    while ($row = $result->fetch_assoc()) {
-        $response[] = $row;
+    if (!($dataStmt instanceof mysqli_stmt)) {
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Unable to prepare faculty list query.',
+        ]);
+        exit;
     }
+
+    $dataParams = array_merge($assignedParams, $whereParams, [$pageSize, $offset]);
+    $dataTypes = $assignedTypes . $whereTypes . 'ii';
+    query_college_faculty_bind_params($dataStmt, $dataTypes, $dataParams);
+    $dataStmt->execute();
+    $dataResult = $dataStmt->get_result();
+
+    if ($dataResult instanceof mysqli_result) {
+        while ($row = $dataResult->fetch_assoc()) {
+            $designationName = trim((string)($row['designation_name'] ?? ''));
+            $status = strtolower(trim((string)($row['status'] ?? '')));
+            if ($status !== 'inactive') {
+                $status = 'active';
+            }
+
+            $response['data'][] = [
+                'college_faculty_id' => (int)($row['college_faculty_id'] ?? 0),
+                'faculty_id' => (int)($row['faculty_id'] ?? 0),
+                'full_name' => query_college_faculty_format_name($row),
+                'designation_id' => (int)($row['designation_id'] ?? 0),
+                'designation_name' => $designationName,
+                'designation_style' => query_college_faculty_designation_style((int)($row['designation_id'] ?? 0), $designationName),
+                'status' => $status,
+                'assigned_count' => (int)($row['assigned_count'] ?? 0),
+            ];
+        }
+    }
+
+    $dataStmt->close();
+
+    $response['pagination']['total'] = $totalRows;
+    $response['pagination']['has_more'] = ($offset + count($response['data'])) < $totalRows;
 
     echo json_encode($response);
     exit;
 }
 
-
-
-// ======================================================================
-// LOAD FACULTY LIST FOR SELECT2
-// ======================================================================
 if (isset($_POST['load_faculty_dropdown'])) {
-
+    $college_id = (int)($_POST['college_id'] ?? 0);
     $data = [];
+    $schema = query_college_faculty_schema_info($conn);
+    $currentTerm = synk_fetch_current_academic_term($conn);
+    $currentAyId = (int)$currentTerm['ay_id'];
+    $currentSemester = (int)$currentTerm['semester'];
+    $termReady = query_college_faculty_term_ready($schema);
 
-    $sql = "
-        SELECT faculty_id, last_name, first_name, middle_name, ext_name
-        FROM tbl_faculty
-        WHERE status = 'active'
-        ORDER BY last_name ASC
+    $selectSql = "
+        SELECT
+            f.faculty_id,
+            f.last_name,
+            f.first_name,
+            " . ($schema['has_middle_name'] ? 'f.middle_name' : 'NULL AS middle_name') . ",
+            " . ($schema['has_ext_name'] ? 'f.ext_name' : 'NULL AS ext_name') . "
+        FROM tbl_faculty f
     ";
-    $res = $conn->query($sql);
 
-    while ($row = $res->fetch_assoc()) {
+    $types = '';
+    $params = [];
 
-        $full = $row['last_name'] . ', ' . $row['first_name'];
+    if ($college_id > 0) {
+        $selectSql .= "
+            LEFT JOIN tbl_college_faculty cf
+                ON cf.faculty_id = f.faculty_id
+               AND cf.college_id = ?
+               AND LOWER(TRIM(cf.status)) = 'active'
+        ";
+        $types .= 'i';
+        $params[] = $college_id;
 
-        if (!empty($row['middle_name'])) {
-            $full .= ' ' . strtoupper(substr($row['middle_name'], 0, 1)) . '.';
+        if ($termReady && $currentAyId > 0 && $currentSemester > 0) {
+            $selectSql .= "
+               AND ((cf.ay_id = ? AND cf.semester = ?) OR (cf.ay_id IS NULL AND cf.semester IS NULL))
+            ";
+            $types .= 'ii';
+            $params[] = $currentAyId;
+            $params[] = $currentSemester;
         }
-
-        if (!empty($row['ext_name'])) {
-            $full .= ', ' . $row['ext_name'];
-        }
-
-        $data[] = [
-            "id" => $row['faculty_id'],
-            "text" => $full
-        ];
     }
+
+    $selectSql .= "
+        WHERE f.status = 'active'
+    ";
+
+    if ($college_id > 0) {
+        $selectSql .= "
+          AND cf.college_faculty_id IS NULL
+        ";
+    }
+
+    $selectSql .= "
+        ORDER BY f.last_name ASC, f.first_name ASC
+    ";
+
+    $stmt = $conn->prepare($selectSql);
+    if (!($stmt instanceof mysqli_stmt)) {
+        echo json_encode($data);
+        exit;
+    }
+
+    query_college_faculty_bind_params($stmt, $types, $params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    if ($res instanceof mysqli_result) {
+        while ($row = $res->fetch_assoc()) {
+            $data[] = [
+                'id' => (int)$row['faculty_id'],
+                'text' => query_college_faculty_format_name($row),
+            ];
+        }
+    }
+
+    $stmt->close();
 
     echo json_encode($data);
     exit;
 }
 
-
-
-// ======================================================================
-// SAVE NEW ASSIGNMENT (COLLEGE → FACULTY)
-// ======================================================================
 if (isset($_POST['save_assignment'])) {
-
-    $college_id = intval($_POST['college_id'] ?? 0);
-    $faculty_id = intval($_POST['faculty_id'] ?? 0);
+    $college_id = (int)($_POST['college_id'] ?? 0);
+    $faculty_id = (int)($_POST['faculty_id'] ?? 0);
+    $schema = query_college_faculty_schema_info($conn);
+    $termReady = query_college_faculty_term_ready($schema);
+    $currentTerm = synk_fetch_current_academic_term($conn);
+    $currentAyId = (int)$currentTerm['ay_id'];
+    $currentSemester = (int)$currentTerm['semester'];
 
     if ($college_id <= 0 || $faculty_id <= 0) {
-        echo json_encode(["status" => "invalid"]);
+        echo json_encode(['status' => 'invalid']);
         exit;
     }
 
-    // Duplicate check
-    $check = $conn->prepare("
-        SELECT 1 FROM tbl_college_faculty 
-        WHERE college_id = ? AND faculty_id = ?
-    ");
-    $check->bind_param("ii", $college_id, $faculty_id);
+    if ($termReady && ($currentAyId <= 0 || $currentSemester <= 0)) {
+        echo json_encode(['status' => 'error']);
+        exit;
+    }
+
+    if ($termReady) {
+        $check = $conn->prepare("
+            SELECT college_faculty_id, LOWER(TRIM(status)) AS status
+            FROM tbl_college_faculty
+            WHERE college_id = ? AND faculty_id = ?
+              AND ((ay_id = ? AND semester = ?) OR (ay_id IS NULL AND semester IS NULL))
+            LIMIT 1
+        ");
+    } else {
+        $check = $conn->prepare("
+            SELECT college_faculty_id, LOWER(TRIM(status)) AS status
+            FROM tbl_college_faculty
+            WHERE college_id = ? AND faculty_id = ?
+            LIMIT 1
+        ");
+    }
+
+    if (!($check instanceof mysqli_stmt)) {
+        echo json_encode(['status' => 'error']);
+        exit;
+    }
+
+    if ($termReady) {
+        $check->bind_param('iiii', $college_id, $faculty_id, $currentAyId, $currentSemester);
+    } else {
+        $check->bind_param('ii', $college_id, $faculty_id);
+    }
     $check->execute();
-    $check->store_result();
+    $checkResult = $check->get_result();
+    $existing = ($checkResult instanceof mysqli_result) ? $checkResult->fetch_assoc() : null;
+    $check->close();
 
-    if ($check->num_rows > 0) {
-        echo json_encode(["status" => "duplicate"]);
+    if (is_array($existing)) {
+        $existingStatus = strtolower(trim((string)($existing['status'] ?? '')));
+
+        if ($existingStatus === 'active') {
+            echo json_encode(['status' => 'duplicate']);
+            exit;
+        }
+
+        $reactivateStmt = $conn->prepare("
+            UPDATE tbl_college_faculty
+            SET status = 'active'
+            WHERE college_faculty_id = ?
+        ");
+
+        if (!($reactivateStmt instanceof mysqli_stmt)) {
+            echo json_encode(['status' => 'error']);
+            exit;
+        }
+
+        $collegeFacultyId = (int)$existing['college_faculty_id'];
+        $reactivateStmt->bind_param('i', $collegeFacultyId);
+
+        if ($reactivateStmt->execute()) {
+            echo json_encode(['status' => 'reactivated']);
+        } else {
+            echo json_encode(['status' => 'error']);
+        }
+
+        $reactivateStmt->close();
         exit;
     }
 
-    // Insert
-    $sql = "
-        INSERT INTO tbl_college_faculty (college_id, faculty_id, status)
-        VALUES (?, ?, 'active')
-    ";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("ii", $college_id, $faculty_id);
+    if ($termReady) {
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_college_faculty (college_id, faculty_id, ay_id, semester, status)
+            VALUES (?, ?, ?, ?, 'active')
+        ");
+    } else {
+        $stmt = $conn->prepare("
+            INSERT INTO tbl_college_faculty (college_id, faculty_id, status)
+            VALUES (?, ?, 'active')
+        ");
+    }
+
+    if (!($stmt instanceof mysqli_stmt)) {
+        echo json_encode(['status' => 'error']);
+        exit;
+    }
+
+    if ($termReady) {
+        $stmt->bind_param('iiii', $college_id, $faculty_id, $currentAyId, $currentSemester);
+    } else {
+        $stmt->bind_param('ii', $college_id, $faculty_id);
+    }
 
     if ($stmt->execute()) {
-        echo json_encode(["status" => "inserted"]);
+        echo json_encode(['status' => 'inserted']);
     } else {
-        echo json_encode(["status" => "error"]);
+        echo json_encode(['status' => 'error']);
     }
 
+    $stmt->close();
     exit;
 }
 
-
-
-// ======================================================================
-// REMOVE ASSIGNMENT (SET INACTIVE)
-// ======================================================================
 if (isset($_POST['remove_assignment'])) {
-
-    $college_faculty_id = intval($_POST['college_faculty_id'] ?? 0);
+    $college_faculty_id = (int)($_POST['college_faculty_id'] ?? 0);
 
     if ($college_faculty_id <= 0) {
-        echo json_encode(["status" => "invalid"]);
+        echo json_encode(['status' => 'invalid']);
         exit;
     }
 
-    $sql = "
+    $stmt = $conn->prepare("
         UPDATE tbl_college_faculty
         SET status = 'inactive'
         WHERE college_faculty_id = ?
-    ";
-    $stmt = $conn->prepare($sql);
-    $stmt->bind_param("i", $college_faculty_id);
+    ");
 
-    if ($stmt->execute()) {
-        echo json_encode(["status" => "removed"]);
-    } else {
-        echo json_encode(["status" => "error"]);
+    if (!($stmt instanceof mysqli_stmt)) {
+        echo json_encode(['status' => 'error']);
+        exit;
     }
 
+    $stmt->bind_param('i', $college_faculty_id);
+
+    if ($stmt->execute()) {
+        echo json_encode(['status' => 'removed']);
+    } else {
+        echo json_encode(['status' => 'error']);
+    }
+
+    $stmt->close();
     exit;
 }
-?>
+
+echo json_encode([
+    'status' => 'invalid_request',
+]);

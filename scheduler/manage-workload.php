@@ -2,6 +2,7 @@
 session_start();
 ob_start();
 include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
 
 /* =====================================================
    WORKLOAD COMPUTATION CONFIG
@@ -19,6 +20,18 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
 
 $college_id   = $_SESSION['college_id'];
 $college_name = $_SESSION['college_name'] ?? '';
+$currentTerm = synk_fetch_current_academic_term($conn);
+$defaultAyId = (int)$currentTerm['ay_id'];
+$defaultAyLabel = (string)$currentTerm['ay_label'];
+$defaultSemesterUi = '';
+
+if ((int)$currentTerm['semester'] === 1) {
+    $defaultSemesterUi = '1st';
+} elseif ((int)$currentTerm['semester'] === 2) {
+    $defaultSemesterUi = '2nd';
+} elseif ((int)$currentTerm['semester'] === 3) {
+    $defaultSemesterUi = 'Midyear';
+}
 
 // LOAD FACULTY ASSIGNED TO THIS COLLEGE
 $faculty_options = "";
@@ -122,6 +135,30 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         .workload-time,
         .workload-room {
             white-space: nowrap;
+        }
+
+        .pair-note {
+            display: block;
+            margin-top: 0.2rem;
+            font-size: 0.7rem;
+            color: #7a8aa0;
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .paired-anchor {
+            background: #fbfcfe;
+        }
+
+        .paired-row td {
+            background-image: linear-gradient(to right, rgba(88, 116, 255, 0.04), rgba(88, 116, 255, 0));
+        }
+
+        .schedule-partner-note {
+            display: block;
+            margin-top: 0.2rem;
+            font-size: 0.72rem;
+            color: #6f7f96;
         }
 
         .type-pill {
@@ -258,7 +295,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
     <div class="card mb-4">
         <div class="card-header">
             <h5 class="m-0">Assign Workload</h5>
-            <small class="text-muted">Add subjects, sections, days, time, and room for faculty.</small>
+            <small class="text-muted">Assign scheduled lecture and laboratory entries to faculty.</small>
         </div>
         <div class="card-body">
 
@@ -274,9 +311,9 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                 <div class="col-md-3">
                     <label class="form-label fw-semibold">Semester</label>
                     <select id="fw_semester" class="form-select">
-                        <option value="1st">1st Semester</option>
-                        <option value="2nd">2nd Semester</option>
-                        <option value="Midyear">Midyear</option>
+                        <option value="1st"<?= $defaultSemesterUi === '1st' ? ' selected' : '' ?>>1st Semester</option>
+                        <option value="2nd"<?= $defaultSemesterUi === '2nd' ? ' selected' : '' ?>>2nd Semester</option>
+                        <option value="Midyear"<?= $defaultSemesterUi === 'Midyear' ? ' selected' : '' ?>>Midyear</option>
                     </select>
                 </div>
 
@@ -289,7 +326,8 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                             while ($r = mysqli_fetch_assoc($ay)) {
                                 $ayId  = (int)$r['ay_id'];
                                 $ayval = htmlspecialchars($r['ay']);
-                                echo "<option value='{$ayval}' data-ay-id='{$ayId}'>{$ayval}</option>";
+                                $selected = ($ayId === $defaultAyId || $r['ay'] === $defaultAyLabel) ? " selected" : "";
+                                echo "<option value='{$ayval}' data-ay-id='{$ayId}'{$selected}>{$ayval}</option>";
                             }
                         ?>
                     </select>
@@ -362,7 +400,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         <tr>
             <!-- Span first 7 columns -->
             <th colspan="7" class="text-end fw-semibold total-label">
-                Teaching Load
+                Assigned Schedule Totals
             </th>
 
             <th class="text-center" id="totalUNIT">0</th>
@@ -383,7 +421,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
     <div class="card-header">
         <h5 class="m-0">Scheduled Classes</h5>
         <small class="text-muted">
-            Select from existing class schedules for the chosen faculty, A.Y., and semester.
+            Select scheduled lecture/laboratory entries for the chosen faculty, A.Y., and semester.
         </small>
     </div>
 
@@ -394,7 +432,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             <input type="text"
                    id="scheduleSearch"
                    class="form-control"
-                   placeholder="Search by course no, description, section, room, or days...">
+                   placeholder="Search by course no, description, section, type, room, or days...">
         </div>
 
         <div class="col-md-4">
@@ -403,6 +441,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                 <option value="course">Course No.</option>
                 <option value="desc">Description</option>
                 <option value="section">Section</option>
+                <option value="type">Type</option>
                 <option value="room">Room</option>
                 <option value="days">Days</option>
             </select>
@@ -420,6 +459,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                     <th>Course No.</th>
                     <th>Course Description</th>
                     <th>Section</th>
+                    <th>Type</th>
                     <th>Days</th>
                     <th>Time</th>
                     <th>Room</th>
@@ -436,7 +476,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
 
     <div class="card-footer d-flex justify-content-between align-items-center">
         <small class="text-muted">
-            Data pulled from <strong>Class Scheduling</strong>
+            Lecture and laboratory entries pulled from <strong>Class Scheduling</strong>
         </small>
 
         <button class="btn btn-primary" id="btnApplyToWorkload">
@@ -583,7 +623,7 @@ $(document).ready(function () {
         $("#checkAllSchedules").prop("checked", false);
         $("#scheduledClassTbody").html(`
             <tr>
-                <td colspan="10" class="text-center text-muted">
+                <td colspan="11" class="text-center text-muted">
                     Loading scheduled classes...
                 </td>
             </tr>
@@ -614,7 +654,7 @@ $(document).ready(function () {
                 $("#checkAllSchedules").prop("checked", false);
                 $("#scheduledClassTbody").html(`
                     <tr>
-                        <td colspan="10" class="text-center text-muted">
+                        <td colspan="11" class="text-center text-muted">
                             No scheduled classes found.
                         </td>
                     </tr>
@@ -624,6 +664,14 @@ $(document).ready(function () {
 
             let rows = "";
             data.forEach(item => {
+                const type = String(item.schedule_type || "").toUpperCase();
+                const typeBadge = type === "LAB"
+                    ? '<span class="type-pill lab">LAB</span>'
+                    : '<span class="type-pill lec">LEC</span>';
+                const partnerNote = item.partner_status === "same_faculty" && item.partner_note
+                    ? `<span class="schedule-partner-note">${escapeHtml(item.partner_note)}</span>`
+                    : "";
+
                 rows += `
                     <tr>
                         <td>
@@ -633,7 +681,8 @@ $(document).ready(function () {
                         </td>
                         <td>${escapeHtml(item.subject_code)}</td>
                         <td>${escapeHtml(item.subject_description)}</td>
-                        <td>${escapeHtml(item.section_name)}</td>
+                        <td>${escapeHtml(item.section_name)}${partnerNote}</td>
+                        <td class="text-center">${typeBadge}</td>
                         <td>${escapeHtml(item.days)}</td>
                         <td>${escapeHtml(item.time)}</td>
                         <td>${escapeHtml(item.room_code)}</td>
@@ -657,7 +706,7 @@ $(document).ready(function () {
         $("#checkAllSchedules").prop("checked", false);
         $("#scheduledClassTbody").html(`
             <tr>
-                <td colspan="10" class="text-danger text-center">
+                <td colspan="11" class="text-danger text-center">
                     Invalid response from server
                 </td>
             </tr>
@@ -674,6 +723,22 @@ $(document).ready(function () {
         $("#checkAllSchedules").prop("checked", total > 0 && total === checked);
     });
 
+    function isPartneredWorkloadPair(currentRow, nextRow) {
+        if (!currentRow || !nextRow) {
+            return false;
+        }
+
+        const currentGroupId = String(currentRow.group_id ?? "").trim();
+        const nextGroupId = String(nextRow.group_id ?? "").trim();
+        if (!currentGroupId || currentGroupId === "0" || currentGroupId !== nextGroupId) {
+            return false;
+        }
+
+        return String(currentRow.sub_code ?? "") === String(nextRow.sub_code ?? "") &&
+               String(currentRow.section ?? "") === String(nextRow.section ?? "") &&
+               String(currentRow.type ?? "").toUpperCase() !== String(nextRow.type ?? "").toUpperCase();
+    }
+
     /* =========================================================
        LOAD FACULTY WORKLOAD LIST
     ========================================================= */
@@ -683,9 +748,6 @@ $(document).ready(function () {
         let totalLAB   = 0;
         let totalUNIT  = 0;
         let totalLOAD  = 0;
-
-        /* Count one load row per offering (LEC+LAB should count once). */
-        const countedOfferings = new Set();
 
         if (!context) return;
 
@@ -720,35 +782,72 @@ $(document).ready(function () {
             for (let i = 0; i < data.length; i++) {
 
                 let row = data[i];
-
-                const offeringKey = String(row.offering_id ?? ("w" + row.workload_id));
-                if (!countedOfferings.has(offeringKey)) {
-                    countedOfferings.add(offeringKey);
-                    totalLEC  += toNumber(row.lec);
-                    totalLAB  += toNumber(row.lab);
-                    totalUNIT += toNumber(row.units);
-                    totalLOAD += toNumber(row.faculty_load);
-                }
+                const nextRow = data[i + 1] || null;
+                totalLEC  += toNumber(row.lec);
+                totalLAB  += toNumber(row.lab);
+                totalUNIT += toNumber(row.units);
+                totalLOAD += toNumber(row.faculty_load);
 
                 const type = String(row.type || "").toUpperCase();
                 const typeBadge = type === "LAB"
                     ? '<span class="type-pill lab">LAB</span>'
                     : '<span class="type-pill lec">LEC</span>';
+                const isPairStart = isPartneredWorkloadPair(row, nextRow);
 
-                let curOffering = row.offering_id ?? null;
-                let next = (i + 1 < data.length) ? data[i + 1] : null;
-                let prev = (i - 1 >= 0) ? data[i - 1] : null;
+                if (isPairStart) {
+                    totalLEC += toNumber(nextRow.lec);
+                    totalLAB += toNumber(nextRow.lab);
+                    totalUNIT += toNumber(nextRow.units);
+                    totalLOAD += toNumber(nextRow.faculty_load);
 
-                let isStartPair =
-                    type === "LEC" &&
-                    curOffering !== null &&
-                    next &&
-                    String(next.offering_id ?? "") === String(curOffering);
+                    const nextType = String(nextRow.type || "").toUpperCase();
+                    const nextTypeBadge = nextType === "LAB"
+                        ? '<span class="type-pill lab">LAB</span>'
+                        : '<span class="type-pill lec">LEC</span>';
+                    const pairedUnits = formatNumber(toNumber(row.units) + toNumber(nextRow.units));
 
-                let isSecondPairRow =
-                    curOffering !== null &&
-                    prev &&
-                    String(prev.offering_id ?? "") === String(curOffering);
+                    rows += `
+                        <tr class="paired-row">
+                            <td class="workload-code paired-anchor" rowspan="2">${escapeHtml(row.sub_code)}</td>
+                            <td class="workload-desc paired-anchor" rowspan="2">${escapeHtml(row.desc)}</td>
+                            <td class="paired-anchor" rowspan="2">
+                                ${escapeHtml(row.section)}
+                                <span class="pair-note">Paired LEC/LAB</span>
+                            </td>
+                            <td class="text-center">${typeBadge}</td>
+                            <td class="workload-days">${escapeHtml(row.days)}</td>
+                            <td class="workload-time">${escapeHtml(row.time)}</td>
+                            <td class="workload-room">${escapeHtml(row.room)}</td>
+                            <td class="text-center paired-anchor" rowspan="2">${pairedUnits}</td>
+                            <td class="text-center">${formatNumber(row.lec)}</td>
+                            <td class="text-center">${formatNumber(row.lab)}</td>
+                            <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-delete-workload btnRemoveWL"
+                                        data-id="${row.workload_id}">
+                                    <i class="bx bx-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                        <tr class="paired-row">
+                            <td class="text-center">${nextTypeBadge}</td>
+                            <td class="workload-days">${escapeHtml(nextRow.days)}</td>
+                            <td class="workload-time">${escapeHtml(nextRow.time)}</td>
+                            <td class="workload-room">${escapeHtml(nextRow.room)}</td>
+                            <td class="text-center">${formatNumber(nextRow.lec)}</td>
+                            <td class="text-center">${formatNumber(nextRow.lab)}</td>
+                            <td class="text-center fw-semibold">${toNumber(nextRow.faculty_load).toFixed(2)}</td>
+                            <td class="text-end">
+                                <button class="btn btn-sm btn-delete-workload btnRemoveWL"
+                                        data-id="${nextRow.workload_id}">
+                                    <i class="bx bx-trash"></i>
+                                </button>
+                            </td>
+                        </tr>
+                    `;
+                    i++;
+                    continue;
+                }
 
                 rows += `
                     <tr>
@@ -759,27 +858,10 @@ $(document).ready(function () {
                         <td class="workload-days">${escapeHtml(row.days)}</td>
                         <td class="workload-time">${escapeHtml(row.time)}</td>
                         <td class="workload-room">${escapeHtml(row.room)}</td>
-                `;
-
-                if (isStartPair) {
-                    rows += `
-                        <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.units)}</td>
-                        <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lec)}</td>
-                        <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lab)}</td>
-                        <td class="text-center fw-semibold" rowspan="2" style="vertical-align: middle;">
-                            ${toNumber(row.faculty_load).toFixed(2)}
-                        </td>
-                    `;
-                } else if (!isSecondPairRow) {
-                    rows += `
                         <td class="text-center">${formatNumber(row.units)}</td>
                         <td class="text-center">${formatNumber(row.lec)}</td>
                         <td class="text-center">${formatNumber(row.lab)}</td>
                         <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
-                    `;
-                }
-
-                rows += `
                         <td class="text-end">
                             <button class="btn btn-sm btn-delete-workload btnRemoveWL"
                                     data-id="${row.workload_id}">
@@ -923,8 +1005,8 @@ $(document).ready(function () {
                 if (res.status === "partial" || res.status === "conflict") {
                     Swal.fire({
                         icon: res.status === "partial" ? "warning" : "error",
-                        title: res.status === "partial" ? "Partially Applied" : "Faculty Conflict",
-                        html: res.message || "Selected classes conflict with this faculty's existing load."
+                        title: res.status === "partial" ? "Partially Applied" : "Workload Conflict",
+                        html: res.message || "Selected classes conflict with this faculty's current workload."
                     });
                     refreshWorkloadPanels();
                     return;
@@ -940,7 +1022,7 @@ $(document).ready(function () {
 /* =========================================================
    SCHEDULED CLASSES SEARCH & FILTER (UI ONLY)
 ========================================================= */
-$("#scheduleSearch, #scheduleFilter").on("keyup change", function () {
+    $("#scheduleSearch, #scheduleFilter").on("keyup change", function () {
 
     let keyword = $("#scheduleSearch").val().toLowerCase();
     let filter  = $("#scheduleFilter").val();
@@ -952,8 +1034,9 @@ $("#scheduleSearch, #scheduleFilter").on("keyup change", function () {
         let course  = row.find("td:eq(1)").text().toLowerCase();
         let desc    = row.find("td:eq(2)").text().toLowerCase();
         let section = row.find("td:eq(3)").text().toLowerCase();
-        let days    = row.find("td:eq(4)").text().toLowerCase();
-        let room    = row.find("td:eq(6)").text().toLowerCase();
+        let type    = row.find("td:eq(4)").text().toLowerCase();
+        let days    = row.find("td:eq(5)").text().toLowerCase();
+        let room    = row.find("td:eq(7)").text().toLowerCase();
 
         let match = false;
 
@@ -967,6 +1050,9 @@ $("#scheduleSearch, #scheduleFilter").on("keyup change", function () {
             case "section":
                 match = section.includes(keyword);
                 break;
+            case "type":
+                match = type.includes(keyword);
+                break;
             case "room":
                 match = room.includes(keyword);
                 break;
@@ -978,6 +1064,7 @@ $("#scheduleSearch, #scheduleFilter").on("keyup change", function () {
                     course.includes(keyword) ||
                     desc.includes(keyword) ||
                     section.includes(keyword) ||
+                    type.includes(keyword) ||
                     days.includes(keyword) ||
                     room.includes(keyword);
         }

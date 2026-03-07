@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/offering_scope_helper.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     echo json_encode([]);
@@ -23,6 +24,7 @@ function mapSemester($s) {
    SINGLE ROOM SCHEDULE
 ========================================================== */
 if (isset($_POST['load_room_schedule'])) {
+    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
 
     $ay       = trim($_POST['ay']);
     $semester = mapSemester($_POST['semester']);
@@ -49,12 +51,9 @@ if (isset($_POST['load_room_schedule'])) {
             ON r.room_id = cs.room_id
         INNER JOIN tbl_prospectus_offering po
             ON po.offering_id = cs.offering_id
-        INNER JOIN tbl_prospectus_subjects ps
-            ON ps.ps_id = po.ps_id
+        {$liveOfferingJoins}
         INNER JOIN tbl_subject_masterlist sm
             ON sm.sub_id = ps.sub_id
-        INNER JOIN tbl_sections sec
-            ON sec.section_id = po.section_id
         INNER JOIN tbl_academic_years ay
             ON ay.ay_id = po.ay_id
         LEFT JOIN tbl_faculty_workload_sched fws
@@ -88,6 +87,7 @@ if (isset($_POST['load_room_schedule'])) {
    ALL ROOMS OVERVIEW
 ========================================================== */
 if (isset($_POST['load_all_rooms'])) {
+    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
 
     $ay       = trim($_POST['ay']);
     $semester = mapSemester($_POST['semester']);
@@ -125,12 +125,9 @@ if (isset($_POST['load_all_rooms'])) {
             FROM tbl_class_schedule cs
             INNER JOIN tbl_prospectus_offering po
                 ON po.offering_id = cs.offering_id
-            INNER JOIN tbl_prospectus_subjects ps
-                ON ps.ps_id = po.ps_id
+            {$liveOfferingJoins}
             INNER JOIN tbl_subject_masterlist sm
                 ON sm.sub_id = ps.sub_id
-            INNER JOIN tbl_sections sec
-                ON sec.section_id = po.section_id
             INNER JOIN tbl_academic_years ay
                 ON ay.ay_id = po.ay_id
             LEFT JOIN tbl_faculty_workload_sched fws

@@ -12,6 +12,7 @@
 
 session_start();
 include 'db.php';
+require_once __DIR__ . '/offering_scope_helper.php';
 header('Content-Type: application/json');
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
@@ -50,6 +51,8 @@ $sem  = (int)$term['current_semester'];
 | ACTIVE SECTIONS QUERY (OPTION A – OFFERING BASED)
 |--------------------------------------------------------------------------
 */
+$liveOfferingJoins = synk_live_offering_join_sql('po', 's', 'ps', 'pys', 'ph');
+
 $sql = "
     SELECT
         s.section_id,
@@ -60,9 +63,7 @@ $sql = "
         camp.campus_name,
         COUNT(po.offering_id) AS offering_count
     FROM tbl_prospectus_offering po
-
-    INNER JOIN tbl_sections s
-        ON s.section_id = po.section_id
+    {$liveOfferingJoins}
 
     INNER JOIN tbl_program p
         ON p.program_id = s.program_id

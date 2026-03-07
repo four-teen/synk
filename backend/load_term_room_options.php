@@ -34,9 +34,13 @@ $sql = "
     SELECT DISTINCT
         r.room_id,
         r.room_code,
-        r.room_name
+        r.room_name,
+        LOWER(COALESCE(r.room_type, 'lecture')) AS room_type,
+        acc.access_type,
+        owner.college_code AS owner_code
     FROM tbl_room_college_access acc
     INNER JOIN tbl_rooms r ON r.room_id = acc.room_id
+    INNER JOIN tbl_college owner ON owner.college_id = r.college_id
     WHERE acc.college_id = ?
       AND acc.ay_id = ?
       AND acc.semester = ?
@@ -58,9 +62,20 @@ while ($row = $res->fetch_assoc()) {
         $label = $code . " - " . $name;
     }
 
+    $accessType = strtolower(trim((string)($row['access_type'] ?? 'owner')));
+    $ownerCode = trim((string)($row['owner_code'] ?? ''));
+    if ($accessType === 'shared') {
+        $label .= $ownerCode !== ''
+            ? " (Shared from {$ownerCode})"
+            : " (Shared)";
+    }
+
     $rooms[] = [
         'room_id' => (int)$row['room_id'],
-        'label' => $label
+        'label' => $label,
+        'room_type' => $row['room_type'] ?? 'lecture',
+        'access_type' => $accessType,
+        'owner_code' => $ownerCode
     ];
 }
 

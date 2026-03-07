@@ -1,7 +1,38 @@
-<?php 
-    session_start();
-    ob_start();
-    include '../backend/db.php';
+<?php
+session_start();
+ob_start();
+
+include '../backend/db.php';
+require_once '../backend/academic_term_helper.php';
+
+$myCollege = (int)($_SESSION['college_id'] ?? 0);
+$collegeLabel = 'College not assigned';
+$currentTerm = synk_fetch_current_academic_term($conn);
+$currentTermText = (string)($currentTerm['term_text'] ?? 'Current academic term');
+
+if ($myCollege > 0) {
+    $collegeStmt = $conn->prepare("
+        SELECT college_name, college_code
+        FROM tbl_college
+        WHERE college_id = ?
+        LIMIT 1
+    ");
+
+    if ($collegeStmt instanceof mysqli_stmt) {
+        $collegeStmt->bind_param('i', $myCollege);
+        $collegeStmt->execute();
+        $collegeResult = $collegeStmt->get_result();
+        $collegeRow = ($collegeResult instanceof mysqli_result) ? $collegeResult->fetch_assoc() : null;
+
+        if (is_array($collegeRow)) {
+            $collegeCode = trim((string)($collegeRow['college_code'] ?? ''));
+            $collegeName = trim((string)($collegeRow['college_name'] ?? ''));
+            $collegeLabel = trim($collegeCode . ' - ' . $collegeName, ' -');
+        }
+
+        $collegeStmt->close();
+    }
+}
 ?>
 <!DOCTYPE html>
 
@@ -28,58 +59,272 @@
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
-    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css">
-    <link rel="stylesheet" type="text/css" href="custom_css.css">
-    <!-- Select2 (for searchable dropdowns) -->
+    <link rel="stylesheet" type="text/css" href="custom_css.css" />
     <link href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" rel="stylesheet" />
 
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
 
     <style>
-      #collegeFacultyTable td {
-        padding-top: 0.5rem !important;
-        padding-bottom: 0.5rem !important;
-      }
-      #collegeFacultyTable td:last-child {
-        white-space: nowrap !important;
-      }
       .select2-container .select2-selection--single {
         height: 38px !important;
         padding: 4px 10px;
       }
+
       .select2-container--default .select2-selection--single .select2-selection__arrow {
         height: 36px !important;
       }
 
-  #collegeFacultyTable td {
-    padding-top: 0.5rem !important;
-    padding-bottom: 0.5rem !important;
-  }
-  #collegeFacultyTable td:last-child {
-    white-space: nowrap !important;
-  }
-  .select2-container .select2-selection--single {
-    height: 38px !important;
-    padding: 4px 10px;
-  }
-  .select2-container--default .select2-selection--single .select2-selection__arrow {
-    height: 36px !important;
-  }
+      .modal.show {
+        z-index: 99999 !important;
+      }
 
-  /* 🔥 FIX MODAL + SWEETALERT + SELECT2 z-index conflict */
-  .modal.show {
-    z-index: 99999 !important;
-  }
-  .select2-container--open {
-    z-index: 100000 !important;
-  }
-  .swal2-container {
-    z-index: 1000000 !important;
-  }
-  .swal2-timer-progress-bar {
-  background: linear-gradient(90deg, #28a745, #20c997) !important;
-}
+      .select2-container--open {
+        z-index: 100000 !important;
+      }
+
+      .swal2-container {
+        z-index: 1000000 !important;
+      }
+
+      .swal2-timer-progress-bar {
+        background: linear-gradient(90deg, #28a745, #20c997) !important;
+      }
+
+      .faculty-list-card {
+        border: 1px solid #e5ecf6;
+        box-shadow: 0 18px 40px rgba(31, 45, 61, 0.06);
+      }
+
+      .faculty-toolbar {
+        padding: 1rem 1.1rem;
+        margin-bottom: 1.25rem;
+        border: 1px solid #e8eef5;
+        border-radius: 1rem;
+        background: linear-gradient(180deg, #fbfcfe 0%, #f5f8fc 100%);
+      }
+
+      .faculty-search-shell .input-group-text {
+        border-right: 0;
+        background: #fff;
+      }
+
+      .faculty-search-shell .form-control {
+        border-left: 0;
+      }
+
+      .faculty-search-shell .form-control:focus {
+        box-shadow: none;
+      }
+
+      .faculty-term-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.6rem;
+        padding: 0.55rem 0.8rem;
+        border-radius: 999px;
+        background: #f5f8ff;
+        border: 1px solid #dfe7fb;
+        color: #4b6282;
+        font-weight: 600;
+      }
+
+      .faculty-term-label {
+        font-size: 0.72rem;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .faculty-results-summary {
+        font-weight: 600;
+        color: #344257;
+      }
+
+      .faculty-term-note {
+        color: #7b8aa0;
+      }
+
+      .faculty-table thead th {
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #667a93;
+        border-bottom: 1px solid #dbe5f1;
+        white-space: nowrap;
+      }
+
+      .faculty-table tbody td {
+        padding-top: 0.85rem;
+        padding-bottom: 0.85rem;
+        color: #4f6078;
+        border-color: #edf2f7;
+        vertical-align: middle;
+      }
+
+      .faculty-index {
+        color: #8a99ae;
+        font-weight: 700;
+      }
+
+      .faculty-name {
+        font-weight: 700;
+        color: #2f3f57;
+      }
+
+      .faculty-designation-pill {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid transparent;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        line-height: 1.1;
+        white-space: nowrap;
+      }
+
+      .faculty-assigned-pill {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 88px;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        font-size: 0.76rem;
+        font-weight: 700;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .faculty-assigned-pill.is-active {
+        background: #e8f7ef;
+        color: #146c43;
+      }
+
+      .faculty-assigned-pill.is-empty {
+        background: #f2f5f9;
+        color: #73839a;
+      }
+
+      .faculty-action-cell .btn {
+        min-width: 108px;
+      }
+
+      .faculty-mobile-list {
+        display: grid;
+        gap: 1rem;
+      }
+
+      .faculty-mobile-card {
+        border: 1px solid #e2eaf3;
+        border-radius: 1rem;
+        box-shadow: 0 10px 24px rgba(31, 45, 61, 0.05);
+      }
+
+      .faculty-mobile-card .card-body {
+        padding: 1rem;
+      }
+
+      .faculty-mobile-top {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        gap: 0.85rem;
+      }
+
+      .faculty-mobile-index {
+        display: inline-flex;
+        margin-bottom: 0.5rem;
+        color: #8898ae;
+        font-size: 0.78rem;
+        font-weight: 700;
+        letter-spacing: 0.06em;
+        text-transform: uppercase;
+      }
+
+      .faculty-mobile-name {
+        margin-bottom: 0.45rem;
+        font-weight: 700;
+        color: #2f3f57;
+      }
+
+      .faculty-mobile-grid {
+        display: grid;
+        grid-template-columns: 1fr;
+        gap: 0.75rem;
+        margin-top: 1rem;
+      }
+
+      .faculty-mobile-meta {
+        padding: 0.8rem 0.9rem;
+        border-radius: 0.85rem;
+        background: #f7f9fc;
+        border: 1px solid #e6edf5;
+      }
+
+      .faculty-mobile-meta-label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.74rem;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        color: #8392a8;
+        font-weight: 700;
+      }
+
+      .faculty-mobile-meta-value {
+        display: block;
+        color: #344257;
+      }
+
+      .faculty-mobile-actions {
+        display: flex;
+        justify-content: flex-end;
+        gap: 0.5rem;
+        margin-top: 1rem;
+      }
+
+      .faculty-mobile-actions .btn {
+        width: 100%;
+      }
+
+      .faculty-empty-state,
+      .faculty-loading-state {
+        padding: 1rem;
+        border-radius: 0.9rem;
+        text-align: center;
+      }
+
+      .faculty-empty-state {
+        border: 1px dashed #d6e0ec;
+        background: #fafcff;
+        color: #70829a;
+      }
+
+      .faculty-loading-state {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.55rem;
+        color: #60748f;
+      }
+
+      .faculty-scroll-sentinel {
+        width: 100%;
+        height: 1px;
+      }
+
+      @media (max-width: 767.98px) {
+        .faculty-toolbar {
+          padding: 0.9rem;
+        }
+
+        .faculty-term-chip {
+          width: 100%;
+          justify-content: center;
+        }
+      }
     </style>
 </head>
 
@@ -87,109 +332,122 @@
 <div class="layout-wrapper layout-content-navbar">
   <div class="layout-container">
 
-    <!-- Sidebar -->
     <?php include 'sidebar.php'; ?>
-    <!-- /Sidebar -->
 
-    <!-- Layout page -->
     <div class="layout-page">
-
-      <!-- Navbar -->
       <?php include 'navbar.php'; ?>
-      <!-- /Navbar -->
 
-      <!-- Content wrapper -->
       <div class="content-wrapper">
-
         <div class="container-xxl flex-grow-1 container-p-y">
 
-          <!-- Title + Controls -->
           <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center mb-4">
             <div class="mb-3 mb-md-0">
               <h4 class="fw-bold mb-1">
                 <i class="bx bx-group me-2"></i> Faculty Assignment per College
               </h4>
               <p class="mb-0 text-muted">
-                Map faculty members to their respective colleges for scheduling and workload.
+                Review assigned faculty, designation, and current-term workload coverage for this college.
               </p>
             </div>
 
-            <div class="d-flex flex-column align-items-stretch align-items-md-end">
-              <!-- College Select -->
+            <div class="d-flex flex-column align-items-stretch align-items-md-end gap-2">
+              <div class="fw-bold" style="font-size: 16px;">
+                <?= htmlspecialchars($collegeLabel, ENT_QUOTES, 'UTF-8') ?>
+              </div>
 
-<div class="mb-2">
-    
-                <?php
-                    $myCollege     = $_SESSION['college_id'];
-                    $college_sql   = $conn->query("SELECT college_name, college_code FROM tbl_college WHERE college_id='$myCollege'");
-                    $college_row   = $college_sql->fetch_assoc();
-                    $college_label = $college_row['college_code'] . " - " . $college_row['college_name'];
-                ?>
-    <div class="fw-bold" style="font-size: 16px;">
-        <?= $college_label ?>
-    </div>
+              <input type="hidden" id="college_id" value="<?= $myCollege ?>">
 
-    <input type="hidden" id="college_id" value="<?= $myCollege ?>">
-</div>              
-
-
-
-
-              <!-- Add Faculty Button -->
               <button class="btn btn-primary" id="btnAddFaculty">
                 <i class="bx bx-plus"></i> Add Faculty to College
               </button>
             </div>
           </div>
 
-          <!-- Card: Assigned Faculty List -->
-          <div class="card">
-            <div class="card-header d-flex justify-content-between align-items-center">
-              <div>
-                <h5 class="m-0">Assigned Faculty</h5>
-                <small class="text-muted">Faculty currently linked to the selected college.</small>
+          <div class="card faculty-list-card">
+            <div class="card-header border-0 pb-0">
+              <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
+                <div>
+                  <h5 class="m-0">Assigned Faculty</h5>
+                  <small class="text-muted">Search and review faculty assignments for this college.</small>
+                </div>
+                <div class="faculty-term-chip">
+                  <span class="faculty-term-label">Current Term</span>
+                  <span id="facultyTermText"><?= htmlspecialchars($currentTermText, ENT_QUOTES, 'UTF-8') ?></span>
+                </div>
               </div>
             </div>
 
-            <div class="card-datatable table-responsive p-3">
-<table class="table table-hover align-middle" id="collegeFacultyTable">
-  <thead>
-    <tr>
-      <th style="width:60px;">#</th>
-      <th>Faculty Name</th>
-      <th style="width:120px;">Status</th>
-      <th style="width:170px;">Date Assigned</th>
-      <th class="text-end" style="width:100px;">Actions</th>
-    </tr>
-  </thead>
-  <tbody></tbody>
-</table>
+            <div class="card-body p-3 p-lg-4">
+              <div class="faculty-toolbar">
+                <div class="row g-3 align-items-center">
+                  <div class="col-lg-6">
+                    <label for="facultySearch" class="form-label fw-semibold">Search</label>
+                    <div class="input-group faculty-search-shell">
+                      <span class="input-group-text"><i class="bx bx-search"></i></span>
+                      <input
+                        type="search"
+                        id="facultySearch"
+                        class="form-control"
+                        placeholder="Search by faculty name, designation, or status"
+                        autocomplete="off"
+                      >
+                    </div>
+                  </div>
+                  <div class="col-lg-6">
+                    <div class="faculty-results-summary" id="facultyResultsSummary">
+                      Loading faculty assignments...
+                    </div>
+                    <small class="faculty-term-note" id="facultyTermNote">
+                      Assigned count is scoped to <?= htmlspecialchars($currentTermText, ENT_QUOTES, 'UTF-8') ?>.
+                    </small>
+                  </div>
+                </div>
+              </div>
+
+              <div id="facultyEmptyState" class="faculty-empty-state d-none">
+                No faculty assignments found for this college.
+              </div>
+
+              <div class="table-responsive d-none d-md-block">
+                <table class="table table-hover align-middle faculty-table mb-0" id="collegeFacultyTable">
+                  <thead>
+                    <tr>
+                      <th style="width:60px;">#</th>
+                      <th>Faculty Name</th>
+                      <th style="width:220px;">Designation</th>
+                      <th style="width:150px;">Assigned</th>
+                      <th style="width:130px;">Status</th>
+                      <th class="text-end" style="width:150px;">Actions</th>
+                    </tr>
+                  </thead>
+                  <tbody id="collegeFacultyTableBody"></tbody>
+                </table>
+              </div>
+
+              <div class="faculty-mobile-list d-md-none" id="collegeFacultyMobileList"></div>
+
+              <div id="facultyLoadingState" class="faculty-loading-state d-none">
+                <div class="spinner-border spinner-border-sm text-primary" role="status"></div>
+                <span>Loading faculty assignments...</span>
+              </div>
+
+              <div id="facultyScrollSentinel" class="faculty-scroll-sentinel"></div>
             </div>
           </div>
 
         </div>
 
-        <!-- Footer -->
         <?php include '../footer.php'; ?>
-        <!-- /Footer -->
 
         <div class="content-backdrop fade"></div>
       </div>
-      <!-- Content wrapper -->
-
     </div>
-    <!-- /Layout page -->
-
   </div>
 
-  <!-- Overlay -->
   <div class="layout-overlay layout-menu-toggle"></div>
 </div>
 
-<!-- ========================= -->
-<!-- ADD FACULTY MODAL        -->
-<!-- ========================= -->
-<div class="modal fade" id="addFacultyModal" tabindex="-1">
+<div class="modal fade" id="addFacultyModal" tabindex="-1" aria-hidden="true">
   <div class="modal-dialog modal-md modal-dialog-centered">
     <div class="modal-content">
 
@@ -206,7 +464,6 @@
             </select>
           </div>
 
-          <!-- hidden submit to support Enter -->
           <button type="submit" hidden></button>
         </form>
       </div>
@@ -224,115 +481,94 @@
   </div>
 </div>
 
-
-<!-- Core JS -->
 <script src="../assets/vendor/libs/jquery/jquery.js"></script>
 <script src="../assets/vendor/js/bootstrap.js"></script>
 <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
 <script src="../assets/vendor/js/menu.js"></script>
-
-<script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
-<script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
-
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
 <script src="../assets/js/main.js"></script>
-
-<!-- Select2 JS -->
 <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 
 <script>
-let facultyTable;
+const facultyListState = {
+  page: 1,
+  pageSize: 20,
+  total: 0,
+  loadedCount: 0,
+  hasMore: true,
+  loading: false,
+  search: "",
+  debounceTimer: null,
+  currentRequest: null,
+  observer: null,
+  requestToken: 0,
+  termText: $("#facultyTermText").text().trim()
+};
+
+const addFacultyModalElement = document.getElementById("addFacultyModal");
+const addFacultyModal = new bootstrap.Modal(addFacultyModalElement, {
+  backdrop: "static",
+  keyboard: false
+});
 
 $(document).ready(function () {
-
-  /* ================================
-     INITIALIZE DATATABLE (ONCE)
-  ================================= */
-  facultyTable = $('#collegeFacultyTable').DataTable({
-    paging: true,
-    searching: true,
-    ordering: false,
-    info: true,
-    lengthChange: false,
-    pageLength: 10,
-    language: {
-      emptyTable: "No faculty assigned to this college."
-    }
-  });
-
-  /* ================================
-     AUTO LOAD FACULTY (NON-ADMIN)
-  ================================= */
-  <?php if ($_SESSION['role'] !== 'admin'): ?>
-    let myCollege = "<?= $_SESSION['college_id'] ?>";
-    loadCollegeFaculty(myCollege);
-  <?php endif; ?>
-
-  /* ================================
-     SELECT2 INITIALIZATION
-  ================================= */
-  $('#faculty_id').select2({
-    dropdownParent: $('#addFacultyModal .modal-body'),
-    width: '100%',
+  $("#faculty_id").select2({
+    dropdownParent: $("#addFacultyModal .modal-body"),
+    width: "100%",
     placeholder: "Select Faculty...",
     allowClear: true
   });
 
   loadFacultyDropdown();
+  initializeFacultyScroll();
+  resetFacultyList();
 
-  /* ================================
-     ENTER KEY FIX (SELECT2 AWARE)
-  ================================= */
-  $('#addFacultyModal').on('keydown', function (e) {
+  $("#facultySearch").on("input", function () {
+    const nextSearch = $.trim($(this).val());
 
-    if (e.key === "Enter") {
-
-      // Allow Enter for Select2 option selection
-      if ($('.select2-container--open').length) {
+    clearTimeout(facultyListState.debounceTimer);
+    facultyListState.debounceTimer = window.setTimeout(function () {
+      if (nextSearch === facultyListState.search) {
         return;
       }
 
-      e.preventDefault();
-      $('#addFacultyForm').submit();
-    }
-
+      facultyListState.search = nextSearch;
+      resetFacultyList();
+    }, 250);
   });
 
-  /* ================================
-     OPEN MODAL
-  ================================= */
-  $('#btnAddFaculty').on('click', function () {
+  $("#addFacultyModal").on("keydown", function (e) {
+    if (e.key !== "Enter") {
+      return;
+    }
 
-    const college_id = $('#college_id').val();
+    if ($(".select2-container--open").length) {
+      return;
+    }
 
-    if (!college_id) {
+    e.preventDefault();
+    $("#addFacultyForm").trigger("submit");
+  });
+
+  $("#btnAddFaculty").on("click", function () {
+    const collegeId = Number($("#college_id").val() || 0);
+
+    if (!collegeId) {
       Swal.fire("No College Selected", "Please select a college first.", "warning");
       return;
     }
 
-    $('#faculty_id').val(null).trigger('change');
-
-    const modal = new bootstrap.Modal(
-      document.getElementById('addFacultyModal'),
-      {
-        backdrop: 'static',
-        keyboard: false
-      }
-    );
-
-    modal.show();
+    $("#faculty_id").val(null).trigger("change");
+    addFacultyModal.show();
   });
 
-  /* ================================
-     SAVE ASSIGNMENT
-  ================================= */
-  $('#addFacultyForm').on('submit', function (e) {
+  $("#addFacultyForm").on("submit", function (e) {
     e.preventDefault();
 
-    const college_id = $('#college_id').val();
-    const faculty_id = $('#faculty_id').val();
+    const collegeId = Number($("#college_id").val() || 0);
+    const facultyId = Number($("#faculty_id").val() || 0);
 
-    if (!college_id || !faculty_id) {
+    if (!collegeId || !facultyId) {
       Swal.fire({
         icon: "warning",
         title: "Missing Data",
@@ -347,47 +583,46 @@ $(document).ready(function () {
       dataType: "json",
       data: {
         save_assignment: 1,
-        college_id: college_id,
-        faculty_id: faculty_id
-      },
-      success: function (res) {
-
-        if (res.status === "inserted") {
-
-          Swal.fire({
-            icon: "success",
-            title: "Faculty Assigned!",
-            text: "Faculty has been successfully assigned to this college.",
-            timer: 1200,
-            timerProgressBar: true,
-            showConfirmButton: false,
-            didOpen: () => Swal.showLoading()
-          });
-
-          // $('#addFacultyModal').modal('hide');
-          loadCollegeFaculty();
-        }
-
-        else if (res.status === "duplicate") {
-          Swal.fire("Already Assigned", "This faculty is already assigned.", "info");
-        }
-
-        else {
-          Swal.fire("Error", "Something went wrong.", "error");
-        }
-      },
-      error: function () {
-        Swal.fire("Server Error", "Unable to connect.", "error");
+        college_id: collegeId,
+        faculty_id: facultyId
       }
+    }).done(function (res) {
+      if (res.status === "inserted" || res.status === "reactivated") {
+        Swal.fire({
+          icon: "success",
+          title: res.status === "reactivated" ? "Assignment Restored" : "Faculty Assigned",
+          text: res.status === "reactivated"
+            ? "The faculty assignment has been reactivated for this college."
+            : "Faculty has been successfully assigned to this college.",
+          timer: 1300,
+          timerProgressBar: true,
+          showConfirmButton: false
+        });
+
+        addFacultyModal.hide();
+        $("#addFacultyForm")[0].reset();
+        $("#faculty_id").val(null).trigger("change");
+        refreshFacultyData();
+        return;
+      }
+
+      if (res.status === "duplicate") {
+        Swal.fire("Already Assigned", "This faculty is already assigned to this college.", "info");
+        return;
+      }
+
+      Swal.fire("Error", "Something went wrong while saving the assignment.", "error");
+    }).fail(function () {
+      Swal.fire("Server Error", "Unable to connect.", "error");
     });
   });
 
-  /* ================================
-     REMOVE ASSIGNMENT
-  ================================= */
-  $(document).on('click', '.btn-remove-assignment', function () {
+  $(document).on("click", ".btn-remove-assignment", function () {
+    const collegeFacultyId = Number($(this).data("id") || 0);
 
-    const college_faculty_id = $(this).data('id');
+    if (!collegeFacultyId) {
+      return;
+    }
 
     Swal.fire({
       title: "Remove Assignment?",
@@ -397,8 +632,9 @@ $(document).ready(function () {
       confirmButtonText: "Yes, remove",
       cancelButtonText: "Cancel"
     }).then((result) => {
-
-      if (!result.isConfirmed) return;
+      if (!result.isConfirmed) {
+        return;
+      }
 
       $.ajax({
         url: "../backend/query_college_faculty.php",
@@ -406,49 +642,138 @@ $(document).ready(function () {
         dataType: "json",
         data: {
           remove_assignment: 1,
-          college_faculty_id: college_faculty_id
-        },
-        success: function (res) {
-
-          if (res.status === "removed") {
-            Swal.fire({
-              icon: "success",
-              title: "Removed!",
-              text: "Faculty assignment removed successfully.",
-              timer: 1200,
-              showConfirmButton: false
-            });
-            loadCollegeFaculty();
-          }
-          else {
-            Swal.fire("Error", "Unable to remove assignment.", "error");
-          }
-        },
-        error: function () {
-          Swal.fire("Error", "Unable to connect to the server.", "error");
+          college_faculty_id: collegeFacultyId
         }
+      }).done(function (res) {
+        if (res.status === "removed") {
+          Swal.fire({
+            icon: "success",
+            title: "Removed",
+            text: "Faculty assignment updated successfully.",
+            timer: 1300,
+            showConfirmButton: false
+          });
+          refreshFacultyData();
+          return;
+        }
+
+        Swal.fire("Error", "Unable to remove assignment.", "error");
+      }).fail(function () {
+        Swal.fire("Error", "Unable to connect to the server.", "error");
       });
     });
   });
 
-}); // END DOCUMENT READY
+  $(document).on("click", ".btn-reactivate-assignment", function () {
+    const collegeId = Number($("#college_id").val() || 0);
+    const facultyId = Number($(this).data("facultyId") || 0);
 
+    if (!collegeId || !facultyId) {
+      return;
+    }
 
-/* ==========================================================
-   LOAD FACULTY DROPDOWN
-========================================================== */
+    $.ajax({
+      url: "../backend/query_college_faculty.php",
+      type: "POST",
+      dataType: "json",
+      data: {
+        save_assignment: 1,
+        college_id: collegeId,
+        faculty_id: facultyId
+      }
+    }).done(function (res) {
+      if (res.status === "reactivated" || res.status === "inserted") {
+        Swal.fire({
+          icon: "success",
+          title: "Assignment Restored",
+          text: "Faculty assignment has been set back to active.",
+          timer: 1300,
+          showConfirmButton: false
+        });
+        refreshFacultyData();
+        return;
+      }
+
+      if (res.status === "duplicate") {
+        refreshFacultyData();
+        return;
+      }
+
+      Swal.fire("Error", "Unable to reactivate this assignment.", "error");
+    }).fail(function () {
+      Swal.fire("Error", "Unable to connect to the server.", "error");
+    });
+  });
+});
+
+function initializeFacultyScroll() {
+  const sentinel = document.getElementById("facultyScrollSentinel");
+
+  if (!sentinel || typeof IntersectionObserver !== "function") {
+    return;
+  }
+
+  facultyListState.observer = new IntersectionObserver(function (entries) {
+    const entry = entries[0];
+    if (!entry || !entry.isIntersecting) {
+      return;
+    }
+
+    if (facultyListState.loading || !facultyListState.hasMore) {
+      return;
+    }
+
+    loadCollegeFaculty();
+  }, {
+    root: null,
+    rootMargin: "220px 0px",
+    threshold: 0
+  });
+
+  facultyListState.observer.observe(sentinel);
+}
+
+function refreshFacultyData() {
+  loadFacultyDropdown();
+  resetFacultyList();
+}
+
+function resetFacultyList() {
+  if (facultyListState.currentRequest) {
+    facultyListState.currentRequest.abort();
+    facultyListState.currentRequest = null;
+  }
+
+  facultyListState.page = 1;
+  facultyListState.total = 0;
+  facultyListState.loadedCount = 0;
+  facultyListState.hasMore = true;
+  facultyListState.loading = false;
+  facultyListState.requestToken += 1;
+
+  $("#collegeFacultyTableBody").empty();
+  $("#collegeFacultyMobileList").empty();
+  $("#facultyEmptyState").addClass("d-none");
+
+  toggleFacultyLoading(false);
+  updateFacultyResultsSummary();
+  loadCollegeFaculty();
+}
+
 function loadFacultyDropdown() {
-
   $.post(
     "../backend/query_college_faculty.php",
-    { load_faculty_dropdown: 1 },
+    {
+      load_faculty_dropdown: 1,
+      college_id: Number($("#college_id").val() || 0)
+    },
     function (data) {
+      const $facultySelect = $("#faculty_id");
+      $facultySelect.empty().append('<option value=""></option>');
 
-      $('#faculty_id').empty().append('<option value=""></option>');
-
-      $.each(data, function (i, item) {
-        $('#faculty_id').append(
-          $('<option>', { value: item.id, text: item.text })
+      $.each(data, function (index, item) {
+        $facultySelect.append(
+          $("<option>", { value: item.id, text: item.text })
         );
       });
     },
@@ -456,51 +781,231 @@ function loadFacultyDropdown() {
   );
 }
 
+function loadCollegeFaculty() {
+  const collegeId = Number($("#college_id").val() || 0);
 
-/* ==========================================================
-   LOAD FACULTY ASSIGNMENTS (DATATABLE SAFE)
-========================================================== */
-function loadCollegeFaculty(collegeID = null) {
+  if (!collegeId || facultyListState.loading || !facultyListState.hasMore) {
+    return;
+  }
 
-  const college_id = collegeID || $('#college_id').val();
-  if (!college_id) return;
+  facultyListState.loading = true;
+  toggleFacultyLoading(true);
+  updateFacultyResultsSummary();
 
-  $.ajax({
+  const requestToken = facultyListState.requestToken;
+
+  facultyListState.currentRequest = $.ajax({
     url: "../backend/query_college_faculty.php",
     type: "POST",
     dataType: "json",
     data: {
       load_college_faculty: 1,
-      college_id: college_id
-    },
-    success: function (data) {
+      college_id: collegeId,
+      page: facultyListState.page,
+      page_size: facultyListState.pageSize,
+      search: facultyListState.search
+    }
+  }).done(function (res) {
+    if (requestToken !== facultyListState.requestToken) {
+      return;
+    }
 
-      facultyTable.clear();
+    if (!res || res.status !== "success") {
+      facultyListState.hasMore = false;
+      updateFacultyResultsSummary("Unable to load faculty assignments.");
+      return;
+    }
 
-      if (!data || data.length === 0) {
-        facultyTable.draw();
-        return;
-      }
+    const rows = Array.isArray(res.data) ? res.data : [];
+    const pagination = res.pagination || {};
+    const startIndex = facultyListState.loadedCount + 1;
 
-      let n = 1;
-      data.forEach(row => {
-        facultyTable.row.add([
-          n++,
-          `${row.last_name}, ${row.first_name}`,
-          row.status,
-          row.date_created,
-          `
-          <button class="btn btn-sm btn-danger btn-remove-assignment"
-                  data-id="${row.college_faculty_id}">
-            <i class="bx bx-trash"></i>
-          </button>
-          `
-        ]);
-      });
+    facultyListState.total = Number(pagination.total || 0);
+    facultyListState.hasMore = Boolean(pagination.has_more);
 
-      facultyTable.draw();
+    if (res.term && res.term.term_text) {
+      facultyListState.termText = String(res.term.term_text);
+      $("#facultyTermText").text(facultyListState.termText);
+      $("#facultyTermNote").text("Assigned count is scoped to " + facultyListState.termText + ".");
+    }
+
+    if (rows.length > 0) {
+      appendFacultyRows(rows, startIndex);
+      facultyListState.loadedCount += rows.length;
+      facultyListState.page += 1;
+    } else if (facultyListState.page === 1) {
+      facultyListState.hasMore = false;
+    }
+
+    const showEmptyState = facultyListState.total === 0;
+    $("#facultyEmptyState")
+      .toggleClass("d-none", !showEmptyState)
+      .text(facultyListState.search
+        ? "No faculty assignments matched your search."
+        : "No faculty assignments found for this college.");
+
+    updateFacultyResultsSummary();
+  }).fail(function (xhr, statusText) {
+    if (statusText === "abort") {
+      return;
+    }
+
+    facultyListState.hasMore = false;
+    updateFacultyResultsSummary("Unable to load faculty assignments.");
+  }).always(function () {
+    if (requestToken === facultyListState.requestToken) {
+      facultyListState.loading = false;
+      facultyListState.currentRequest = null;
+      toggleFacultyLoading(false);
     }
   });
 }
+
+function appendFacultyRows(rows, startIndex) {
+  const tableRows = [];
+  const mobileCards = [];
+
+  rows.forEach(function (row, index) {
+    const sequence = startIndex + index;
+    const designationHtml = buildDesignationHtml(row);
+    const assignedHtml = buildAssignedHtml(row);
+    const statusBadge = buildStatusBadge(row.status);
+    const actionHtml = buildActionHtml(row);
+    const safeName = escapeHtml(row.full_name || "Unnamed Faculty");
+
+    tableRows.push(
+      "<tr>" +
+        "<td class='faculty-index'>" + sequence + "</td>" +
+        "<td><div class='faculty-name'>" + safeName + "</div></td>" +
+        "<td>" + designationHtml + "</td>" +
+        "<td>" + assignedHtml + "</td>" +
+        "<td>" + statusBadge + "</td>" +
+        "<td class='text-end faculty-action-cell'>" + actionHtml + "</td>" +
+      "</tr>"
+    );
+
+    mobileCards.push(
+      "<div class='card faculty-mobile-card'>" +
+        "<div class='card-body'>" +
+          "<div class='faculty-mobile-top'>" +
+            "<div>" +
+              "<span class='faculty-mobile-index'>#" + sequence + "</span>" +
+              "<h6 class='faculty-mobile-name'>" + safeName + "</h6>" +
+              "<div>" + designationHtml + "</div>" +
+            "</div>" +
+            "<div>" + statusBadge + "</div>" +
+          "</div>" +
+          "<div class='faculty-mobile-grid'>" +
+            "<div class='faculty-mobile-meta'>" +
+              "<span class='faculty-mobile-meta-label'>Assigned</span>" +
+              "<span class='faculty-mobile-meta-value'>" + assignedHtml + "</span>" +
+            "</div>" +
+            "<div class='faculty-mobile-meta'>" +
+              "<span class='faculty-mobile-meta-label'>Academic Term</span>" +
+              "<span class='faculty-mobile-meta-value'>" + escapeHtml(facultyListState.termText || "Current academic term") + "</span>" +
+            "</div>" +
+          "</div>" +
+          "<div class='faculty-mobile-actions'>" + actionHtml + "</div>" +
+        "</div>" +
+      "</div>"
+    );
+  });
+
+  $("#collegeFacultyTableBody").append(tableRows.join(""));
+  $("#collegeFacultyMobileList").append(mobileCards.join(""));
+}
+
+function buildDesignationHtml(row) {
+  const designationName = String(row.designation_name || "").trim();
+
+  if (designationName === "") {
+    return "<span class='text-muted'>Not Set</span>";
+  }
+
+  const styleAttr = row.designation_style
+    ? " style=\"" + escapeHtml(String(row.designation_style)) + "\""
+    : "";
+
+  return "<span class='faculty-designation-pill'" + styleAttr + ">" + escapeHtml(designationName) + "</span>";
+}
+
+function buildAssignedHtml(row) {
+  const count = Number(row.assigned_count || 0);
+  const label = count + " " + (count === 1 ? "class" : "classes");
+  const stateClass = count > 0 ? "is-active" : "is-empty";
+
+  return "<span class='faculty-assigned-pill " + stateClass + "'>" + escapeHtml(label) + "</span>";
+}
+
+function buildStatusBadge(status) {
+  const normalizedStatus = String(status || "").toLowerCase() === "inactive" ? "inactive" : "active";
+  const badgeClass = normalizedStatus === "active" ? "bg-success" : "bg-danger";
+  const label = normalizedStatus === "active" ? "ACTIVE" : "INACTIVE";
+
+  return "<span class='badge " + badgeClass + "'>" + label + "</span>";
+}
+
+function buildActionHtml(row) {
+  const isActive = String(row.status || "").toLowerCase() !== "inactive";
+
+  if (isActive) {
+    return (
+      "<button class='btn btn-sm btn-outline-danger btn-remove-assignment' data-id='" +
+      escapeHtml(String(row.college_faculty_id || 0)) +
+      "'>" +
+      "<i class='bx bx-trash me-1'></i> Remove" +
+      "</button>"
+    );
+  }
+
+  return (
+    "<button class='btn btn-sm btn-outline-success btn-reactivate-assignment' data-faculty-id='" +
+    escapeHtml(String(row.faculty_id || 0)) +
+    "'>" +
+    "<i class='bx bx-refresh me-1'></i> Reactivate" +
+    "</button>"
+  );
+}
+
+function toggleFacultyLoading(isLoading) {
+  $("#facultyLoadingState").toggleClass("d-none", !isLoading);
+}
+
+function updateFacultyResultsSummary(overrideText) {
+  if (overrideText) {
+    $("#facultyResultsSummary").text(overrideText);
+    return;
+  }
+
+  if (facultyListState.loading && facultyListState.loadedCount === 0) {
+    $("#facultyResultsSummary").text("Loading faculty assignments...");
+    return;
+  }
+
+  if (facultyListState.total === 0) {
+    $("#facultyResultsSummary").text(
+      facultyListState.search
+        ? "No faculty assignments matched your search."
+        : "No faculty assignments found."
+    );
+    return;
+  }
+
+  const noun = facultyListState.total === 1 ? "faculty assignment" : "faculty assignments";
+  $("#facultyResultsSummary").text(
+    "Showing " + facultyListState.loadedCount + " of " + facultyListState.total + " " + noun
+  );
+}
+
+function escapeHtml(value) {
+  return String(value)
+    .replace(/&/g, "&amp;")
+    .replace(/</g, "&lt;")
+    .replace(/>/g, "&gt;")
+    .replace(/\"/g, "&quot;")
+    .replace(/'/g, "&#39;");
+}
 </script>
 
+</body>
+</html>

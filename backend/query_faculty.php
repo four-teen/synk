@@ -1,16 +1,191 @@
 <?php
 require_once "db.php";
 
+function query_faculty_designation_style(int $designationId, string $designationName): string
+{
+    $designationName = trim($designationName);
+    if ($designationName === '') {
+        return 'background-color:#f1f2f6;color:#697a8d;border-color:#d9dce1;';
+    }
+
+    $seed = ($designationId > 0) ? $designationId : (int)sprintf('%u', crc32(strtolower($designationName)));
+    $hue = (($seed * 47) + 17) % 360;
+    return "background-color:hsla({$hue}, 78%, 91%, 0.95);color:hsla({$hue}, 72%, 32%, 1);border-color:hsla({$hue}, 68%, 78%, 1);";
+}
+
+function query_faculty_describe_columns(mysqli $conn, string $tableName): array
+{
+    $columns = [];
+    $result = $conn->query("SHOW COLUMNS FROM `{$tableName}`");
+
+    if (!($result instanceof mysqli_result)) {
+        return $columns;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $fieldName = strtolower((string)($row['Field'] ?? ''));
+        if ($fieldName !== '') {
+            $columns[$fieldName] = $row;
+        }
+    }
+
+    return $columns;
+}
+
+function query_faculty_schema_info(mysqli $conn): array
+{
+    $facultyColumns = query_faculty_describe_columns($conn, 'tbl_faculty');
+
+    $designationTableResult = $conn->query("SHOW TABLES LIKE 'tbl_designation'");
+    $hasDesignationTable = ($designationTableResult instanceof mysqli_result && $designationTableResult->num_rows > 0);
+    $designationColumns = $hasDesignationTable
+        ? query_faculty_describe_columns($conn, 'tbl_designation')
+        : [];
+
+    $designationTextColumn = null;
+    foreach (['designation', 'designation_name'] as $candidate) {
+        if (isset($facultyColumns[$candidate])) {
+            $designationTextColumn = $candidate;
+            break;
+        }
+    }
+
+    return [
+        'has_middle_name' => isset($facultyColumns['middle_name']),
+        'has_ext_name' => isset($facultyColumns['ext_name']),
+        'has_status' => isset($facultyColumns['status']),
+        'has_designation_id' => isset($facultyColumns['designation_id']),
+        'designation_text_column' => $designationTextColumn,
+        'designation_table_exists' => $hasDesignationTable,
+        'designation_table_has_name' => isset($designationColumns['designation_name']),
+        'designation_table_has_status' => isset($designationColumns['status']),
+    ];
+}
+
+function query_faculty_bind_params(mysqli_stmt $stmt, string $types, array &$params): bool
+{
+    if ($types === '' || count($params) === 0) {
+        return true;
+    }
+
+    $bindParams = [$types];
+    foreach ($params as $index => &$value) {
+        $bindParams[] = &$value;
+    }
+
+    return call_user_func_array([$stmt, 'bind_param'], $bindParams);
+}
+
+function query_faculty_lookup_designation(mysqli $conn, array $schema, int $designationId): ?array
+{
+    if (
+        $designationId <= 0
+        || !$schema['designation_table_exists']
+        || !$schema['designation_table_has_name']
+    ) {
+        return null;
+    }
+
+    $sql = "SELECT designation_id, designation_name";
+    if ($schema['designation_table_has_status']) {
+        $sql .= ", status";
+    }
+    $sql .= " FROM tbl_designation WHERE designation_id = ? LIMIT 1";
+
+    $stmt = $conn->prepare($sql);
+    if (!($stmt instanceof mysqli_stmt)) {
+        return null;
+    }
+
+    $stmt->bind_param("i", $designationId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = ($result instanceof mysqli_result) ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    if (!is_array($row)) {
+        return null;
+    }
+
+    if ($schema['designation_table_has_status']) {
+        $status = strtolower(trim((string)($row['status'] ?? '')));
+        if ($status !== 'active') {
+            return null;
+        }
+    }
+
+    return [
+        'designation_id' => (int)$row['designation_id'],
+        'designation_name' => trim((string)$row['designation_name']),
+    ];
+}
+
+function query_faculty_persist_schema_ready(array $schema): bool
+{
+    return $schema['has_designation_id'] || $schema['designation_text_column'] !== null;
+}
+
 // ------------------------------------------------------------
 // LOAD FACULTY LIST
 // ------------------------------------------------------------
 if (isset($_POST['load_faculty'])) {
+    $schema = query_faculty_schema_info($conn);
+    $selectParts = [
+        "f.faculty_id",
+        "f.last_name",
+        "f.first_name",
+        $schema['has_middle_name'] ? "f.middle_name" : "NULL AS middle_name",
+        $schema['has_ext_name'] ? "f.ext_name" : "NULL AS ext_name",
+        $schema['has_status'] ? "f.status" : "'active' AS status",
+    ];
+    $designationLookup = [];
+
+    if ($schema['has_designation_id']) {
+        $selectParts[] = "f.designation_id";
+    } else {
+        $selectParts[] = "NULL AS designation_id";
+    }
+
+    if ($schema['designation_text_column'] !== null) {
+        $designationColumn = $schema['designation_text_column'];
+        $selectParts[] = "f.`{$designationColumn}` AS designation_name";
+    } else {
+        $selectParts[] = "NULL AS designation_name";
+    }
 
     $qry = $conn->query("
-        SELECT faculty_id, last_name, first_name, middle_name, ext_name, status
-        FROM tbl_faculty
-        ORDER BY last_name ASC, first_name ASC
+        SELECT
+            " . implode(",\n            ", $selectParts) . "
+        FROM tbl_faculty f
+        ORDER BY f.last_name ASC, f.first_name ASC
     ");
+
+    if (!($qry instanceof mysqli_result)) {
+        echo "<tr><td colspan='5' class='text-center text-muted'>Unable to load faculty list. Please check database connection/schema.</td></tr>";
+        exit;
+    }
+
+    if (
+        $schema['has_designation_id']
+        && $schema['designation_table_exists']
+        && $schema['designation_table_has_name']
+    ) {
+        $designationResult = $conn->query("
+            SELECT designation_id, designation_name
+            FROM tbl_designation
+        ");
+
+        if ($designationResult instanceof mysqli_result) {
+            while ($designationRow = $designationResult->fetch_assoc()) {
+                $lookupId = (string)($designationRow['designation_id'] ?? '');
+                $lookupName = trim((string)($designationRow['designation_name'] ?? ''));
+
+                if ($lookupId !== '' && $lookupName !== '') {
+                    $designationLookup[$lookupId] = $lookupName;
+                }
+            }
+        }
+    }
 
     $count = 1;
 
@@ -30,10 +205,25 @@ if (isset($_POST['load_faculty'])) {
             ? "<span class='badge bg-success'>ACTIVE</span>"
             : "<span class='badge bg-secondary'>INACTIVE</span>";
 
+        $designationIdRaw = trim((string)($row['designation_id'] ?? ''));
+        $designationNameRaw = trim((string)($row['designation_name'] ?? ''));
+        if ($designationNameRaw === '' && $designationIdRaw !== '' && isset($designationLookup[$designationIdRaw])) {
+            $designationNameRaw = $designationLookup[$designationIdRaw];
+        }
+        $designationName = $designationNameRaw !== ''
+            ? htmlspecialchars($designationNameRaw, ENT_QUOTES, 'UTF-8')
+            : 'Not Set';
+        $designationStyle = query_faculty_designation_style((int)($row['designation_id'] ?? 0), $designationNameRaw);
+        $designationStyleAttr = htmlspecialchars($designationStyle, ENT_QUOTES, 'UTF-8');
+        $designationDisplay = ($designationNameRaw !== '')
+            ? "<span class='faculty-designation-pill' style='{$designationStyleAttr}'>{$designationName}</span>"
+            : "<span class='text-muted'>Not Set</span>";
+
         echo "
             <tr>
                 <td>{$count}.</td>
                 <td>" . htmlspecialchars($fullname) . "</td>
+                <td>{$designationDisplay}</td>
                 <td>{$badge}</td>
                 <td class='text-end'>
 
@@ -43,7 +233,10 @@ if (isset($_POST['load_faculty'])) {
                         data-fname=\"" . htmlspecialchars($row['first_name']) . "\"
                         data-mname=\"" . htmlspecialchars($row['middle_name']) . "\"
                         data-ext=\"" . htmlspecialchars($row['ext_name']) . "\"
-                        data-status='{$row['status']}'>
+                        data-status='{$row['status']}'
+                        data-designation='" . htmlspecialchars($designationIdRaw, ENT_QUOTES, 'UTF-8') . "'
+                        data-designation-name='" . htmlspecialchars($designationNameRaw, ENT_QUOTES, 'UTF-8') . "'
+                        data-designation-style='{$designationStyleAttr}'>
                         <i class='bx bx-edit'></i>
                     </button>
 
@@ -67,23 +260,74 @@ if (isset($_POST['load_faculty'])) {
 // SAVE NEW FACULTY
 // ------------------------------------------------------------
 if (isset($_POST['save_faculty'])) {
+    $schema = query_faculty_schema_info($conn);
+    if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
+        echo "schema_update_required";
+        exit;
+    }
 
     $lname = trim(strtoupper($_POST['last_name']));
     $fname = trim(strtoupper($_POST['first_name']));
     $mname = trim(strtoupper($_POST['middle_name']));
     $ext   = trim(strtoupper($_POST['ext_name']));
+    $designationId = (int)($_POST['designation_id'] ?? 0);
     $status = $_POST['status'];
 
-    if ($lname == "" || $fname == "") {
+    if ($lname == "" || $fname == "" || $designationId <= 0) {
         echo "missing";
         exit;
     }
 
+    $designationRecord = query_faculty_lookup_designation($conn, $schema, $designationId);
+    if (!is_array($designationRecord) || $designationRecord['designation_name'] === '') {
+        echo "invalid_designation";
+        exit;
+    }
+
+    $insertColumns = ['last_name', 'first_name'];
+    $insertValues = [$lname, $fname];
+    $insertTypes = "ss";
+
+    if ($schema['has_middle_name']) {
+        $insertColumns[] = 'middle_name';
+        $insertValues[] = $mname;
+        $insertTypes .= "s";
+    }
+
+    if ($schema['has_ext_name']) {
+        $insertColumns[] = 'ext_name';
+        $insertValues[] = $ext;
+        $insertTypes .= "s";
+    }
+
+    if ($schema['has_designation_id']) {
+        $insertColumns[] = 'designation_id';
+        $insertValues[] = $designationRecord['designation_id'];
+        $insertTypes .= "i";
+    } else {
+        $insertColumns[] = $schema['designation_text_column'];
+        $insertValues[] = $designationRecord['designation_name'];
+        $insertTypes .= "s";
+    }
+
+    if ($schema['has_status']) {
+        $insertColumns[] = 'status';
+        $insertValues[] = $status;
+        $insertTypes .= "s";
+    }
+
+    $placeholders = implode(', ', array_fill(0, count($insertColumns), '?'));
     $stmt = $conn->prepare("
-        INSERT INTO tbl_faculty (last_name, first_name, middle_name, ext_name, status)
-        VALUES (?, ?, ?, ?, ?)
+        INSERT INTO tbl_faculty (`" . implode('`, `', $insertColumns) . "`)
+        VALUES ({$placeholders})
     ");
-    $stmt->bind_param("sssss", $lname, $fname, $mname, $ext, $status);
+
+    if (!($stmt instanceof mysqli_stmt)) {
+        echo "save_failed";
+        exit;
+    }
+
+    query_faculty_bind_params($stmt, $insertTypes, $insertValues);
     $stmt->execute();
     $stmt->close();
 
@@ -96,25 +340,81 @@ if (isset($_POST['save_faculty'])) {
 // UPDATE FACULTY
 // ------------------------------------------------------------
 if (isset($_POST['update_faculty'])) {
+    $schema = query_faculty_schema_info($conn);
+    if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
+        echo "schema_update_required";
+        exit;
+    }
 
-    $id    = $_POST['faculty_id'];
+    $id    = (int)($_POST['faculty_id'] ?? 0);
     $lname = trim(strtoupper($_POST['last_name']));
     $fname = trim(strtoupper($_POST['first_name']));
     $mname = trim(strtoupper($_POST['middle_name']));
     $ext   = trim(strtoupper($_POST['ext_name']));
+    $designationId = (int)($_POST['designation_id'] ?? 0);
     $status = $_POST['status'];
 
-    if ($lname == "" || $fname == "") {
+    if ($id <= 0 || $lname == "" || $fname == "" || $designationId <= 0) {
         echo "missing";
         exit;
     }
 
+    $designationRecord = query_faculty_lookup_designation($conn, $schema, $designationId);
+    if (!is_array($designationRecord) || $designationRecord['designation_name'] === '') {
+        echo "invalid_designation";
+        exit;
+    }
+
+    $updateParts = [
+        "last_name = ?",
+        "first_name = ?",
+    ];
+    $updateValues = [$lname, $fname];
+    $updateTypes = "ss";
+
+    if ($schema['has_middle_name']) {
+        $updateParts[] = "middle_name = ?";
+        $updateValues[] = $mname;
+        $updateTypes .= "s";
+    }
+
+    if ($schema['has_ext_name']) {
+        $updateParts[] = "ext_name = ?";
+        $updateValues[] = $ext;
+        $updateTypes .= "s";
+    }
+
+    if ($schema['has_designation_id']) {
+        $updateParts[] = "designation_id = ?";
+        $updateValues[] = $designationRecord['designation_id'];
+        $updateTypes .= "i";
+    } else {
+        $updateParts[] = "`{$schema['designation_text_column']}` = ?";
+        $updateValues[] = $designationRecord['designation_name'];
+        $updateTypes .= "s";
+    }
+
+    if ($schema['has_status']) {
+        $updateParts[] = "status = ?";
+        $updateValues[] = $status;
+        $updateTypes .= "s";
+    }
+
+    $updateValues[] = $id;
+    $updateTypes .= "i";
+
     $stmt = $conn->prepare("
         UPDATE tbl_faculty 
-        SET last_name=?, first_name=?, middle_name=?, ext_name=?, status=?
+        SET " . implode(", ", $updateParts) . "
         WHERE faculty_id=?
     ");
-    $stmt->bind_param("sssssi", $lname, $fname, $mname, $ext, $status, $id);
+
+    if (!($stmt instanceof mysqli_stmt)) {
+        echo "update_failed";
+        exit;
+    }
+
+    query_faculty_bind_params($stmt, $updateTypes, $updateValues);
     $stmt->execute();
     $stmt->close();
 
