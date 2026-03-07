@@ -26,14 +26,10 @@ $college_id = (int) $_SESSION['college_id'];
 /* =====================================================
    INPUTS
 ===================================================== */
-$faculty_id_raw = $_POST['faculty_id'] ?? '';
-$ay_raw         = trim($_POST['ay'] ?? '');
-$semester_raw   = trim($_POST['semester'] ?? '');
-
-if ($ay_raw === '' || $semester_raw === '') {
-    echo json_encode([]);
-    exit;
-}
+$ay_id        = (int)($_POST['ay_id'] ?? 0);
+$semester     = (int)($_POST['semester_num'] ?? 0);
+$ay_raw       = trim($_POST['ay'] ?? '');
+$semester_raw = trim($_POST['semester'] ?? '');
 
 /* =====================================================
    SEMESTER MAP (UI → DB)
@@ -44,32 +40,43 @@ $semester_map = [
     'Midyear' => 3
 ];
 
-if (!isset($semester_map[$semester_raw])) {
-    echo json_encode([]);
-    exit;
-}
+if ($semester <= 0) {
+    if ($semester_raw === '' || !isset($semester_map[$semester_raw])) {
+        echo json_encode([]);
+        exit;
+    }
 
-$semester = $semester_map[$semester_raw];
+    $semester = $semester_map[$semester_raw];
+}
 
 /* =====================================================
    RESOLVE AY → ay_id
 ===================================================== */
-$ayStmt = $conn->prepare("
-    SELECT ay_id 
-    FROM tbl_academic_years 
-    WHERE ay = ? 
-    LIMIT 1
-");
-$ayStmt->bind_param("s", $ay_raw);
-$ayStmt->execute();
-$ayRes = $ayStmt->get_result();
+if ($ay_id <= 0) {
+    if ($ay_raw === '') {
+        echo json_encode([]);
+        exit;
+    }
 
-if ($ayRes->num_rows === 0) {
-    echo json_encode([]);
-    exit;
+    $ayStmt = $conn->prepare("
+        SELECT ay_id 
+        FROM tbl_academic_years 
+        WHERE ay = ? 
+        LIMIT 1
+    ");
+    $ayStmt->bind_param("s", $ay_raw);
+    $ayStmt->execute();
+    $ayRes = $ayStmt->get_result();
+
+    if ($ayRes->num_rows === 0) {
+        $ayStmt->close();
+        echo json_encode([]);
+        exit;
+    }
+
+    $ay_id = (int)$ayRes->fetch_assoc()['ay_id'];
+    $ayStmt->close();
 }
-
-$ay_id = (int)$ayRes->fetch_assoc()['ay_id'];
 
 /* =====================================================
    MAIN QUERY
@@ -107,10 +114,11 @@ WHERE
     o.ay_id = ?
 AND o.semester = ?
 AND p.college_id = ?                         -- 🔴 COLLEGE FILTER
-AND cs.schedule_id NOT IN (
-    SELECT fw.schedule_id
+AND NOT EXISTS (
+    SELECT 1
     FROM tbl_faculty_workload_sched fw
-    WHERE fw.ay_id = ?
+    WHERE fw.schedule_id = cs.schedule_id
+      AND fw.ay_id = ?
       AND fw.semester = ?
 )
 ORDER BY

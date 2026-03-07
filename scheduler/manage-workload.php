@@ -285,10 +285,11 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                     <select id="fw_ay" class="form-select select2-single">
                         <option value="">Select A.Y.</option>
                         <?php
-                            $ay = mysqli_query($conn, "SELECT ay FROM tbl_academic_years ORDER BY ay ASC");
+                            $ay = mysqli_query($conn, "SELECT ay_id, ay FROM tbl_academic_years ORDER BY ay ASC");
                             while ($r = mysqli_fetch_assoc($ay)) {
+                                $ayId  = (int)$r['ay_id'];
                                 $ayval = htmlspecialchars($r['ay']);
-                                echo "<option value='{$ayval}'>{$ayval}</option>";
+                                echo "<option value='{$ayval}' data-ay-id='{$ayId}'>{$ayval}</option>";
                             }
                         ?>
                     </select>
@@ -471,6 +472,9 @@ while ($f = mysqli_fetch_assoc($f_run)) {
 ========================================================= */
 let currentAyId = null;
 let currentSemesterNum = null;
+let scheduledClassesRequest = null;
+let workloadListRequest = null;
+let selectionRequestToken = 0;
 
 $(document).ready(function () {
 
@@ -511,16 +515,69 @@ $(document).ready(function () {
         return Number.isInteger(n) ? String(n) : n.toFixed(2);
     }
 
+    function getSelectedContext() {
+        const facultyId = $("#faculty_id").val();
+        const ayText = $("#fw_ay").val();
+        const semesterUi = $("#fw_semester").val();
+        const ayId = Number($("#fw_ay option:selected").data("ay-id")) || 0;
+        const semesterNum = SEMESTER_MAP[semesterUi] || 0;
+
+        if (!facultyId || !ayText || !semesterUi || !ayId || !semesterNum) {
+            return null;
+        }
+
+        return {
+            facultyId,
+            facultyName: $("#faculty_id option:selected").text(),
+            ayId,
+            ayText,
+            semesterUi,
+            semesterNum
+        };
+    }
+
+    function abortPendingRequest(request) {
+        if (request && request.readyState !== 4) {
+            request.abort();
+        }
+    }
+
+    function hideSelectionPanels() {
+        abortPendingRequest(scheduledClassesRequest);
+        abortPendingRequest(workloadListRequest);
+        currentAyId = null;
+        currentSemesterNum = null;
+        $("#facultyAlert").hide();
+        $("#scheduledClassCard").hide();
+        $("#workloadCard").hide();
+        $("#checkAllSchedules").prop("checked", false);
+    }
+
+    function refreshWorkloadPanels() {
+        const context = getSelectedContext();
+
+        if (!context) {
+            hideSelectionPanels();
+            return null;
+        }
+
+        currentAyId = context.ayId;
+        currentSemesterNum = context.semesterNum;
+
+        const requestToken = ++selectionRequestToken;
+        loadScheduledClasses(context, requestToken);
+        loadWorkloadList(context, requestToken);
+
+        return context;
+    }
+
     /* =========================================================
        LOAD SCHEDULED CLASSES
     ========================================================= */
-    function loadScheduledClasses() {
+    function loadScheduledClasses(context = getSelectedContext(), requestToken = selectionRequestToken) {
+        if (!context) return;
 
-        let faculty_id = $("#faculty_id").val();
-        let ay_text    = $("#fw_ay").val();
-        let semester_ui = $("#fw_semester").val();
-
-        if (!faculty_id || !ay_text || !semester_ui) return;
+        abortPendingRequest(scheduledClassesRequest);
 
         $("#scheduledClassCard").show();
         $("#checkAllSchedules").prop("checked", false);
@@ -532,59 +589,68 @@ $(document).ready(function () {
             </tr>
         `);
 
-        $.post(
-            "../backend/query_class_schedule_loader.php",
-            {
-                faculty_id: faculty_id,
-                ay: ay_text,
-                semester: semester_ui
-            },
-            function (res) {
-
-                let data = (typeof res === "string") ? JSON.parse(res) : res;
-
-                if (!Array.isArray(data)) {
-                    showInvalid();
-                    return;
-                }
-
-                if (data.length === 0) {
-                    $("#checkAllSchedules").prop("checked", false);
-                    $("#scheduledClassTbody").html(`
-                        <tr>
-                            <td colspan="10" class="text-center text-muted">
-                                No scheduled classes found.
-                            </td>
-                        </tr>
-                    `);
-                    return;
-                }
-
-        let rows = "";
-        data.forEach(item => {
-            rows += `
-                <tr>
-                    <td>
-                        <input type="checkbox"
-                               class="chkSchedule"
-                               value="${item.schedule_id}">
-                    </td>
-                    <td>${item.subject_code}</td>
-                    <td>${item.subject_description}</td>
-                    <td>${item.section_name}</td>
-                    <td>${item.days}</td>
-                    <td>${item.time}</td>
-                    <td>${item.room_code}</td>
-                    <td class="text-center">${item.units}</td>
-                    <td class="text-center">${item.hours_lec}</td>
-                    <td class="text-center">${item.hours_lab}</td>
-                </tr>
-            `;
-        });
-        $("#scheduledClassTbody").html(rows);
-
+        scheduledClassesRequest = $.ajax({
+            url: "../backend/query_class_schedule_loader.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                faculty_id: context.facultyId,
+                ay_id: context.ayId,
+                ay: context.ayText,
+                semester_num: context.semesterNum,
+                semester: context.semesterUi
             }
-        ).fail(showInvalid);
+        }).done(function (data) {
+            if (requestToken !== selectionRequestToken) {
+                return;
+            }
+
+            if (!Array.isArray(data)) {
+                showInvalid();
+                return;
+            }
+
+            if (data.length === 0) {
+                $("#checkAllSchedules").prop("checked", false);
+                $("#scheduledClassTbody").html(`
+                    <tr>
+                        <td colspan="10" class="text-center text-muted">
+                            No scheduled classes found.
+                        </td>
+                    </tr>
+                `);
+                return;
+            }
+
+            let rows = "";
+            data.forEach(item => {
+                rows += `
+                    <tr>
+                        <td>
+                            <input type="checkbox"
+                                   class="chkSchedule"
+                                   value="${escapeHtml(item.schedule_id)}">
+                        </td>
+                        <td>${escapeHtml(item.subject_code)}</td>
+                        <td>${escapeHtml(item.subject_description)}</td>
+                        <td>${escapeHtml(item.section_name)}</td>
+                        <td>${escapeHtml(item.days)}</td>
+                        <td>${escapeHtml(item.time)}</td>
+                        <td>${escapeHtml(item.room_code)}</td>
+                        <td class="text-center">${formatNumber(item.units)}</td>
+                        <td class="text-center">${formatNumber(item.hours_lec)}</td>
+                        <td class="text-center">${formatNumber(item.hours_lab)}</td>
+                    </tr>
+                `;
+            });
+            $("#scheduledClassTbody").html(rows);
+        }).fail(function (xhr, status) {
+            if (status === "abort" || requestToken !== selectionRequestToken) {
+                return;
+            }
+
+            showInvalid();
+        });
     }
 
     function showInvalid() {
@@ -611,7 +677,7 @@ $(document).ready(function () {
     /* =========================================================
        LOAD FACULTY WORKLOAD LIST
     ========================================================= */
-    function loadWorkloadList() {
+    function loadWorkloadList(context = getSelectedContext(), requestToken = selectionRequestToken) {
 
         let totalLEC   = 0;
         let totalLAB   = 0;
@@ -621,133 +687,142 @@ $(document).ready(function () {
         /* Count one load row per offering (LEC+LAB should count once). */
         const countedOfferings = new Set();
 
-        if (!currentAyId || !currentSemesterNum) return;
+        if (!context) return;
 
-        let faculty_id = $("#faculty_id").val();
-        if (!faculty_id) return;
+        abortPendingRequest(workloadListRequest);
 
-        $.post(
-            "../backend/query_load_faculty_workload.php",
-            {
-                faculty_id: faculty_id,
-                ay_id: currentAyId,
-                semester: currentSemesterNum
-            },
-            function (data) {
+        workloadListRequest = $.ajax({
+            url: "../backend/query_load_faculty_workload.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                faculty_id: context.facultyId,
+                ay_id: context.ayId,
+                semester: context.semesterNum
+            }
+        }).done(function (data) {
+            if (requestToken !== selectionRequestToken) {
+                return;
+            }
 
-                if (!Array.isArray(data) || data.length === 0) {
-                    $("#workloadTbody").html("");
-                    $("#totalLEC").text("0");
-                    $("#totalLAB").text("0");
-                    $("#totalUNIT").text("0");
-                    $("#totalLOADCell").html(`<span class="load-pill load-high">0.00 <small>(UNDERLOAD)</small></span>`);
-                    $("#workloadCard").hide();
-                    return;
+            if (!Array.isArray(data) || data.length === 0) {
+                $("#workloadTbody").html("");
+                $("#totalLEC").text("0");
+                $("#totalLAB").text("0");
+                $("#totalUNIT").text("0");
+                $("#totalLOADCell").html(`<span class="load-pill load-high">0.00 <small>(UNDERLOAD)</small></span>`);
+                $("#workloadCard").hide();
+                return;
+            }
+
+            let rows = "";
+
+            for (let i = 0; i < data.length; i++) {
+
+                let row = data[i];
+
+                const offeringKey = String(row.offering_id ?? ("w" + row.workload_id));
+                if (!countedOfferings.has(offeringKey)) {
+                    countedOfferings.add(offeringKey);
+                    totalLEC  += toNumber(row.lec);
+                    totalLAB  += toNumber(row.lab);
+                    totalUNIT += toNumber(row.units);
+                    totalLOAD += toNumber(row.faculty_load);
                 }
 
-                let rows = "";
+                const type = String(row.type || "").toUpperCase();
+                const typeBadge = type === "LAB"
+                    ? '<span class="type-pill lab">LAB</span>'
+                    : '<span class="type-pill lec">LEC</span>';
 
-                for (let i = 0; i < data.length; i++) {
+                let curOffering = row.offering_id ?? null;
+                let next = (i + 1 < data.length) ? data[i + 1] : null;
+                let prev = (i - 1 >= 0) ? data[i - 1] : null;
 
-                    let row = data[i];
+                let isStartPair =
+                    type === "LEC" &&
+                    curOffering !== null &&
+                    next &&
+                    String(next.offering_id ?? "") === String(curOffering);
 
-                    const offeringKey = String(row.offering_id ?? ("w" + row.workload_id));
-                    if (!countedOfferings.has(offeringKey)) {
-                        countedOfferings.add(offeringKey);
-                        totalLEC  += toNumber(row.lec);
-                        totalLAB  += toNumber(row.lab);
-                        totalUNIT += toNumber(row.units);
-                        totalLOAD += toNumber(row.faculty_load);
-                    }
+                let isSecondPairRow =
+                    curOffering !== null &&
+                    prev &&
+                    String(prev.offering_id ?? "") === String(curOffering);
 
-                    const type = String(row.type || "").toUpperCase();
-                    const typeBadge = type === "LAB"
-                        ? '<span class="type-pill lab">LAB</span>'
-                        : '<span class="type-pill lec">LEC</span>';
+                rows += `
+                    <tr>
+                        <td class="workload-code">${escapeHtml(row.sub_code)}</td>
+                        <td class="workload-desc">${escapeHtml(row.desc)}</td>
+                        <td>${escapeHtml(row.section)}</td>
+                        <td class="text-center">${typeBadge}</td>
+                        <td class="workload-days">${escapeHtml(row.days)}</td>
+                        <td class="workload-time">${escapeHtml(row.time)}</td>
+                        <td class="workload-room">${escapeHtml(row.room)}</td>
+                `;
 
-                    let curOffering = row.offering_id ?? null;
-                    let next = (i + 1 < data.length) ? data[i + 1] : null;
-                    let prev = (i - 1 >= 0) ? data[i - 1] : null;
-
-                    let isStartPair =
-                        type === "LEC" &&
-                        curOffering !== null &&
-                        next &&
-                        String(next.offering_id ?? "") === String(curOffering);
-
-                    let isSecondPairRow =
-                        curOffering !== null &&
-                        prev &&
-                        String(prev.offering_id ?? "") === String(curOffering);
-
+                if (isStartPair) {
                     rows += `
-                        <tr>
-                            <td class="workload-code">${escapeHtml(row.sub_code)}</td>
-                            <td class="workload-desc">${escapeHtml(row.desc)}</td>
-                            <td>${escapeHtml(row.section)}</td>
-                            <td class="text-center">${typeBadge}</td>
-                            <td class="workload-days">${escapeHtml(row.days)}</td>
-                            <td class="workload-time">${escapeHtml(row.time)}</td>
-                            <td class="workload-room">${escapeHtml(row.room)}</td>
+                        <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.units)}</td>
+                        <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lec)}</td>
+                        <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lab)}</td>
+                        <td class="text-center fw-semibold" rowspan="2" style="vertical-align: middle;">
+                            ${toNumber(row.faculty_load).toFixed(2)}
+                        </td>
                     `;
-
-                    if (isStartPair) {
-                        rows += `
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.units)}</td>
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lec)}</td>
-                            <td class="text-center" rowspan="2" style="vertical-align: middle;">${formatNumber(row.lab)}</td>
-                            <td class="text-center fw-semibold" rowspan="2" style="vertical-align: middle;">
-                                ${toNumber(row.faculty_load).toFixed(2)}
-                            </td>
-                        `;
-                    } else if (!isSecondPairRow) {
-                        rows += `
-                            <td class="text-center">${formatNumber(row.units)}</td>
-                            <td class="text-center">${formatNumber(row.lec)}</td>
-                            <td class="text-center">${formatNumber(row.lab)}</td>
-                            <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
-                        `;
-                    }
-
+                } else if (!isSecondPairRow) {
                     rows += `
-                            <td class="text-end">
-                                <button class="btn btn-sm btn-delete-workload btnRemoveWL"
-                                        data-id="${row.workload_id}">
-                                    <i class="bx bx-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
+                        <td class="text-center">${formatNumber(row.units)}</td>
+                        <td class="text-center">${formatNumber(row.lec)}</td>
+                        <td class="text-center">${formatNumber(row.lab)}</td>
+                        <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
                     `;
                 }
 
-                $("#workloadTbody").html(rows);
+                rows += `
+                        <td class="text-end">
+                            <button class="btn btn-sm btn-delete-workload btnRemoveWL"
+                                    data-id="${row.workload_id}">
+                                <i class="bx bx-trash"></i>
+                            </button>
+                        </td>
+                    </tr>
+                `;
+            }
 
-                let loadClass = "load-high";
-                let loadLabel = "UNDERLOAD";
-                if (totalLOAD >= 18 && totalLOAD <= 21) {
-                    loadClass = "load-normal";
-                    loadLabel = "NORMAL LOAD";
-                } else if (totalLOAD > 21) {
-                    loadClass = "load-over";
-                    loadLabel = "OVERLOAD";
-                }
+            $("#workloadTbody").html(rows);
 
-                $("#totalLEC").text(formatNumber(totalLEC));
-                $("#totalLAB").text(formatNumber(totalLAB));
-                $("#totalUNIT").text(formatNumber(totalUNIT));
-                $("#totalLOADCell").html(`
-                    <span class="load-pill ${loadClass}">
-                        ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
-                    </span>
-                `);
+            let loadClass = "load-high";
+            let loadLabel = "UNDERLOAD";
+            if (totalLOAD >= 18 && totalLOAD <= 21) {
+                loadClass = "load-normal";
+                loadLabel = "NORMAL LOAD";
+            } else if (totalLOAD > 21) {
+                loadClass = "load-over";
+                loadLabel = "OVERLOAD";
+            }
 
-                $("#printFacultyName").text($("#faculty_id option:selected").text());
-                $("#printTerm").text($("#fw_semester").val() + " A.Y. " + $("#fw_ay").val());
+            $("#totalLEC").text(formatNumber(totalLEC));
+            $("#totalLAB").text(formatNumber(totalLAB));
+            $("#totalUNIT").text(formatNumber(totalUNIT));
+            $("#totalLOADCell").html(`
+                <span class="load-pill ${loadClass}">
+                    ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
+                </span>
+            `);
 
-                $("#workloadCard").show();
-            },
-            "json"
-        );
+            $("#printFacultyName").text(context.facultyName);
+            $("#printTerm").text(context.semesterUi + " A.Y. " + context.ayText);
+
+            $("#workloadCard").show();
+        }).fail(function (xhr, status) {
+            if (status === "abort" || requestToken !== selectionRequestToken) {
+                return;
+            }
+
+            $("#workloadTbody").html("");
+            $("#workloadCard").hide();
+        });
     }
 
     /* =========================================================
@@ -771,8 +846,7 @@ $(document).ready(function () {
                 "../backend/query_remove_workload.php",
                 { workload_id: id },
                 function () {
-                    loadScheduledClasses();
-                    loadWorkloadList();
+                    refreshWorkloadPanels();
                 }
             );
         });
@@ -783,40 +857,19 @@ $(document).ready(function () {
     ========================================================= */
     $("#faculty_id, #fw_ay, #fw_semester").on("change", function () {
 
-        let faculty_id = $("#faculty_id").val();
-        let ay_text    = $("#fw_ay").val();
-        let semester_ui = $("#fw_semester").val();
-
-        if (!faculty_id || !ay_text || !semester_ui) {
-            $("#facultyAlert").hide();
-            $("#scheduledClassCard").hide();
-            $("#workloadCard").hide();
+        const context = getSelectedContext();
+        if (!context) {
+            hideSelectionPanels();
             return;
         }
 
-        $("#facultyNameText").text(
-            $("#faculty_id option:selected").text()
-        );
-        $("#termSummary").text(semester_ui + " A.Y. " + ay_text);
+        $("#facultyNameText").text(context.facultyName);
+        $("#termSummary").text(context.semesterUi + " A.Y. " + context.ayText);
 
-        $("#facultyAlert").slideDown();
-        $("#scheduledClassCard").slideDown();
+        $("#facultyAlert").stop(true, true).slideDown();
+        $("#scheduledClassCard").stop(true, true).slideDown();
 
-        currentSemesterNum = SEMESTER_MAP[semester_ui];
-
-        // Resolve AY → ay_id
-        $.post(
-            "../backend/query_get_ay_id.php",
-            { ay: ay_text },
-            function (res) {
-                if (res && res.ay_id) {
-                    currentAyId = res.ay_id;
-                    loadScheduledClasses();
-                    loadWorkloadList();
-                }
-            },
-            "json"
-        );
+        refreshWorkloadPanels();
     });
 
     /* =========================================================
@@ -863,8 +916,7 @@ $(document).ready(function () {
                         res.message || (res.inserted + " class(es) added to workload."),
                         "success"
                     );
-                    loadScheduledClasses();
-                    loadWorkloadList();
+                    refreshWorkloadPanels();
                     return;
                 }
 
@@ -874,8 +926,7 @@ $(document).ready(function () {
                         title: res.status === "partial" ? "Partially Applied" : "Faculty Conflict",
                         html: res.message || "Selected classes conflict with this faculty's existing load."
                     });
-                    loadScheduledClasses();
-                    loadWorkloadList();
+                    refreshWorkloadPanels();
                     return;
                 }
 
