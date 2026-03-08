@@ -1,5 +1,7 @@
 <?php
 
+require_once __DIR__ . '/scheduler_access_helper.php';
+
 function synk_useraccount_columns(mysqli $conn): array
 {
     static $cache = null;
@@ -110,16 +112,25 @@ function synk_find_useraccount_by_email(mysqli $conn, string $email): ?array
     return $row ?: null;
 }
 
-function synk_complete_user_login(array $row): string
+function synk_complete_user_login(array $row, ?mysqli $conn = null): string
 {
     session_regenerate_id(true);
 
-    $_SESSION['user_id'] = $row['user_id'];
-    $_SESSION['username'] = $row['username'];
-    $_SESSION['email'] = $row['email'];
-    $_SESSION['role'] = $row['role'];
-    $_SESSION['college_id'] = $row['college_id'];
-    $_SESSION['college_name'] = $row['college_name'];
+    if ((string)($row['role'] ?? '') === 'scheduler' && $conn instanceof mysqli) {
+        $accessRows = synk_resolve_scheduler_access_rows(
+            $conn,
+            (int)($row['user_id'] ?? 0),
+            (int)($row['college_id'] ?? 0)
+        );
+        synk_scheduler_store_session_scope($row, $accessRows, (int)($row['college_id'] ?? 0));
+    } else {
+        $_SESSION['user_id'] = $row['user_id'];
+        $_SESSION['username'] = $row['username'];
+        $_SESSION['email'] = $row['email'];
+        $_SESSION['role'] = $row['role'];
+        $_SESSION['college_id'] = $row['college_id'];
+        $_SESSION['college_name'] = $row['college_name'];
+    }
 
     return (string)$row['role'];
 }

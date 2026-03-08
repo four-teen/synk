@@ -90,7 +90,7 @@ if (!in_array($role, synk_supported_module_roles(), true)) {
     synk_auth_status_redirect('role_not_supported');
 }
 
-if ($role === 'scheduler' && empty($user['college_id'])) {
+if ($role === 'scheduler' && !synk_scheduler_account_has_access($conn, $user)) {
     synk_auth_status_redirect('account_incomplete');
 }
 
@@ -100,7 +100,7 @@ if ($existingGoogleSub !== '' && !hash_equals($existingGoogleSub, $googleSub)) {
 }
 
 synk_record_google_login($conn, (int)$user['user_id'], $googleSub, $emailVerified, $displayName);
-synk_complete_user_login($user);
+synk_complete_user_login($user, $conn);
 
 $redirectPath = synk_role_redirect_path($role);
 if ($redirectPath === null) {

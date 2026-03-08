@@ -7,6 +7,39 @@
         header('Location: ../index.php');
         exit;
     }
+
+    $collegeOptionsHtml = '';
+    $collegeQuery = $conn->query("
+        SELECT
+            c.college_id,
+            c.college_code,
+            c.college_name,
+            cp.campus_name
+        FROM tbl_college c
+        LEFT JOIN tbl_campus cp ON cp.campus_id = c.campus_id
+        WHERE c.status = 'active'
+        ORDER BY cp.campus_name ASC, c.college_name ASC, c.college_code ASC
+    ");
+
+    while ($collegeRow = $collegeQuery->fetch_assoc()) {
+        $label = trim((string)$collegeRow['college_code']);
+        $collegeName = trim((string)$collegeRow['college_name']);
+        $campusName = trim((string)($collegeRow['campus_name'] ?? ''));
+
+        if ($label !== '' && $collegeName !== '') {
+            $label .= ' - ' . $collegeName;
+        } elseif ($collegeName !== '') {
+            $label = $collegeName;
+        }
+
+        if ($campusName !== '') {
+            $label .= ' (' . $campusName . ')';
+        }
+
+        $collegeOptionsHtml .= "<option value='" . (int)$collegeRow['college_id'] . "'>" .
+            htmlspecialchars($label, ENT_QUOTES, 'UTF-8') .
+            "</option>";
+    }
 ?>
 <!DOCTYPE html>
 
@@ -33,6 +66,7 @@
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
 
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
@@ -206,6 +240,66 @@
         background: rgba(245, 246, 255, 0.7);
       }
 
+      .college-access-select {
+        min-height: 11rem;
+      }
+
+      .select2-container {
+        width: 100% !important;
+      }
+
+      .select2-container--default .select2-selection--multiple {
+        min-height: 3rem;
+        border: 1px solid #d9dee3;
+        border-radius: 0.5rem;
+        padding: 0.35rem 0.5rem;
+      }
+
+      .select2-container--default.select2-container--focus .select2-selection--multiple {
+        border-color: #696cff;
+        box-shadow: 0 0 0 0.2rem rgba(105, 108, 255, 0.16);
+      }
+
+      .select2-container--default .select2-selection--multiple .select2-selection__choice {
+        margin-top: 0.3rem;
+        background: rgba(105, 108, 255, 0.1);
+        border: 0;
+        border-radius: 999px;
+        color: #435971;
+        padding: 0.2rem 0.65rem;
+      }
+
+      .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+        color: #696cff;
+        margin-right: 0.35rem;
+      }
+
+      .select2-dropdown {
+        border: 1px solid #d9dee3;
+        border-radius: 0.75rem;
+        overflow: hidden;
+        box-shadow: 0 0.5rem 1.2rem rgba(67, 89, 113, 0.16);
+      }
+
+      .college-access-dropdown {
+        min-width: 0 !important;
+      }
+
+      .college-access-dropdown .select2-results {
+        max-height: 18rem;
+        overflow-y: auto;
+      }
+
+      .select2-search--dropdown .select2-search__field {
+        border: 1px solid #d9dee3;
+        border-radius: 0.5rem;
+        padding: 0.45rem 0.65rem;
+      }
+
+      .select2-results__option {
+        padding: 0.55rem 0.75rem;
+      }
+
       @media (max-width: 767.98px) {
         .accounts-header {
           align-items: stretch !important;
@@ -290,7 +384,7 @@
                       type="search"
                       id="accountSearch"
                       class="form-control"
-                      placeholder="Search name, email, role, college"
+                      placeholder="Search name, email, role, college access"
                       autocomplete="off"
                     >
                   </div>
@@ -316,7 +410,7 @@
                         <th>Email</th>
                         <th>Access</th>
                         <th>Role</th>
-                        <th>College</th>
+                        <th>College Access</th>
                         <th style="width:120px;">Status</th>
                         <th class="text-end" style="width:140px;">Actions</th>
                       </tr>
@@ -352,7 +446,7 @@
 <!-- ADD ACCOUNT MODAL         -->
 <!-- ========================= -->
 <div class="modal fade" id="addAccountModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
@@ -384,17 +478,19 @@
             </div>
 
             <div class="col-md-12" id="add_college_wrapper" style="display:none;">
-              <label class="form-label">Assigned College <span class="text-danger">*</span></label>
-              <select name="college_id" id="add_college_id" class="form-select">
-                <option value="">Select College</option>
-                <?php
-                  $qc = $conn->query("SELECT college_id, college_code, college_name FROM tbl_college WHERE status='active' ORDER BY college_name");
-                  while ($c = $qc->fetch_assoc()) {
-                    $label = $c['college_code'] . ' - ' . $c['college_name'];
-                    echo "<option value='{$c['college_id']}'>" . htmlspecialchars($label) . "</option>";
-                  }
-                ?>
+              <label class="form-label">Managed Colleges <span class="text-danger">*</span></label>
+              <select name="college_ids[]" id="add_college_ids" class="form-select college-access-select" multiple>
+                <?= $collegeOptionsHtml ?>
               </select>
+              <small class="text-muted">Select every college this scheduler is allowed to manage.</small>
+            </div>
+
+            <div class="col-md-12" id="add_default_college_wrapper" style="display:none;">
+              <label class="form-label">Default College on Login <span class="text-danger">*</span></label>
+              <select name="default_college_id" id="add_default_college_id" class="form-select">
+                <option value="">Select Default College</option>
+              </select>
+              <small class="text-muted">The scheduler can switch later, but this college opens first after sign in.</small>
             </div>
 
             <div class="col-md-6">
@@ -422,7 +518,7 @@
 <!-- EDIT ACCOUNT MODAL        -->
 <!-- ========================= -->
 <div class="modal fade" id="editAccountModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
@@ -456,17 +552,19 @@
             </div>
 
             <div class="col-md-12" id="edit_college_wrapper" style="display:none;">
-              <label class="form-label">Assigned College <span class="text-danger">*</span></label>
-              <select name="college_id" id="edit_college_id" class="form-select">
-                <option value="">Select College</option>
-                <?php
-                  $qc2 = $conn->query("SELECT college_id, college_code, college_name FROM tbl_college WHERE status='active' ORDER BY college_name");
-                  while ($c2 = $qc2->fetch_assoc()) {
-                    $label = $c2['college_code'] . ' - ' . $c2['college_name'];
-                    echo "<option value='{$c2['college_id']}'>" . htmlspecialchars($label) . "</option>";
-                  }
-                ?>
+              <label class="form-label">Managed Colleges <span class="text-danger">*</span></label>
+              <select name="college_ids[]" id="edit_college_ids" class="form-select college-access-select" multiple>
+                <?= $collegeOptionsHtml ?>
               </select>
+              <small class="text-muted">Select every college this scheduler is allowed to manage.</small>
+            </div>
+
+            <div class="col-md-12" id="edit_default_college_wrapper" style="display:none;">
+              <label class="form-label">Default College on Login <span class="text-danger">*</span></label>
+              <select name="default_college_id" id="edit_default_college_id" class="form-select">
+                <option value="">Select Default College</option>
+              </select>
+              <small class="text-muted">This becomes the first workspace after sign in.</small>
             </div>
 
             <div class="col-md-6">
@@ -498,6 +596,7 @@
 <script src="../assets/vendor/js/menu.js"></script>
 
 <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
+<script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
 <script src="../assets/js/main.js"></script>
 
 <script>
@@ -511,7 +610,40 @@ const accountState = {
 
 let accountSearchTimer = null;
 
+function initializeCollegeAccessSelect2(mode) {
+  const $select = $("#" + mode + "_college_ids");
+  const $modal = $select.closest(".modal");
+
+  if ($select.data("select2")) {
+    $select.select2("destroy");
+  }
+
+  $select.select2({
+    width: "100%",
+    placeholder: "Search and select colleges",
+    closeOnSelect: false,
+    dropdownParent: $modal,
+    dropdownAutoWidth: false,
+    dropdownCssClass: "college-access-dropdown"
+  });
+
+  $select.off("select2:open.collegeWidth").on("select2:open.collegeWidth", function() {
+    const dropdownWidth = $select.next(".select2-container").outerWidth();
+    const $dropdown = $(".select2-container--open .select2-dropdown");
+
+    if (dropdownWidth && $dropdown.length) {
+      $dropdown.css({
+        width: dropdownWidth + "px",
+        minWidth: dropdownWidth + "px",
+        maxWidth: dropdownWidth + "px"
+      });
+    }
+  });
+}
+
 // INITIAL LOAD
+initializeCollegeAccessSelect2("add");
+initializeCollegeAccessSelect2("edit");
 loadAccounts();
 
 $(window).on("scroll", function() {
@@ -589,6 +721,14 @@ function parseAccountRows(html) {
     const roleText = $cells.eq(4).text().trim();
     const collegeText = $cells.eq(5).text().trim();
     const statusText = $cells.eq(6).text().trim();
+    const collegeIdsAttr = String($editButton.attr("data-college-ids") || "[]");
+    let collegeIds = [];
+
+    try {
+      collegeIds = JSON.parse(collegeIdsAttr);
+    } catch (error) {
+      collegeIds = [];
+    }
 
     accounts.push({
       id: String($editButton.data("id") || $deleteButton.data("id") || ""),
@@ -600,7 +740,9 @@ function parseAccountRows(html) {
       roleValue: String($editButton.data("role") || ""),
       collegeHtml: $.trim($cells.eq(5).html()),
       collegeText: collegeText === "" ? "N/A" : collegeText,
-      collegeValue: String($editButton.data("college") || ""),
+      collegeIds: Array.isArray(collegeIds) ? collegeIds.map(String) : [],
+      collegeIdsAttr: collegeIdsAttr,
+      defaultCollegeValue: String($editButton.attr("data-default-college") || ""),
       statusHtml: $.trim($cells.eq(6).html()),
       statusText: statusText,
       statusValue: String($editButton.data("status") || ""),
@@ -713,7 +855,7 @@ function buildMobileCardHtml(account, rowNumber) {
             <span class="account-mobile-meta-value">${escapeHtml(account.roleText)}</span>
           </div>
           <div>
-            <span class="account-mobile-meta-label">College</span>
+            <span class="account-mobile-meta-label">College Access</span>
             <span class="account-mobile-meta-value">${escapeHtml(account.collegeText)}</span>
           </div>
         </div>
@@ -746,7 +888,8 @@ function buildActionButtonsHtml(account, mobileView) {
       data-username="${escapeHtml(account.username)}"
       data-email="${escapeHtml(account.email)}"
       data-role="${escapeHtml(account.roleValue)}"
-      data-college="${escapeHtml(account.collegeValue)}"
+      data-college-ids="${escapeHtml(account.collegeIdsAttr)}"
+      data-default-college="${escapeHtml(account.defaultCollegeValue)}"
       data-status="${escapeHtml(account.statusValue)}"
     >
       ${editLabel}
@@ -856,26 +999,74 @@ function escapeHtml(value) {
     .replace(/'/g, "&#039;");
 }
 
-// Show/Hide college field based on role (ADD)
-$("#add_role").on("change", function() {
-  const role = $(this).val();
-  if (role === "scheduler") {
-    $("#add_college_wrapper").show();
-  } else {
-    $("#add_college_wrapper").hide();
-    $("#add_college_id").val("");
+function buildDefaultCollegeOptions(mode, preferredValue) {
+  const $collegeSelect = $("#" + mode + "_college_ids");
+  const $defaultSelect = $("#" + mode + "_default_college_id");
+  const selectedValues = ($collegeSelect.val() || []).map(String);
+  const placeholder = mode === "add" ? "Select Default College" : "Select Default College";
+
+  $defaultSelect.empty().append(`<option value="">${placeholder}</option>`);
+
+  selectedValues.forEach(function(value) {
+    const option = $collegeSelect.find(`option[value="${value}"]`).first();
+    if (option.length) {
+      $defaultSelect.append(
+        $("<option>", {
+          value: value,
+          text: option.text()
+        })
+      );
+    }
+  });
+
+  if (selectedValues.length === 0) {
+    $defaultSelect.val("");
+    return;
   }
+
+  const desiredValue = selectedValues.indexOf(String(preferredValue || "")) !== -1
+    ? String(preferredValue)
+    : selectedValues[0];
+
+  $defaultSelect.val(desiredValue);
+}
+
+function resetCollegeAccessFields(mode) {
+  $("#" + mode + "_college_ids").val(null).trigger("change");
+  $("#" + mode + "_default_college_id")
+    .empty()
+    .append('<option value="">Select Default College</option>')
+    .val("");
+}
+
+function toggleCollegeAccessFields(mode, role, preferredDefaultValue) {
+  const isScheduler = role === "scheduler";
+  $("#" + mode + "_college_wrapper").toggle(isScheduler);
+  $("#" + mode + "_default_college_wrapper").toggle(isScheduler);
+
+  if (!isScheduler) {
+    resetCollegeAccessFields(mode);
+    return;
+  }
+
+  buildDefaultCollegeOptions(mode, preferredDefaultValue);
+  $("#" + mode + "_college_ids").trigger("change.select2");
+}
+
+$("#add_role").on("change", function() {
+  toggleCollegeAccessFields("add", $(this).val(), $("#add_default_college_id").val());
 });
 
-// Show/Hide college field based on role (EDIT)
 $("#edit_role").on("change", function() {
-  const role = $(this).val();
-  if (role === "scheduler") {
-    $("#edit_college_wrapper").show();
-  } else {
-    $("#edit_college_wrapper").hide();
-    $("#edit_college_id").val("");
-  }
+  toggleCollegeAccessFields("edit", $(this).val(), $("#edit_default_college_id").val());
+});
+
+$("#add_college_ids").on("change", function() {
+  buildDefaultCollegeOptions("add", $("#add_default_college_id").val());
+});
+
+$("#edit_college_ids").on("change", function() {
+  buildDefaultCollegeOptions("edit", $("#edit_default_college_id").val());
 });
 
 // ------------------------------------
@@ -913,7 +1104,7 @@ $("#btnSaveAccount").click(function () {
         return;
       }
       if (res === "need_college") {
-        Swal.fire("Missing College", "Scheduler must have an assigned college.", "warning");
+        Swal.fire("Missing College Access", "Select at least one college for the scheduler.", "warning");
         return;
       }
       if (res === "dup_email") {
@@ -934,7 +1125,9 @@ $("#btnSaveAccount").click(function () {
       });
 
       $("#addAccountForm")[0].reset();
+      resetCollegeAccessFields("add");
       $("#add_college_wrapper").hide();
+      $("#add_default_college_wrapper").hide();
       $("#addAccountModal").modal("hide");
       loadAccounts();
     }
@@ -953,16 +1146,33 @@ $(document).on("click", ".btnEditAccount", function () {
   $("#edit_role").val($(this).data("role"));
   $("#edit_status").val($(this).data("status"));
 
-  const collegeId = $(this).data("college");
-  if ($(this).data("role") === "scheduler") {
-    $("#edit_college_wrapper").show();
-    $("#edit_college_id").val(collegeId);
+  const role = String($(this).data("role") || "");
+  const collegeIdsAttr = String($(this).attr("data-college-ids") || "[]");
+  const defaultCollegeId = String($(this).attr("data-default-college") || "");
+  let collegeIds = [];
+
+  try {
+    collegeIds = JSON.parse(collegeIdsAttr);
+  } catch (error) {
+    collegeIds = [];
+  }
+
+  if (role === "scheduler") {
+    $("#edit_college_ids").val((Array.isArray(collegeIds) ? collegeIds : []).map(String)).trigger("change");
+    toggleCollegeAccessFields("edit", role, defaultCollegeId);
   } else {
-    $("#edit_college_wrapper").hide();
-    $("#edit_college_id").val("");
+    toggleCollegeAccessFields("edit", role, "");
   }
 
   $("#editAccountModal").modal("show");
+});
+
+$("#addAccountModal").on("shown.bs.modal", function() {
+  $("#add_college_ids").trigger("focus");
+});
+
+$("#editAccountModal").on("shown.bs.modal", function() {
+  $("#edit_college_ids").trigger("focus");
 });
 
 // ------------------------------------
@@ -1000,7 +1210,7 @@ $("#btnUpdateAccount").click(function () {
         return;
       }
       if (res === "need_college") {
-        Swal.fire("Missing College", "Scheduler must have an assigned college.", "warning");
+        Swal.fire("Missing College Access", "Select at least one college for the scheduler.", "warning");
         return;
       }
       if (res === "dup_email") {

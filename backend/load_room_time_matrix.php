@@ -3,7 +3,13 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 
-if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
+    echo "<div class='text-danger text-center'>Unauthorized access.</div>";
+    exit;
+}
+
+$role = (string)($_SESSION['role'] ?? '');
+if (!in_array($role, ['scheduler', 'admin'], true)) {
     echo "<div class='text-danger text-center'>Unauthorized access.</div>";
     exit;
 }
@@ -14,7 +20,12 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
     exit;
 }
 
-$college_id = (int)($_SESSION['college_id'] ?? 0);
+$college_id = 0;
+if ($role === 'scheduler') {
+    $college_id = (int)($_SESSION['college_id'] ?? 0);
+} elseif ($role === 'admin') {
+    $college_id = (int)($_POST['college_id'] ?? 0);
+}
 $ay_id = (int)($_POST['ay_id'] ?? 0);
 $semester = (int)($_POST['semester'] ?? 0);
 

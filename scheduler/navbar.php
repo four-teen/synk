@@ -1,6 +1,23 @@
 <?php
-  $uName = ucfirst($_SESSION['username']);
-  $uRole = ucfirst($_SESSION['role']);
+require_once '../backend/scheduler_access_helper.php';
+
+if ((string)($_SESSION['role'] ?? '') === 'scheduler') {
+    synk_scheduler_bootstrap_session_scope($conn);
+}
+
+if (empty($_SESSION['csrf_token'])) {
+    $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+}
+
+$uName = ucfirst((string)($_SESSION['username'] ?? 'User'));
+$uRole = ucfirst((string)($_SESSION['role'] ?? 'User'));
+$schedulerCollegeAccess = is_array($_SESSION['scheduler_college_access'] ?? null)
+    ? $_SESSION['scheduler_college_access']
+    : [];
+$activeCollegeId = (int)($_SESSION['college_id'] ?? 0);
+$activeCampusName = trim((string)($_SESSION['campus_name'] ?? ''));
+$activeCollegeName = trim((string)($_SESSION['college_name'] ?? ''));
+$schedulerScopeToken = (string)$_SESSION['csrf_token'];
 ?>
 
 <nav
@@ -13,11 +30,9 @@
     </a>
   </div>
 
-  <div class="navbar-nav-right d-flex align-items-center" id="navbar-collapse">
-
-    <!-- Search -->
-    <div class="navbar-nav align-items-center">
-      <div class="nav-item d-flex align-items-center">
+  <div class="navbar-nav-right d-flex align-items-center gap-3 w-100" id="navbar-collapse">
+    <div class="navbar-nav align-items-center flex-grow-1">
+      <div class="nav-item d-flex align-items-center w-100">
         <i class="bx bx-search fs-4 lh-0"></i>
         <input
           type="text"
@@ -27,18 +42,42 @@
         />
       </div>
     </div>
-    <!-- /Search -->
+
+    <?php if ((string)($_SESSION['role'] ?? '') === 'scheduler'): ?>
+      <div class="d-none d-md-flex align-items-center gap-2 flex-shrink-0">
+        <span class="badge bg-label-info text-uppercase"><?= htmlspecialchars($activeCampusName !== '' ? $activeCampusName : 'Campus', ENT_QUOTES, 'UTF-8') ?></span>
+        <?php if (count($schedulerCollegeAccess) > 1): ?>
+          <select
+            id="schedulerCollegeSwitch"
+            class="form-select form-select-sm"
+            style="min-width: 18rem;"
+            aria-label="Switch active college workspace"
+          >
+            <?php foreach ($schedulerCollegeAccess as $accessRow): ?>
+              <?php
+                $optionCollegeId = (int)($accessRow['college_id'] ?? 0);
+                $optionLabel = (string)($accessRow['display_label'] ?? $accessRow['college_name'] ?? 'College');
+                if (!empty($accessRow['is_default'])) {
+                    $optionLabel .= ' [Default]';
+                }
+              ?>
+              <option value="<?= $optionCollegeId ?>" <?= $optionCollegeId === $activeCollegeId ? 'selected' : '' ?>>
+                <?= htmlspecialchars($optionLabel, ENT_QUOTES, 'UTF-8') ?>
+              </option>
+            <?php endforeach; ?>
+          </select>
+        <?php else: ?>
+          <span class="badge bg-label-primary"><?= htmlspecialchars($activeCollegeName !== '' ? $activeCollegeName : 'Assigned College', ENT_QUOTES, 'UTF-8') ?></span>
+        <?php endif; ?>
+      </div>
+    <?php endif; ?>
 
     <ul class="navbar-nav flex-row align-items-center ms-auto">
-
-      <!-- Username & Role Display -->
-      <li class="nav-item lh-1 me-3">
-        <!-- <span class="fw-semibold">ID: <?= $_SESSION['college_id'] ?></span>         -->
-        <span class="fw-semibold"><?= $uName ?></span>
-        <small class="text-muted ms-1">(<?= $uRole ?>)</small>
+      <li class="nav-item lh-1 me-3 text-end">
+        <span class="fw-semibold"><?= htmlspecialchars($uName, ENT_QUOTES, 'UTF-8') ?></span>
+        <small class="text-muted ms-1">(<?= htmlspecialchars($uRole, ENT_QUOTES, 'UTF-8') ?>)</small>
       </li>
 
-      <!-- User Dropdown -->
       <li class="nav-item navbar-dropdown dropdown-user dropdown">
         <a class="nav-link dropdown-toggle hide-arrow" href="javascript:void(0);" data-bs-toggle="dropdown">
           <div class="avatar avatar-online">
@@ -57,8 +96,11 @@
                 </div>
 
                 <div class="flex-grow-1">
-                  <span class="fw-semibold d-block"><?= $uName ?></span>
-                  <small class="text-muted"><?= $uRole ?></small>
+                  <span class="fw-semibold d-block"><?= htmlspecialchars($uName, ENT_QUOTES, 'UTF-8') ?></span>
+                  <small class="text-muted"><?= htmlspecialchars($uRole, ENT_QUOTES, 'UTF-8') ?></small>
+                  <?php if ((string)($_SESSION['role'] ?? '') === 'scheduler' && $activeCollegeName !== ''): ?>
+                    <small class="text-muted d-block mt-1"><?= htmlspecialchars($activeCollegeName, ENT_QUOTES, 'UTF-8') ?></small>
+                  <?php endif; ?>
                 </div>
               </div>
             </a>
@@ -90,8 +132,57 @@
           </li>
         </ul>
       </li>
-      <!-- /User -->
-
     </ul>
   </div>
 </nav>
+
+<?php if ((string)($_SESSION['role'] ?? '') === 'scheduler' && count($schedulerCollegeAccess) > 1): ?>
+  <script>
+    document.addEventListener("change", function (event) {
+      if (event.target.id !== "schedulerCollegeSwitch") {
+        return;
+      }
+
+      const select = event.target;
+      const originalValue = select.dataset.previousValue || select.value;
+      select.disabled = true;
+
+      const payload = new URLSearchParams({
+        college_id: select.value,
+        csrf_token: <?= json_encode($schedulerScopeToken) ?>
+      });
+
+      fetch("../backend/query_scheduler_scope.php", {
+        method: "POST",
+        headers: {
+          "Content-Type": "application/x-www-form-urlencoded; charset=UTF-8"
+        },
+        body: payload.toString()
+      })
+        .then(function (response) {
+          return response.json();
+        })
+        .then(function (data) {
+          if (!data || data.status !== "success") {
+            throw new Error((data && data.message) || "Unable to switch workspace.");
+          }
+
+          window.location.reload();
+        })
+        .catch(function (error) {
+          window.alert(error.message || "Unable to switch workspace.");
+          select.value = originalValue;
+        })
+        .finally(function () {
+          select.disabled = false;
+        });
+    });
+
+    document.addEventListener("DOMContentLoaded", function () {
+      const select = document.getElementById("schedulerCollegeSwitch");
+      if (select) {
+        select.dataset.previousValue = select.value;
+      }
+    });
+  </script>
+<?php endif; ?>

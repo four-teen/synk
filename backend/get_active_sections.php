@@ -12,8 +12,10 @@
 
 session_start();
 include 'db.php';
+require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     echo json_encode([
@@ -23,28 +25,17 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
     exit;
 }
 
-/*
-|--------------------------------------------------------------------------
-| LOAD CURRENT ACADEMIC SETTINGS
-|--------------------------------------------------------------------------
-*/
-$termRes = $conn->query("
-    SELECT current_ay_id, current_semester
-    FROM tbl_academic_settings
-    LIMIT 1
-");
+$currentTerm = synk_fetch_current_academic_term($conn);
+$ayId = (int)($currentTerm['ay_id'] ?? 0);
+$sem = (int)($currentTerm['semester'] ?? 0);
 
-if (!$termRes || $termRes->num_rows === 0) {
+if ($ayId <= 0 || $sem <= 0) {
     echo json_encode([
         'status' => 'error',
         'message' => 'Academic settings not configured.'
     ]);
     exit;
 }
-
-$term = $termRes->fetch_assoc();
-$ayId = (int)$term['current_ay_id'];
-$sem  = (int)$term['current_semester'];
 
 /*
 |--------------------------------------------------------------------------

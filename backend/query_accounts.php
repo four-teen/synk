@@ -160,13 +160,25 @@ function query_accounts_build_update(mysqli $conn, array $payload): array
 
 function query_accounts_validate_payload(array $input, string $allowedDomain, bool $requireUserId = false): array
 {
+    $incomingCollegeIds = $input['college_ids'] ?? ($input['college_id'] ?? []);
+    $defaultCollegeRaw = $input['default_college_id'] ?? ($input['college_id'] ?? '');
+    $collegeIds = synk_parse_scheduler_college_ids($incomingCollegeIds);
+    $defaultCollegeId = $defaultCollegeRaw === '' || $defaultCollegeRaw === null ? null : (int)$defaultCollegeRaw;
+    $normalizedAccess = synk_scheduler_normalize_access_payload(
+        trim((string)($input['role'] ?? '')),
+        $collegeIds,
+        $defaultCollegeId
+    );
+
     $payload = [
         'user_id' => (int)($input['user_id'] ?? 0),
         'username' => trim((string)($input['username'] ?? '')),
         'email' => synk_normalize_email((string)($input['email'] ?? '')),
         'role' => trim((string)($input['role'] ?? '')),
         'status' => trim((string)($input['status'] ?? 'active')),
-        'college_id' => ($input['college_id'] ?? '') === '' ? null : (int)$input['college_id'],
+        'college_id' => $normalizedAccess['default_college_id'],
+        'college_ids' => $normalizedAccess['college_ids'],
+        'default_college_id' => $normalizedAccess['default_college_id'],
         'password' => synk_build_placeholder_password(),
     ];
 
@@ -186,11 +198,30 @@ function query_accounts_validate_payload(array $input, string $allowedDomain, bo
         return ['error' => 'invalid_domain'];
     }
 
-    if ($payload['role'] === 'scheduler' && $payload['college_id'] === null) {
+    if ($payload['role'] === 'scheduler' && empty($payload['college_ids'])) {
         return ['error' => 'need_college'];
     }
 
     return ['payload' => $payload];
+}
+
+function query_accounts_render_college_access_html(array $accessRows): string
+{
+    if (empty($accessRows)) {
+        return "<span class='text-muted'>N/A</span>";
+    }
+
+    $chunks = [];
+    foreach ($accessRows as $row) {
+        $label = htmlspecialchars((string)($row['display_label'] ?? ''), ENT_QUOTES, 'UTF-8');
+        $defaultBadge = !empty($row['is_default'])
+            ? " <span class='badge bg-label-primary ms-1'>Default</span>"
+            : "";
+
+        $chunks[] = "<div class='small text-wrap mb-1'>{$label}{$defaultBadge}</div>";
+    }
+
+    return implode('', $chunks);
 }
 
 if (isset($_POST['load_accounts'])) {
@@ -210,11 +241,21 @@ if (isset($_POST['load_accounts'])) {
         $roleLabel = query_accounts_role_label($row['role']);
         $providerBadge = query_accounts_provider_badge($row['auth_provider'] ?? 'legacy');
 
-        if (!empty($row['college_id']) && !empty($row['college_name'])) {
-            $collegeLabel = htmlspecialchars($row['college_code'] . ' - ' . $row['college_name'], ENT_QUOTES, 'UTF-8');
-        } else {
-            $collegeLabel = "<span class='text-muted'>N/A</span>";
+        $accessRows = [];
+        $collegeIds = [];
+        $defaultCollegeId = '';
+
+        if ((string)($row['role'] ?? '') === 'scheduler') {
+            $accessRows = synk_resolve_scheduler_access_rows($conn, (int)$row['user_id'], (int)($row['college_id'] ?? 0));
+            $collegeIds = array_values(array_map(function ($item) {
+                return (int)($item['college_id'] ?? 0);
+            }, $accessRows));
+            $defaultCollegeId = synk_scheduler_default_college_id($accessRows);
         }
+
+        $collegeLabel = query_accounts_render_college_access_html($accessRows);
+        $collegeIdsJson = htmlspecialchars(json_encode($collegeIds), ENT_QUOTES, 'UTF-8');
+        $defaultCollegeAttr = htmlspecialchars((string)$defaultCollegeId, ENT_QUOTES, 'UTF-8');
 
         $badge = ($row['status'] === 'active')
             ? "<span class='badge bg-success'>ACTIVE</span>"
@@ -235,7 +276,8 @@ if (isset($_POST['load_accounts'])) {
                 data-username=\"" . htmlspecialchars($row['username'], ENT_QUOTES, 'UTF-8') . "\"
                 data-email=\"" . htmlspecialchars($row['email'], ENT_QUOTES, 'UTF-8') . "\"
                 data-role='" . htmlspecialchars($row['role'], ENT_QUOTES, 'UTF-8') . "'
-                data-college='" . ($row['college_id'] ?? '') . "'
+                data-college-ids='{$collegeIdsJson}'
+                data-default-college='{$defaultCollegeAttr}'
                 data-status='" . htmlspecialchars($row['status'], ENT_QUOTES, 'UTF-8') . "'>
               <i class='bx bx-edit-alt'></i>
             </button>
@@ -274,11 +316,42 @@ if (isset($_POST['save_account'])) {
     }
     $q->close();
 
-    [$sql, $types, $values] = query_accounts_build_insert($conn, $payload);
-    $stmt = $conn->prepare($sql);
-    synk_stmt_bind_params($stmt, $types, $values);
-    $stmt->execute();
-    $stmt->close();
+    $conn->begin_transaction();
+
+    try {
+        [$sql, $types, $values] = query_accounts_build_insert($conn, $payload);
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            throw new RuntimeException('save_failed');
+        }
+
+        synk_stmt_bind_params($stmt, $types, $values);
+        if (!$stmt->execute()) {
+            $stmt->close();
+            throw new RuntimeException('save_failed');
+        }
+
+        $newUserId = (int)$conn->insert_id;
+        $stmt->close();
+
+        $accessError = synk_persist_scheduler_college_access(
+            $conn,
+            $newUserId,
+            $payload['role'],
+            $payload['college_ids'],
+            $payload['default_college_id']
+        );
+
+        if ($accessError !== null) {
+            throw new RuntimeException($accessError);
+        }
+
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        echo $e->getMessage();
+        exit;
+    }
 
     echo 'success';
     exit;
@@ -304,11 +377,40 @@ if (isset($_POST['update_account'])) {
     }
     $q->close();
 
-    [$sql, $types, $values] = query_accounts_build_update($conn, $payload);
-    $stmt = $conn->prepare($sql);
-    synk_stmt_bind_params($stmt, $types, $values);
-    $stmt->execute();
-    $stmt->close();
+    $conn->begin_transaction();
+
+    try {
+        [$sql, $types, $values] = query_accounts_build_update($conn, $payload);
+        $stmt = $conn->prepare($sql);
+        if (!$stmt) {
+            throw new RuntimeException('save_failed');
+        }
+
+        synk_stmt_bind_params($stmt, $types, $values);
+        if (!$stmt->execute()) {
+            $stmt->close();
+            throw new RuntimeException('save_failed');
+        }
+        $stmt->close();
+
+        $accessError = synk_persist_scheduler_college_access(
+            $conn,
+            (int)$payload['user_id'],
+            $payload['role'],
+            $payload['college_ids'],
+            $payload['default_college_id']
+        );
+
+        if ($accessError !== null) {
+            throw new RuntimeException($accessError);
+        }
+
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        echo $e->getMessage();
+        exit;
+    }
 
     echo 'success';
     exit;
@@ -321,10 +423,41 @@ if (isset($_POST['delete_account'])) {
         exit;
     }
 
-    $stmt = $conn->prepare("DELETE FROM tbl_useraccount WHERE user_id = ?");
-    $stmt->bind_param("i", $userId);
-    $stmt->execute();
-    $stmt->close();
+    $conn->begin_transaction();
+
+    try {
+        if (synk_scheduler_access_table_exists($conn)) {
+            $cleanup = $conn->prepare("DELETE FROM tbl_user_college_access WHERE user_id = ?");
+            if (!$cleanup) {
+                throw new RuntimeException('delete_failed');
+            }
+
+            $cleanup->bind_param("i", $userId);
+            if (!$cleanup->execute()) {
+                $cleanup->close();
+                throw new RuntimeException('delete_failed');
+            }
+            $cleanup->close();
+        }
+
+        $stmt = $conn->prepare("DELETE FROM tbl_useraccount WHERE user_id = ?");
+        if (!$stmt) {
+            throw new RuntimeException('delete_failed');
+        }
+
+        $stmt->bind_param("i", $userId);
+        if (!$stmt->execute()) {
+            $stmt->close();
+            throw new RuntimeException('delete_failed');
+        }
+        $stmt->close();
+
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        echo 'delete_failed';
+        exit;
+    }
 
     echo 'deleted';
     exit;

@@ -1,8 +1,10 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
 
 /*
 |=====================================================
@@ -17,11 +19,17 @@ header('Content-Type: application/json');
 |=====================================================
 */
 
-$ay_id    = intval($_GET['ay_id'] ?? 0);
-$semester = intval($_GET['semester'] ?? 0);
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+    exit;
+}
 
-if (!$ay_id || !$semester) {
-    echo json_encode(["status" => "error", "message" => "Invalid academic term"]);
+$currentTerm = synk_fetch_current_academic_term($conn);
+$ay_id = (int)($currentTerm['ay_id'] ?? 0);
+$semester = (int)($currentTerm['semester'] ?? 0);
+
+if ($ay_id <= 0 || $semester <= 0) {
+    echo json_encode(["status" => "error", "message" => "Academic settings not configured"]);
     exit;
 }
 
@@ -85,6 +93,8 @@ $data = [];
 while ($row = $res->fetch_assoc()) {
     $data[] = $row;
 }
+
+$stmt->close();
 
 echo json_encode([
     "status" => "success",

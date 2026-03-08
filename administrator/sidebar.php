@@ -47,6 +47,15 @@ $sidebarSections = [
                         'description' => 'Set the active academic year and semester',
                         'pages' => ['academic-settings.php'],
                     ],
+                    [
+                        'key' => 'term_data_reset',
+                        'href' => 'manage-term-data.php',
+                        'icon_bg' => 'bg-label-danger',
+                        'icon' => 'bx-refresh',
+                        'title' => 'Term Data Reset',
+                        'description' => 'Clear scoped scheduling data for a college term',
+                        'pages' => ['manage-term-data.php'],
+                    ],
                 ],
             ],
             [

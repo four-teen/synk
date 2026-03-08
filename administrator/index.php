@@ -2,70 +2,14 @@
     session_start();
     ob_start();
     include '../backend/db.php';
+    require_once '../backend/academic_term_helper.php';
 
-    /*
-    |--------------------------------------------------------------------------
-    | LOAD CURRENT ACADEMIC SETTINGS
-    |--------------------------------------------------------------------------
-    */
-    $currentAyId   = null;
-    $currentSem    = null;
-
-    $termRes = $conn->query("
-        SELECT current_ay_id, current_semester
-        FROM tbl_academic_settings
-        LIMIT 1
-    ");
-
-    if ($termRes && $termRes->num_rows > 0) {
-        $termRow     = $termRes->fetch_assoc();
-        $currentAyId = (int)$termRow['current_ay_id'];
-        $currentSem  = (int)$termRow['current_semester'];
-    }
-
-
-    /* =====================================================
-      RESOLVE ACADEMIC TERM LABEL (FOR DISPLAY ONLY)
-    ===================================================== */
-
-    // 1️⃣ Resolve Academic Year label (e.g., 2025–2026)
+    $currentAyId = 0;
+    $currentSem = 0;
     $academicYearLabel = '';
-
-    if ($currentAyId) {
-        $ayStmt = $conn->prepare("
-            SELECT ay
-            FROM tbl_academic_years
-            WHERE ay_id = ?
-            LIMIT 1
-        ");
-        $ayStmt->bind_param("i", $currentAyId);
-        $ayStmt->execute();
-        $ayRes = $ayStmt->get_result();
-
-        if ($ayRow = $ayRes->fetch_assoc()) {
-            $academicYearLabel = $ayRow['ay'];
-        }
-
-        $ayStmt->close();
-    }
-
-    // 2️⃣ Resolve Semester label
     $semesterLabel = '';
-    if ($currentSem == 1) {
-        $semesterLabel = '1st Semester';
-    } elseif ($currentSem == 2) {
-        $semesterLabel = '2nd Semester';
-    } elseif ($currentSem == 3) {
-        $semesterLabel = 'Midyear';
-    }
-
-    // 3️⃣ Final text used by modals
-    $academicTermText = "AY: {$academicYearLabel} · {$semesterLabel}";
-
-
-
-
-
+    $academicTermText = 'Current academic term';
+    $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-8');
     if (!isset($_SESSION['user_id'])) {
         header("Location: ../index.php");
         exit;
@@ -76,6 +20,14 @@
         exit;
     }
 
+    $currentTerm = synk_fetch_current_academic_term($conn);
+    $currentAyId = (int)($currentTerm['ay_id'] ?? 0);
+    $currentSem = (int)($currentTerm['semester'] ?? 0);
+    $academicYearLabel = (string)($currentTerm['ay_label'] ?? '');
+    $semesterLabel = (string)($currentTerm['semester_label'] ?? '');
+    $academicTermText = trim((string)($currentTerm['term_text'] ?? 'Current academic term'));
+    $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-8');
+
     // Load all campuses
     $campus_sql = $conn->query("SELECT campus_id, campus_code, campus_name FROM tbl_campus WHERE status = 'active' ORDER BY campus_id ASC");
     $campuses = [];
@@ -83,22 +35,16 @@
         $campuses[] = $row;
     }
 
-    // --- ROOMS PER CAMPUS CHART DATA ---
-    $roomDataQuery = "
-        SELECT 
-            tbl_campus.campus_name,
-            COUNT(tbl_rooms.room_id) AS room_count
-        FROM tbl_rooms
-        INNER JOIN tbl_college ON tbl_college.college_id = tbl_rooms.college_id
-        INNER JOIN tbl_campus ON tbl_campus.campus_id = tbl_college.campus_id
-        GROUP BY tbl_campus.campus_id
-        ORDER BY tbl_campus.campus_name ASC
-    ";
-
-    $roomData = [];
-    $res = $conn->query($roomDataQuery);
-    while ($row = $res->fetch_assoc()) {
-        $roomData[] = $row;
+    $campusAnalytics = [];
+    foreach ($campuses as $campus) {
+        $campusId = (int)$campus['campus_id'];
+        $campusAnalytics[$campusId] = [
+            'campus_id' => $campusId,
+            'campus_name' => $campus['campus_name'],
+            'faculty_count' => 0,
+            'section_count' => 0,
+            'workload_count' => 0,
+        ];
     }
     
 /*
@@ -151,11 +97,125 @@ if ($currentAyId && $currentSem) {
     $res = $stmt->get_result();
 
     while ($row = $res->fetch_assoc()) {
-        $facultyPerCampus[(int)$row['campus_id']] = (int)$row['faculty_count'];
+        $campusId = (int)$row['campus_id'];
+        $facultyCount = (int)$row['faculty_count'];
+
+        $facultyPerCampus[$campusId] = $facultyCount;
+        if (isset($campusAnalytics[$campusId])) {
+            $campusAnalytics[$campusId]['faculty_count'] = $facultyCount;
+        }
     }
 
     $stmt->close();
 }
+
+/*
+|--------------------------------------------------------------------------
+| ACTIVE SECTIONS PER CAMPUS (CURRENT TERM ONLY)
+|--------------------------------------------------------------------------
+| Source:
+| - tbl_prospectus_offering
+| - section campus resolved via sections → program → college → campus
+|--------------------------------------------------------------------------
+*/
+
+if ($currentAyId && $currentSem) {
+
+    $sectionsPerCampusSql = "
+        SELECT
+            camp.campus_id,
+            COUNT(DISTINCT s.section_id) AS section_count
+        FROM tbl_prospectus_offering po
+
+        INNER JOIN tbl_sections s
+            ON s.section_id = po.section_id
+
+        INNER JOIN tbl_program p
+            ON p.program_id = s.program_id
+
+        INNER JOIN tbl_college col
+            ON col.college_id = p.college_id
+
+        INNER JOIN tbl_campus camp
+            ON camp.campus_id = col.campus_id
+
+        WHERE po.ay_id = ?
+          AND po.semester = ?
+          AND p.status = 'active'
+
+        GROUP BY camp.campus_id
+    ";
+
+    $stmt = $conn->prepare($sectionsPerCampusSql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $campusId = (int)$row['campus_id'];
+        if (isset($campusAnalytics[$campusId])) {
+            $campusAnalytics[$campusId]['section_count'] = (int)$row['section_count'];
+        }
+    }
+
+    $stmt->close();
+}
+
+/*
+|--------------------------------------------------------------------------
+| SCHEDULED WORKLOADS PER CAMPUS (CURRENT TERM ONLY)
+|--------------------------------------------------------------------------
+| Source:
+| - tbl_class_schedule
+| - term resolved via prospectus offering
+|--------------------------------------------------------------------------
+*/
+
+if ($currentAyId && $currentSem) {
+
+    $workloadsPerCampusSql = "
+        SELECT
+            camp.campus_id,
+            COUNT(cs.schedule_id) AS workload_count
+        FROM tbl_class_schedule cs
+
+        INNER JOIN tbl_prospectus_offering po
+            ON po.offering_id = cs.offering_id
+
+        INNER JOIN tbl_sections s
+            ON s.section_id = po.section_id
+
+        INNER JOIN tbl_program p
+            ON p.program_id = s.program_id
+
+        INNER JOIN tbl_college col
+            ON col.college_id = p.college_id
+
+        INNER JOIN tbl_campus camp
+            ON camp.campus_id = col.campus_id
+
+        WHERE po.ay_id = ?
+          AND po.semester = ?
+
+        GROUP BY camp.campus_id
+    ";
+
+    $stmt = $conn->prepare($workloadsPerCampusSql);
+    $stmt->bind_param("ii", $currentAyId, $currentSem);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $campusId = (int)$row['campus_id'];
+        if (isset($campusAnalytics[$campusId])) {
+            $campusAnalytics[$campusId]['workload_count'] = (int)$row['workload_count'];
+        }
+    }
+
+    $stmt->close();
+}
+
+$campusAnalytics = array_values($campusAnalytics);
 
 /*
 |--------------------------------------------------------------------------
@@ -539,7 +599,7 @@ if ($currentAyId && $currentSem) {
     <div class="kpi-icon bg-info">
       <i class="bx bx-book-open"></i>
     </div>
-    <h3 class="kpi-value text-info mt-2">5</h3>
+    <h3 class="kpi-value text-info mt-2"><?php echo $totalPrograms; ?></h3>
     <small class="text-muted">Programs Offered</small>
   </div>
 </div>
@@ -547,7 +607,7 @@ if ($currentAyId && $currentSem) {
 
           <!-- TOTAL SECTIONS -->
           <div class="col-md-3 col-6">
-            <div class="kpi-box text-center cursor-pointer">
+            <div class="kpi-box text-center cursor-pointer" id="kpiActiveSections">
               <div class="kpi-icon bg-success">
                 <i class="bx bx-group"></i>
               </div>
@@ -577,34 +637,56 @@ if ($currentAyId && $currentSem) {
     </div>
   </div>
 
-                <!-- Expense Overview -->
-<!-- Rooms per Campus Overview -->
+                <!-- Campus Operations Overview -->
 <div class="col-lg-12 order-1 mb-4">
   <div class="card h-100 shadow-sm">
 
     <div class="card-header d-flex justify-content-between align-items-center">
-      <h5 class="m-0">Room Distribution per Campus</h5>
-      <span class="badge bg-label-info">Academic Analytics</span>
+      <div>
+        <h5 class="m-0">Campus Academic Load</h5>
+        <small class="text-muted">Faculty coverage, section volume, and scheduled classes by campus</small>
+      </div>
+      <span class="badge bg-label-info"><?= $academicTermTextEscaped ?></span>
     </div>
 
     <div class="card-body">
 
       <!-- Chart Container -->
-      <div id="roomsPerCampusChart"></div>
+      <div id="campusOperationsChart"></div>
 
       <!-- Summary List -->
       <div class="mt-4">
-        <h6 class="fw-bold mb-2">Campus Breakdown</h6>
-        <ul class="list-group">
+        <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-2">
+          <h6 class="fw-bold mb-0">Campus Breakdown</h6>
+          <small class="text-muted">Most useful first-glance view: staffing versus teaching load.</small>
+        </div>
 
-          <?php foreach ($roomData as $room): ?>
-          <li class="list-group-item d-flex justify-content-between align-items-center">
-            <span class="fw-semibold"><?php echo $room['campus_name']; ?></span>
-            <span class="badge bg-primary rounded-pill"><?php echo $room['room_count']; ?> Rooms</span>
-          </li>
+        <?php if (!empty($campusAnalytics)): ?>
+        <div class="list-group">
+          <?php foreach ($campusAnalytics as $campusMetric): ?>
+          <div class="list-group-item">
+            <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
+              <div>
+                <span class="fw-semibold"><?php echo htmlspecialchars($campusMetric['campus_name'], ENT_QUOTES, 'UTF-8'); ?></span>
+                <div>
+                  <small class="text-muted">Current-term operating footprint</small>
+                </div>
+              </div>
+
+              <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
+                <span class="badge bg-label-primary"><?php echo (int)$campusMetric['faculty_count']; ?> Faculty</span>
+                <span class="badge bg-label-success"><?php echo (int)$campusMetric['section_count']; ?> Sections</span>
+                <span class="badge bg-label-warning"><?php echo (int)$campusMetric['workload_count']; ?> Workloads</span>
+              </div>
+            </div>
+          </div>
           <?php endforeach; ?>
-
-        </ul>
+        </div>
+        <?php else: ?>
+        <div class="alert alert-light border mb-0">
+          No campus analytics are available for the selected academic term.
+        </div>
+        <?php endif; ?>
       </div>
 
     </div>
@@ -613,7 +695,7 @@ if ($currentAyId && $currentSem) {
 
 
 
-                <!--/ Expense Overview -->
+                <!--/ Campus Operations Overview -->
 
 </div>
 
@@ -728,7 +810,7 @@ if ($currentAyId && $currentSem) {
           <i class="bx bx-calendar me-2 text-primary"></i>
           <strong class="me-2">Academic Term:</strong>
           <span id="modalAcademicTerm">
-            2025–2026 · 2nd Semester
+            <?= $academicTermTextEscaped ?>
           </span>
         </div>
 
@@ -800,7 +882,7 @@ if ($currentAyId && $currentSem) {
           <i class="bx bx-calendar me-2 text-primary"></i>
           <strong class="me-2">Academic Term:</strong>
           <span id="sectionsAcademicTerm">
-            2025–2026 · 2nd Semester
+            <?= $academicTermTextEscaped ?>
           </span>
         </div>
 
@@ -856,7 +938,7 @@ if ($currentAyId && $currentSem) {
       <div class="modal-header">
         <h5 class="modal-title">
           <i class="bx bx-book-alt me-2 text-success"></i>
-          Subjects Offered — <span id="sectionTitle"></span>
+          Subjects Offered - <span id="sectionTitle"></span>
         </h5>
         <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
@@ -866,7 +948,7 @@ if ($currentAyId && $currentSem) {
       <div class="alert alert-light border d-flex align-items-center mb-3">
         <i class="bx bx-calendar me-2 text-primary"></i>
         <strong class="me-2">Academic Term:</strong>
-        <span><?= htmlspecialchars($academicTermText) ?></span>
+        <span><?= $academicTermTextEscaped ?></span>
       </div>
 
         <div class="table-responsive">
@@ -880,7 +962,7 @@ if ($currentAyId && $currentSem) {
             </thead>
             <tbody>
               <tr>
-                <td colspan="4" class="text-center text-muted py-4">
+                <td colspan="3" class="text-center text-muted py-4">
                   <i class="bx bx-loader-circle bx-spin me-1"></i>
                   Loading subjects...
                 </td>
@@ -920,7 +1002,7 @@ if ($currentAyId && $currentSem) {
         <div class="alert alert-light border d-flex align-items-center mb-3">
           <i class="bx bx-calendar me-2 text-primary"></i>
           <strong class="me-2">Academic Term:</strong>
-          <span><?= htmlspecialchars($academicTermText) ?></span>
+          <span><?= $academicTermTextEscaped ?></span>
         </div>
 
         <div class="table-responsive">
@@ -939,7 +1021,7 @@ if ($currentAyId && $currentSem) {
             </thead>
             <tbody>
               <tr>
-                <td colspan="5" class="text-center text-muted py-4">
+                <td colspan="8" class="text-center text-muted py-4">
                   <i class="bx bx-loader-circle bx-spin me-1"></i>
                   Loading scheduled classes...
                 </td>
@@ -990,64 +1072,95 @@ if ($currentAyId && $currentSem) {
 <script>
 document.addEventListener("DOMContentLoaded", function () {
 
-  var campusNames = <?= json_encode(array_column($roomData, 'campus_name')); ?>;
-  var roomCounts  = <?= json_encode(array_column($roomData, 'room_count')); ?>;
+  var campusNames = <?= json_encode(array_column($campusAnalytics, 'campus_name')); ?>;
+  var facultyCounts = <?= json_encode(array_column($campusAnalytics, 'faculty_count')); ?>;
+  var sectionCounts = <?= json_encode(array_column($campusAnalytics, 'section_count')); ?>;
+  var workloadCounts = <?= json_encode(array_column($campusAnalytics, 'workload_count')); ?>;
 
-  // Prevent flat line (all zero) or ApexCharts single-point issue
-  if (roomCounts.length < 2) {
-      roomCounts = [0, ...roomCounts]; 
-      campusNames = ["", ...campusNames];
+  if (!campusNames.length) {
+    campusNames = ['No campuses'];
+    facultyCounts = [0];
+    sectionCounts = [0];
+    workloadCounts = [0];
+  } else if (campusNames.length === 1) {
+    campusNames = ['', campusNames[0]];
+    facultyCounts = [0].concat(facultyCounts);
+    sectionCounts = [0].concat(sectionCounts);
+    workloadCounts = [0].concat(workloadCounts);
   }
 
-  var options = {
-    series: [{
-      name: 'Total Rooms',
-      data: roomCounts
-    }],
+  var chartMax = Math.max.apply(null, facultyCounts.concat(sectionCounts, workloadCounts, [0])) + 2;
+
+  var campusOperationsOptions = {
+    series: [
+      {
+        name: 'Faculty Assigned',
+        data: facultyCounts
+      },
+      {
+        name: 'Active Sections',
+        data: sectionCounts
+      },
+      {
+        name: 'Scheduled Workloads',
+        data: workloadCounts
+      }
+    ],
 
     chart: {
       type: 'line',
-      height: 330,
-      toolbar: { show: false }
+      height: 340,
+      toolbar: { show: false },
+      zoom: { enabled: false }
     },
 
-stroke: {
-  curve: 'smooth',
-  width: 2,
-  colors: ['#ff9800'] // darker orange
-},
+    colors: ['#696cff', '#71dd37', '#ffab00'],
 
-// fill: {
-//   type: 'gradient',
-//   gradient: {
-//     shadeIntensity: 0.4,
-//     opacityFrom: 0.6,
-//     opacityTo: 0.1,
-//     stops: [0, 90, 100],
-//     gradientToColors: ['#ffc266'] // strong orange fade
-//   }
-// },
+    stroke: {
+      curve: 'smooth',
+      width: 3,
+      dashArray: [0, 4, 2]
+    },
 
-markers: {
-  size: 6,
-  colors: ['#fff'],
-  strokeColors: '#ff9800',
-  strokeWidth: 3
-},
+    markers: {
+      size: 5,
+      strokeWidth: 0,
+      hover: {
+        sizeOffset: 2
+      }
+    },
+
+    dataLabels: {
+      enabled: false
+    },
+
+    legend: {
+      position: 'top',
+      horizontalAlign: 'left'
+    },
+
+    tooltip: {
+      shared: true,
+      intersect: false
+    },
+
     xaxis: {
       categories: campusNames,
       labels: {
+        rotate: -12,
         style: { fontSize: '13px', colors: '#777' }
       }
     },
 
     yaxis: {
       min: 0,
-      max: Math.max(...roomCounts) + 2, // force visible line
+      max: chartMax,
       tickAmount: 5,
-      labels: { style: { colors: '#777' } },
+      labels: {
+        style: { colors: '#777' }
+      },
       title: {
-        text: 'Total Rooms',
+        text: 'Current Term Count',
         style: { color: '#777' }
       }
     },
@@ -1058,22 +1171,66 @@ markers: {
     }
   };
 
-  var chart = new ApexCharts(document.querySelector("#roomsPerCampusChart"), options);
-  chart.render();
+  var campusOperationsChart = document.querySelector("#campusOperationsChart");
+  if (campusOperationsChart) {
+    var chart = new ApexCharts(campusOperationsChart, campusOperationsOptions);
+    chart.render();
+  }
+
+  function formatDaysLabel(rawDays) {
+    if (!rawDays) {
+      return "TBA";
+    }
+
+    try {
+      const parsed = JSON.parse(rawDays);
+      if (Array.isArray(parsed) && parsed.length > 0) {
+        return parsed.join("");
+      }
+    } catch (error) {
+      // Keep fallback below when days are already plain text.
+    }
+
+    return String(rawDays);
+  }
+
+  function formatTimeLabel(rawTime) {
+    if (!rawTime) {
+      return "TBA";
+    }
+
+    const parts = String(rawTime).split(":");
+    if (parts.length < 2) {
+      return String(rawTime);
+    }
+
+    let hours = Number(parts[0]);
+    const minutes = parts[1];
+    if (Number.isNaN(hours)) {
+      return String(rawTime);
+    }
+
+    const suffix = hours >= 12 ? "PM" : "AM";
+    hours = hours % 12 || 12;
+    return hours + ":" + minutes + " " + suffix;
+  }
+
+  function formatScheduleLabel(daysJson, timeStart, timeEnd) {
+    return formatDaysLabel(daysJson) + " - " + formatTimeLabel(timeStart) + " to " + formatTimeLabel(timeEnd);
+  }
 
 
   let programsDataTable = null;
 
 
   const programsKpi = document.getElementById("kpiProgramsOffered");
-  const tableBody   = document.getElementById("programsOfferedTable");
+  const programsTableBody = document.getElementById("programsOfferedTable");
 
-  if (!programsKpi) return;
-
-  programsKpi.addEventListener("click", function () {
+  if (programsKpi && programsTableBody) {
+    programsKpi.addEventListener("click", function () {
 
     // Reset table with loading state
-    tableBody.innerHTML = `
+    programsTableBody.innerHTML = `
       <tr>
         <td colspan="6" class="text-center text-muted py-4">
           <i class="bx bx-loader-circle bx-spin me-1"></i>
@@ -1089,12 +1246,12 @@ markers: {
     modal.show();
 
     // AJAX fetch
-    fetch("../backend/get_programs_offered.php")
+    fetch("../backend/get_programs_offered.php", { cache: "no-store" })
       .then(response => response.json())
       .then(result => {
 
         if (result.status !== 'success') {
-          tableBody.innerHTML = `
+          programsTableBody.innerHTML = `
             <tr>
               <td colspan="6" class="text-center text-danger py-4">
                 Failed to load programs.
@@ -1105,7 +1262,7 @@ markers: {
         }
 
         if (result.data.length === 0) {
-          tableBody.innerHTML = `
+          programsTableBody.innerHTML = `
             <tr>
               <td colspan="6" class="text-center text-muted py-4">
                 No programs offered this term.
@@ -1132,7 +1289,7 @@ markers: {
           `;
         });
 
-        tableBody.innerHTML = rows;
+        programsTableBody.innerHTML = rows;
 /* =====================================================
    DATATABLE-AWARE INITIALIZATION
 ===================================================== */
@@ -1161,7 +1318,7 @@ programsDataTable = $('#programsOfferedModal table').DataTable({
 
       })
       .catch(() => {
-        tableBody.innerHTML = `
+        programsTableBody.innerHTML = `
           <tr>
             <td colspan="6" class="text-center text-danger py-4">
               AJAX error occurred.
@@ -1170,7 +1327,8 @@ programsDataTable = $('#programsOfferedModal table').DataTable({
         `;
       });
 
-  });
+    });
+  }
 
 /* =====================================================
    ACTIVE SECTIONS KPI → MODAL → AJAX → DATATABLE
@@ -1178,7 +1336,7 @@ programsDataTable = $('#programsOfferedModal table').DataTable({
 
 let sectionsDataTable = null;
 
-const sectionsKpi = document.querySelector('.kpi-icon.bg-success')?.closest('.kpi-box');
+const sectionsKpi = document.getElementById("kpiActiveSections");
 
 if (sectionsKpi) {
 
@@ -1200,7 +1358,7 @@ if (sectionsKpi) {
     );
     modal.show();
 
-    fetch("../backend/get_active_sections.php")
+    fetch("../backend/get_active_sections.php", { cache: "no-store" })
       .then(res => res.json())
       .then(result => {
 
@@ -1231,7 +1389,7 @@ if (sectionsKpi) {
           rows += `
             <tr>
               <td><strong>${s.section_name}</strong></td>
-              <td>${s.program_code} – ${s.program_name}</td>
+              <td>${s.program_code} - ${s.program_name}</td>
               <td>${s.college_name}</td>
               <td>${s.campus_name}</td>
       <td class="text-center">
@@ -1328,12 +1486,9 @@ $(document)
       document.getElementById("sectionOfferingsModal")
     ).show();
 
-    const CURRENT_AY_ID = <?= (int)$currentAyId ?>;
-    const CURRENT_SEM   = <?= (int)$currentSem ?>;
-
     fetch(
-      `../backend/get_section_offerings.php?section_id=${sectionId}&ay_id=${CURRENT_AY_ID}&semester=${CURRENT_SEM}`,
-      { cache: "no-store" } // 🔒 prevent browser caching
+      `../backend/get_section_offerings.php?section_id=${sectionId}`,
+      { cache: "no-store" }
     )
       .then(res => res.json())
       .then(result => {
@@ -1410,9 +1565,10 @@ $(document)
 
 let facultyWorkloadsDT = null;
 
-document
-  .getElementById("kpiFacultyWorkloads")
-  .addEventListener("click", function () {
+const facultyWorkloadsKpi = document.getElementById("kpiFacultyWorkloads");
+
+if (facultyWorkloadsKpi) {
+  facultyWorkloadsKpi.addEventListener("click", function () {
 
     const table = $("#facultyWorkloadsTable");
     const tbody = table.find("tbody");
@@ -1423,7 +1579,7 @@ document
 
     tbody.html(`
       <tr>
-        <td colspan="5" class="text-center text-muted py-4">
+        <td colspan="8" class="text-center text-muted py-4">
           <i class="bx bx-loader-circle bx-spin me-1"></i>
           Loading scheduled classes...
         </td>
@@ -1434,14 +1590,14 @@ document
       document.getElementById("facultyWorkloadsModal")
     ).show();
 
-    fetch(`../backend/get_faculty_workloads.php?ay_id=<?= (int)$currentAyId ?>&semester=<?= (int)$currentSem ?>`)
+    fetch("../backend/get_faculty_workloads.php", { cache: "no-store" })
       .then(res => res.json())
       .then(result => {
 
         if (result.status !== "success") {
           tbody.html(`
             <tr>
-              <td colspan="5" class="text-center text-danger py-4">
+              <td colspan="8" class="text-center text-danger py-4">
                 Failed to load workloads.
               </td>
             </tr>
@@ -1449,29 +1605,39 @@ document
           return;
         }
 
-let rows = "";
-result.data.forEach(r => {
+        if (!result.data || result.data.length === 0) {
+          tbody.html(`
+            <tr>
+              <td colspan="8" class="text-center text-muted py-4">
+                No scheduled classes found for the current term.
+              </td>
+            </tr>
+          `);
+          return;
+        }
 
-  const schedule = `${r.days_json} · ${r.time_start} – ${r.time_end}`;
-  const room     = r.room_name ?? "TBA";
-  const faculty  = r.faculty_name ?? "Unassigned";
+        let rows = "";
+        result.data.forEach(r => {
+          const schedule = formatScheduleLabel(r.days_json, r.time_start, r.time_end);
+          const room = r.room_name ?? "TBA";
+          const faculty = r.faculty_name ?? "Unassigned";
 
-  rows += `
-    <tr>
-      <td><strong>${r.sub_code}</strong></td>
-      <td>${r.section_name}</td>
-      <td>
-        <strong>${r.program_code}</strong><br>
-        <small class="text-muted">${r.program_name}</small>
-      </td>
-      <td>${r.college_name}</td>
-      <td>${r.campus_name}</td>
-      <td>${schedule}</td>
-      <td>${room}</td>
-      <td>${faculty}</td>
-    </tr>
-  `;
-});
+          rows += `
+            <tr>
+              <td><strong>${r.sub_code}</strong></td>
+              <td>${r.section_name}</td>
+              <td>
+                <strong>${r.program_code}</strong><br>
+                <small class="text-muted">${r.program_name}</small>
+              </td>
+              <td>${r.college_name}</td>
+              <td>${r.campus_name}</td>
+              <td>${schedule}</td>
+              <td>${room}</td>
+              <td>${faculty}</td>
+            </tr>
+          `;
+        });
 
         tbody.html(rows);
 
@@ -1483,10 +1649,19 @@ result.data.forEach(r => {
           buttons: ["copy", "excel", "pdf", "print"]
         });
 
+      })
+      .catch(() => {
+        tbody.html(`
+          <tr>
+            <td colspan="8" class="text-center text-danger py-4">
+              Failed to load workloads.
+            </td>
+          </tr>
+        `);
       });
 
   });
-
+}
 
 });
 </script>

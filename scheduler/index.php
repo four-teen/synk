@@ -3,6 +3,9 @@ session_start();
 ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/scheduler_access_helper.php';
+
+synk_scheduler_bootstrap_session_scope($conn);
 
 if (!isset($_SESSION['user_id'])) {
     header("Location: ../index.php");
@@ -23,8 +26,10 @@ $currentTerm = synk_fetch_current_academic_term($conn);
 $academicTermText = $currentTerm['term_text'];
 
 $collegeName = htmlspecialchars($_SESSION['college_name'] ?? 'Assigned College', ENT_QUOTES, 'UTF-8');
+$campusName = htmlspecialchars($_SESSION['campus_name'] ?? 'Current Campus', ENT_QUOTES, 'UTF-8');
 $schedulerName = htmlspecialchars($_SESSION['username'] ?? 'Scheduler', ENT_QUOTES, 'UTF-8');
 $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-8');
+$campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 ?>
 
 <html
@@ -207,6 +212,10 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
         font-size: 0.84rem;
         color: #8592a3;
       }
+
+      .dashboard-scope-toggle .btn {
+        min-width: 7.5rem;
+      }
     </style>
   </head>
 
@@ -238,6 +247,7 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
 
                             <div class="hero-meta mb-3">
                               <span class="badge bg-label-primary"><?php echo $collegeName; ?></span>
+                              <span class="badge bg-label-info"><?php echo $campusName; ?></span>
                               <span class="badge bg-label-info"><?php echo $academicTermTextEscaped; ?></span>
                             </div>
 
@@ -265,9 +275,17 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                         <div class="card-header d-flex align-items-center justify-content-between pb-0">
                           <div class="card-title mb-0">
                             <h5 class="m-0 me-2">Scheduling Operations Overview</h5>
-                            <small class="text-muted">College-level scheduling indicators</small>
+                            <small class="text-muted" id="operationsOverviewSubtitle">College-level scheduling indicators</small>
                           </div>
-                          <span class="badge bg-label-primary">KPI Summary</span>
+                          <div class="d-flex align-items-center gap-2 flex-wrap">
+                            <div class="btn-group btn-group-sm dashboard-scope-toggle" role="group" aria-label="Dashboard scope toggle">
+                              <button type="button" class="btn btn-outline-primary active" data-dashboard-scope="college">Current College</button>
+                              <?php if ($campusViewEnabled): ?>
+                                <button type="button" class="btn btn-outline-primary" data-dashboard-scope="campus">Current Campus</button>
+                              <?php endif; ?>
+                            </div>
+                            <span class="badge bg-label-primary" id="dashboardScopeBadge">College View</span>
+                          </div>
                         </div>
 
                         <div class="card-body px-4 py-3">
@@ -324,10 +342,10 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                       <div class="card h-100 shadow-sm">
                         <div class="card-header d-flex justify-content-between align-items-center">
                           <div>
-                            <h5 class="m-0">Scheduling Progress by Program</h5>
-                            <small class="text-muted">Each line shows how many classes a program has, how many are already scheduled, and how many still need schedule assignment.</small>
+                            <h5 class="m-0" id="programChartTitle">Scheduling Progress by Program</h5>
+                            <small class="text-muted" id="programChartSubtitle">Each line shows how many classes a program has, how many are already scheduled, and how many still need schedule assignment.</small>
                           </div>
-                          <span class="badge bg-label-primary">Scheduler Focus</span>
+                          <span class="badge bg-label-primary" id="programChartBadge">Scheduler Focus</span>
                         </div>
 
                         <div class="card-body">
@@ -343,10 +361,10 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                       <div class="card h-100 shadow-sm">
                         <div class="card-header d-flex justify-content-between align-items-center">
                           <div>
-                            <h5 class="m-0">Weekly Scheduling Pressure</h5>
-                            <small class="text-muted">Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.</small>
+                            <h5 class="m-0" id="weeklyPressureTitle">Weekly Scheduling Pressure</h5>
+                            <small class="text-muted" id="weeklyPressureSubtitle">Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.</small>
                           </div>
-                          <span class="badge bg-label-info">Demand Map</span>
+                          <span class="badge bg-label-info" id="weeklyPressureBadge">Demand Map</span>
                         </div>
 
                         <div class="card-body">
@@ -491,6 +509,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
       document.addEventListener("DOMContentLoaded", function () {
         let schedulingProgressChart = null;
         let weeklyPressureChart = null;
+        let dashboardScope = "college";
+        const campusViewEnabled = <?php echo $campusViewEnabled ? 'true' : 'false'; ?>;
 
         function buildInlineLoader(message) {
           return (
@@ -551,6 +571,70 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
 
           if (element) {
             element.textContent = message;
+          }
+        }
+
+        function setScopeButtons() {
+          document.querySelectorAll("[data-dashboard-scope]").forEach(function (button) {
+            const isActive = button.getAttribute("data-dashboard-scope") === dashboardScope;
+            button.classList.toggle("active", isActive);
+            button.classList.toggle("btn-primary", isActive);
+            button.classList.toggle("btn-outline-primary", !isActive);
+          });
+        }
+
+        function applyDashboardScopeMeta(meta) {
+          const scopeType = meta && meta.scope === "campus" && campusViewEnabled ? "campus" : "college";
+          const scopeLabel = meta && meta.scope_label ? meta.scope_label : (scopeType === "campus" ? <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?> : <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>);
+          const scopeBadge = document.getElementById("dashboardScopeBadge");
+          const overviewSubtitle = document.getElementById("operationsOverviewSubtitle");
+          const programChartTitle = document.getElementById("programChartTitle");
+          const programChartSubtitle = document.getElementById("programChartSubtitle");
+          const programChartBadge = document.getElementById("programChartBadge");
+          const weeklyPressureTitle = document.getElementById("weeklyPressureTitle");
+          const weeklyPressureSubtitle = document.getElementById("weeklyPressureSubtitle");
+          const weeklyPressureBadge = document.getElementById("weeklyPressureBadge");
+
+          if (scopeBadge) {
+            scopeBadge.textContent = scopeType === "campus" ? "Campus View" : "College View";
+          }
+
+          if (overviewSubtitle) {
+            overviewSubtitle.textContent = scopeType === "campus"
+              ? "Read-only scheduling indicators across all colleges in " + scopeLabel
+              : "College-level scheduling indicators";
+          }
+
+          if (programChartTitle) {
+            programChartTitle.textContent = scopeType === "campus"
+              ? "Scheduling Progress by College"
+              : "Scheduling Progress by Program";
+          }
+
+          if (programChartSubtitle) {
+            programChartSubtitle.textContent = scopeType === "campus"
+              ? "Each line shows total classes, scheduled classes, and remaining unscheduled classes for every college in the current campus."
+              : "Each line shows how many classes a program has, how many are already scheduled, and how many still need schedule assignment.";
+          }
+
+          if (programChartBadge) {
+            programChartBadge.textContent = scopeType === "campus" ? "Campus Monitor" : "Scheduler Focus";
+          }
+
+          if (weeklyPressureTitle) {
+            weeklyPressureTitle.textContent = scopeType === "campus"
+              ? "Weekly Scheduling Pressure Across Campus"
+              : "Weekly Scheduling Pressure";
+          }
+
+          if (weeklyPressureSubtitle) {
+            weeklyPressureSubtitle.textContent = scopeType === "campus"
+              ? "Higher lines mean a busier campus day. It combines scheduled classes, rooms in use, and faculty active across all colleges in the current campus."
+              : "Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.";
+          }
+
+          if (weeklyPressureBadge) {
+            weeklyPressureBadge.textContent = scopeType === "campus" ? "Campus Demand" : "Demand Map";
           }
         }
 
@@ -911,6 +995,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
           const faculty = Number(data.faculty) || 0;
           const prospectus = Number(data.prospectus_items) || 0;
           const unscheduled = Number(data.unscheduled_classes) || 0;
+          const scopeType = data && data.scope === "campus" && campusViewEnabled ? "campus" : "college";
+          const scopeLabel = data && data.scope_label ? data.scope_label : (scopeType === "campus" ? <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?> : <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>);
 
           animateCount("countPrograms", programs);
           animateCount("countFaculty", faculty);
@@ -929,56 +1015,101 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
 
           if (unscheduled > 0) {
             unscheduledCard.classList.add("kpi-warning-active");
-            unscheduledNote.textContent = "Needs schedule assignment";
+            unscheduledNote.textContent = scopeType === "campus" ? "Need schedule assignment across campus" : "Needs schedule assignment";
             unscheduledBadge.className = "badge bg-danger rounded-pill";
             schedulerStatusMessage.textContent =
-              unscheduled + " classes still need time or room assignment.";
+              scopeType === "campus"
+                ? unscheduled + " classes still need time or room assignment across " + scopeLabel + "."
+                : unscheduled + " classes still need time or room assignment.";
             return;
           }
 
           unscheduledCard.classList.remove("kpi-warning-active");
-          unscheduledNote.textContent = "All classes scheduled";
+          unscheduledNote.textContent = scopeType === "campus" ? "All campus classes scheduled" : "All classes scheduled";
           unscheduledBadge.className = "badge bg-success rounded-pill";
           schedulerStatusMessage.textContent =
-            "Scheduling looks clear for this workspace.";
+            scopeType === "campus"
+              ? "Scheduling looks clear across " + scopeLabel + "."
+              : "Scheduling looks clear for this workspace.";
         }
 
-        $.ajax({
-          url: "../backend/dashboard_scheduler_charts.php",
-          type: "POST",
-          dataType: "json",
-          success: function (data) {
-            renderProgramSchedulingChart(data.program_progress || []);
-            renderWeeklyPressureChart(data.weekly_pressure || []);
-          },
-          error: function (xhr) {
-            console.error("Scheduler charts error:", xhr.responseText);
-            setChartFallback("programSchedulingChart", "Unable to load program scheduling progress.");
-            setChartFallback("weeklyPressureChart", "Unable to load weekday scheduling pressure.");
-            setInsight("programProgressInsight", "Program comparison data could not be loaded.");
-            setInsight("weeklyPressureInsight", "Weekday load data could not be loaded.");
-          }
+        function loadDashboardData() {
+          applyDashboardScopeMeta({
+            scope: dashboardScope,
+            scope_label: dashboardScope === "campus"
+              ? <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?>
+              : <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>
+          });
+          setCountsLoadingState();
+          setChartLoading("programSchedulingChart", "Loading program scheduling progress...");
+          setChartLoading("weeklyPressureChart", "Loading weekday scheduling pressure...");
+          setInsight(
+            "programProgressInsight",
+            dashboardScope === "campus"
+              ? "Loading the comparison of total classes, scheduled classes, and unscheduled classes for each college in the current campus."
+              : "Loading the comparison of total classes, scheduled classes, and unscheduled classes per program."
+          );
+          setInsight(
+            "weeklyPressureInsight",
+            dashboardScope === "campus"
+              ? "Loading which weekdays are busiest across all colleges in the current campus."
+              : "Loading which weekdays are busiest based on classes, rooms, and faculty activity."
+          );
+
+          $.ajax({
+            url: "../backend/dashboard_scheduler_charts.php",
+            type: "POST",
+            dataType: "json",
+            data: { scope: dashboardScope },
+            success: function (data) {
+              applyDashboardScopeMeta(data || {});
+              renderProgramSchedulingChart(data.program_progress || []);
+              renderWeeklyPressureChart(data.weekly_pressure || []);
+            },
+            error: function (xhr) {
+              console.error("Scheduler charts error:", xhr.responseText);
+              setChartFallback("programSchedulingChart", "Unable to load program scheduling progress.");
+              setChartFallback("weeklyPressureChart", "Unable to load weekday scheduling pressure.");
+              setInsight("programProgressInsight", "Program comparison data could not be loaded.");
+              setInsight("weeklyPressureInsight", "Weekday load data could not be loaded.");
+            }
+          });
+
+          $.ajax({
+            url: "../backend/dashboard_counts.php",
+            type: "POST",
+            dataType: "json",
+            data: { scope: dashboardScope },
+            success: function (data) {
+              updateDashboardCounts(data || {});
+            },
+            error: function (xhr) {
+              console.error("Dashboard counts error:", xhr.responseText);
+              document.getElementById("schedulerStatusMessage").textContent =
+                "Unable to load dashboard counts.";
+            }
+          });
+        }
+
+        document.querySelectorAll("[data-dashboard-scope]").forEach(function (button) {
+          button.addEventListener("click", function () {
+            const requestedScope = button.getAttribute("data-dashboard-scope");
+            if (requestedScope === dashboardScope) {
+              return;
+            }
+
+            if (requestedScope === "campus" && !campusViewEnabled) {
+              return;
+            }
+
+            dashboardScope = requestedScope;
+            setScopeButtons();
+            loadDashboardData();
+          });
         });
 
-        $.ajax({
-          url: "../backend/dashboard_counts.php",
-          type: "POST",
-          dataType: "json",
-          success: function (data) {
-            updateDashboardCounts(data);
-          },
-          error: function (xhr) {
-            console.error("Dashboard counts error:", xhr.responseText);
-            document.getElementById("schedulerStatusMessage").textContent =
-              "Unable to load dashboard counts.";
-          }
-        });
-
-        setCountsLoadingState();
-        setChartLoading("programSchedulingChart", "Loading program scheduling progress...");
-        setChartLoading("weeklyPressureChart", "Loading weekday scheduling pressure...");
-        setInsight("programProgressInsight", "Loading the comparison of total classes, scheduled classes, and unscheduled classes per program.");
-        setInsight("weeklyPressureInsight", "Loading which weekdays are busiest based on classes, rooms, and faculty activity.");
+        setScopeButtons();
+        loadDashboardData();
       });
     </script>
   </body>

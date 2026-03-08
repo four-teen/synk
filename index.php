@@ -57,7 +57,7 @@ if (isset($_POST['login'])) {
         exit;
     }
 
-    if ((string)$row['role'] === 'scheduler' && empty($row['college_id'])) {
+    if ((string)$row['role'] === 'scheduler' && !synk_scheduler_account_has_access($conn, $row)) {
         echo 'account_incomplete';
         exit;
     }
@@ -68,7 +68,7 @@ if (isset($_POST['login'])) {
         exit;
     }
 
-    echo synk_complete_user_login($row);
+    echo synk_complete_user_login($row, $conn);
     exit;
 }
 ?>

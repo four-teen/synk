@@ -1,8 +1,15 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 header('Content-Type: application/json');
+header('Cache-Control: no-store, no-cache, must-revalidate, max-age=0');
+
+if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
+    echo json_encode(["status" => "error", "message" => "Unauthorized"]);
+    exit;
+}
 
 /* =====================================================
    GET SUBJECTS OFFERED FOR A SECTION (LEVEL 3 DRILLDOWN)
@@ -15,17 +22,20 @@ header('Content-Type: application/json');
 ===================================================== */
 
 
-/* ------------------------------
-   READ PARAMETERS
--------------------------------- */
 $section_id = intval($_GET['section_id'] ?? 0);
-$ay_id      = intval($_GET['ay_id'] ?? 0);
-$semester   = intval($_GET['semester'] ?? 0);
 
-
-if (!$section_id || !$ay_id || !$semester) {
-
+if (!$section_id) {
     echo json_encode(["status" => "error", "message" => "Invalid parameters"]);
+    exit;
+}
+
+$currentTerm = synk_fetch_current_academic_term($conn);
+$ay_id = (int)($currentTerm['ay_id'] ?? 0);
+$semester = (int)($currentTerm['semester'] ?? 0);
+
+if ($ay_id <= 0 || $semester <= 0) {
+
+    echo json_encode(["status" => "error", "message" => "Academic settings not configured"]);
     exit;
 }
 
@@ -87,6 +97,8 @@ $data = [];
 while ($row = $res->fetch_assoc()) {
     $data[] = $row;
 }
+
+$stmt->close();
 
 echo json_encode([
     "status" => "success",
