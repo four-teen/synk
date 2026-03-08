@@ -27,13 +27,37 @@ function h($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function time_label($time) {
-    return date("h:i A", strtotime($time));
+function time_compact_label($time) {
+    return date("H:i", strtotime($time));
 }
 
 function normalize_day_token($day) {
     $token = strtoupper(trim((string)$day));
     return $token === 'TH' ? 'Th' : $token;
+}
+
+function day_short_label($day) {
+    $labels = [
+        'M' => 'Mon',
+        'T' => 'Tue',
+        'W' => 'Wed',
+        'Th' => 'Thu',
+        'F' => 'Fri',
+        'S' => 'Sat'
+    ];
+
+    return $labels[$day] ?? $day;
+}
+
+function subject_color_class($subjectCode) {
+    $subject = strtoupper(trim((string)$subjectCode));
+    if ($subject === '') {
+        return 'sub-0';
+    }
+
+    $paletteSize = 12;
+    $hash = (int)(sprintf('%u', crc32($subject)) % $paletteSize);
+    return 'sub-' . $hash;
 }
 
 function overlaps($slotStart, $slotEnd, $itemStart, $itemEnd) {
@@ -138,6 +162,7 @@ if (!$schedStmt) {
     echo "<div class='text-danger text-center'>Unable to load the room-time matrix right now.</div>";
     exit;
 }
+
 $schedStmt->bind_param("ii", $ay_id, $semester);
 $schedStmt->execute();
 $schedRes = $schedStmt->get_result();
@@ -158,7 +183,8 @@ while ($row = $schedRes->fetch_assoc()) {
         'time_end' => (string)$row['time_end'],
         'sub_code' => (string)$row['sub_code'],
         'section_name' => (string)$row['section_name'],
-        'college_code' => (string)($row['college_code'] ?? '')
+        'college_code' => (string)($row['college_code'] ?? ''),
+        'subject_class' => subject_color_class($row['sub_code'] ?? '')
     ];
 
     foreach ($decodedDays as $dayToken) {
@@ -166,24 +192,32 @@ while ($row = $schedRes->fetch_assoc()) {
         if (!in_array($dayKey, $daysOrder, true)) {
             continue;
         }
+
         $schedulesByRoomDay[(int)$row['room_id']][$dayKey][] = $item;
     }
 }
 $schedStmt->close();
 
-echo "<div class='mb-3 small text-muted'>";
-echo "Room usage is shown by <strong>weekday and time slot</strong> for the selected term. Shared rooms include schedules from every college using that room.";
+echo "<div class='mb-3 small text-muted matrix-meta-note'>";
+echo "Each column is a 30-minute time block. The same subject keeps the same color across the matrix. Shared rooms include schedules from every college using that room.";
 echo "</div>";
 
 echo "<div class='matrix-shell'>";
 echo "<div class='table-responsive matrix-scroll-wrap'>";
 echo "<table class='table table-bordered matrix-table'>";
+echo "<colgroup>";
+echo "<col class='matrix-room-col'>";
+echo "<col class='matrix-day-col'>";
+foreach ($timeSlots as $slot) {
+    echo "<col class='matrix-slot-col'>";
+}
+echo "</colgroup>";
 echo "<thead><tr>";
 echo "<th class='matrix-room'>Room</th>";
 echo "<th class='matrix-day'>Day</th>";
 
 foreach ($timeSlots as $slot) {
-    echo "<th class='text-center small'>" . h(time_label($slot['start'])) . "<br>-<br>" . h(time_label($slot['end'])) . "</th>";
+    echo "<th class='text-center matrix-slot-header'><div class='matrix-time-slot'><span>" . h(time_compact_label($slot['start'])) . "</span><span>" . h(time_compact_label($slot['end'])) . "</span></div></th>";
 }
 
 echo "</tr></thead><tbody>";
@@ -200,6 +234,7 @@ foreach ($rooms as $roomId => $roomLabel) {
                 if (!overlaps($slot['start'], $slot['end'], $item['time_start'], $item['time_end'])) {
                     continue;
                 }
+
                 $slotMap[$index][$item['schedule_id']] = $item;
             }
         }
@@ -211,7 +246,7 @@ foreach ($rooms as $roomId => $roomLabel) {
             $firstDayRow = false;
         }
 
-        echo "<td class='matrix-day text-center'>" . h($dayKey) . "</td>";
+        echo "<td class='matrix-day text-center'>" . h(day_short_label($dayKey)) . "</td>";
 
         for ($slotIndex = 0; $slotIndex < count($timeSlots); ) {
             $currentItems = array_values($slotMap[$slotIndex]);
@@ -244,6 +279,7 @@ foreach ($rooms as $roomId => $roomLabel) {
                 if ($nextSignature !== $signature) {
                     break;
                 }
+
                 $colspan++;
             }
 
@@ -252,11 +288,12 @@ foreach ($rooms as $roomId => $roomLabel) {
 
             foreach ($currentItems as $item) {
                 $typeLabel = $item['schedule_type'] === 'LAB' ? 'LAB' : 'LEC';
-                $collegeSuffix = $item['college_code'] !== '' ? " • " . $item['college_code'] : '';
+                $collegeSuffix = $item['college_code'] !== '' ? " | " . $item['college_code'] : '';
+
                 $entriesHtml[] = "
-                    <div class='matrix-entry'>
+                    <div class='matrix-entry " . h($item['subject_class']) . "'>
                         <strong>" . h($item['sub_code']) . "</strong><br>
-                        <small>" . h($item['section_name']) . " • " . h($typeLabel) . h($collegeSuffix) . "</small>
+                        <small>" . h($item['section_name']) . " | " . h($typeLabel) . h($collegeSuffix) . "</small>
                     </div>
                 ";
             }

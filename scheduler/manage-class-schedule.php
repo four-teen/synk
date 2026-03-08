@@ -75,21 +75,23 @@ body.swal2-shown .modal {
 ===================================================== */
 .matrix-table th,
 .matrix-table td {
-    min-width: 110px;          /* base fallback */
+    min-width: 88px;
     vertical-align: middle;
 }
 
 .matrix-room {
     background: #f8f9fa;
-    white-space: nowrap;
+    white-space: normal;
+    word-break: break-word;
+    line-height: 1.15;
 }
 
 .matrix-cell {
     border-radius: 6px;
-    padding: 8px;
+    padding: 4px;
     text-align: center;
-    font-size: 0.85rem;
-    min-height: 48px;
+    font-size: 0.76rem;
+    min-height: 34px;
 }
 
 .schedule-group-card {
@@ -229,106 +231,160 @@ body.swal2-shown .modal {
 }
 
 .matrix-vacant {
-    background: #e9ecef;
-    color: #6c757d;
+    background: #eef2f6;
+    color: #8b97a8;
 }
 
 .matrix-occupied {
-    background: #0d6efd;
-    color: #fff;
+    background: #f6f9fc;
+    color: #17324d;
+    border: 1px solid #d8e4f1;
     font-weight: 600;
 }
 
 .matrix-entry {
-    border-radius: 6px;
+    border-radius: 5px;
     color: #fff;
-    padding: 4px 6px;
-    margin-bottom: 4px;
-    line-height: 1.15;
+    padding: 3px 5px;
+    margin-bottom: 3px;
+    line-height: 1.08;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
 .matrix-entry:last-child {
     margin-bottom: 0;
 }
 
-.matrix-occupied .matrix-entry {
-    background: rgba(255, 255, 255, 0.14);
-}
-
 .matrix-conflict .matrix-entry {
-    background: #dc3545;
     color: #fff;
 }
 
+.matrix-entry strong {
+    display: block;
+    font-size: 0.68rem;
+    letter-spacing: 0.01em;
+}
+
 .matrix-entry small {
+    display: block;
     color: rgba(255, 255, 255, 0.92);
+    font-size: 0.58rem;
 }
 
 .matrix-conflict {
-    background: #fff4f4;
-    border: 1px solid #ffc7c7;
+    background: #fff5f5;
+    border: 1px solid #ffc9c9;
 }
 
 .matrix-day {
     background: #f8f9fa;
     font-weight: 700;
     white-space: nowrap;
-    min-width: 70px;
+    min-width: 52px;
+    width: 52px;
+    max-width: 52px;
+    letter-spacing: 0.02em;
 }
 
 /* SUBJECT COLORS (auto-rotated) */
-.sub-0 { background: #0d6efd; } /* blue */
-.sub-1 { background: #198754; } /* green */
-.sub-2 { background: #fd7e14; } /* orange */
-.sub-3 { background: #6f42c1; } /* purple */
-.sub-4 { background: #20c997; } /* teal */
+.sub-0 { background: #2563eb; }
+.sub-1 { background: #059669; }
+.sub-2 { background: #d97706; }
+.sub-3 { background: #7c3aed; }
+.sub-4 { background: #0f766e; }
+.sub-5 { background: #dc2626; }
+.sub-6 { background: #db2777; }
+.sub-7 { background: #4f46e5; }
+.sub-8 { background: #0891b2; }
+.sub-9 { background: #65a30d; }
+.sub-10 { background: #b45309; }
+.sub-11 { background: #475569; }
 
 /* =====================================================
    ROOM–TIME MATRIX (ENHANCEMENTS – SCOPED)
    👉 Scoped to #matrixModal ONLY to avoid conflicts
 ===================================================== */
 
-/* Compact font sizing */
-#matrixModal .matrix-table {
-    font-size: 0.72rem;
+#matrixModal {
+    --matrix-room-col-width: 118px;
+    --matrix-day-col-width: 50px;
+    --matrix-slot-col-width: 58px;
 }
 
-/* Smaller header text */
-#matrixModal .matrix-table th {
+#matrixModal .matrix-table {
     font-size: 0.68rem;
-    line-height: 1.1;
+}
+
+#matrixModal .matrix-room-col {
+    width: var(--matrix-room-col-width);
+}
+
+#matrixModal .matrix-day-col {
+    width: var(--matrix-day-col-width);
+}
+
+#matrixModal .matrix-slot-col {
+    width: var(--matrix-slot-col-width);
+}
+
+#matrixModal .matrix-table th {
+    font-size: 0.62rem;
+    line-height: 1.05;
     white-space: nowrap;
 }
 
-/* Reduce padding + width for more columns */
 #matrixModal .matrix-table th,
 #matrixModal .matrix-table td {
-    padding: 6px !important;
-    min-width: 90px;     /* override safely */
+    padding: 4px !important;
+    min-width: var(--matrix-slot-col-width);
 }
 
-/* Room column slightly wider */
 #matrixModal .matrix-room {
-    min-width: 140px;
-    font-size: 0.75rem;
+    min-width: var(--matrix-room-col-width);
+    width: var(--matrix-room-col-width);
+    max-width: var(--matrix-room-col-width);
+    font-size: 0.69rem;
+    padding: 7px 6px !important;
 }
 
-/* Compact cells */
+#matrixModal .matrix-day {
+    min-width: var(--matrix-day-col-width);
+    width: var(--matrix-day-col-width);
+    max-width: var(--matrix-day-col-width);
+    font-size: 0.64rem;
+    padding: 4px 3px !important;
+}
+
 #matrixModal .matrix-cell {
-    padding: 6px;
-    min-height: 38px;
-    font-size: 0.7rem;
-    line-height: 1.15;
+    padding: 3px;
+    min-height: 28px;
+    font-size: 0.64rem;
+    line-height: 1.02;
 }
 
-/* Text hierarchy inside occupied cell */
 #matrixModal .matrix-cell strong {
-    font-size: 0.72rem;
+    font-size: 0.64rem;
 }
 
 #matrixModal .matrix-cell small {
-    font-size: 0.65rem;
-    opacity: 0.9;
+    font-size: 0.56rem;
+    opacity: 0.94;
+}
+
+#matrixModal .matrix-time-slot {
+    display: grid;
+    gap: 1px;
+    justify-items: center;
+    line-height: 1.02;
+    font-variant-numeric: tabular-nums;
+}
+
+#matrixModal .matrix-time-slot span {
+    display: block;
+}
+
+#matrixModal .matrix-meta-note {
+    line-height: 1.35;
 }
 
 /* =====================================================
@@ -349,6 +405,21 @@ body.swal2-shown .modal {
     left: 0;
     z-index: 5;
     box-shadow: 2px 0 4px rgba(0,0,0,0.05);
+}
+
+#matrixModal .matrix-day {
+    position: sticky;
+    left: var(--matrix-room-col-width);
+    z-index: 4;
+    box-shadow: 2px 0 4px rgba(0,0,0,0.04);
+}
+
+#matrixModal .matrix-table thead .matrix-room {
+    z-index: 9;
+}
+
+#matrixModal .matrix-table thead .matrix-day {
+    z-index: 8;
 }
 
 /* =====================================================
@@ -408,8 +479,8 @@ body.swal2-shown .modal {
 }
 
 #matrixModal .modal-dialog {
-    max-width: min(98vw, 1900px) !important;
-    width: min(98vw, 1900px);
+    max-width: min(99vw, 2200px) !important;
+    width: min(99vw, 2200px);
     height: 95vh;
     margin: 0.75rem auto;
 }
@@ -422,18 +493,34 @@ body.swal2-shown .modal {
     overflow: hidden;
 }
 
-@media (min-width: 1400px) {
-    #matrixModal .matrix-table th,
-    #matrixModal .matrix-table td {
-        min-width: 82px;
+@media (min-width: 1200px) {
+    #matrixModal {
+        --matrix-room-col-width: 104px;
+        --matrix-day-col-width: 46px;
+        --matrix-slot-col-width: 50px;
     }
 
-    #matrixModal .matrix-room {
-        min-width: 165px;
+    #matrixModal .matrix-table {
+        width: 100%;
+        table-layout: fixed;
+    }
+}
+
+@media (min-width: 1600px) {
+    #matrixModal {
+        --matrix-room-col-width: 100px;
+        --matrix-day-col-width: 44px;
+        --matrix-slot-col-width: 48px;
     }
 }
 
 @media (max-width: 992px) {
+    #matrixModal {
+        --matrix-room-col-width: 126px;
+        --matrix-day-col-width: 52px;
+        --matrix-slot-col-width: 66px;
+    }
+
     #matrixModal .modal-dialog {
         max-width: 100vw !important;
         width: 100vw;
@@ -451,7 +538,12 @@ body.swal2-shown .modal {
         border-right: 0;
         border-bottom: 0;
     }
-}
+
+    #matrixModal .matrix-table {
+        width: max-content;
+        table-layout: auto;
+    }
+  }
   </style>
 </head>
 

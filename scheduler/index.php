@@ -163,11 +163,15 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
       }
 
       .chart-shell {
-        min-height: 320px;
+        min-height: 340px;
+      }
+
+      .chart-shell-compact {
+        min-height: 340px;
       }
 
       .chart-fallback {
-        min-height: 320px;
+        min-height: 340px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -176,7 +180,7 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
       }
 
       .chart-loader {
-        min-height: 320px;
+        min-height: 340px;
         display: flex;
         align-items: center;
         justify-content: center;
@@ -195,6 +199,13 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
         display: flex;
         flex-wrap: wrap;
         gap: 0.5rem;
+      }
+
+      .chart-insight {
+        min-height: 40px;
+        margin-top: 0.75rem;
+        font-size: 0.84rem;
+        color: #8592a3;
       }
     </style>
   </head>
@@ -313,14 +324,36 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
                       <div class="card h-100 shadow-sm">
                         <div class="card-header d-flex justify-content-between align-items-center">
                           <div>
-                            <h5 class="m-0">Faculty Teaching Load</h5>
-                            <small class="text-muted">Unit distribution across assigned faculty</small>
+                            <h5 class="m-0">Scheduling Progress by Program</h5>
+                            <small class="text-muted">Each line shows how many classes a program has, how many are already scheduled, and how many still need schedule assignment.</small>
                           </div>
-                          <span class="badge bg-label-warning">College Analytics</span>
+                          <span class="badge bg-label-primary">Scheduler Focus</span>
                         </div>
 
                         <div class="card-body">
-                          <div id="facultyLoadChart" class="chart-shell"></div>
+                          <div id="programSchedulingChart" class="chart-shell"></div>
+                          <p class="chart-insight mb-0" id="programProgressInsight">
+                            This graph helps you see which program still has the most unscheduled classes.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-12 order-1 mb-4">
+                      <div class="card h-100 shadow-sm">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                          <div>
+                            <h5 class="m-0">Weekly Scheduling Pressure</h5>
+                            <small class="text-muted">Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.</small>
+                          </div>
+                          <span class="badge bg-label-info">Demand Map</span>
+                        </div>
+
+                        <div class="card-body">
+                          <div id="weeklyPressureChart" class="chart-shell chart-shell-compact"></div>
+                          <p class="chart-insight mb-0" id="weeklyPressureInsight">
+                            This graph helps you spot which days are crowded and may need balancing.
+                          </p>
                         </div>
                       </div>
                     </div>
@@ -456,7 +489,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
 
     <script>
       document.addEventListener("DOMContentLoaded", function () {
-        let facultyLoadChart = null;
+        let schedulingProgressChart = null;
+        let weeklyPressureChart = null;
 
         function buildInlineLoader(message) {
           return (
@@ -490,8 +524,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
           }, 20);
         }
 
-        function setChartFallback(message) {
-          const chartContainer = document.getElementById("facultyLoadChart");
+        function setChartFallback(containerId, message) {
+          const chartContainer = document.getElementById(containerId);
 
           if (!chartContainer) {
             return;
@@ -501,8 +535,8 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
             '<div class="chart-fallback"><p class="mb-0">' + message + "</p></div>";
         }
 
-        function setChartLoading(message) {
-          const chartContainer = document.getElementById("facultyLoadChart");
+        function setChartLoading(containerId, message) {
+          const chartContainer = document.getElementById(containerId);
 
           if (!chartContainer) {
             return;
@@ -510,6 +544,14 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
 
           chartContainer.innerHTML =
             '<div class="chart-loader">' + buildInlineLoader(message) + "</div>";
+        }
+
+        function setInsight(elementId, message) {
+          const element = document.getElementById(elementId);
+
+          if (element) {
+            element.textContent = message;
+          }
         }
 
         function setCountsLoadingState() {
@@ -542,68 +584,112 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
           }
         }
 
-        function renderFacultyLoadChart(data) {
+        function renderProgramSchedulingChart(data) {
           if (!Array.isArray(data) || data.length === 0) {
-            setChartFallback("No workload data available.");
+            setChartFallback("programSchedulingChart", "No program scheduling data available.");
+            setInsight("programProgressInsight", "No class offerings were found for the current term, so there is nothing to compare yet.");
             return;
           }
 
-          const facultyNames = [];
-          const unitValues = [];
-          const markers = [];
+          const categories = [];
+          const totalValues = [];
+          const scheduledValues = [];
+          const pendingValues = [];
+          let highestPending = null;
+          let totalPending = 0;
 
           data.forEach(function (row, index) {
-            const units = Number(row.units) || 0;
+            const programLabel = row.program || "Program " + (index + 1);
+            const total = Number(row.total) || 0;
+            const scheduled = Number(row.scheduled) || 0;
+            const pending = Number(row.pending);
+            const safePending = Number.isFinite(pending) ? pending : Math.max(0, total - scheduled);
 
-            facultyNames.push(row.faculty || "Faculty " + (index + 1));
-            unitValues.push(units);
+            categories.push(programLabel);
+            totalValues.push(total);
+            scheduledValues.push(scheduled);
+            pendingValues.push(safePending);
+            totalPending += safePending;
 
-            let markerColor = "#52c41a";
-            let markerSize = 6;
-
-            if (units >= 21) {
-              markerColor = "#ff4d4f";
-              markerSize = 7;
-            } else if (units < 18) {
-              markerColor = "#faad14";
-              markerSize = 7;
+            if (!highestPending || safePending > highestPending.pending || (safePending === highestPending.pending && total > highestPending.total)) {
+              highestPending = {
+                program: programLabel,
+                pending: safePending,
+                total: total
+              };
             }
-
-            markers.push({
-              seriesIndex: 0,
-              dataPointIndex: index,
-              fillColor: markerColor,
-              strokeColor: markerColor,
-              size: markerSize
-            });
           });
 
-          const chartContainer = document.querySelector("#facultyLoadChart");
+          const chartContainer = document.querySelector("#programSchedulingChart");
 
           if (!chartContainer) {
             return;
           }
 
-          if (facultyLoadChart) {
-            facultyLoadChart.destroy();
+          if (schedulingProgressChart) {
+            schedulingProgressChart.destroy();
           }
 
-          facultyLoadChart = new ApexCharts(chartContainer, {
+          chartContainer.innerHTML = "";
+
+          schedulingProgressChart = new ApexCharts(chartContainer, {
             chart: {
               type: "line",
-              height: 320,
-              toolbar: { show: false }
+              height: 340,
+              toolbar: { show: false },
+              zoom: { enabled: false }
             },
             series: [
               {
-                name: "Total Units",
-                data: unitValues
+                name: "All Classes",
+                data: totalValues
+              },
+              {
+                name: "Already Scheduled",
+                data: scheduledValues
+              },
+              {
+                name: "Still Unscheduled",
+                data: pendingValues
               }
             ],
+            colors: ["#696cff", "#71dd37", "#ffab00"],
+            stroke: {
+              curve: "smooth",
+              width: [3, 4, 3]
+            },
+            fill: {
+              type: "gradient",
+              gradient: {
+                shadeIntensity: 1,
+                opacityFrom: 0.2,
+                opacityTo: 0.03,
+                stops: [0, 90, 100]
+              }
+            },
+            markers: {
+              size: 0,
+              hover: {
+                sizeOffset: 5
+              }
+            },
+            dataLabels: {
+              enabled: false
+            },
+            legend: {
+              position: "top",
+              horizontalAlign: "left",
+              fontSize: "12px"
+            },
+            grid: {
+              borderColor: "#eceef1",
+              strokeDashArray: 4
+            },
             xaxis: {
-              categories: facultyNames,
+              categories: categories,
               labels: {
-                rotate: -35,
+                rotate: -25,
+                trim: true,
                 style: {
                   fontSize: "12px",
                   colors: "#697a8d"
@@ -612,46 +698,214 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
             },
             yaxis: {
               min: 0,
+              forceNiceScale: true,
               title: {
-                text: "Units",
+                text: "Offerings",
                 style: {
                   color: "#697a8d"
                 }
               }
             },
+            tooltip: {
+              shared: true,
+              intersect: false,
+              y: {
+                formatter: function (value, context) {
+                  const labels = [" total classes", " already scheduled", " still unscheduled"];
+                  return value + labels[context.seriesIndex];
+                }
+              }
+            },
+            responsive: [
+              {
+                breakpoint: 768,
+                options: {
+                  chart: {
+                    height: 320
+                  },
+                  xaxis: {
+                    labels: {
+                      rotate: -40
+                    }
+                  }
+                }
+              }
+            ]
+          });
+
+          schedulingProgressChart.render();
+
+          if (totalPending === 0) {
+            setInsight("programProgressInsight", "All programs are fully scheduled. The unscheduled line is at zero across the chart.");
+            return;
+          }
+
+          setInsight(
+            "programProgressInsight",
+            "The orange line shows classes that still need schedule assignment. " +
+              highestPending.program +
+              " has the highest unscheduled count with " +
+              highestPending.pending +
+              " class" +
+              (highestPending.pending === 1 ? "" : "s") +
+              " still not scheduled out of " +
+              highestPending.total +
+              " total."
+          );
+        }
+
+        function renderWeeklyPressureChart(data) {
+          if (!Array.isArray(data) || data.length === 0) {
+            setChartFallback("weeklyPressureChart", "No weekday scheduling pressure data available.");
+            setInsight("weeklyPressureInsight", "No scheduled classes were found for the current term, so weekday pressure cannot be measured yet.");
+            return;
+          }
+
+          const days = [];
+          const meetings = [];
+          const rooms = [];
+          const faculty = [];
+          let busiestDay = null;
+
+          data.forEach(function (row) {
+            const dayLabel = row.day || "--";
+            const meetingCount = Number(row.meetings) || 0;
+            const roomCount = Number(row.rooms) || 0;
+            const facultyCount = Number(row.faculty) || 0;
+
+            days.push(dayLabel);
+            meetings.push(meetingCount);
+            rooms.push(roomCount);
+            faculty.push(facultyCount);
+
+            if (!busiestDay || meetingCount > busiestDay.meetings || (meetingCount === busiestDay.meetings && roomCount > busiestDay.rooms)) {
+              busiestDay = {
+                day: dayLabel,
+                meetings: meetingCount,
+                rooms: roomCount
+              };
+            }
+          });
+
+          const chartContainer = document.querySelector("#weeklyPressureChart");
+
+          if (!chartContainer) {
+            return;
+          }
+
+          if (weeklyPressureChart) {
+            weeklyPressureChart.destroy();
+          }
+
+          chartContainer.innerHTML = "";
+
+          weeklyPressureChart = new ApexCharts(chartContainer, {
+            chart: {
+              type: "line",
+              height: 340,
+              toolbar: { show: false },
+              zoom: { enabled: false }
+            },
+            series: [
+              {
+                name: "Scheduled Classes",
+                data: meetings
+              },
+              {
+                name: "Rooms In Use",
+                data: rooms
+              },
+              {
+                name: "Faculty Active",
+                data: faculty
+              }
+            ],
+            colors: ["#03c3ec", "#696cff", "#71dd37"],
             stroke: {
               curve: "smooth",
-              width: 3
+              width: [4, 3, 3]
+            },
+            fill: {
+              type: "gradient",
+              gradient: {
+                shadeIntensity: 1,
+                opacityFrom: 0.18,
+                opacityTo: 0.02,
+                stops: [0, 90, 100]
+              }
             },
             markers: {
-              size: 5,
-              discrete: markers
+              size: 4,
+              strokeWidth: 0,
+              hover: {
+                sizeOffset: 2
+              }
+            },
+            dataLabels: {
+              enabled: false
+            },
+            legend: {
+              position: "top",
+              horizontalAlign: "left",
+              fontSize: "12px"
             },
             grid: {
               borderColor: "#eceef1",
               strokeDashArray: 4
             },
-            colors: ["#696cff"],
+            xaxis: {
+              categories: days,
+              labels: {
+                style: {
+                  fontSize: "12px",
+                  colors: "#697a8d"
+                }
+              }
+            },
+            yaxis: {
+              min: 0,
+              forceNiceScale: true,
+              title: {
+                text: "Daily Load",
+                style: {
+                  color: "#697a8d"
+                }
+              }
+            },
             tooltip: {
+              shared: true,
+              intersect: false,
               y: {
-                formatter: function (value) {
-                  if (value >= 21) {
-                    return value + " units (Overload)";
-                  }
-
-                  if (value < 18) {
-                    return value + " units (Underload)";
-                  }
-
-                  return value + " units (Normal)";
+                formatter: function (value, context) {
+                  const labels = [" scheduled classes", " rooms in use", " faculty active"];
+                  return value + labels[context.seriesIndex];
                 }
               }
             }
           });
 
-          facultyLoadChart.render();
-        }
+          weeklyPressureChart.render();
 
+          if (!busiestDay || busiestDay.meetings === 0) {
+            setInsight("weeklyPressureInsight", "No scheduled classes are mapped to weekdays yet.");
+            return;
+          }
+
+          setInsight(
+            "weeklyPressureInsight",
+            "Higher lines mean a busier day. " +
+              busiestDay.day +
+              " is currently the busiest with " +
+              busiestDay.meetings +
+              " scheduled class" +
+              (busiestDay.meetings === 1 ? "" : "s") +
+              " using " +
+              busiestDay.rooms +
+              " room" +
+              (busiestDay.rooms === 1 ? "" : "s") +
+              "."
+          );
+        }
         function updateDashboardCounts(data) {
           const programs = Number(data.programs) || 0;
           const faculty = Number(data.faculty) || 0;
@@ -690,15 +944,19 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
         }
 
         $.ajax({
-          url: "../backend/dashboard_faculty_load.php",
+          url: "../backend/dashboard_scheduler_charts.php",
           type: "POST",
           dataType: "json",
           success: function (data) {
-            renderFacultyLoadChart(data);
+            renderProgramSchedulingChart(data.program_progress || []);
+            renderWeeklyPressureChart(data.weekly_pressure || []);
           },
           error: function (xhr) {
-            console.error("Faculty load chart error:", xhr.responseText);
-            setChartFallback("Unable to load faculty workload data.");
+            console.error("Scheduler charts error:", xhr.responseText);
+            setChartFallback("programSchedulingChart", "Unable to load program scheduling progress.");
+            setChartFallback("weeklyPressureChart", "Unable to load weekday scheduling pressure.");
+            setInsight("programProgressInsight", "Program comparison data could not be loaded.");
+            setInsight("weeklyPressureInsight", "Weekday load data could not be loaded.");
           }
         });
 
@@ -717,7 +975,10 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
         });
 
         setCountsLoadingState();
-        setChartLoading("Loading faculty workload data...");
+        setChartLoading("programSchedulingChart", "Loading program scheduling progress...");
+        setChartLoading("weeklyPressureChart", "Loading weekday scheduling pressure...");
+        setInsight("programProgressInsight", "Loading the comparison of total classes, scheduled classes, and unscheduled classes per program.");
+        setInsight("weeklyPressureInsight", "Loading which weekdays are busiest based on classes, rooms, and faculty activity.");
       });
     </script>
   </body>
