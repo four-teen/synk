@@ -402,19 +402,10 @@ function build_schedule_patterns($scheduleType, $lecUnits, $labUnits) {
     $patterns = [];
 
     if ($scheduleType === 'LAB') {
-        $weeklyMinutes = max(180, (int)round((float)$labUnits * 180));
-
-        if ($weeklyMinutes <= 240) {
-            foreach (['M', 'T', 'W', 'Th', 'F'] as $day) {
-                add_pattern($patterns, [$day], $weeklyMinutes, 26, "{$day} laboratory block");
-            }
-            add_pattern($patterns, ['S'], $weeklyMinutes, 18, 'Saturday laboratory block');
-        } else {
-            $splitMinutes = max(180, ceil_to_slot($weeklyMinutes / 2, 30));
-            add_pattern($patterns, ['M', 'W'], $splitMinutes, 24, 'MW split laboratory');
-            add_pattern($patterns, ['T', 'Th'], $splitMinutes, 24, 'TTh split laboratory');
-            add_pattern($patterns, ['F', 'S'], $splitMinutes, 15, 'FS split laboratory');
-        }
+        $meetingMinutes = 90;
+        add_pattern($patterns, ['T', 'Th'], $meetingMinutes, 28, 'TTh laboratory pair');
+        add_pattern($patterns, ['M', 'W'], $meetingMinutes, 26, 'MW laboratory pair');
+        add_pattern($patterns, ['F', 'S'], $meetingMinutes, 16, 'FS laboratory pair');
 
         return array_values($patterns);
     }

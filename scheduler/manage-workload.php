@@ -20,10 +20,30 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
 
 $college_id   = $_SESSION['college_id'];
 $college_name = $_SESSION['college_name'] ?? '';
+$campus_name  = '';
 $currentTerm = synk_fetch_current_academic_term($conn);
 $defaultAyId = (int)$currentTerm['ay_id'];
 $defaultAyLabel = (string)$currentTerm['ay_label'];
 $defaultSemesterUi = '';
+
+if ((int)$college_id > 0) {
+    $campusStmt = $conn->prepare("
+        SELECT cp.campus_name
+        FROM tbl_college c
+        LEFT JOIN tbl_campus cp ON cp.campus_id = c.campus_id
+        WHERE c.college_id = ?
+        LIMIT 1
+    ");
+
+    if ($campusStmt) {
+        $campusStmt->bind_param("i", $college_id);
+        $campusStmt->execute();
+        $campusResult = $campusStmt->get_result();
+        $campusRow = $campusResult ? $campusResult->fetch_assoc() : null;
+        $campus_name = trim((string)($campusRow['campus_name'] ?? ''));
+        $campusStmt->close();
+    }
+}
 
 if ((int)$currentTerm['semester'] === 1) {
     $defaultSemesterUi = '1st';
@@ -99,11 +119,13 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         }
 
         .workload-table thead th {
-            font-size: 0.76rem;
+            font-size: 0.72rem;
             text-transform: uppercase;
             letter-spacing: 0.08em;
             color: #5f728b;
             border-bottom: 1px solid #dbe4ef;
+            border-top: 1px solid #dbe4ef;
+            box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(204, 216, 229, 0.9);
             white-space: nowrap;
         }
 
@@ -113,7 +135,8 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             vertical-align: middle;
         }
 
-        .workload-table tfoot th {
+        .workload-table tfoot th,
+        .workload-table tfoot td {
             color: #5f728b;
             border-top: 2px solid #d7e1ec;
             background: #f9fbfd;
@@ -128,13 +151,246 @@ while ($f = mysqli_fetch_assoc($f_run)) {
 
         .workload-desc {
             color: #5f728b;
-            text-transform: uppercase;
         }
 
         .workload-days,
-        .workload-time,
         .workload-room {
             white-space: nowrap;
+        }
+
+        .workload-time {
+            white-space: normal;
+            line-height: 1.08;
+            min-width: 88px;
+        }
+
+        .time-line {
+            display: block;
+            white-space: nowrap;
+        }
+
+        .merged-metric {
+            vertical-align: middle !important;
+            background: #fbfcfe;
+            font-weight: 600;
+        }
+
+        .workload-summary-row th,
+        .workload-summary-row td {
+            background: #f9fbfd;
+            font-size: inherit;
+            border-top: 1px solid #d7e1ec;
+            border-bottom: 1px solid #d7e1ec;
+        }
+
+        .workload-summary-label {
+            color: #52657d;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
+        .workload-summary-value {
+            color: #4f6279;
+            font-weight: 600;
+        }
+
+        .screen-only {
+            white-space: nowrap;
+        }
+
+        .summary-separator th,
+        .summary-separator td {
+            border-top: 2px solid #b9c8d9 !important;
+        }
+
+        .workload-total-row th,
+        .workload-total-row td {
+            border-top: 2px solid #b7c6d8 !important;
+            font-size: inherit;
+            background: #f6f9fc;
+        }
+
+        .load-status-inline {
+            display: inline-block;
+            margin-left: 0.45rem;
+            padding: 2px 8px;
+            border-radius: 999px;
+            font-size: 0.76rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            vertical-align: middle;
+        }
+
+        .total-load-value {
+            font-size: inherit;
+            font-weight: 700;
+        }
+
+        .load-status-inline.underload {
+            background: #fff3cd;
+            color: #7a5a00;
+        }
+
+        .load-status-inline.overload {
+            background: #fde8ea;
+            color: #a61c2d;
+        }
+
+        .print-sheet-header {
+            display: none;
+            padding-top: 0;
+            padding-bottom: 0.12rem;
+            margin-bottom: 0.4rem;
+        }
+
+        .print-sheet-title {
+            font-family: Arial, sans-serif;
+            font-size: 0.98rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            text-align: center;
+            color: #000;
+        }
+
+        .print-sheet-subtitle {
+            font-family: Arial, sans-serif;
+            font-size: 0.78rem;
+            text-align: center;
+            color: #000;
+        }
+
+        .print-sheet-line {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 1rem;
+            margin-top: 0.18rem;
+            font-family: Arial, sans-serif;
+            font-size: 0.76rem;
+            color: #000;
+        }
+
+        .print-line-value {
+            display: inline-block;
+            min-width: 180px;
+            border-bottom: 1px solid #bcc7d3;
+            padding: 0 0.18rem 0.08rem;
+            line-height: 1.2;
+        }
+
+        .print-line-value.is-filled {
+            border-bottom-color: transparent;
+        }
+
+        .print-line-value.is-blank {
+            border-bottom-color: #bcc7d3;
+        }
+
+        .print-sheet-line.single {
+            grid-template-columns: 1fr;
+        }
+
+        .print-only-block {
+            display: none;
+        }
+
+        .print-workload-footer {
+            margin-top: 0.75rem;
+            font-family: Arial, sans-serif;
+            color: #000;
+        }
+
+        .print-signatory-grid {
+            display: grid;
+            grid-template-columns: 1fr 1fr;
+            gap: 0.8rem 1.25rem;
+            align-items: start;
+        }
+
+        .print-signatory {
+            font-size: 0.8rem;
+        }
+
+        .print-signatory.full-width {
+            grid-column: 1 / -1;
+            width: 52%;
+            margin: 0 auto;
+        }
+
+        .print-sign-label {
+            margin-bottom: 0.18rem;
+            font-weight: 400;
+        }
+
+        .print-sign-line {
+            min-height: 1.1rem;
+            border-bottom: 1px solid #bcc7d3;
+            padding: 0 0.18rem 0.06rem;
+            font-weight: 800;
+            line-height: 1.15;
+        }
+
+        #printConforme {
+            text-align: center;
+        }
+
+        .print-sign-line.is-filled {
+            border-bottom-color: #bcc7d3;
+        }
+
+        .print-sign-line.short {
+            width: 70%;
+            margin: 0.4rem auto 0;
+        }
+
+        .print-sign-caption {
+            margin-top: 0.08rem;
+            text-align: center;
+            font-size: 0.78rem;
+            min-height: 0.9rem;
+        }
+
+        .print-sign-uppercase {
+            text-transform: uppercase;
+        }
+
+        .print-meta-grid {
+            display: grid;
+            grid-template-columns: 1.35fr 1fr;
+            gap: 0.9rem 1rem;
+            margin-top: 0.7rem;
+            align-items: start;
+        }
+
+        .print-note-block,
+        .print-cc-block,
+        .print-ack-box {
+            font-size: 0.67rem;
+            line-height: 1.2;
+        }
+
+        .print-note-title,
+        .print-cc-title,
+        .print-ack-title {
+            font-weight: 700;
+            margin-bottom: 0.12rem;
+        }
+
+        .print-note-line,
+        .print-cc-line,
+        .print-ack-line {
+            margin: 0.06rem 0;
+        }
+
+        .print-note-line.indent {
+            padding-left: 1.5rem;
+        }
+
+        .print-ack-box {
+            border: 1px dashed #8b97a6;
+            padding: 0.35rem 0.45rem;
+            margin-top: 0.45rem;
         }
 
         .pair-note {
@@ -243,7 +499,21 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         }
 
         /* PRINT */
+        @page {
+            size: A4 portrait;
+            margin: 0;
+        }
+
         @media print {
+            html,
+            body {
+                width: 210mm !important;
+                min-height: 297mm !important;
+                margin: 0 !important;
+                padding: 0 !important;
+                overflow: hidden !important;
+            }
+
             body * {
                 visibility: hidden;
             }
@@ -261,13 +531,148 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                 position: absolute;
                 left: 0;
                 top: 0;
-                width: 100%;
+                width: 210mm;
+                min-height: 297mm;
+                max-width: 210mm;
+                padding: 16mm 6mm 7mm;
+                box-sizing: border-box;
+                box-shadow: none;
+                border: none;
+                margin: 0;
+                page-break-after: avoid !important;
+                break-after: avoid-page !important;
+            }
+
+            #workloadCard > .card-header {
+                display: none !important;
+            }
+
+            #workloadCard .table-responsive {
+                overflow: visible !important;
+            }
+
+            .print-sheet-header {
+                display: block !important;
+                margin-bottom: 0.45rem;
+            }
+
+            .workload-table,
+            .workload-table th,
+            .workload-table td {
+                border: 1px solid #000 !important;
+                color: #000 !important;
+                background: #fff !important;
+                font-family: Arial, sans-serif;
+                font-size: 7.6pt !important;
+                table-layout: fixed;
+            }
+
+            .workload-table th,
+            .workload-table td {
+                padding: 3px 4px !important;
+                line-height: 1.08;
+                word-break: break-word;
+            }
+
+            .workload-table thead th {
+                font-size: 6.15pt !important;
+                line-height: 1.02 !important;
+                letter-spacing: 0.01em !important;
+                white-space: normal !important;
+                word-break: normal !important;
+                padding: 2px 3px !important;
+            }
+
+            .workload-table thead th.course-head { width: 7.5% !important; }
+            .workload-table thead th.day-head { width: 5.5% !important; }
+            .workload-table thead th.time-head { width: 7.5% !important; }
+            .workload-table thead th.room-head { width: 6.5% !important; }
+            .workload-table thead th.unit-head { width: 4.5% !important; }
+            .workload-table thead th.hours-group-head { width: 9% !important; }
+            .workload-table thead th.load-head { width: 6% !important; }
+            .workload-table thead th.students-head { width: 7.5% !important; }
+            .workload-table thead th.hours-subhead {
+                width: 4.5% !important;
+                white-space: nowrap !important;
+                word-break: keep-all !important;
+                overflow-wrap: normal !important;
+            }
+
+            .workload-table th:nth-child(1),
+            .workload-table td:nth-child(1) { width: 10%; }
+            .workload-table th:nth-child(2),
+            .workload-table td:nth-child(2) { width: 19%; }
+            .workload-table th:nth-child(3),
+            .workload-table td:nth-child(3) { width: 8%; }
+            .workload-table th:nth-child(4),
+            .workload-table td:nth-child(4) { width: 6%; }
+            .workload-table th:nth-child(5),
+            .workload-table td:nth-child(5) { width: 8%; }
+            .workload-table th:nth-child(6),
+            .workload-table td:nth-child(6) { width: 7%; }
+            .workload-table th:nth-child(7),
+            .workload-table td:nth-child(7) { width: 4.5%; }
+            .workload-table th:nth-child(8),
+            .workload-table td:nth-child(8) { width: 4.5%; }
+            .workload-table th:nth-child(9),
+            .workload-table td:nth-child(9) { width: 4.5%; }
+            .workload-table th:nth-child(10),
+            .workload-table td:nth-child(10) { width: 5.5%; }
+            .workload-table th:nth-child(11),
+            .workload-table td:nth-child(11) { width: 7%; }
+
+            .workload-time {
+                min-width: 0;
+            }
+
+            .workload-table {
+                width: 100% !important;
+                page-break-inside: avoid !important;
+                break-inside: avoid-page !important;
             }
 
             .btn,
             .badge,
-            .select2-container {
+            .select2-container,
+            .screen-only {
                 display: none !important;
+            }
+
+            .load-status-inline {
+                display: block;
+                margin-left: 0;
+                margin-top: 2px;
+                padding: 0;
+                border: 0;
+                background: transparent !important;
+                color: #000 !important;
+                font-size: 6.8pt !important;
+                letter-spacing: 0.02em;
+            }
+
+            .print-sheet-line,
+            .print-sheet-subtitle {
+                font-size: 7.2pt !important;
+            }
+
+            .print-only-block {
+                display: block !important;
+            }
+
+            .print-workload-footer {
+                page-break-inside: avoid;
+                break-inside: avoid-page;
+            }
+
+            .print-signatory,
+            .print-sign-caption {
+                font-size: 7.8pt !important;
+            }
+
+            .print-note-block,
+            .print-cc-block,
+            .print-ack-box {
+                font-size: 6.7pt !important;
             }
         }
 
@@ -360,15 +765,21 @@ while ($f = mysqli_fetch_assoc($f_run)) {
 </div>
 
 <!-- PRINT HEADER (VISIBLE ONLY ON PRINT) -->
-<div id="printHeader" class="mb-3" style="display:none;">
-    <h5 class="mb-1 fw-bold">FACULTY WORKLOAD SUMMARY</h5>
-    <div class="text-muted" style="font-size:0.9rem;">
-        <div><strong>College:</strong> <?= htmlspecialchars($college_name) ?></div>
-        <div><strong>Faculty:</strong> <span id="printFacultyName"></span></div>
-        <div><strong>Term:</strong> <span id="printTerm"></span></div>
-        <div><strong>Date Generated:</strong> <?= date("F d, Y") ?></div>
+<div id="printHeader" class="print-sheet-header">
+    <div class="print-sheet-title">INDIVIDUAL FACULTY WORKLOAD</div>
+    <div class="print-sheet-subtitle"><span id="printCampus" class="print-line-value <?= trim($campus_name) !== '' ? 'is-filled' : 'is-blank' ?>" style="min-width:220px;"><?= htmlspecialchars($campus_name) ?></span></div>
+    <div class="print-sheet-subtitle"><span id="printSemesterAy" class="print-line-value is-blank" style="min-width:240px;"></span></div>
+    <div class="print-sheet-line">
+        <div>Name: <span id="printFacultyName" class="print-line-value is-blank"></span></div>
+        <div>College: <span id="printCollege" class="print-line-value <?= trim($college_name) !== '' ? 'is-filled' : 'is-blank' ?>"><?= htmlspecialchars($college_name) ?></span></div>
     </div>
-    <hr>
+    <div class="print-sheet-line">
+        <div>Degree: <span class="print-line-value is-blank"></span></div>
+        <div>Major: <span class="print-line-value is-blank"></span></div>
+    </div>
+    <div class="print-sheet-line single">
+        <div>Designation: <span id="printDesignation" class="print-line-value is-blank" style="min-width:300px;"></span></div>
+    </div>
 </div>
 
     
@@ -377,44 +788,117 @@ while ($f = mysqli_fetch_assoc($f_run)) {
             <thead class="table-light">
                 <tr>
                     <th rowspan="2">Course No.</th>
-                    <th rowspan="2">Description</th>
-                    <th rowspan="2">Section</th>
-                    <th rowspan="2">Type</th>
-                    <th rowspan="2">Days</th>
-                    <th rowspan="2">Time</th>
-                    <th rowspan="2">Room</th>
-                    <th rowspan="2" class="text-center">Unit</th>
-                    <th colspan="2" class="text-center">No. of Hours</th>
-                    <th rowspan="2" class="text-center">Faculty Load</th>
-                    <th rowspan="2" class="text-end">Action</th>
+                    <th rowspan="2">Course Description</th>
+                    <th rowspan="2" class="course-head">Course</th>
+                    <th rowspan="2" class="day-head">Day</th>
+                    <th rowspan="2" class="time-head">Time</th>
+                    <th rowspan="2" class="room-head">Room</th>
+                    <th rowspan="2" class="text-center unit-head">Unit</th>
+                    <th colspan="2" class="text-center hours-group-head">No. of Hours</th>
+                    <th rowspan="2" class="text-center load-head">Load</th>
+                    <th rowspan="2" class="text-center students-head"># of<br>Students</th>
+                    <th rowspan="2" class="text-end screen-only">Action</th>
                 </tr>
                 <tr>
-                    <th class="text-center">Lec</th>
-                    <th class="text-center">Lab</th>
+                    <th class="text-center hours-subhead">Lab</th>
+                    <th class="text-center hours-subhead">Lec</th>
                 </tr>
             </thead>
 
             <tbody id="workloadTbody"></tbody>
-    <!-- ✅ TABLE FOOTER -->
     <tfoot class="table-light">
-        <tr>
-            <!-- Span first 7 columns -->
-            <th colspan="7" class="text-end fw-semibold total-label">
-                Assigned Schedule Totals
-            </th>
-
-            <th class="text-center" id="totalUNIT">0</th>
-            <th class="text-center" id="totalLEC">0</th>
-            <th class="text-center" id="totalLAB">0</th>
-            <th class="text-center" id="totalLOADCell">
-                <span id="totalLOAD">0.00</span>
-            </th>
-            <th></th>
+        <tr class="workload-summary-row">
+            <th colspan="2" class="text-start workload-summary-label">Designation:</th>
+            <td colspan="4" class="workload-summary-value" id="designationText"></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="text-center fw-semibold" id="designationLOAD"></td>
+            <td></td>
+            <td class="screen-only"></td>
         </tr>
-    </tfoot>            
+        <tr class="workload-summary-row summary-separator">
+            <th colspan="2" class="text-start workload-summary-label">No. of Prep:</th>
+            <td colspan="4" class="workload-summary-value" id="totalPreparations">0</td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td></td>
+            <td class="screen-only"></td>
+        </tr>
+        <tr class="workload-summary-row workload-total-row">
+            <th colspan="6" class="text-end fw-semibold total-label">Total Load</th>
+            <th class="text-center" id="totalUNIT">0</th>
+            <th class="text-center" id="totalLAB">0</th>
+            <th class="text-center" id="totalLEC">0</th>
+            <th class="text-center fw-semibold" id="totalLOADCell">0</th>
+            <th class="text-center" id="totalStudents"></th>
+            <th class="screen-only"></th>
+        </tr>
+    </tfoot>
         </table>
     </div>
     
+    <div id="printFooter" class="print-only-block print-workload-footer">
+    <div class="print-signatory-grid">
+        <div class="print-signatory">
+            <div class="print-sign-label">Conforme:</div>
+            <div id="printConforme" class="print-sign-line print-sign-uppercase"></div>
+            <div class="print-sign-caption">Name/Signature over Printed Name</div>
+            <div class="print-sign-line short"></div>
+            <div class="print-sign-caption">Date</div>
+        </div>
+        <div class="print-signatory">
+            <div class="print-sign-label">Prepared by:</div>
+            <div class="print-sign-line"></div>
+            <div class="print-sign-caption">&nbsp;</div>
+            <div class="print-sign-line short"></div>
+            <div class="print-sign-caption">Date</div>
+        </div>
+        <div class="print-signatory full-width">
+            <div class="print-sign-label">Approved:</div>
+            <div class="print-sign-line"></div>
+            <div class="print-sign-caption">&nbsp;</div>
+        </div>
+    </div>
+
+    <div class="print-meta-grid">
+        <div class="print-note-block">
+            <div class="print-note-title">Note:</div>
+            <div class="print-note-line">Regular number of students in the class:</div>
+            <div class="print-note-line indent">Lecture: 40, Lab: 25</div>
+            <div class="print-note-line">Load of teaching lab only 0.8 per contact hour/week/semester. Load of teaching lecture only 1.0 per contact hour/week/semester.</div>
+            <div class="print-note-line">Thesis in final adviser:</div>
+            <div class="print-note-line indent">0-15 students, 1 unit</div>
+            <div class="print-note-line indent">16-30 students, 2 units</div>
+            <div class="print-note-line indent">31-45 students, 3 units</div>
+            <div class="print-note-line">Compute additional unit as:</div>
+            <div class="print-note-line indent">0.33 unit/subject after the 2nd class preparation</div>
+            <div class="print-note-line indent">0.02 unit/subject in excess of the set regular number</div>
+        </div>
+
+        <div>
+            <div class="print-cc-block">
+                <div class="print-cc-title">cc</div>
+                <div class="print-cc-line">1 - VP ACA</div>
+                <div class="print-cc-line">1 - Registrar</div>
+                <div class="print-cc-line">1 - College Dean</div>
+                <div class="print-cc-line">1 - Program Chairperson</div>
+                <div class="print-cc-line">1 - Faculty Concerned</div>
+            </div>
+
+            <div class="print-ack-box">
+                <div class="print-ack-title">ACKNOWLEDGEMENT RECEIPT:</div>
+                <div class="print-ack-line">Date: ____________________</div>
+                <div class="print-ack-line">Time: ____________________</div>
+                <div class="print-ack-line">By:</div>
+                <div class="print-sign-line" style="margin-top:0.16rem;"></div>
+                <div class="print-sign-caption">Name &amp; Signature of Authorized Representative</div>
+            </div>
+        </div>
+    </div>
+</div>
 </div>
 <!-- SCHEDULED CLASSES CARD -->
 <div class="card mb-4 mt-4" id="scheduledClassCard" style="display:none;">
@@ -464,8 +948,8 @@ while ($f = mysqli_fetch_assoc($f_run)) {
                     <th>Time</th>
                     <th>Room</th>
                     <th class="text-center">Units</th>
-                    <th class="text-center">Lec</th>
                     <th class="text-center">Lab</th>
+                    <th class="text-center">Lec</th>
                 </tr>
             </thead>
             <tbody id="scheduledClassTbody">
@@ -535,6 +1019,7 @@ $(document).ready(function () {
         "2nd": 2,
         "Midyear": 3
     };
+    const WORKLOAD_COLLEGE_NAME = <?= json_encode($college_name) ?>;
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -552,7 +1037,117 @@ $(document).ready(function () {
 
     function formatNumber(value) {
         const n = toNumber(value);
-        return Number.isInteger(n) ? String(n) : n.toFixed(2);
+        return Number.isInteger(n) ? String(n) : String(parseFloat(n.toFixed(2)));
+    }
+
+    function formatStudentCount(value) {
+        const n = Math.round(toNumber(value));
+        return n > 0 ? String(n) : "";
+    }
+
+    function getLoadStatus(loadValue) {
+        const numericLoad = toNumber(loadValue);
+
+        if (numericLoad > 21) {
+            return { label: "Overload", className: "overload" };
+        }
+
+        if (numericLoad >= 18) {
+            return { label: "", className: "normal" };
+        }
+
+        return { label: "Underload", className: "underload" };
+    }
+
+    function formatCompactTime(value) {
+        const raw = String(value ?? "").trim();
+        if (raw === "") {
+            return "";
+        }
+
+        const parts = raw.split("-");
+        if (parts.length !== 2) {
+            return escapeHtml(raw);
+        }
+
+        return `
+            <span class="time-line">${escapeHtml(parts[0].trim())}</span>
+            <span class="time-line">${escapeHtml(parts[1].trim())}</span>
+        `;
+    }
+
+    function formatDesignationDisplay(meta) {
+        const name = String(meta?.designation_name || meta?.designation_label || "").trim();
+        const label = String(meta?.designation_label || name).trim();
+
+        if (!label) {
+            return "";
+        }
+
+        if (name.toUpperCase() === "DEAN" && String(WORKLOAD_COLLEGE_NAME || "").trim() !== "") {
+            return `${label}, ${WORKLOAD_COLLEGE_NAME}`;
+        }
+
+        return label;
+    }
+
+    function setPrintField(selector, value, options = {}) {
+        const $field = $(selector);
+        const normalized = String(value ?? "").trim();
+        const rendered = normalized !== ""
+            ? (options.uppercase ? normalized.toUpperCase() : normalized)
+            : "";
+
+        $field.text(rendered);
+        $field.toggleClass("is-filled", normalized !== "");
+        $field.toggleClass("is-blank", normalized === "");
+    }
+
+    function normalizeWorkloadResponse(payload) {
+        if (Array.isArray(payload)) {
+            return {
+                rows: payload,
+                meta: {
+                    designation_name: "",
+                    designation_label: "",
+                    designation_units: 0,
+                    total_preparations: 0
+                }
+            };
+        }
+
+        if (!payload || !Array.isArray(payload.rows)) {
+            return null;
+        }
+
+        return {
+            rows: payload.rows,
+            meta: payload.meta || {}
+        };
+    }
+
+    function getWorkloadGroupKey(row) {
+        const groupId = Number(row?.group_id) || 0;
+        if (groupId > 0) {
+            return `g:${groupId}`;
+        }
+
+        const offeringId = Number(row?.offering_id) || 0;
+        if (offeringId > 0) {
+            return `o:${offeringId}`;
+        }
+
+        return `w:${Number(row?.workload_id) || 0}`;
+    }
+
+    function buildWorkloadDescription(row, isPaired = false) {
+        const description = escapeHtml(row?.desc || "");
+        if (!isPaired) {
+            return description;
+        }
+
+        const typeSuffix = String(row?.type || "").toUpperCase() === "LAB" ? "lab" : "lec";
+        return `${description} (${escapeHtml(typeSuffix)})`;
     }
 
     function getSelectedContext() {
@@ -591,6 +1186,19 @@ $(document).ready(function () {
         $("#scheduledClassCard").hide();
         $("#workloadCard").hide();
         $("#checkAllSchedules").prop("checked", false);
+        $("#workloadTbody").html("");
+        $("#designationText").text("");
+        $("#designationLOAD").text("");
+        $("#totalPreparations").text("0");
+        $("#totalUNIT").text("0");
+        $("#totalLEC").text("0");
+        $("#totalLAB").text("0");
+        $("#totalLOADCell").text("0");
+        $("#totalStudents").text("");
+        setPrintField("#printFacultyName", "");
+        setPrintField("#printSemesterAy", "");
+        setPrintField("#printDesignation", "");
+        setPrintField("#printConforme", "");
     }
 
     function refreshWorkloadPanels() {
@@ -687,8 +1295,8 @@ $(document).ready(function () {
                         <td>${escapeHtml(item.time)}</td>
                         <td>${escapeHtml(item.room_code)}</td>
                         <td class="text-center">${formatNumber(item.units)}</td>
-                        <td class="text-center">${formatNumber(item.hours_lec)}</td>
                         <td class="text-center">${formatNumber(item.hours_lab)}</td>
+                        <td class="text-center">${formatNumber(item.hours_lec)}</td>
                     </tr>
                 `;
             });
@@ -728,14 +1336,14 @@ $(document).ready(function () {
             return false;
         }
 
-        const currentGroupId = String(currentRow.group_id ?? "").trim();
-        const nextGroupId = String(nextRow.group_id ?? "").trim();
-        if (!currentGroupId || currentGroupId === "0" || currentGroupId !== nextGroupId) {
+        const currentGroupId = Number(currentRow.group_id) || 0;
+        const nextGroupId = Number(nextRow.group_id) || 0;
+        if (currentGroupId <= 0 || currentGroupId !== nextGroupId) {
             return false;
         }
 
         return String(currentRow.sub_code ?? "") === String(nextRow.sub_code ?? "") &&
-               String(currentRow.section ?? "") === String(nextRow.section ?? "") &&
+               String(currentRow.course ?? currentRow.section ?? "") === String(nextRow.course ?? nextRow.section ?? "") &&
                String(currentRow.type ?? "").toUpperCase() !== String(nextRow.type ?? "").toUpperCase();
     }
 
@@ -743,12 +1351,6 @@ $(document).ready(function () {
        LOAD FACULTY WORKLOAD LIST
     ========================================================= */
     function loadWorkloadList(context = getSelectedContext(), requestToken = selectionRequestToken) {
-
-        let totalLEC   = 0;
-        let totalLAB   = 0;
-        let totalUNIT  = 0;
-        let totalLOAD  = 0;
-
         if (!context) return;
 
         abortPendingRequest(workloadListRequest);
@@ -767,62 +1369,80 @@ $(document).ready(function () {
                 return;
             }
 
-            if (!Array.isArray(data) || data.length === 0) {
-                $("#workloadTbody").html("");
+            const payload = normalizeWorkloadResponse(data);
+            if (!payload) {
+                $("#workloadTbody").html(`
+                    <tr>
+                        <td colspan="12" class="text-danger text-center">
+                            Invalid response from server
+                        </td>
+                    </tr>
+                `);
+                $("#designationText").text("");
+                $("#designationLOAD").text("");
+                $("#totalPreparations").text("0");
+                $("#totalUNIT").text("0");
                 $("#totalLEC").text("0");
                 $("#totalLAB").text("0");
-                $("#totalUNIT").text("0");
-                $("#totalLOADCell").html(`<span class="load-pill load-high">0.00 <small>(UNDERLOAD)</small></span>`);
-                $("#workloadCard").hide();
+                $("#totalLOADCell").text("0");
+                $("#totalStudents").text("");
+                setPrintField("#printFacultyName", "");
+                setPrintField("#printSemesterAy", "");
+                setPrintField("#printDesignation", "");
+                setPrintField("#printConforme", "");
+                $("#workloadCard").show();
                 return;
             }
 
+            const rowsData = payload.rows;
+            const meta = payload.meta || {};
+            const countedGroups = new Set();
+            const preparationSet = new Set();
+            let totalLEC = 0;
+            let totalLAB = 0;
+            let totalUNIT = 0;
+            let totalLOAD = 0;
             let rows = "";
 
-            for (let i = 0; i < data.length; i++) {
-
-                let row = data[i];
-                const nextRow = data[i + 1] || null;
-                totalLEC  += toNumber(row.lec);
-                totalLAB  += toNumber(row.lab);
-                totalUNIT += toNumber(row.units);
-                totalLOAD += toNumber(row.faculty_load);
-
-                const type = String(row.type || "").toUpperCase();
-                const typeBadge = type === "LAB"
-                    ? '<span class="type-pill lab">LAB</span>'
-                    : '<span class="type-pill lec">LEC</span>';
+            for (let i = 0; i < rowsData.length; i++) {
+                const row = rowsData[i];
+                const nextRow = rowsData[i + 1] || null;
+                const groupKey = getWorkloadGroupKey(row);
                 const isPairStart = isPartneredWorkloadPair(row, nextRow);
 
-                if (isPairStart) {
-                    totalLEC += toNumber(nextRow.lec);
-                    totalLAB += toNumber(nextRow.lab);
-                    totalUNIT += toNumber(nextRow.units);
-                    totalLOAD += toNumber(nextRow.faculty_load);
+                if (!countedGroups.has(groupKey)) {
+                    countedGroups.add(groupKey);
+                    totalLEC += toNumber(row.lec);
+                    totalLAB += toNumber(row.lab);
+                    totalUNIT += toNumber(row.units);
+                    totalLOAD += toNumber(row.faculty_load);
+                }
 
-                    const nextType = String(nextRow.type || "").toUpperCase();
-                    const nextTypeBadge = nextType === "LAB"
-                        ? '<span class="type-pill lab">LAB</span>'
-                        : '<span class="type-pill lec">LEC</span>';
-                    const pairedUnits = formatNumber(toNumber(row.units) + toNumber(nextRow.units));
+                const preparationKey = String(row.sub_code || "").trim();
+                if (preparationKey !== "") {
+                    preparationSet.add(preparationKey);
+                }
+
+                if (isPairStart) {
+                    const mergedStudents = Math.max(
+                        toNumber(row.student_count),
+                        toNumber(nextRow.student_count)
+                    );
 
                     rows += `
                         <tr class="paired-row">
-                            <td class="workload-code paired-anchor" rowspan="2">${escapeHtml(row.sub_code)}</td>
-                            <td class="workload-desc paired-anchor" rowspan="2">${escapeHtml(row.desc)}</td>
-                            <td class="paired-anchor" rowspan="2">
-                                ${escapeHtml(row.section)}
-                                <span class="pair-note">Paired LEC/LAB</span>
-                            </td>
-                            <td class="text-center">${typeBadge}</td>
+                            <td class="workload-code">${escapeHtml(row.sub_code)}</td>
+                            <td class="workload-desc">${buildWorkloadDescription(row, true)}</td>
+                            <td>${escapeHtml(row.course || row.section)}</td>
                             <td class="workload-days">${escapeHtml(row.days)}</td>
-                            <td class="workload-time">${escapeHtml(row.time)}</td>
+                            <td class="workload-time">${formatCompactTime(row.time)}</td>
                             <td class="workload-room">${escapeHtml(row.room)}</td>
-                            <td class="text-center paired-anchor" rowspan="2">${pairedUnits}</td>
-                            <td class="text-center">${formatNumber(row.lec)}</td>
-                            <td class="text-center">${formatNumber(row.lab)}</td>
-                            <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
-                            <td class="text-end">
+                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.units)}</td>
+                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.lab)}</td>
+                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.lec)}</td>
+                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.faculty_load)}</td>
+                            <td class="text-center merged-metric" rowspan="2">${formatStudentCount(mergedStudents)}</td>
+                            <td class="text-end screen-only">
                                 <button class="btn btn-sm btn-delete-workload btnRemoveWL"
                                         data-id="${row.workload_id}">
                                     <i class="bx bx-trash"></i>
@@ -830,14 +1450,13 @@ $(document).ready(function () {
                             </td>
                         </tr>
                         <tr class="paired-row">
-                            <td class="text-center">${nextTypeBadge}</td>
+                            <td class="workload-code">${escapeHtml(nextRow.sub_code)}</td>
+                            <td class="workload-desc">${buildWorkloadDescription(nextRow, true)}</td>
+                            <td>${escapeHtml(nextRow.course || nextRow.section)}</td>
                             <td class="workload-days">${escapeHtml(nextRow.days)}</td>
-                            <td class="workload-time">${escapeHtml(nextRow.time)}</td>
+                            <td class="workload-time">${formatCompactTime(nextRow.time)}</td>
                             <td class="workload-room">${escapeHtml(nextRow.room)}</td>
-                            <td class="text-center">${formatNumber(nextRow.lec)}</td>
-                            <td class="text-center">${formatNumber(nextRow.lab)}</td>
-                            <td class="text-center fw-semibold">${toNumber(nextRow.faculty_load).toFixed(2)}</td>
-                            <td class="text-end">
+                            <td class="text-end screen-only">
                                 <button class="btn btn-sm btn-delete-workload btnRemoveWL"
                                         data-id="${nextRow.workload_id}">
                                     <i class="bx bx-trash"></i>
@@ -852,17 +1471,17 @@ $(document).ready(function () {
                 rows += `
                     <tr>
                         <td class="workload-code">${escapeHtml(row.sub_code)}</td>
-                        <td class="workload-desc">${escapeHtml(row.desc)}</td>
-                        <td>${escapeHtml(row.section)}</td>
-                        <td class="text-center">${typeBadge}</td>
+                        <td class="workload-desc">${buildWorkloadDescription(row)}</td>
+                        <td>${escapeHtml(row.course || row.section)}</td>
                         <td class="workload-days">${escapeHtml(row.days)}</td>
-                        <td class="workload-time">${escapeHtml(row.time)}</td>
+                        <td class="workload-time">${formatCompactTime(row.time)}</td>
                         <td class="workload-room">${escapeHtml(row.room)}</td>
                         <td class="text-center">${formatNumber(row.units)}</td>
-                        <td class="text-center">${formatNumber(row.lec)}</td>
                         <td class="text-center">${formatNumber(row.lab)}</td>
-                        <td class="text-center fw-semibold">${toNumber(row.faculty_load).toFixed(2)}</td>
-                        <td class="text-end">
+                        <td class="text-center">${formatNumber(row.lec)}</td>
+                        <td class="text-center fw-semibold">${formatNumber(row.faculty_load)}</td>
+                        <td class="text-center">${formatStudentCount(row.student_count)}</td>
+                        <td class="text-end screen-only">
                             <button class="btn btn-sm btn-delete-workload btnRemoveWL"
                                     data-id="${row.workload_id}">
                                 <i class="bx bx-trash"></i>
@@ -872,29 +1491,41 @@ $(document).ready(function () {
                 `;
             }
 
-            $("#workloadTbody").html(rows);
-
-            let loadClass = "load-high";
-            let loadLabel = "UNDERLOAD";
-            if (totalLOAD >= 18 && totalLOAD <= 21) {
-                loadClass = "load-normal";
-                loadLabel = "NORMAL LOAD";
-            } else if (totalLOAD > 21) {
-                loadClass = "load-over";
-                loadLabel = "OVERLOAD";
+            if (!rows) {
+                rows = `
+                    <tr>
+                        <td colspan="12" class="text-center text-muted">
+                            No workload assigned yet.
+                        </td>
+                    </tr>
+                `;
             }
 
-            $("#totalLEC").text(formatNumber(totalLEC));
+            const designationUnits = toNumber(meta.designation_units);
+            const totalPreparations = Math.max(
+                Number(meta.total_preparations) || 0,
+                preparationSet.size
+            );
+            const grandTotalLoad = totalLOAD + designationUnits;
+            const loadStatus = getLoadStatus(grandTotalLoad);
+
+            $("#workloadTbody").html(rows);
+            $("#designationText").text(formatDesignationDisplay(meta));
+            $("#designationLOAD").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
+            $("#totalPreparations").text(formatNumber(totalPreparations));
             $("#totalLAB").text(formatNumber(totalLAB));
+            $("#totalLEC").text(formatNumber(totalLEC));
             $("#totalUNIT").text(formatNumber(totalUNIT));
             $("#totalLOADCell").html(`
-                <span class="load-pill ${loadClass}">
-                    ${totalLOAD.toFixed(2)} <small>(${loadLabel})</small>
-                </span>
+                <span class="total-load-value">${escapeHtml(formatNumber(grandTotalLoad))}</span>
+                ${loadStatus.label ? `<span class="load-status-inline ${escapeHtml(loadStatus.className)}">${escapeHtml(loadStatus.label)}</span>` : ""}
             `);
+            $("#totalStudents").text("");
 
-            $("#printFacultyName").text(context.facultyName);
-            $("#printTerm").text(context.semesterUi + " A.Y. " + context.ayText);
+            setPrintField("#printFacultyName", context.facultyName);
+            setPrintField("#printSemesterAy", context.semesterUi + " Semester | AY " + context.ayText);
+            setPrintField("#printDesignation", formatDesignationDisplay(meta));
+            setPrintField("#printConforme", context.facultyName, { uppercase: true });
 
             $("#workloadCard").show();
         }).fail(function (xhr, status) {
@@ -902,8 +1533,18 @@ $(document).ready(function () {
                 return;
             }
 
-            $("#workloadTbody").html("");
-            $("#workloadCard").hide();
+            $("#workloadTbody").html(`
+                <tr>
+                    <td colspan="12" class="text-danger text-center">
+                        Failed to load faculty workload.
+                    </td>
+                </tr>
+            `);
+            setPrintField("#printFacultyName", "");
+            setPrintField("#printSemesterAy", "");
+            setPrintField("#printDesignation", "");
+            setPrintField("#printConforme", "");
+            $("#workloadCard").show();
         });
     }
 
