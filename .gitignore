@@ -54,6 +54,7 @@ gulpfile.tmp.*
 # **/static/vendor
 
 # Local auth secrets
+backend/auth_config.php
 backend/auth_config.local.php
 
 # HTML files
