@@ -3,6 +3,7 @@ session_start();
 ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/schema_helper.php';
 
 /* =====================================================
    WORKLOAD COMPUTATION CONFIG
@@ -55,21 +56,48 @@ if ((int)$currentTerm['semester'] === 1) {
 
 // LOAD FACULTY ASSIGNED TO THIS COLLEGE
 $faculty_options = "";
-$faculty_sql = "
-    SELECT f.faculty_id,
+$assignmentHasAyId = synk_table_has_column($conn, 'tbl_college_faculty', 'ay_id');
+$assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'semester');
+$facultySql = "
+    SELECT DISTINCT f.faculty_id,
            CONCAT(f.last_name, ', ', f.first_name, ' ', COALESCE(f.ext_name,'')) AS full_name
     FROM tbl_college_faculty cf
     JOIN tbl_faculty f ON cf.faculty_id = f.faculty_id
-    WHERE cf.college_id = '$college_id'
+    WHERE cf.college_id = ?
       AND cf.status = 'active'
       AND f.status  = 'active'
-    ORDER BY f.last_name, f.first_name
 ";
-$f_run = mysqli_query($conn, $faculty_sql);
-while ($f = mysqli_fetch_assoc($f_run)) {
-    $fid   = (int)$f['faculty_id'];
-    $fname = htmlspecialchars($f['full_name']);
-    $faculty_options .= "<option value='{$fid}'>{$fname}</option>";
+
+$facultyTypes = 'i';
+$facultyParams = [(int)$college_id];
+
+if ($assignmentHasAyId) {
+    $facultySql .= " AND cf.ay_id = ?";
+    $facultyTypes .= 'i';
+    $facultyParams[] = (int)$defaultAyId;
+}
+
+if ($assignmentHasSemester) {
+    $facultySql .= " AND cf.semester = ?";
+    $facultyTypes .= 'i';
+    $facultyParams[] = (int)$currentTerm['semester'];
+}
+
+$facultySql .= " ORDER BY f.last_name, f.first_name";
+
+$facultyStmt = $conn->prepare($facultySql);
+if ($facultyStmt instanceof mysqli_stmt) {
+    synk_bind_dynamic_params($facultyStmt, $facultyTypes, $facultyParams);
+    $facultyStmt->execute();
+    $facultyResult = $facultyStmt->get_result();
+
+    while ($f = $facultyResult->fetch_assoc()) {
+        $fid = (int)$f['faculty_id'];
+        $fname = htmlspecialchars((string)$f['full_name'], ENT_QUOTES, 'UTF-8');
+        $faculty_options .= "<option value='{$fid}'>{$fname}</option>";
+    }
+
+    $facultyStmt->close();
 }
 
 ?>
@@ -449,6 +477,24 @@ while ($f = mysqli_fetch_assoc($f_run)) {
         .btn-delete-workload:hover {
             background: #ff5f4d;
             color: #fff;
+        }
+
+        .table-loader-row td {
+            padding-top: 1.1rem !important;
+            padding-bottom: 1.1rem !important;
+        }
+
+        .table-loader {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.65rem;
+            color: #6f7f95;
+            font-weight: 600;
+        }
+
+        .table-loader .spinner-border {
+            width: 1rem;
+            height: 1rem;
         }
 
         .total-label {
@@ -1126,6 +1172,39 @@ $(document).ready(function () {
         };
     }
 
+    function buildLoadingRow(colspan, message) {
+        return `
+            <tr class="table-loader-row">
+                <td colspan="${colspan}" class="text-center text-muted">
+                    <div class="table-loader">
+                        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                        <span>${escapeHtml(message)}</span>
+                    </div>
+                </td>
+            </tr>
+        `;
+    }
+
+    function setScheduledClassesLoadingState(message = "Loading scheduled classes...") {
+        $("#scheduledClassCard").show();
+        $("#checkAllSchedules").prop("checked", false);
+        $("#btnApplyToWorkload").prop("disabled", true);
+        $("#scheduledClassTbody").html(buildLoadingRow(11, message));
+    }
+
+    function setWorkloadLoadingState(message = "Loading faculty workload...") {
+        $("#workloadCard").show();
+        $("#workloadTbody").html(buildLoadingRow(12, message));
+        $("#designationText").text("");
+        $("#designationLOAD").text("");
+        $("#totalPreparations").text("0");
+        $("#totalUNIT").text("0");
+        $("#totalLEC").text("0");
+        $("#totalLAB").text("0");
+        $("#totalLOADCell").text("0");
+        $("#totalStudents").text("");
+    }
+
     function getWorkloadGroupKey(row) {
         const groupId = Number(row?.group_id) || 0;
         if (groupId > 0) {
@@ -1186,6 +1265,7 @@ $(document).ready(function () {
         $("#scheduledClassCard").hide();
         $("#workloadCard").hide();
         $("#checkAllSchedules").prop("checked", false);
+        $("#btnApplyToWorkload").prop("disabled", true);
         $("#workloadTbody").html("");
         $("#designationText").text("");
         $("#designationLOAD").text("");
@@ -1226,16 +1306,7 @@ $(document).ready(function () {
         if (!context) return;
 
         abortPendingRequest(scheduledClassesRequest);
-
-        $("#scheduledClassCard").show();
-        $("#checkAllSchedules").prop("checked", false);
-        $("#scheduledClassTbody").html(`
-            <tr>
-                <td colspan="11" class="text-center text-muted">
-                    Loading scheduled classes...
-                </td>
-            </tr>
-        `);
+        setScheduledClassesLoadingState();
 
         scheduledClassesRequest = $.ajax({
             url: "../backend/query_class_schedule_loader.php",
@@ -1267,6 +1338,7 @@ $(document).ready(function () {
                         </td>
                     </tr>
                 `);
+                $("#btnApplyToWorkload").prop("disabled", true);
                 return;
             }
 
@@ -1301,12 +1373,14 @@ $(document).ready(function () {
                 `;
             });
             $("#scheduledClassTbody").html(rows);
+            $("#btnApplyToWorkload").prop("disabled", false);
         }).fail(function (xhr, status) {
             if (status === "abort" || requestToken !== selectionRequestToken) {
                 return;
             }
 
             showInvalid();
+            $("#btnApplyToWorkload").prop("disabled", true);
         });
     }
 
@@ -1354,6 +1428,7 @@ $(document).ready(function () {
         if (!context) return;
 
         abortPendingRequest(workloadListRequest);
+        setWorkloadLoadingState();
 
         workloadListRequest = $.ajax({
             url: "../backend/query_load_faculty_workload.php",

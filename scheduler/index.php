@@ -175,6 +175,22 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
         text-align: center;
       }
 
+      .chart-loader {
+        min-height: 320px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        color: #8592a3;
+        text-align: center;
+      }
+
+      .chart-loader .loader-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-weight: 600;
+      }
+
       .hero-meta {
         display: flex;
         flex-wrap: wrap;
@@ -442,6 +458,15 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
       document.addEventListener("DOMContentLoaded", function () {
         let facultyLoadChart = null;
 
+        function buildInlineLoader(message) {
+          return (
+            '<div class="loader-inline">' +
+              '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' +
+              '<span>' + message + "</span>" +
+            "</div>"
+          );
+        }
+
         function animateCount(elementId, target) {
           const element = document.getElementById(elementId);
           const safeTarget = Number(target) || 0;
@@ -474,6 +499,47 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
 
           chartContainer.innerHTML =
             '<div class="chart-fallback"><p class="mb-0">' + message + "</p></div>";
+        }
+
+        function setChartLoading(message) {
+          const chartContainer = document.getElementById("facultyLoadChart");
+
+          if (!chartContainer) {
+            return;
+          }
+
+          chartContainer.innerHTML =
+            '<div class="chart-loader">' + buildInlineLoader(message) + "</div>";
+        }
+
+        function setCountsLoadingState() {
+          ["countPrograms", "countFaculty", "countProspectus", "countUnscheduled"].forEach(function (id) {
+            const element = document.getElementById(id);
+            if (element) {
+              element.textContent = "--";
+            }
+          });
+
+          ["summaryPrograms", "summaryFaculty", "summaryProspectus", "summaryUnscheduled"].forEach(function (id) {
+            const element = document.getElementById(id);
+            if (element) {
+              element.textContent = "--";
+            }
+          });
+
+          const unscheduledCard = document.getElementById("cardUnscheduled");
+          const unscheduledNote = document.getElementById("unscheduledNote");
+          const schedulerStatusMessage = document.getElementById("schedulerStatusMessage");
+
+          if (unscheduledCard) {
+            unscheduledCard.classList.remove("kpi-warning-active");
+          }
+          if (unscheduledNote) {
+            unscheduledNote.textContent = "Loading dashboard counts";
+          }
+          if (schedulerStatusMessage) {
+            schedulerStatusMessage.textContent = "Loading dashboard data...";
+          }
         }
 
         function renderFacultyLoadChart(data) {
@@ -649,6 +715,9 @@ $academicTermTextEscaped = htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-
               "Unable to load dashboard counts.";
           }
         });
+
+        setCountsLoadingState();
+        setChartLoading("Loading faculty workload data...");
       });
     </script>
   </body>

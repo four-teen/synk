@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schema_helper.php';
 
 header('Content-Type: application/json');
 
@@ -39,44 +40,65 @@ function workload_title_case(string $value): string
 }
 
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+$classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+$facultyHasDesignationId = synk_table_has_column($conn, 'tbl_faculty', 'designation_id');
+$designationTableExists = synk_table_exists($conn, 'tbl_designation');
+$designationHasStatus = $designationTableExists && synk_table_has_column($conn, 'tbl_designation', 'status');
+$assignmentHasAyId = synk_table_has_column($conn, 'tbl_college_faculty', 'ay_id');
+$assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'semester');
+
+$selectParts = [
+    'fw.workload_id',
+    'o.offering_id',
+    $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
+    $classScheduleHasType ? 'cs.schedule_type AS type' : "'LEC' AS type",
+    'sm.sub_code',
+    'sm.sub_description AS `desc`',
+    'sec.section_name AS section',
+    'sec.full_section AS full_section',
+    'cs.days_json',
+    'cs.time_start',
+    'cs.time_end',
+    'r.room_code AS room',
+    'ps.lec_units',
+    'ps.lab_units',
+    'ps.total_units'
+];
+
+$orderParts = [
+    'sec.section_name',
+    'sm.sub_code',
+    $classScheduleHasGroupId ? 'COALESCE(cs.schedule_group_id, cs.schedule_id)' : 'cs.schedule_id'
+];
+
+if ($classScheduleHasType) {
+    $orderParts[] = "FIELD(cs.schedule_type, 'LEC', 'LAB')";
+}
+
+$orderParts[] = 'cs.time_start';
 
 $sql = "
 SELECT
-    fw.workload_id,
-    o.offering_id,
-    cs.schedule_group_id AS group_id,
-    cs.schedule_type     AS type,
-    sm.sub_code,
-    sm.sub_description   AS `desc`,
-    sec.section_name     AS section,
-    sec.full_section     AS full_section,
-    cs.days_json,
-    cs.time_start,
-    cs.time_end,
-    r.room_code          AS room,
-    ps.lec_units,
-    ps.lab_units,
-    ps.total_units
+    " . implode(",\n    ", $selectParts) . "
 FROM tbl_faculty_workload_sched fw
 JOIN tbl_class_schedule cs       ON cs.schedule_id = fw.schedule_id
 JOIN tbl_prospectus_offering o   ON o.offering_id = cs.offering_id
 {$liveOfferingJoins}
+JOIN tbl_program p               ON p.program_id = o.program_id
 JOIN tbl_subject_masterlist sm   ON sm.sub_id = ps.sub_id
 LEFT JOIN tbl_rooms r            ON r.room_id = cs.room_id
 WHERE
     fw.faculty_id = ?
 AND fw.ay_id      = ?
 AND fw.semester   = ?
+AND p.college_id  = ?
 ORDER BY
-    sec.section_name,
-    sm.sub_code,
-    COALESCE(cs.schedule_group_id, cs.schedule_id),
-    FIELD(cs.schedule_type, 'LEC', 'LAB'),
-    cs.time_start
+    " . implode(",\n    ", $orderParts) . "
 ";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("iii", $faculty_id, $ay_id, $semester);
+$stmt->bind_param("iiii", $faculty_id, $ay_id, $semester, $college_id);
 $stmt->execute();
 $res = $stmt->get_result();
 
@@ -137,7 +159,27 @@ $stmt->close();
 $designationName = '';
 $designationUnits = 0.0;
 
-if ($college_id > 0) {
+if ($college_id > 0 && $facultyHasDesignationId && $designationTableExists) {
+    $designationWhere = [
+        'cf.college_id = ?',
+        'cf.faculty_id = ?',
+        "cf.status = 'active'"
+    ];
+    $designationTypes = 'ii';
+    $designationParams = [$college_id, $faculty_id];
+
+    if ($assignmentHasAyId) {
+        $designationWhere[] = 'cf.ay_id = ?';
+        $designationTypes .= 'i';
+        $designationParams[] = $ay_id;
+    }
+
+    if ($assignmentHasSemester) {
+        $designationWhere[] = 'cf.semester = ?';
+        $designationTypes .= 'i';
+        $designationParams[] = $semester;
+    }
+
     $designationSql = "
         SELECT
             d.designation_name,
@@ -147,18 +189,14 @@ if ($college_id > 0) {
             ON f.faculty_id = cf.faculty_id
         LEFT JOIN tbl_designation d
             ON d.designation_id = f.designation_id
-           AND d.status = 'active'
-        WHERE cf.college_id = ?
-          AND cf.faculty_id = ?
-          AND cf.ay_id = ?
-          AND cf.semester = ?
-          AND cf.status = 'active'
+           " . ($designationHasStatus ? "AND d.status = 'active'" : '') . "
+        WHERE " . implode("\n          AND ", $designationWhere) . "
         ORDER BY cf.college_faculty_id DESC
         LIMIT 1
     ";
 
     $designationStmt = $conn->prepare($designationSql);
-    $designationStmt->bind_param("iiii", $college_id, $faculty_id, $ay_id, $semester);
+    synk_bind_dynamic_params($designationStmt, $designationTypes, $designationParams);
     $designationStmt->execute();
     $designationRes = $designationStmt->get_result();
     $designationRow = $designationRes->fetch_assoc();

@@ -54,6 +54,17 @@ $default_semester = (int)$currentTerm['semester'];
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 38px !important;
         }
+        .page-loader-inline {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.65rem;
+            color: #6f7f95;
+            font-weight: 600;
+        }
+        .page-loader-inline .spinner-border {
+            width: 1rem;
+            height: 1rem;
+        }
     </style>
 </head>
 
@@ -287,9 +298,33 @@ $(document).ready(function () {
     width: '100%'
   });
 
-  // ---------------------
+// ---------------------
 // AUTO-LOAD OFFERINGS WHEN FILTERS ARE COMPLETE
 // ---------------------
+function buildLoaderRow(colspan, message) {
+  return `
+    <tr>
+      <td colspan="${colspan}" class="text-center text-muted py-4">
+        <div class="page-loader-inline">
+          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+          <span>${message}</span>
+        </div>
+      </td>
+    </tr>
+  `;
+}
+
+function buildLoaderBlock(message) {
+  return `
+    <div class="d-flex justify-content-center py-4">
+      <div class="page-loader-inline">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+        <span>${message}</span>
+      </div>
+    </div>
+  `;
+}
+
 function tryAutoLoadOfferings() {
 
   let pid = $('#prospectus_id').val();
@@ -300,10 +335,7 @@ function tryAutoLoadOfferings() {
 
 
   if (pid && ay && sem) {
-
-    $('#offeringsTable tbody').html(
-      "<tr><td colspan='7' class='text-center text-muted'>Loading offerings...</td></tr>"
-    );
+    $('#offeringsTable tbody').html(buildLoaderRow(7, "Loading offerings..."));
 
     loadOfferings(pid, ay, sem);
   }
@@ -483,6 +515,7 @@ $('#semester').on('change', tryAutoLoadOfferings);
   // Load Offerings Table
   // ---------------------
 function loadOfferings(pid, ay, sem) {
+  $('#offeringsTable tbody').html(buildLoaderRow(7, "Loading offerings..."));
   $.post(
     "../backend/load_offerings.php",
     { prospectus_id: pid, ay_id: ay, semester: sem },
@@ -615,7 +648,7 @@ $('#btnViewProspectus').on('click', function () {
 
   const modalEl = document.getElementById('prospectusPreviewModal');
   const modal = new bootstrap.Modal(modalEl);
-  $('#prospectusPreviewBody').html('<div class="text-muted">Loading prospectus...</div>');
+  $('#prospectusPreviewBody').html(buildLoaderBlock('Loading prospectus...'));
   modal.show();
 
   $.ajax({

@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schema_helper.php';
 
 header('Content-Type: application/json');
 
@@ -140,6 +141,9 @@ if (empty($schedule_ids)) {
     respond('error', 'No valid schedules selected.');
 }
 
+$classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+$classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+
 /* ===============================
    LOAD CANDIDATE SCHEDULES
    - scoped to scheduler college and selected term
@@ -147,58 +151,85 @@ if (empty($schedule_ids)) {
 ================================ */
 $inList = implode(',', array_map('intval', $schedule_ids));
 
-$candidateSql = "
-    SELECT
-        cs.schedule_id,
-        cs.schedule_group_id,
-        cs.schedule_type,
-        cs.days_json,
-        cs.time_start,
-        cs.time_end,
-        sm.sub_code,
-        sec.section_name,
-        partner_cs.schedule_id AS partner_schedule_id,
-        partner_cs.schedule_type AS partner_schedule_type,
-        partner_fw.faculty_id AS partner_faculty_id,
-        CONCAT(
+$candidateSelectParts = [
+    'cs.schedule_id',
+    $classScheduleHasGroupId ? 'cs.schedule_group_id' : 'NULL AS schedule_group_id',
+    $classScheduleHasType ? 'cs.schedule_type' : "'LEC' AS schedule_type",
+    'cs.days_json',
+    'cs.time_start',
+    'cs.time_end',
+    'sm.sub_code',
+    'sec.section_name',
+    $classScheduleHasGroupId ? 'partner_cs.schedule_id AS partner_schedule_id' : 'NULL AS partner_schedule_id',
+    ($classScheduleHasGroupId && $classScheduleHasType)
+        ? 'partner_cs.schedule_type AS partner_schedule_type'
+        : "'' AS partner_schedule_type",
+    $classScheduleHasGroupId ? 'partner_fw.faculty_id AS partner_faculty_id' : 'NULL AS partner_faculty_id',
+    $classScheduleHasGroupId
+        ? "CONCAT(
             COALESCE(partner_f.last_name, ''),
             CASE WHEN partner_f.last_name IS NOT NULL AND partner_f.first_name IS NOT NULL THEN ', ' ELSE '' END,
             COALESCE(partner_f.first_name, '')
-        ) AS partner_faculty_name
-    FROM tbl_class_schedule cs
-    INNER JOIN tbl_prospectus_offering o
-        ON o.offering_id = cs.offering_id
-    " . synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph') . "
-    INNER JOIN tbl_program p
-        ON p.program_id = o.program_id
-    INNER JOIN tbl_subject_masterlist sm
-        ON sm.sub_id = ps.sub_id
-    LEFT JOIN tbl_class_schedule partner_cs
-        ON cs.schedule_group_id IS NOT NULL
-       AND partner_cs.schedule_group_id = cs.schedule_group_id
-       AND partner_cs.schedule_id <> cs.schedule_id
-    LEFT JOIN tbl_faculty_workload_sched partner_fw
-        ON partner_fw.schedule_id = partner_cs.schedule_id
-       AND partner_fw.ay_id = ?
-       AND partner_fw.semester = ?
-    LEFT JOIN tbl_faculty partner_f
-        ON partner_f.faculty_id = partner_fw.faculty_id
+        ) AS partner_faculty_name"
+        : "'' AS partner_faculty_name"
+];
+
+$candidateJoinParts = [
+    'FROM tbl_class_schedule cs',
+    'INNER JOIN tbl_prospectus_offering o',
+    '    ON o.offering_id = cs.offering_id',
+    trim(synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph')),
+    'INNER JOIN tbl_program p',
+    '    ON p.program_id = o.program_id',
+    'INNER JOIN tbl_subject_masterlist sm',
+    '    ON sm.sub_id = ps.sub_id',
+    'LEFT JOIN tbl_faculty_workload_sched assigned_fw',
+    '    ON assigned_fw.schedule_id = cs.schedule_id',
+    '   AND assigned_fw.ay_id = ?',
+    '   AND assigned_fw.semester = ?'
+];
+
+if ($classScheduleHasGroupId) {
+    $candidateJoinParts[] = 'LEFT JOIN tbl_class_schedule partner_cs';
+    $candidateJoinParts[] = '    ON cs.schedule_group_id IS NOT NULL';
+    $candidateJoinParts[] = '   AND partner_cs.schedule_group_id = cs.schedule_group_id';
+    $candidateJoinParts[] = '   AND partner_cs.schedule_id <> cs.schedule_id';
+    $candidateJoinParts[] = 'LEFT JOIN tbl_faculty_workload_sched partner_fw';
+    $candidateJoinParts[] = '    ON partner_fw.schedule_id = partner_cs.schedule_id';
+    $candidateJoinParts[] = '   AND partner_fw.ay_id = ?';
+    $candidateJoinParts[] = '   AND partner_fw.semester = ?';
+    $candidateJoinParts[] = 'LEFT JOIN tbl_faculty partner_f';
+    $candidateJoinParts[] = '    ON partner_f.faculty_id = partner_fw.faculty_id';
+}
+
+$candidateSql = "
+    SELECT
+        " . implode(",\n        ", $candidateSelectParts) . "
+    " . implode("\n", $candidateJoinParts) . "
     WHERE cs.schedule_id IN ($inList)
       AND o.ay_id = ?
       AND o.semester = ?
       AND p.college_id = ?
-      AND NOT EXISTS (
-            SELECT 1
-            FROM tbl_faculty_workload_sched fwx
-            WHERE fwx.schedule_id = cs.schedule_id
-              AND fwx.ay_id = ?
-              AND fwx.semester = ?
-      )
+      AND assigned_fw.schedule_id IS NULL
     ORDER BY cs.time_start, cs.schedule_id
 ";
 
 $candStmt = $conn->prepare($candidateSql);
-$candStmt->bind_param('iiiiiii', $ay_id, $semester, $ay_id, $semester, $college_id, $ay_id, $semester);
+$candidateBindTypes = 'ii';
+$candidateBindParams = [$ay_id, $semester];
+
+if ($classScheduleHasGroupId) {
+    $candidateBindTypes .= 'ii';
+    $candidateBindParams[] = $ay_id;
+    $candidateBindParams[] = $semester;
+}
+
+$candidateBindTypes .= 'iii';
+$candidateBindParams[] = $ay_id;
+$candidateBindParams[] = $semester;
+$candidateBindParams[] = $college_id;
+
+synk_bind_dynamic_params($candStmt, $candidateBindTypes, $candidateBindParams);
 $candStmt->execute();
 $candRes = $candStmt->get_result();
 
@@ -221,7 +252,7 @@ if (empty($candidates)) {
 $existingSql = "
     SELECT
         cs.schedule_id,
-        cs.schedule_type,
+        " . ($classScheduleHasType ? 'cs.schedule_type' : "'LEC' AS schedule_type") . ",
         cs.days_json,
         cs.time_start,
         cs.time_end,

@@ -27,3 +27,16 @@ function synk_live_offering_join_sql(
            AND {$sectionAlias}.status = 'active'
     ";
 }
+
+function synk_scheduled_offering_join_sql(
+    string $scheduleAlias = 'sched',
+    string $offeringAlias = 'o'
+): string {
+    return "
+        LEFT JOIN (
+            SELECT DISTINCT offering_id
+            FROM tbl_class_schedule
+        ) {$scheduleAlias}
+            ON {$scheduleAlias}.offering_id = {$offeringAlias}.offering_id
+    ";
+}

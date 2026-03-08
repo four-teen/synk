@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schema_helper.php';
 
 header('Content-Type: application/json');
 
@@ -89,78 +90,101 @@ if ($ay_id <= 0) {
    - Exclude schedule rows that already exist in faculty workload
 ===================================================== */
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+$classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+
+$selectParts = [
+    'cs.schedule_id',
+    $classScheduleHasGroupId ? 'cs.schedule_group_id' : 'NULL AS schedule_group_id',
+    $classScheduleHasType ? 'cs.schedule_type' : "'LEC' AS schedule_type",
+    'sm.sub_code',
+    'sm.sub_description',
+    'sec.section_name',
+    'cs.days_json',
+    'cs.time_start',
+    'cs.time_end',
+    'r.room_code',
+    'ps.total_units AS total_units',
+    'ps.lec_units AS lec_units',
+    'ps.lab_units AS lab_units',
+    $classScheduleHasGroupId ? 'partner_cs.schedule_id AS partner_schedule_id' : 'NULL AS partner_schedule_id',
+    ($classScheduleHasGroupId && $classScheduleHasType)
+        ? 'partner_cs.schedule_type AS partner_schedule_type'
+        : "'' AS partner_schedule_type",
+    $classScheduleHasGroupId ? 'partner_fw.faculty_id AS partner_faculty_id' : 'NULL AS partner_faculty_id'
+];
+
+$joinParts = [
+    'FROM tbl_class_schedule cs',
+    'JOIN tbl_prospectus_offering o',
+    '    ON o.offering_id = cs.offering_id',
+    trim($liveOfferingJoins),
+    'JOIN tbl_program p',
+    '    ON p.program_id = o.program_id',
+    'JOIN tbl_subject_masterlist sm',
+    '    ON sm.sub_id = ps.sub_id',
+    'LEFT JOIN tbl_rooms r',
+    '    ON r.room_id = cs.room_id',
+    'LEFT JOIN tbl_faculty_workload_sched assigned_fw',
+    '    ON assigned_fw.schedule_id = cs.schedule_id',
+    '   AND assigned_fw.ay_id = ?',
+    '   AND assigned_fw.semester = ?'
+];
+
+if ($classScheduleHasGroupId) {
+    $joinParts[] = 'LEFT JOIN tbl_class_schedule partner_cs';
+    $joinParts[] = '    ON cs.schedule_group_id IS NOT NULL';
+    $joinParts[] = '   AND partner_cs.schedule_group_id = cs.schedule_group_id';
+    $joinParts[] = '   AND partner_cs.schedule_id <> cs.schedule_id';
+    $joinParts[] = 'LEFT JOIN tbl_faculty_workload_sched partner_fw';
+    $joinParts[] = '    ON partner_fw.schedule_id = partner_cs.schedule_id';
+    $joinParts[] = '   AND partner_fw.ay_id = ?';
+    $joinParts[] = '   AND partner_fw.semester = ?';
+}
 
 $sql = "
 SELECT
-    cs.schedule_id,
-    cs.schedule_group_id,
-    cs.schedule_type,
-    sm.sub_code,
-    sm.sub_description,
-    sec.section_name,
-    cs.days_json,
-    cs.time_start,
-    cs.time_end,
-    r.room_code,
-    ps.total_units AS total_units,
-    ps.lec_units   AS lec_units,
-    ps.lab_units   AS lab_units,
-    partner_cs.schedule_id AS partner_schedule_id,
-    partner_cs.schedule_type AS partner_schedule_type,
-    partner_fw.faculty_id AS partner_faculty_id
-FROM tbl_class_schedule cs
-JOIN tbl_prospectus_offering o
-    ON o.offering_id = cs.offering_id
-{$liveOfferingJoins}
-JOIN tbl_program p
-    ON p.program_id = o.program_id
-JOIN tbl_subject_masterlist sm
-    ON sm.sub_id = ps.sub_id
-LEFT JOIN tbl_rooms r
-    ON r.room_id = cs.room_id
-LEFT JOIN tbl_class_schedule partner_cs
-    ON cs.schedule_group_id IS NOT NULL
-   AND partner_cs.schedule_group_id = cs.schedule_group_id
-   AND partner_cs.schedule_id <> cs.schedule_id
-LEFT JOIN tbl_faculty_workload_sched partner_fw
-    ON partner_fw.schedule_id = partner_cs.schedule_id
-   AND partner_fw.ay_id = ?
-   AND partner_fw.semester = ?
+    " . implode(",\n    ", $selectParts) . "
+" . implode("\n", $joinParts) . "
 WHERE
     o.ay_id = ?
 AND o.semester = ?
 AND p.college_id = ?
-AND NOT EXISTS (
-    SELECT 1
-    FROM tbl_faculty_workload_sched fw
-    WHERE fw.schedule_id = cs.schedule_id
-      AND fw.ay_id = ?
-      AND fw.semester = ?
-)
+AND assigned_fw.schedule_id IS NULL
+" . ($classScheduleHasGroupId ? "
 AND (
     cs.schedule_group_id IS NULL
     OR partner_fw.faculty_id IS NULL
     OR partner_fw.faculty_id = ?
-)
+)" : '') . "
 ORDER BY
     sec.section_name,
     sm.sub_code,
-    FIELD(cs.schedule_type, 'LEC', 'LAB'),
+    " . ($classScheduleHasType ? "FIELD(cs.schedule_type, 'LEC', 'LAB')," : '') . "
     cs.time_start
 ";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param(
-    "iiiiiiii",
-    $ay_id,
-    $semester,
-    $ay_id,
-    $semester,
-    $college_id,
-    $ay_id,
-    $semester,
-    $faculty_id
-);
+$bindTypes = 'ii';
+$bindParams = [$ay_id, $semester];
+
+if ($classScheduleHasGroupId) {
+    $bindTypes .= 'ii';
+    $bindParams[] = $ay_id;
+    $bindParams[] = $semester;
+}
+
+$bindTypes .= 'iii';
+$bindParams[] = $ay_id;
+$bindParams[] = $semester;
+$bindParams[] = $college_id;
+
+if ($classScheduleHasGroupId) {
+    $bindTypes .= 'i';
+    $bindParams[] = $faculty_id;
+}
+
+synk_bind_dynamic_params($stmt, $bindTypes, $bindParams);
 $stmt->execute();
 $res = $stmt->get_result();
 

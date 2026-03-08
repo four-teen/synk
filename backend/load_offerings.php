@@ -31,6 +31,7 @@ if (!$prospectus_id || !$ay_id || !$semester) {
 }
 
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$scheduledOfferingJoin = synk_scheduled_offering_join_sql('sched', 'o');
 
 $sql = "
 SELECT
@@ -42,16 +43,13 @@ SELECT
     ps.lab_units,
     ps.total_units,
     CASE
-        WHEN EXISTS (
-            SELECT 1
-            FROM tbl_class_schedule cs
-            WHERE cs.offering_id = o.offering_id
-        ) THEN 'scheduled'
+        WHEN sched.offering_id IS NOT NULL THEN 'scheduled'
         WHEN o.status = 'locked' THEN 'locked'
         ELSE 'pending'
     END AS display_status
 FROM tbl_prospectus_offering o
 {$liveOfferingJoins}
+{$scheduledOfferingJoin}
 JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
 JOIN tbl_program p ON p.program_id = o.program_id
 WHERE o.prospectus_id = ?
@@ -82,18 +80,20 @@ while ($row = $res->fetch_assoc()) {
         $badgeClass = 'bg-dark';
     }
 
-    $sc = strtoupper($row['sub_code']);
-    $sd = strtoupper($row['sub_description']);
+    $sectionName = htmlspecialchars((string)$row['section_name'], ENT_QUOTES, 'UTF-8');
+    $sc = htmlspecialchars(strtoupper((string)$row['sub_code']), ENT_QUOTES, 'UTF-8');
+    $sd = htmlspecialchars(strtoupper((string)$row['sub_description']), ENT_QUOTES, 'UTF-8');
+    $statusLabel = htmlspecialchars($status, ENT_QUOTES, 'UTF-8');
     echo "
     <tr>
-        <td>{$row['section_name']}</td>
+        <td>{$sectionName}</td>
         <td>{$sc}</td>
         <td>{$sd}</td>
         <td class='text-center'>{$row['lec_units']}</td>
         <td class='text-center'>{$row['lab_units']}</td>
         <td class='text-center'>{$row['total_units']}</td>
         <td class='text-center'>
-            <span class='badge {$badgeClass}'>{$status}</span>
+            <span class='badge {$badgeClass}'>{$statusLabel}</span>
         </td>
     </tr>
     ";

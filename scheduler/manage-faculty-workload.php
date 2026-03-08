@@ -90,6 +90,30 @@ if ($ay_id) {
 <style>
 .report-card { border:1px solid #e6e9ef; border-radius:10px; }
 .print-area { background:#fff; padding:18px; }
+.report-loading-overlay {
+  position: fixed;
+  inset: 0;
+  z-index: 1200;
+  background: rgba(255,255,255,0.86);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 1.5rem;
+}
+.report-loading-card {
+  min-width: 260px;
+  max-width: 360px;
+  padding: 1rem 1.2rem;
+  border: 1px solid #dbe3ee;
+  border-radius: 14px;
+  background: #fff;
+  box-shadow: 0 12px 32px rgba(31, 45, 61, 0.12);
+  text-align: center;
+}
+.report-loading-card .spinner-border {
+  width: 1.3rem;
+  height: 1.3rem;
+}
 
 .print-header {
   display:flex; gap:14px; align-items:center;
@@ -132,13 +156,20 @@ table.report-table th { background:#f7f7f7; text-align:center; }
 <?php include 'navbar.php'; ?>
 <div class="content-wrapper">
 <div class="container-xxl container-p-y">
+<div id="reportLoadingOverlay" class="report-loading-overlay">
+  <div class="report-loading-card">
+    <div class="spinner-border text-primary mb-3" role="status" aria-hidden="true"></div>
+    <div class="fw-semibold">Generating faculty workload report...</div>
+    <div class="small text-muted mt-1">Please wait while records are loaded.</div>
+  </div>
+</div>
 
 <div class="no-print">
 <h4 class="fw-bold mb-2">Faculty Workload (Read-Only Report)</h4>
 
 <div class="card report-card mb-4">
 <div class="card-body">
-<form method="GET" class="row g-3 align-items-end">
+<form method="GET" class="row g-3 align-items-end" id="facultyWorkloadFilterForm">
 
 <div class="col-md-5">
 <label class="form-label">Prospectus</label>
@@ -186,7 +217,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 
 <div class="col-md-2 d-grid">
-<button class="btn btn-primary">Generate</button>
+<button class="btn btn-primary" type="submit" id="generateFacultyWorkloadBtn">Generate</button>
 <?php if ($prospectus_id && $ay_id && $semester): ?>
 <a class="btn btn-outline-primary"
    href="?prospectus_id=<?=$prospectus_id?>&ay_id=<?=$ay_id?>&semester=<?=$semester?>&print=1"
@@ -215,17 +246,19 @@ SELECT
   r.room_name
 FROM tbl_prospectus_offering o
 {$liveOfferingJoins}
+JOIN tbl_program p ON p.program_id = o.program_id
 JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
 LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
 LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
 WHERE o.prospectus_id = ?
 AND o.ay_id = ?
 AND o.semester = ?
+AND p.college_id = ?
 ORDER BY sm.sub_code, sec.section_name
 ";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("sii", $prospectus_id, $ay_id, $semester);
+$stmt->bind_param("iiii", $prospectus_id, $ay_id, $semester, $collegeId);
 $stmt->execute();
 $res = $stmt->get_result();
 
@@ -284,5 +317,23 @@ $time = ($x['time_start']&&$x['time_end']) ? date("h:iA",strtotime($x['time_star
 </div>
 </div>
 </div>
+<script>
+document.addEventListener('DOMContentLoaded', function () {
+  var form = document.getElementById('facultyWorkloadFilterForm');
+  var overlay = document.getElementById('reportLoadingOverlay');
+  var submitButton = document.getElementById('generateFacultyWorkloadBtn');
+
+  if (!form || !overlay) {
+    return;
+  }
+
+  form.addEventListener('submit', function () {
+    overlay.style.display = 'flex';
+    if (submitButton) {
+      submitButton.disabled = true;
+    }
+  });
+});
+</script>
 </body>
 </html>

@@ -65,18 +65,15 @@ function inspect_existing_offerings(mysqli $conn, int $prospectusId, int $ayId, 
         'duplicate_pairs' => 0
     ];
 
+    $scheduledOfferingJoin = synk_scheduled_offering_join_sql('sched', 'o');
     $stmt = $conn->prepare("
         SELECT
             o.offering_id,
             o.ps_id,
             o.section_id,
-            EXISTS (
-                SELECT 1
-                FROM tbl_class_schedule cs
-                WHERE cs.offering_id = o.offering_id
-                LIMIT 1
-            ) AS has_schedule
+            IF(sched.offering_id IS NULL, 0, 1) AS has_schedule
         FROM tbl_prospectus_offering o
+        {$scheduledOfferingJoin}
         WHERE o.prospectus_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
@@ -380,6 +377,7 @@ try {
     $subjectsByYear = $context['subjectsByYear'];
     $sectionsByYear = $context['sectionsByYear'];
     $targetMap = build_target_map($subjectsByYear, $sectionsByYear, $programId, $prospectusId, $ayId, $semester);
+    $scheduledOfferingJoin = synk_scheduled_offering_join_sql('sched', 'o');
 
     $existingStmt = $conn->prepare("
         SELECT
@@ -391,13 +389,9 @@ try {
             o.ay_id,
             o.section_id,
             o.status,
-            EXISTS (
-                SELECT 1
-                FROM tbl_class_schedule cs
-                WHERE cs.offering_id = o.offering_id
-                LIMIT 1
-            ) AS has_schedule
+            IF(sched.offering_id IS NULL, 0, 1) AS has_schedule
         FROM tbl_prospectus_offering o
+        {$scheduledOfferingJoin}
         WHERE o.prospectus_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
@@ -517,16 +511,13 @@ try {
     $toActive = $conn->prepare("
         UPDATE tbl_prospectus_offering o
         {$liveOfferingJoins}
+        {$scheduledOfferingJoin}
         SET o.status = 'active'
         WHERE o.prospectus_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
           AND (o.status IS NULL OR o.status = 'pending')
-          AND EXISTS (
-                SELECT 1
-                FROM tbl_class_schedule cs
-                WHERE cs.offering_id = o.offering_id
-          )
+          AND sched.offering_id IS NOT NULL
     ");
     $toActive->bind_param('iii', $prospectusId, $ayId, $semester);
     $toActive->execute();
@@ -536,16 +527,13 @@ try {
     $toPending = $conn->prepare("
         UPDATE tbl_prospectus_offering o
         {$liveOfferingJoins}
+        {$scheduledOfferingJoin}
         SET o.status = 'pending'
         WHERE o.prospectus_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
           AND o.status = 'active'
-          AND NOT EXISTS (
-                SELECT 1
-                FROM tbl_class_schedule cs
-                WHERE cs.offering_id = o.offering_id
-          )
+          AND sched.offering_id IS NULL
     ");
     $toPending->bind_param('iii', $prospectusId, $ayId, $semester);
     $toPending->execute();
