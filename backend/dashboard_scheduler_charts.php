@@ -4,8 +4,20 @@ include 'db.php';
 require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/scheduler_access_helper.php';
+require_once __DIR__ . '/schema_helper.php';
 
 header('Content-Type: application/json');
+
+function empty_dashboard_heatmap_payload(): array
+{
+    return [
+        'series' => [],
+        'peak_label' => 'No occupied room slots',
+        'peak_occupied_rooms' => 0,
+        'peak_percent' => 0.0,
+        'total_rooms' => 0
+    ];
+}
 
 function empty_dashboard_chart_payload(string $scope = 'college', string $scopeLabel = ''): array
 {
@@ -13,7 +25,8 @@ function empty_dashboard_chart_payload(string $scope = 'college', string $scopeL
         'scope' => $scope,
         'scope_label' => $scopeLabel,
         'program_progress' => [],
-        'weekly_pressure' => []
+        'weekly_pressure' => [],
+        'schedule_heatmap' => empty_dashboard_heatmap_payload()
     ];
 }
 
@@ -45,6 +58,71 @@ function normalize_dashboard_day_token($day): string
     }
 
     return in_array($token, ['M', 'T', 'W', 'F', 'S'], true) ? $token : '';
+}
+
+function dashboard_heatmap_day_order(): array
+{
+    return ['M', 'T', 'W', 'Th', 'F'];
+}
+
+function dashboard_decode_days(string $daysJson): array
+{
+    $decoded = json_decode($daysJson, true);
+    if (!is_array($decoded)) {
+        return [];
+    }
+
+    $unique = [];
+    foreach ($decoded as $day) {
+        $token = normalize_dashboard_day_token($day);
+        if ($token !== '') {
+            $unique[$token] = true;
+        }
+    }
+
+    return array_keys($unique);
+}
+
+function dashboard_time_to_minutes(string $time): int
+{
+    $time = trim($time);
+    if ($time === '') {
+        return 0;
+    }
+
+    $parts = explode(':', $time);
+    if (count($parts) < 2) {
+        return 0;
+    }
+
+    $hours = (int)$parts[0];
+    $minutes = (int)$parts[1];
+    return ($hours * 60) + $minutes;
+}
+
+function dashboard_minutes_to_label(int $minutes): string
+{
+    $hours = intdiv($minutes, 60);
+    $mins = $minutes % 60;
+    $suffix = $hours >= 12 ? 'PM' : 'AM';
+    $displayHour = $hours % 12;
+    if ($displayHour === 0) {
+        $displayHour = 12;
+    }
+
+    return sprintf('%d:%02d %s', $displayHour, $mins, $suffix);
+}
+
+function dashboard_overlap_hours(int $startMinutes, int $endMinutes, int $windowStartMinutes, int $windowEndMinutes): float
+{
+    $effectiveStart = max($startMinutes, $windowStartMinutes);
+    $effectiveEnd = min($endMinutes, $windowEndMinutes);
+
+    if ($effectiveEnd <= $effectiveStart) {
+        return 0.0;
+    }
+
+    return ($effectiveEnd - $effectiveStart) / 60;
 }
 
 if (!isset($_SESSION['college_id'])) {
@@ -242,11 +320,205 @@ foreach (dashboard_day_order() as $token) {
     ];
 }
 
+$scheduleHeatmap = empty_dashboard_heatmap_payload();
+$heatmapSlotLabels = [];
+$heatmapDays = dashboard_heatmap_day_order();
+$dayWindowStartMinutes = 7 * 60;
+$dayWindowEndMinutes = $dayWindowStartMinutes + (8 * 60);
+$slotDefinitions = [];
+
+for ($slotMinutes = $dayWindowStartMinutes; $slotMinutes < $dayWindowEndMinutes; $slotMinutes += 60) {
+    $slotLabel = dashboard_minutes_to_label($slotMinutes);
+    $slotDefinitions[] = [
+        'label' => $slotLabel,
+        'start' => $slotMinutes,
+        'end' => $slotMinutes + 60
+    ];
+    $heatmapSlotLabels[] = $slotLabel;
+}
+
+$heatmapMatrix = [];
+foreach ($heatmapDays as $dayKey) {
+    $heatmapMatrix[$dayKey] = [];
+    foreach ($heatmapSlotLabels as $slotLabel) {
+        $heatmapMatrix[$dayKey][$slotLabel] = [];
+    }
+}
+
+$roomPool = [];
+
+if ($scope === 'campus') {
+    $roomPoolSql = "
+        SELECT DISTINCT r.room_id
+        FROM tbl_rooms r
+        INNER JOIN tbl_college c
+            ON c.college_id = r.college_id
+        WHERE c.campus_id = ?
+          AND c.status = 'active'
+          AND r.status = 'active'
+    ";
+
+    $roomPoolStmt = $conn->prepare($roomPoolSql);
+    if ($roomPoolStmt instanceof mysqli_stmt) {
+        $roomPoolStmt->bind_param('i', $filterValue);
+    }
+} elseif (synk_table_exists($conn, 'tbl_room_college_access')) {
+    $roomPoolSql = "
+        SELECT DISTINCT r.room_id
+        FROM tbl_room_college_access acc
+        INNER JOIN tbl_rooms r
+            ON r.room_id = acc.room_id
+        WHERE acc.college_id = ?
+          AND acc.ay_id = ?
+          AND acc.semester = ?
+          AND r.status = 'active'
+    ";
+
+    $roomPoolStmt = $conn->prepare($roomPoolSql);
+    if ($roomPoolStmt instanceof mysqli_stmt) {
+        $roomPoolStmt->bind_param('iii', $filterValue, $currentAyId, $currentSemester);
+    }
+} else {
+    $roomPoolSql = "
+        SELECT DISTINCT r.room_id
+        FROM tbl_rooms r
+        WHERE r.college_id = ?
+          AND r.status = 'active'
+    ";
+
+    $roomPoolStmt = $conn->prepare($roomPoolSql);
+    if ($roomPoolStmt instanceof mysqli_stmt) {
+        $roomPoolStmt->bind_param('i', $filterValue);
+    }
+}
+
+if (isset($roomPoolStmt) && $roomPoolStmt instanceof mysqli_stmt) {
+    $roomPoolStmt->execute();
+    $roomPoolRes = $roomPoolStmt->get_result();
+
+    while ($roomRow = $roomPoolRes->fetch_assoc()) {
+        $roomId = (int)($roomRow['room_id'] ?? 0);
+        if ($roomId > 0) {
+            $roomPool[$roomId] = true;
+        }
+    }
+
+    $roomPoolStmt->close();
+}
+unset($roomPoolStmt);
+
+$scheduleHeatmap['total_rooms'] = count($roomPool);
+
+if (!empty($roomPool)) {
+    $roomIdList = implode(',', array_map('intval', array_keys($roomPool)));
+    $heatmapSql = "
+        SELECT
+            cs.room_id,
+            cs.time_start,
+            cs.time_end,
+            cs.days_json
+        FROM tbl_class_schedule cs
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        WHERE o.ay_id = ?
+          AND o.semester = ?
+          AND cs.room_id IN ({$roomIdList})
+    ";
+
+    $heatmapStmt = $conn->prepare($heatmapSql);
+    if ($heatmapStmt instanceof mysqli_stmt) {
+        $heatmapStmt->bind_param('ii', $currentAyId, $currentSemester);
+        $heatmapStmt->execute();
+        $heatmapRes = $heatmapStmt->get_result();
+
+        while ($heatmapRow = $heatmapRes->fetch_assoc()) {
+            $roomId = (int)($heatmapRow['room_id'] ?? 0);
+            if (!isset($roomPool[$roomId])) {
+                continue;
+            }
+
+            $meetingDays = array_values(array_intersect(
+                dashboard_decode_days((string)($heatmapRow['days_json'] ?? '')),
+                $heatmapDays
+            ));
+            $startMinutes = dashboard_time_to_minutes((string)($heatmapRow['time_start'] ?? ''));
+            $endMinutes = dashboard_time_to_minutes((string)($heatmapRow['time_end'] ?? ''));
+            $meetingHours = dashboard_overlap_hours(
+                $startMinutes,
+                $endMinutes,
+                $dayWindowStartMinutes,
+                $dayWindowEndMinutes
+            );
+
+            if (count($meetingDays) === 0 || $meetingHours <= 0) {
+                continue;
+            }
+
+            foreach ($meetingDays as $dayKey) {
+                foreach ($slotDefinitions as $slotDefinition) {
+                    if ($slotDefinition['start'] < $endMinutes && $slotDefinition['end'] > $startMinutes) {
+                        $heatmapMatrix[$dayKey][$slotDefinition['label']][$roomId] = true;
+                    }
+                }
+            }
+        }
+
+        $heatmapStmt->close();
+    }
+    unset($heatmapStmt);
+
+    foreach ($heatmapDays as $dayKey) {
+        $seriesData = [];
+
+        foreach ($heatmapSlotLabels as $slotLabel) {
+            $occupiedRooms = count($heatmapMatrix[$dayKey][$slotLabel]);
+            $occupancyPercent = $scheduleHeatmap['total_rooms'] > 0
+                ? round(($occupiedRooms / $scheduleHeatmap['total_rooms']) * 100, 1)
+                : 0.0;
+
+            $seriesData[] = [
+                'x' => $slotLabel,
+                'y' => $occupancyPercent
+            ];
+
+            if ($occupancyPercent > $scheduleHeatmap['peak_percent']) {
+                $scheduleHeatmap['peak_percent'] = $occupancyPercent;
+                $scheduleHeatmap['peak_occupied_rooms'] = $occupiedRooms;
+                $scheduleHeatmap['peak_label'] = dashboard_day_label($dayKey) . ' - ' . $slotLabel;
+            }
+        }
+
+        $scheduleHeatmap['series'][] = [
+            'name' => dashboard_day_label($dayKey),
+            'data' => $seriesData
+        ];
+    }
+}
+
+if (empty($scheduleHeatmap['series'])) {
+    foreach ($heatmapDays as $dayKey) {
+        $seriesData = [];
+
+        foreach ($heatmapSlotLabels as $slotLabel) {
+            $seriesData[] = [
+                'x' => $slotLabel,
+                'y' => 0
+            ];
+        }
+
+        $scheduleHeatmap['series'][] = [
+            'name' => dashboard_day_label($dayKey),
+            'data' => $seriesData
+        ];
+    }
+}
+
 echo json_encode([
     'scope' => $scope,
     'scope_label' => $scopeLabel,
     'program_progress' => $programProgress,
-    'weekly_pressure' => $weeklyPressure
+    'weekly_pressure' => $weeklyPressure,
+    'schedule_heatmap' => $scheduleHeatmap
 ]);
 exit;
 ?>

@@ -361,6 +361,25 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                       <div class="card h-100 shadow-sm">
                         <div class="card-header d-flex justify-content-between align-items-center">
                           <div>
+                            <h5 class="m-0" id="scheduleHeatmapTitle">Accessible Room Occupancy Heatmap</h5>
+                            <small class="text-muted" id="scheduleHeatmapSubtitle">Each cell shows the percentage of active rooms accessible to your college that are occupied during each weekday hour.</small>
+                          </div>
+                          <span class="badge bg-label-info" id="scheduleHeatmapBadge">Room Heat</span>
+                        </div>
+
+                        <div class="card-body">
+                          <div id="scheduleHeatmapChart" class="chart-shell"></div>
+                          <p class="chart-insight mb-0" id="scheduleHeatmapInsight">
+                            This heat map highlights the busiest room-hours for scheduling.
+                          </p>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-lg-12 order-1 mb-4">
+                      <div class="card h-100 shadow-sm">
+                        <div class="card-header d-flex justify-content-between align-items-center">
+                          <div>
                             <h5 class="m-0" id="weeklyPressureTitle">Weekly Scheduling Pressure</h5>
                             <small class="text-muted" id="weeklyPressureSubtitle">Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.</small>
                           </div>
@@ -508,6 +527,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
     <script>
       document.addEventListener("DOMContentLoaded", function () {
         let schedulingProgressChart = null;
+        let scheduleHeatmapChart = null;
         let weeklyPressureChart = null;
         let dashboardScope = "college";
         const campusViewEnabled = <?php echo $campusViewEnabled ? 'true' : 'false'; ?>;
@@ -591,6 +611,9 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           const programChartTitle = document.getElementById("programChartTitle");
           const programChartSubtitle = document.getElementById("programChartSubtitle");
           const programChartBadge = document.getElementById("programChartBadge");
+          const scheduleHeatmapTitle = document.getElementById("scheduleHeatmapTitle");
+          const scheduleHeatmapSubtitle = document.getElementById("scheduleHeatmapSubtitle");
+          const scheduleHeatmapBadge = document.getElementById("scheduleHeatmapBadge");
           const weeklyPressureTitle = document.getElementById("weeklyPressureTitle");
           const weeklyPressureSubtitle = document.getElementById("weeklyPressureSubtitle");
           const weeklyPressureBadge = document.getElementById("weeklyPressureBadge");
@@ -619,6 +642,22 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
           if (programChartBadge) {
             programChartBadge.textContent = scopeType === "campus" ? "Campus Monitor" : "Scheduler Focus";
+          }
+
+          if (scheduleHeatmapTitle) {
+            scheduleHeatmapTitle.textContent = scopeType === "campus"
+              ? "Campus Room Occupancy Heatmap"
+              : "Accessible Room Occupancy Heatmap";
+          }
+
+          if (scheduleHeatmapSubtitle) {
+            scheduleHeatmapSubtitle.textContent = scopeType === "campus"
+              ? "Each cell shows the percentage of active campus rooms occupied during each weekday hour across all colleges in the current campus."
+              : "Each cell shows the percentage of active rooms accessible to your college that are occupied during each weekday hour.";
+          }
+
+          if (scheduleHeatmapBadge) {
+            scheduleHeatmapBadge.textContent = scopeType === "campus" ? "Campus Heat" : "Room Heat";
           }
 
           if (weeklyPressureTitle) {
@@ -719,7 +758,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           schedulingProgressChart = new ApexCharts(chartContainer, {
             chart: {
               type: "line",
-              height: 340,
+              height: 360,
               toolbar: { show: false },
               zoom: { enabled: false }
             },
@@ -737,24 +776,23 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                 data: pendingValues
               }
             ],
-            colors: ["#696cff", "#71dd37", "#ffab00"],
+            colors: ["#275efe", "#1f9d55", "#ff8a00"],
             stroke: {
-              curve: "smooth",
-              width: [3, 4, 3]
+              curve: "straight",
+              width: [4, 4, 4],
+              dashArray: [0, 6, 2],
+              lineCap: "round"
             },
             fill: {
-              type: "gradient",
-              gradient: {
-                shadeIntensity: 1,
-                opacityFrom: 0.2,
-                opacityTo: 0.03,
-                stops: [0, 90, 100]
-              }
+              type: "solid",
+              opacity: 1
             },
             markers: {
-              size: 0,
+              size: 4,
+              strokeWidth: 2,
+              strokeColors: "#ffffff",
               hover: {
-                sizeOffset: 5
+                sizeOffset: 3
               }
             },
             dataLabels: {
@@ -763,14 +801,23 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             legend: {
               position: "top",
               horizontalAlign: "left",
-              fontSize: "12px"
+              fontSize: "12px",
+              markers: {
+                width: 10,
+                height: 10,
+                radius: 12
+              }
             },
             grid: {
               borderColor: "#eceef1",
-              strokeDashArray: 4
+              strokeDashArray: 4,
+              padding: {
+                top: 8
+              }
             },
             xaxis: {
               categories: categories,
+              tickPlacement: "on",
               labels: {
                 rotate: -25,
                 trim: true,
@@ -782,6 +829,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             },
             yaxis: {
               min: 0,
+              max: Math.max(5, Math.ceil((Math.max.apply(null, totalValues.concat(scheduledValues, pendingValues)) || 0) * 1.12)),
+              tickAmount: 5,
               forceNiceScale: true,
               title: {
                 text: "Offerings",
@@ -835,6 +884,129 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               " still not scheduled out of " +
               highestPending.total +
               " total."
+          );
+        }
+
+        function renderScheduleHeatmap(heatmap) {
+          const payload = heatmap && typeof heatmap === "object" ? heatmap : {};
+          const series = Array.isArray(payload.series) ? payload.series : [];
+          const totalRooms = Number(payload.total_rooms) || 0;
+          const peakPercent = Number(payload.peak_percent) || 0;
+          const peakOccupiedRooms = Number(payload.peak_occupied_rooms) || 0;
+          const peakLabel = payload.peak_label || "No occupied room slots";
+          const scopeType = dashboardScope === "campus" && campusViewEnabled ? "campus" : "college";
+          const poolLabel = scopeType === "campus" ? "campus room pool" : "accessible room pool";
+          const chartContainer = document.querySelector("#scheduleHeatmapChart");
+
+          if (!chartContainer) {
+            return;
+          }
+
+          if (!series.length) {
+            setChartFallback("scheduleHeatmapChart", "No room occupancy heat map is available.");
+            setInsight("scheduleHeatmapInsight", "Room occupancy could not be measured for the current scheduling scope.");
+            return;
+          }
+
+          if (scheduleHeatmapChart) {
+            scheduleHeatmapChart.destroy();
+          }
+
+          chartContainer.innerHTML = "";
+
+          scheduleHeatmapChart = new ApexCharts(chartContainer, {
+            series: series,
+            chart: {
+              type: "heatmap",
+              height: 340,
+              toolbar: { show: false }
+            },
+            dataLabels: {
+              enabled: false
+            },
+            stroke: {
+              width: 1,
+              colors: ["#ffffff"]
+            },
+            plotOptions: {
+              heatmap: {
+                shadeIntensity: 0.6,
+                enableShades: false,
+                colorScale: {
+                  ranges: [
+                    { from: 0, to: 0, name: "Idle", color: "#edf1f7" },
+                    { from: 0.1, to: 25, name: "Light", color: "#8fc2ff" },
+                    { from: 25.1, to: 50, name: "Moderate", color: "#4b97f2" },
+                    { from: 50.1, to: 75, name: "Busy", color: "#1f6fd1" },
+                    { from: 75.1, to: 100, name: "Peak", color: "#114aa3" }
+                  ]
+                }
+              }
+            },
+            xaxis: {
+              labels: {
+                rotate: -35,
+                style: {
+                  fontSize: "11px",
+                  colors: "#697a8d"
+                }
+              }
+            },
+            yaxis: {
+              labels: {
+                style: {
+                  colors: "#697a8d"
+                }
+              }
+            },
+            legend: {
+              position: "top",
+              horizontalAlign: "left"
+            },
+            grid: {
+              borderColor: "#eceef4",
+              strokeDashArray: 4
+            },
+            tooltip: {
+              y: {
+                formatter: function (value) {
+                  return Number(value).toFixed(1) + "% occupied";
+                }
+              }
+            }
+          });
+
+          scheduleHeatmapChart.render();
+
+          if (totalRooms <= 0) {
+            setInsight(
+              "scheduleHeatmapInsight",
+              "No active rooms are available in the current " + poolLabel + ", so occupancy cannot be measured yet."
+            );
+            return;
+          }
+
+          if (peakPercent <= 0) {
+            setInsight(
+              "scheduleHeatmapInsight",
+              "No occupied room slots are mapped in the current weekday window across the " + poolLabel + " of " + totalRooms + " room" + (totalRooms === 1 ? "" : "s") + "."
+            );
+            return;
+          }
+
+          setInsight(
+            "scheduleHeatmapInsight",
+            "Peak room pressure hits " +
+              peakLabel +
+              " with " +
+              peakOccupiedRooms +
+              "/" +
+              totalRooms +
+              " rooms occupied (" +
+              peakPercent.toFixed(1) +
+              "%) in the current " +
+              poolLabel +
+              "."
           );
         }
 
@@ -1040,14 +1212,35 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               ? <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?>
               : <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>
           });
+
+          if (schedulingProgressChart) {
+            schedulingProgressChart.destroy();
+            schedulingProgressChart = null;
+          }
+          if (scheduleHeatmapChart) {
+            scheduleHeatmapChart.destroy();
+            scheduleHeatmapChart = null;
+          }
+          if (weeklyPressureChart) {
+            weeklyPressureChart.destroy();
+            weeklyPressureChart = null;
+          }
+
           setCountsLoadingState();
           setChartLoading("programSchedulingChart", "Loading program scheduling progress...");
+          setChartLoading("scheduleHeatmapChart", "Loading room occupancy heat map...");
           setChartLoading("weeklyPressureChart", "Loading weekday scheduling pressure...");
           setInsight(
             "programProgressInsight",
             dashboardScope === "campus"
               ? "Loading the comparison of total classes, scheduled classes, and unscheduled classes for each college in the current campus."
               : "Loading the comparison of total classes, scheduled classes, and unscheduled classes per program."
+          );
+          setInsight(
+            "scheduleHeatmapInsight",
+            dashboardScope === "campus"
+              ? "Loading which weekday hours have the highest room occupancy across the current campus."
+              : "Loading which weekday hours are busiest across rooms accessible to your college."
           );
           setInsight(
             "weeklyPressureInsight",
@@ -1064,13 +1257,16 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             success: function (data) {
               applyDashboardScopeMeta(data || {});
               renderProgramSchedulingChart(data.program_progress || []);
+              renderScheduleHeatmap(data.schedule_heatmap || {});
               renderWeeklyPressureChart(data.weekly_pressure || []);
             },
             error: function (xhr) {
               console.error("Scheduler charts error:", xhr.responseText);
               setChartFallback("programSchedulingChart", "Unable to load program scheduling progress.");
+              setChartFallback("scheduleHeatmapChart", "Unable to load room occupancy heat map.");
               setChartFallback("weeklyPressureChart", "Unable to load weekday scheduling pressure.");
               setInsight("programProgressInsight", "Program comparison data could not be loaded.");
+              setInsight("scheduleHeatmapInsight", "Room occupancy data could not be loaded.");
               setInsight("weeklyPressureInsight", "Weekday load data could not be loaded.");
             }
           });
