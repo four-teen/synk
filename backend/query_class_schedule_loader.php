@@ -3,11 +3,9 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
+require_once __DIR__ . '/schedule_block_helper.php';
 
 header('Content-Type: application/json');
-
-define('LAB_LOAD_MULTIPLIER', 0.75);
-define('LAB_CONTACT_HOURS_PER_UNIT', 3.0);
 
 /* =====================================================
    SECURITY
@@ -95,6 +93,7 @@ $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'sche
 
 $selectParts = [
     'cs.schedule_id',
+    'o.offering_id',
     $classScheduleHasGroupId ? 'cs.schedule_group_id' : 'NULL AS schedule_group_id',
     $classScheduleHasType ? 'cs.schedule_type' : "'LEC' AS schedule_type",
     'sm.sub_code',
@@ -106,12 +105,7 @@ $selectParts = [
     'r.room_code',
     'ps.total_units AS total_units',
     'ps.lec_units AS lec_units',
-    'ps.lab_units AS lab_units',
-    $classScheduleHasGroupId ? 'partner_cs.schedule_id AS partner_schedule_id' : 'NULL AS partner_schedule_id',
-    ($classScheduleHasGroupId && $classScheduleHasType)
-        ? 'partner_cs.schedule_type AS partner_schedule_type'
-        : "'' AS partner_schedule_type",
-    $classScheduleHasGroupId ? 'partner_fw.faculty_id AS partner_faculty_id' : 'NULL AS partner_faculty_id'
+    'ps.lab_units AS lab_units'
 ];
 
 $joinParts = [
@@ -131,17 +125,6 @@ $joinParts = [
     '   AND assigned_fw.semester = ?'
 ];
 
-if ($classScheduleHasGroupId) {
-    $joinParts[] = 'LEFT JOIN tbl_class_schedule partner_cs';
-    $joinParts[] = '    ON cs.schedule_group_id IS NOT NULL';
-    $joinParts[] = '   AND partner_cs.schedule_group_id = cs.schedule_group_id';
-    $joinParts[] = '   AND partner_cs.schedule_id <> cs.schedule_id';
-    $joinParts[] = 'LEFT JOIN tbl_faculty_workload_sched partner_fw';
-    $joinParts[] = '    ON partner_fw.schedule_id = partner_cs.schedule_id';
-    $joinParts[] = '   AND partner_fw.ay_id = ?';
-    $joinParts[] = '   AND partner_fw.semester = ?';
-}
-
 $sql = "
 SELECT
     " . implode(",\n    ", $selectParts) . "
@@ -151,12 +134,6 @@ WHERE
 AND o.semester = ?
 AND p.college_id = ?
 AND assigned_fw.schedule_id IS NULL
-" . ($classScheduleHasGroupId ? "
-AND (
-    cs.schedule_group_id IS NULL
-    OR partner_fw.faculty_id IS NULL
-    OR partner_fw.faculty_id = ?
-)" : '') . "
 ORDER BY
     sec.section_name,
     sm.sub_code,
@@ -168,21 +145,10 @@ $stmt = $conn->prepare($sql);
 $bindTypes = 'ii';
 $bindParams = [$ay_id, $semester];
 
-if ($classScheduleHasGroupId) {
-    $bindTypes .= 'ii';
-    $bindParams[] = $ay_id;
-    $bindParams[] = $semester;
-}
-
 $bindTypes .= 'iii';
 $bindParams[] = $ay_id;
 $bindParams[] = $semester;
 $bindParams[] = $college_id;
-
-if ($classScheduleHasGroupId) {
-    $bindTypes .= 'i';
-    $bindParams[] = $faculty_id;
-}
 
 synk_bind_dynamic_params($stmt, $bindTypes, $bindParams);
 $stmt->execute();
@@ -200,47 +166,24 @@ while ($row = $res->fetch_assoc()) {
     }
 
     $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? 'LEC')));
-    $lecUnits = (float)$row['lec_units'];
-    $labValue = (float)$row['lab_units'];
-    $totalUnits = (float)$row['total_units'];
-    $labIsCredit = ($labValue > 0) && (abs(($lecUnits + $labValue) - $totalUnits) < 0.0001);
-    $labHours = $labIsCredit ? ($labValue * LAB_CONTACT_HOURS_PER_UNIT) : $labValue;
-
-    $componentUnits = $scheduleType === 'LAB'
-        ? ($labIsCredit ? $labValue : 0)
-        : $lecUnits;
-    $componentLec = $scheduleType === 'LEC' ? $lecUnits : 0;
-    $componentLab = $scheduleType === 'LAB' ? $labHours : 0;
-    $componentLoad = $scheduleType === 'LAB'
-        ? round($labHours * LAB_LOAD_MULTIPLIER, 2)
-        : round($lecUnits, 2);
-    $partnerScheduleId = (int)($row['partner_schedule_id'] ?? 0);
-    $partnerFacultyId = (int)($row['partner_faculty_id'] ?? 0);
-    $partnerType = strtoupper(trim((string)($row['partner_schedule_type'] ?? '')));
-    $partnerStatus = 'none';
-    $partnerNote = '';
-
-    if ($partnerScheduleId > 0) {
-        if ($partnerFacultyId > 0) {
-            if ($faculty_id > 0 && $partnerFacultyId === $faculty_id) {
-                $partnerStatus = 'same_faculty';
-                if ($partnerType !== '') {
-                    $partnerNote = "Paired with assigned {$partnerType}";
-                }
-            } else {
-                $partnerStatus = 'other_faculty';
-                $partnerNote = 'Paired with another faculty';
-            }
-        } else {
-            $partnerStatus = 'unassigned';
-            if ($partnerType !== '') {
-                $partnerNote = "Has {$partnerType} partner";
-            }
-        }
-    }
+    $subjectUnits = synk_subject_units_total(
+        (float)$row['lec_units'],
+        (float)$row['lab_units'],
+        (float)$row['total_units']
+    );
+    $metrics = synk_schedule_block_metrics_from_row([
+        'schedule_type' => $scheduleType,
+        'days' => $days_arr,
+        'time_start' => (string)$row['time_start'],
+        'time_end' => (string)$row['time_end'],
+        'lec_units' => (float)$row['lec_units'],
+        'lab_units' => (float)$row['lab_units'],
+        'total_units' => (float)$row['total_units']
+    ]);
 
     $data[] = [
         'schedule_id' => (int)$row['schedule_id'],
+        'offering_id' => (int)$row['offering_id'],
         'group_id' => $row['schedule_group_id'],
         'schedule_type' => $scheduleType,
         'subject_code' => $row['sub_code'],
@@ -250,14 +193,15 @@ while ($row = $res->fetch_assoc()) {
         'time' => date("g:iA", strtotime($row['time_start'])) . "-" .
                   date("g:iA", strtotime($row['time_end'])),
         'room_code' => $row['room_code'] ?? '',
-        'units' => $componentUnits,
-        'hours_lec' => $componentLec,
-        'hours_lab' => round($componentLab, 2),
-        'faculty_load' => $componentLoad,
-        'partner_schedule_id' => $partnerScheduleId,
-        'partner_type' => $partnerType,
-        'partner_status' => $partnerStatus,
-        'partner_note' => $partnerNote
+        'lec_units' => (float)$row['lec_units'],
+        'lab_units' => (float)$row['lab_units'],
+        'subject_units' => round($subjectUnits, 2),
+        'units' => $metrics['units'],
+        'hours_lec' => $metrics['hours_lec'],
+        'hours_lab' => $metrics['hours_lab'],
+        'faculty_load' => $metrics['faculty_load'],
+        'weekly_minutes' => $metrics['weekly_minutes'],
+        'coverage_ratio' => $metrics['coverage_ratio']
     ];
 }
 

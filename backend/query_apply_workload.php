@@ -159,19 +159,7 @@ $candidateSelectParts = [
     'cs.time_start',
     'cs.time_end',
     'sm.sub_code',
-    'sec.section_name',
-    $classScheduleHasGroupId ? 'partner_cs.schedule_id AS partner_schedule_id' : 'NULL AS partner_schedule_id',
-    ($classScheduleHasGroupId && $classScheduleHasType)
-        ? 'partner_cs.schedule_type AS partner_schedule_type'
-        : "'' AS partner_schedule_type",
-    $classScheduleHasGroupId ? 'partner_fw.faculty_id AS partner_faculty_id' : 'NULL AS partner_faculty_id',
-    $classScheduleHasGroupId
-        ? "CONCAT(
-            COALESCE(partner_f.last_name, ''),
-            CASE WHEN partner_f.last_name IS NOT NULL AND partner_f.first_name IS NOT NULL THEN ', ' ELSE '' END,
-            COALESCE(partner_f.first_name, '')
-        ) AS partner_faculty_name"
-        : "'' AS partner_faculty_name"
+    'sec.section_name'
 ];
 
 $candidateJoinParts = [
@@ -189,19 +177,6 @@ $candidateJoinParts = [
     '   AND assigned_fw.semester = ?'
 ];
 
-if ($classScheduleHasGroupId) {
-    $candidateJoinParts[] = 'LEFT JOIN tbl_class_schedule partner_cs';
-    $candidateJoinParts[] = '    ON cs.schedule_group_id IS NOT NULL';
-    $candidateJoinParts[] = '   AND partner_cs.schedule_group_id = cs.schedule_group_id';
-    $candidateJoinParts[] = '   AND partner_cs.schedule_id <> cs.schedule_id';
-    $candidateJoinParts[] = 'LEFT JOIN tbl_faculty_workload_sched partner_fw';
-    $candidateJoinParts[] = '    ON partner_fw.schedule_id = partner_cs.schedule_id';
-    $candidateJoinParts[] = '   AND partner_fw.ay_id = ?';
-    $candidateJoinParts[] = '   AND partner_fw.semester = ?';
-    $candidateJoinParts[] = 'LEFT JOIN tbl_faculty partner_f';
-    $candidateJoinParts[] = '    ON partner_f.faculty_id = partner_fw.faculty_id';
-}
-
 $candidateSql = "
     SELECT
         " . implode(",\n        ", $candidateSelectParts) . "
@@ -217,12 +192,6 @@ $candidateSql = "
 $candStmt = $conn->prepare($candidateSql);
 $candidateBindTypes = 'ii';
 $candidateBindParams = [$ay_id, $semester];
-
-if ($classScheduleHasGroupId) {
-    $candidateBindTypes .= 'ii';
-    $candidateBindParams[] = $ay_id;
-    $candidateBindParams[] = $semester;
-}
 
 $candidateBindTypes .= 'iii';
 $candidateBindParams[] = $ay_id;
@@ -298,21 +267,6 @@ $acceptedBatch = [];
 $conflicts = [];
 
 foreach ($candidates as $cand) {
-    $partnerFacultyId = (int)($cand['partner_faculty_id'] ?? 0);
-    if ($partnerFacultyId > 0 && $partnerFacultyId !== $faculty_id) {
-        $conflicts[] = [
-            'type' => 'pair',
-            'candidate' => $cand,
-            'against' => [
-                'sub_code' => $cand['sub_code'],
-                'section_name' => $cand['section_name'],
-                'schedule_type' => strtoupper(trim((string)($cand['partner_schedule_type'] ?? 'PARTNER'))),
-                'faculty_name' => (string)($cand['partner_faculty_name'] ?? '')
-            ]
-        ];
-        continue;
-    }
-
     $hit = null;
 
     foreach ($existing as $other) {
@@ -364,17 +318,6 @@ if (!empty($conflicts)) {
         $a = $entry['against'];
 
         $candLabel = esc(strtoupper($c['sub_code'])) . " (" . esc($c['section_name']) . ", " . esc($c['schedule_type']) . ")";
-
-        if (($entry['type'] ?? 'time') === 'pair') {
-            $hitLabel = esc(strtoupper($a['sub_code'])) . " (" . esc($a['section_name']) . ", " . esc($a['schedule_type']) . ")";
-            $facultyLabel = trim((string)($a['faculty_name'] ?? ''));
-            $facultyHtml = $facultyLabel !== ''
-                ? " already assigned to <b>" . esc($facultyLabel) . "</b>"
-                : " already assigned to another faculty";
-
-            $items[] = "<li><b>{$candLabel}</b> is paired with <b>{$hitLabel}</b>{$facultyHtml}.</li>";
-            continue;
-        }
 
         $candWhen = esc(fmt_days($c['days'])) . " " . esc(fmt_time($c['time_start'])) . "-" . esc(fmt_time($c['time_end']));
         $hitLabel = esc(strtoupper($a['sub_code'])) . " (" . esc($a['section_name']) . ", " . esc($a['schedule_type']) . ")";

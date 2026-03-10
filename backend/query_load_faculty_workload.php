@@ -3,6 +3,7 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
+require_once __DIR__ . '/schedule_block_helper.php';
 
 header('Content-Type: application/json');
 
@@ -20,9 +21,6 @@ if ($faculty_id <= 0 || $ay_id <= 0 || $semester <= 0) {
     echo json_encode(['rows' => [], 'meta' => []]);
     exit;
 }
-
-define('LAB_LOAD_MULTIPLIER', 0.75);
-define('LAB_CONTACT_HOURS_PER_UNIT', 3.0);
 
 function workload_title_case(string $value): string
 {
@@ -112,16 +110,20 @@ while ($row = $res->fetch_assoc()) {
     }
 
     $rowType = strtoupper(trim((string)($row['type'] ?? 'LEC')));
-    $lecUnits = (float)($row['lec_units'] ?? 0);
-    $labValue = (float)($row['lab_units'] ?? 0);
-    $totalUnits = (float)($row['total_units'] ?? 0);
-
-    $labIsCredit = ($labValue > 0) && (abs(($lecUnits + $labValue) - $totalUnits) < 0.0001);
-    $labHours = $labIsCredit ? ($labValue * LAB_CONTACT_HOURS_PER_UNIT) : $labValue;
-    $subjectUnits = $totalUnits > 0
-        ? $totalUnits
-        : ($lecUnits + ($labIsCredit ? $labValue : 0));
-    $subjectLoad = $lecUnits + ($labHours * LAB_LOAD_MULTIPLIER);
+    $subjectUnits = synk_subject_units_total(
+        (float)($row['lec_units'] ?? 0),
+        (float)($row['lab_units'] ?? 0),
+        (float)($row['total_units'] ?? 0)
+    );
+    $metrics = synk_schedule_block_metrics_from_row([
+        'schedule_type' => $rowType,
+        'days' => $days_arr,
+        'time_start' => (string)$row['time_start'],
+        'time_end' => (string)$row['time_end'],
+        'lec_units' => (float)($row['lec_units'] ?? 0),
+        'lab_units' => (float)($row['lab_units'] ?? 0),
+        'total_units' => (float)($row['total_units'] ?? 0)
+    ]);
 
     $fullSection = trim((string)($row['full_section'] ?? ''));
     if ($fullSection === '') {
@@ -141,10 +143,13 @@ while ($row = $res->fetch_assoc()) {
         'time' => date("g:iA", strtotime((string)$row['time_start'])) . "-" .
                   date("g:iA", strtotime((string)$row['time_end'])),
         'room' => (string)($row['room'] ?? ''),
-        'units' => round($subjectUnits, 2),
-        'lec' => round($lecUnits, 2),
-        'lab' => round($labHours, 2),
-        'faculty_load' => round($subjectLoad, 2),
+        'lec_units' => (float)($row['lec_units'] ?? 0),
+        'lab_units' => (float)($row['lab_units'] ?? 0),
+        'subject_units' => round($subjectUnits, 2),
+        'units' => $metrics['units'],
+        'lec' => $metrics['hours_lec'],
+        'lab' => $metrics['hours_lab'],
+        'faculty_load' => $metrics['faculty_load'],
         'student_count' => 0
     ];
 

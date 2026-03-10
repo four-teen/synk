@@ -840,7 +840,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
                     <th rowspan="2" class="time-head">Time</th>
                     <th rowspan="2" class="room-head">Room</th>
                     <th rowspan="2" class="text-center unit-head">Unit</th>
-                    <th colspan="2" class="text-center hours-group-head">No. of Hours</th>
+                    <th colspan="2" class="text-center hours-group-head">Unit Breakdown</th>
                     <th rowspan="2" class="text-center load-head">Load</th>
                     <th rowspan="2" class="text-center students-head"># of<br>Students</th>
                     <th rowspan="2" class="text-end screen-only">Action</th>
@@ -1205,28 +1205,48 @@ $(document).ready(function () {
         $("#totalStudents").text("");
     }
 
-    function getWorkloadGroupKey(row) {
-        const groupId = Number(row?.group_id) || 0;
-        if (groupId > 0) {
-            return `g:${groupId}`;
-        }
-
-        const offeringId = Number(row?.offering_id) || 0;
-        if (offeringId > 0) {
-            return `o:${offeringId}`;
-        }
-
-        return `w:${Number(row?.workload_id) || 0}`;
+    function buildWorkloadDescription(row) {
+        return escapeHtml(row?.desc || "");
     }
 
-    function buildWorkloadDescription(row, isPaired = false) {
-        const description = escapeHtml(row?.desc || "");
-        if (!isPaired) {
-            return description;
+    function getDisplayUnits(row) {
+        if (row && Object.prototype.hasOwnProperty.call(row, "subject_units")) {
+            return toNumber(row.subject_units);
         }
 
-        const typeSuffix = String(row?.type || "").toUpperCase() === "LAB" ? "lab" : "lec";
-        return `${description} (${escapeHtml(typeSuffix)})`;
+        return toNumber(row?.units);
+    }
+
+    function getDisplayLabUnits(row) {
+        if (row && Object.prototype.hasOwnProperty.call(row, "lab_units")) {
+            return toNumber(row.lab_units);
+        }
+
+        return toNumber(row?.hours_lab);
+    }
+
+    function getDisplayLecUnits(row) {
+        if (row && Object.prototype.hasOwnProperty.call(row, "lec_units")) {
+            return toNumber(row.lec_units);
+        }
+
+        return toNumber(row?.hours_lec);
+    }
+
+    function getUnitTotalKey(row) {
+        const offeringId = Number(row?.offering_id) || 0;
+        if (offeringId > 0) {
+            return `offering:${offeringId}`;
+        }
+
+        const groupId = Number(row?.group_id) || 0;
+        if (groupId > 0) {
+            return `group:${groupId}`;
+        }
+
+        const subjectCode = String(row?.sub_code || row?.subject_code || "").trim();
+        const courseLabel = String(row?.course || row?.section || row?.section_name || "").trim();
+        return `${subjectCode}|${courseLabel}`;
     }
 
     function getSelectedContext() {
@@ -1345,13 +1365,12 @@ $(document).ready(function () {
             let rows = "";
             data.forEach(item => {
                 const type = String(item.schedule_type || "").toUpperCase();
+                const displayUnits = getDisplayUnits(item);
+                const displayLabUnits = getDisplayLabUnits(item);
+                const displayLecUnits = getDisplayLecUnits(item);
                 const typeBadge = type === "LAB"
                     ? '<span class="type-pill lab">LAB</span>'
                     : '<span class="type-pill lec">LEC</span>';
-                const partnerNote = item.partner_status === "same_faculty" && item.partner_note
-                    ? `<span class="schedule-partner-note">${escapeHtml(item.partner_note)}</span>`
-                    : "";
-
                 rows += `
                     <tr>
                         <td>
@@ -1361,14 +1380,14 @@ $(document).ready(function () {
                         </td>
                         <td>${escapeHtml(item.subject_code)}</td>
                         <td>${escapeHtml(item.subject_description)}</td>
-                        <td>${escapeHtml(item.section_name)}${partnerNote}</td>
+                        <td>${escapeHtml(item.section_name)}</td>
                         <td class="text-center">${typeBadge}</td>
                         <td>${escapeHtml(item.days)}</td>
                         <td>${escapeHtml(item.time)}</td>
                         <td>${escapeHtml(item.room_code)}</td>
-                        <td class="text-center">${formatNumber(item.units)}</td>
-                        <td class="text-center">${formatNumber(item.hours_lab)}</td>
-                        <td class="text-center">${formatNumber(item.hours_lec)}</td>
+                        <td class="text-center">${formatNumber(displayUnits)}</td>
+                        <td class="text-center">${formatNumber(displayLabUnits)}</td>
+                        <td class="text-center">${formatNumber(displayLecUnits)}</td>
                     </tr>
                 `;
             });
@@ -1404,22 +1423,6 @@ $(document).ready(function () {
         const checked = $(".chkSchedule:checked").length;
         $("#checkAllSchedules").prop("checked", total > 0 && total === checked);
     });
-
-    function isPartneredWorkloadPair(currentRow, nextRow) {
-        if (!currentRow || !nextRow) {
-            return false;
-        }
-
-        const currentGroupId = Number(currentRow.group_id) || 0;
-        const nextGroupId = Number(nextRow.group_id) || 0;
-        if (currentGroupId <= 0 || currentGroupId !== nextGroupId) {
-            return false;
-        }
-
-        return String(currentRow.sub_code ?? "") === String(nextRow.sub_code ?? "") &&
-               String(currentRow.course ?? currentRow.section ?? "") === String(nextRow.course ?? nextRow.section ?? "") &&
-               String(currentRow.type ?? "").toUpperCase() !== String(nextRow.type ?? "").toUpperCase();
-    }
 
     /* =========================================================
        LOAD FACULTY WORKLOAD LIST
@@ -1471,8 +1474,8 @@ $(document).ready(function () {
 
             const rowsData = payload.rows;
             const meta = payload.meta || {};
-            const countedGroups = new Set();
             const preparationSet = new Set();
+            const unitTotalKeys = new Set();
             let totalLEC = 0;
             let totalLAB = 0;
             let totalUNIT = 0;
@@ -1481,66 +1484,22 @@ $(document).ready(function () {
 
             for (let i = 0; i < rowsData.length; i++) {
                 const row = rowsData[i];
-                const nextRow = rowsData[i + 1] || null;
-                const groupKey = getWorkloadGroupKey(row);
-                const isPairStart = isPartneredWorkloadPair(row, nextRow);
+                const displayUnits = getDisplayUnits(row);
+                const displayLabUnits = getDisplayLabUnits(row);
+                const displayLecUnits = getDisplayLecUnits(row);
+                const unitTotalKey = getUnitTotalKey(row);
+                totalLOAD += toNumber(row.faculty_load);
 
-                if (!countedGroups.has(groupKey)) {
-                    countedGroups.add(groupKey);
-                    totalLEC += toNumber(row.lec);
-                    totalLAB += toNumber(row.lab);
-                    totalUNIT += toNumber(row.units);
-                    totalLOAD += toNumber(row.faculty_load);
+                if (!unitTotalKeys.has(unitTotalKey)) {
+                    totalUNIT += displayUnits;
+                    totalLAB += displayLabUnits;
+                    totalLEC += displayLecUnits;
+                    unitTotalKeys.add(unitTotalKey);
                 }
 
                 const preparationKey = String(row.sub_code || "").trim();
                 if (preparationKey !== "") {
                     preparationSet.add(preparationKey);
-                }
-
-                if (isPairStart) {
-                    const mergedStudents = Math.max(
-                        toNumber(row.student_count),
-                        toNumber(nextRow.student_count)
-                    );
-
-                    rows += `
-                        <tr class="paired-row">
-                            <td class="workload-code">${escapeHtml(row.sub_code)}</td>
-                            <td class="workload-desc">${buildWorkloadDescription(row, true)}</td>
-                            <td>${escapeHtml(row.course || row.section)}</td>
-                            <td class="workload-days">${escapeHtml(row.days)}</td>
-                            <td class="workload-time">${formatCompactTime(row.time)}</td>
-                            <td class="workload-room">${escapeHtml(row.room)}</td>
-                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.units)}</td>
-                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.lab)}</td>
-                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.lec)}</td>
-                            <td class="text-center merged-metric" rowspan="2">${formatNumber(row.faculty_load)}</td>
-                            <td class="text-center merged-metric" rowspan="2">${formatStudentCount(mergedStudents)}</td>
-                            <td class="text-end screen-only">
-                                <button class="btn btn-sm btn-delete-workload btnRemoveWL"
-                                        data-id="${row.workload_id}">
-                                    <i class="bx bx-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                        <tr class="paired-row">
-                            <td class="workload-code">${escapeHtml(nextRow.sub_code)}</td>
-                            <td class="workload-desc">${buildWorkloadDescription(nextRow, true)}</td>
-                            <td>${escapeHtml(nextRow.course || nextRow.section)}</td>
-                            <td class="workload-days">${escapeHtml(nextRow.days)}</td>
-                            <td class="workload-time">${formatCompactTime(nextRow.time)}</td>
-                            <td class="workload-room">${escapeHtml(nextRow.room)}</td>
-                            <td class="text-end screen-only">
-                                <button class="btn btn-sm btn-delete-workload btnRemoveWL"
-                                        data-id="${nextRow.workload_id}">
-                                    <i class="bx bx-trash"></i>
-                                </button>
-                            </td>
-                        </tr>
-                    `;
-                    i++;
-                    continue;
                 }
 
                 rows += `
@@ -1551,9 +1510,9 @@ $(document).ready(function () {
                         <td class="workload-days">${escapeHtml(row.days)}</td>
                         <td class="workload-time">${formatCompactTime(row.time)}</td>
                         <td class="workload-room">${escapeHtml(row.room)}</td>
-                        <td class="text-center">${formatNumber(row.units)}</td>
-                        <td class="text-center">${formatNumber(row.lab)}</td>
-                        <td class="text-center">${formatNumber(row.lec)}</td>
+                        <td class="text-center">${formatNumber(displayUnits)}</td>
+                        <td class="text-center">${formatNumber(displayLabUnits)}</td>
+                        <td class="text-center">${formatNumber(displayLecUnits)}</td>
                         <td class="text-center fw-semibold">${formatNumber(row.faculty_load)}</td>
                         <td class="text-center">${formatStudentCount(row.student_count)}</td>
                         <td class="text-end screen-only">

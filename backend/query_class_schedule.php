@@ -3,6 +3,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schedule_block_helper.php';
 
 header('Content-Type: application/json');
 
@@ -138,7 +139,8 @@ function load_context_live($conn, $offering_id, $college_id) {
             sm.sub_code,
             sm.sub_description,
             ps.lec_units,
-            ps.lab_units
+            ps.lab_units,
+            ps.total_units
         FROM tbl_prospectus_offering o
         {$liveOfferingJoins}
         JOIN tbl_program p ON p.program_id = o.program_id
@@ -277,6 +279,95 @@ function load_existing_schedule_rows($conn, $offering_id) {
 
     $stmt->close();
     return $rows;
+}
+
+function load_schedule_block_rows($conn, $offering_id) {
+    $sql = "
+        SELECT
+            cs.schedule_id,
+            cs.schedule_type,
+            cs.schedule_group_id,
+            cs.room_id,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end
+        FROM tbl_class_schedule cs
+        WHERE cs.offering_id = ?
+          AND cs.schedule_type IN ('LEC', 'LAB')
+        ORDER BY FIELD(cs.schedule_type, 'LEC', 'LAB'), cs.schedule_id
+    ";
+    $stmt = $conn->prepare($sql);
+    $stmt->bind_param("i", $offering_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $row['schedule_id'] = (int)$row['schedule_id'];
+        $row['schedule_group_id'] = isset($row['schedule_group_id']) ? (int)$row['schedule_group_id'] : 0;
+        $row['room_id'] = (int)$row['room_id'];
+        $row['schedule_type'] = synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC'));
+        $row['days'] = normalize_days_array(json_decode((string)$row['days_json'], true));
+        $rows[] = $row;
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function mark_offering_schedule_state($conn, $offering_id, $state) {
+    $allowed = ['active', 'pending'];
+    $state = in_array($state, $allowed, true) ? $state : 'pending';
+
+    $upd = $conn->prepare("
+        UPDATE tbl_prospectus_offering
+        SET status = ?
+        WHERE offering_id = ?
+          AND (status IS NULL OR status != 'locked')
+    ");
+    $upd->bind_param("si", $state, $offering_id);
+    $ok = $upd->execute();
+    $upd->close();
+    return $ok;
+}
+
+function build_schedule_coverage_summary($ctx, $rows) {
+    $required = synk_required_minutes_by_type(
+        (float)($ctx['lec_units'] ?? 0),
+        (float)($ctx['lab_units'] ?? 0),
+        (float)($ctx['total_units'] ?? 0)
+    );
+    $scheduled = synk_sum_scheduled_minutes_by_type($rows);
+    $requiredTypes = required_schedule_types_for_context($ctx);
+
+    $hasAny = false;
+    $isComplete = true;
+    foreach ($requiredTypes as $type) {
+        $requiredMinutes = (int)($required[$type] ?? 0);
+        $scheduledMinutes = (int)($scheduled[$type] ?? 0);
+
+        if ($scheduledMinutes > 0) {
+            $hasAny = true;
+        }
+
+        if ($requiredMinutes > 0 && $scheduledMinutes < $requiredMinutes) {
+            $isComplete = false;
+        }
+    }
+
+    if (!$hasAny) {
+        $status = 'empty';
+    } elseif ($isComplete) {
+        $status = 'complete';
+    } else {
+        $status = 'partial';
+    }
+
+    return [
+        'status' => $status,
+        'required_minutes' => $required,
+        'scheduled_minutes' => $scheduled
+    ];
 }
 
 function load_workload_faculties_for_offering($conn, $offering_id, $ay_id, $semester) {
@@ -484,6 +575,57 @@ function insert_schedule_row($conn, $offering_id, $schedule_type, $group_id, $ro
     }
 }
 
+function update_schedule_block_row($conn, $schedule_id, $schedule_type, $group_id, $room_id, $days_json, $time_start, $time_end) {
+    if ($group_id === null) {
+        $sql = "
+            UPDATE tbl_class_schedule
+            SET schedule_type = ?,
+                schedule_group_id = NULL,
+                room_id = ?,
+                days_json = ?,
+                time_start = ?,
+                time_end = ?
+            WHERE schedule_id = ?
+        ";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("sisssi", $schedule_type, $room_id, $days_json, $time_start, $time_end, $schedule_id);
+    } else {
+        $sql = "
+            UPDATE tbl_class_schedule
+            SET schedule_type = ?,
+                schedule_group_id = ?,
+                room_id = ?,
+                days_json = ?,
+                time_start = ?,
+                time_end = ?
+            WHERE schedule_id = ?
+        ";
+        $stmt = $conn->prepare($sql);
+        $stmt->bind_param("siisssi", $schedule_type, $group_id, $room_id, $days_json, $time_start, $time_end, $schedule_id);
+    }
+
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if (!$ok) {
+        throw new RuntimeException("Failed to update schedule block.");
+    }
+}
+
+function insert_schedule_block_row($conn, $offering_id, $schedule_type, $group_id, $room_id, $days_json, $time_start, $time_end, $user_id) {
+    insert_schedule_row(
+        $conn,
+        $offering_id,
+        $schedule_type,
+        $group_id,
+        $room_id,
+        $days_json,
+        $time_start,
+        $time_end,
+        $user_id
+    );
+}
+
 /* =====================================================
    STANDARD CONFLICT CHECK (SECTION + ROOM)
    - ignores same offering_id
@@ -544,6 +686,288 @@ function check_conflict($conn, $ctx, $offering_id, $room_id, $time_start, $time_
             );
         }
     }
+}
+
+function block_label_for_response($type, $sequence) {
+    $base = strtoupper(trim((string)$type)) === 'LAB' ? 'Laboratory' : 'Lecture';
+    return $base . ' ' . max(1, (int)$sequence);
+}
+
+/* =====================================================
+   LOAD DYNAMIC SCHEDULE BLOCKS
+===================================================== */
+if (isset($_POST['load_schedule_blocks'])) {
+    $offering_id = (int)($_POST['offering_id'] ?? 0);
+    if (!$offering_id) {
+        respond("error", "Missing offering reference.");
+    }
+
+    $ctx = load_context_live($conn, $offering_id, $college_id);
+    if (!$ctx) {
+        respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
+    }
+
+    $rows = load_schedule_block_rows($conn, $offering_id);
+    $coverage = build_schedule_coverage_summary($ctx, $rows);
+    $sequenceByType = ['LEC' => 0, 'LAB' => 0];
+    $blocks = [];
+
+    foreach ($rows as $row) {
+        $type = synk_normalize_schedule_type((string)$row['schedule_type']);
+        $sequenceByType[$type]++;
+        $metrics = synk_schedule_block_metrics_from_row([
+            'schedule_type' => $type,
+            'days' => $row['days'],
+            'time_start' => (string)$row['time_start'],
+            'time_end' => (string)$row['time_end'],
+            'lec_units' => (float)($ctx['lec_units'] ?? 0),
+            'lab_units' => (float)($ctx['lab_units'] ?? 0),
+            'total_units' => (float)($ctx['total_units'] ?? 0)
+        ]);
+
+        $blocks[] = [
+            'schedule_id' => (int)$row['schedule_id'],
+            'group_id' => (int)($row['schedule_group_id'] ?? 0),
+            'type' => $type,
+            'label' => block_label_for_response($type, $sequenceByType[$type]),
+            'room_id' => (int)$row['room_id'],
+            'time_start' => (string)$row['time_start'],
+            'time_end' => (string)$row['time_end'],
+            'days' => $row['days'],
+            'days_json' => json_encode($row['days']),
+            'weekly_minutes' => $metrics['weekly_minutes'],
+            'units' => $metrics['units'],
+            'hours_lec' => $metrics['hours_lec'],
+            'hours_lab' => $metrics['hours_lab'],
+            'faculty_load' => $metrics['faculty_load']
+        ];
+    }
+
+    respond("ok", "Loaded schedule blocks.", [
+        'status_key' => $coverage['status'],
+        'required_minutes' => $coverage['required_minutes'],
+        'scheduled_minutes' => $coverage['scheduled_minutes'],
+        'required_types' => required_schedule_types_for_context($ctx),
+        'blocks' => $blocks
+    ]);
+}
+
+/* =====================================================
+   SAVE DYNAMIC SCHEDULE BLOCKS
+===================================================== */
+if (isset($_POST['save_schedule_blocks'])) {
+    $offering_id = (int)($_POST['offering_id'] ?? 0);
+    $blocksRaw = $_POST['blocks'] ?? null;
+
+    if ($offering_id <= 0 || !is_array($blocksRaw)) {
+        respond("error", "Invalid schedule payload.");
+    }
+
+    $ctx = load_context_live($conn, $offering_id, $college_id);
+    if (!$ctx) {
+        respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
+    }
+
+    $assignedFaculties = load_workload_faculties_for_offering(
+        $conn,
+        $offering_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester']
+    );
+
+    if (!empty($assignedFaculties)) {
+        $names = array_map(static function ($faculty) {
+            return htmlspecialchars((string)$faculty['faculty_name'], ENT_QUOTES, 'UTF-8');
+        }, $assignedFaculties);
+
+        respond(
+            "error",
+            "This schedule cannot be changed because it is already assigned in Faculty Workload to <b>" .
+            implode('</b>, <b>', $names) .
+            "</b>. Remove the workload assignment first."
+        );
+    }
+
+    $existingRows = load_schedule_block_rows($conn, $offering_id);
+    $existingById = [];
+    $existingGroupId = null;
+
+    foreach ($existingRows as $row) {
+        $existingById[(int)$row['schedule_id']] = $row;
+        $candidateGroupId = (int)($row['schedule_group_id'] ?? 0);
+        if ($candidateGroupId > 0 && $existingGroupId === null) {
+            $existingGroupId = $candidateGroupId;
+        }
+    }
+
+    $allowedTypes = required_schedule_types_for_context($ctx);
+    $normalized = [];
+    $sequencePreview = ['LEC' => 0, 'LAB' => 0];
+
+    foreach ($blocksRaw as $blockIndex => $block) {
+        if (!is_array($block)) {
+            continue;
+        }
+
+        $rawType = strtoupper(trim((string)($block['type'] ?? '')));
+        if (!in_array($rawType, ['LEC', 'LAB'], true)) {
+            respond("error", "Invalid schedule block type.");
+        }
+
+        if (!in_array($rawType, $allowedTypes, true)) {
+            respond("error", "This subject does not allow {$rawType} schedule blocks.");
+        }
+
+        $scheduleId = (int)($block['schedule_id'] ?? 0);
+        if ($scheduleId > 0 && !isset($existingById[$scheduleId])) {
+            respond("error", "A schedule block could not be matched to this offering.");
+        }
+
+        $roomId = (int)($block['room_id'] ?? 0);
+        $timeStart = normalize_time_input($block['time_start'] ?? '');
+        $timeEnd = normalize_time_input($block['time_end'] ?? '');
+        $days = normalize_days_array(json_decode((string)($block['days_json'] ?? ''), true));
+
+        if (empty($days) && isset($block['days']) && is_array($block['days'])) {
+            $days = normalize_days_array($block['days']);
+        }
+
+        $sequencePreview[$rawType]++;
+        $label = block_label_for_response($rawType, $sequencePreview[$rawType]);
+
+        if ($roomId <= 0 || !$timeStart || !$timeEnd || empty($days)) {
+            respond("error", "{$label} is incomplete.");
+        }
+
+        if ($timeEnd <= $timeStart) {
+            respond("error", "{$label} must end later than it starts.");
+        }
+
+        validate_time_window($timeStart, $timeEnd, $label);
+        validate_room_for_schedule($conn, $roomId, $college_id, (int)$ctx['ay_id'], (int)$ctx['semester'], $rawType);
+
+        $normalized[] = [
+            'schedule_id' => $scheduleId,
+            'type' => $rawType,
+            'label' => $label,
+            'room_id' => $roomId,
+            'time_start' => $timeStart,
+            'time_end' => $timeEnd,
+            'days' => $days,
+            'days_json' => json_encode($days)
+        ];
+    }
+
+    if (empty($normalized)) {
+        respond("error", "Add at least one lecture or laboratory block.");
+    }
+
+    for ($i = 0; $i < count($normalized); $i++) {
+        for ($j = $i + 1; $j < count($normalized); $j++) {
+            $left = $normalized[$i];
+            $right = $normalized[$j];
+
+            if (!days_overlap($left['days'], $right['days'])) {
+                continue;
+            }
+
+            if (!time_overlap($left['time_start'], $left['time_end'], $right['time_start'], $right['time_end'])) {
+                continue;
+            }
+
+            respond(
+                "conflict",
+                "<b>Internal Schedule Conflict</b><br><b>{$left['label']}</b> overlaps with <b>{$right['label']}</b>."
+            );
+        }
+    }
+
+    foreach ($normalized as $block) {
+        check_conflict(
+            $conn,
+            $ctx,
+            $offering_id,
+            (int)$block['room_id'],
+            (string)$block['time_start'],
+            (string)$block['time_end'],
+            $block['days'],
+            (string)$block['label']
+        );
+    }
+
+    $group_id = count($normalized) > 1 ? ($existingGroupId ?: random_int(100000, 2147483647)) : null;
+    $keepIds = [];
+
+    $conn->begin_transaction();
+    try {
+        foreach ($normalized as $block) {
+            if ((int)$block['schedule_id'] > 0) {
+                $keepIds[(int)$block['schedule_id']] = true;
+                update_schedule_block_row(
+                    $conn,
+                    (int)$block['schedule_id'],
+                    (string)$block['type'],
+                    $group_id,
+                    (int)$block['room_id'],
+                    (string)$block['days_json'],
+                    (string)$block['time_start'],
+                    (string)$block['time_end']
+                );
+                continue;
+            }
+
+            insert_schedule_block_row(
+                $conn,
+                $offering_id,
+                (string)$block['type'],
+                $group_id,
+                (int)$block['room_id'],
+                (string)$block['days_json'],
+                (string)$block['time_start'],
+                (string)$block['time_end'],
+                (int)$_SESSION['user_id']
+            );
+        }
+
+        $staleIds = [];
+        foreach ($existingRows as $row) {
+            $scheduleId = (int)$row['schedule_id'];
+            if (!isset($keepIds[$scheduleId])) {
+                $staleIds[] = $scheduleId;
+            }
+        }
+
+        if (!empty($staleIds)) {
+            $idList = implode(',', array_map('intval', $staleIds));
+            $del = $conn->prepare("
+                DELETE FROM tbl_class_schedule
+                WHERE offering_id = ?
+                  AND schedule_id IN ({$idList})
+            ");
+            $del->bind_param("i", $offering_id);
+            if (!$del->execute()) {
+                throw new RuntimeException("Failed to remove stale schedule blocks.");
+            }
+            $del->close();
+        }
+
+        $coverage = build_schedule_coverage_summary($ctx, $normalized);
+        $offeringState = $coverage['status'] === 'complete' ? 'active' : 'pending';
+        if (!mark_offering_schedule_state($conn, $offering_id, $offeringState)) {
+            throw new RuntimeException("Failed to update offering status.");
+        }
+
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        respond("error", "Failed to save schedule blocks.");
+    }
+
+    respond("ok", "Schedule blocks saved.", [
+        'status_key' => $coverage['status'],
+        'required_minutes' => $coverage['required_minutes'],
+        'scheduled_minutes' => $coverage['scheduled_minutes']
+    ]);
 }
 
 /* =====================================================
@@ -660,7 +1084,12 @@ if (isset($_POST['clear_schedule'])) {
 /* =====================================================
    VALIDATE REQUEST
 ===================================================== */
-if (!isset($_POST['save_schedule']) && !isset($_POST['save_dual_schedule']) && !isset($_POST['clear_schedule'])) {
+if (
+    !isset($_POST['save_schedule']) &&
+    !isset($_POST['save_dual_schedule']) &&
+    !isset($_POST['save_schedule_blocks']) &&
+    !isset($_POST['clear_schedule'])
+) {
     respond("error", "Invalid request.");
 }
 

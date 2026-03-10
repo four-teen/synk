@@ -230,6 +230,68 @@ body.swal2-shown .modal {
     font-size: 0.72rem;
 }
 
+.schedule-block-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.schedule-block-card {
+    border: 1px solid #d7e1f2;
+    border-radius: 14px;
+    padding: 1rem;
+    background: linear-gradient(180deg, #ffffff 0%, #f9fbff 100%);
+    box-shadow: 0 10px 24px rgba(31, 42, 68, 0.06);
+}
+
+.schedule-block-card + .schedule-block-card {
+    margin-top: 1rem;
+}
+
+.schedule-block-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.schedule-block-meta {
+    font-size: 0.82rem;
+    color: #5f6f8d;
+}
+
+.schedule-block-days {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.3rem;
+}
+
+.schedule-block-empty {
+    border: 1px dashed #c7d4ee;
+    border-radius: 12px;
+    background: rgba(249, 251, 255, 0.8);
+    color: #5f6f8d;
+    padding: 1rem;
+    text-align: center;
+}
+
+.coverage-summary {
+    border: 1px solid #d7e1f2;
+    border-radius: 12px;
+    background: #f8fbff;
+    padding: 0.85rem 1rem;
+}
+
+.coverage-summary strong {
+    color: #1f2a44;
+}
+
+.coverage-detail {
+    font-size: 0.82rem;
+    color: #5f6f8d;
+}
+
 .matrix-vacant {
     background: #eef2f6;
     color: #8b97a8;
@@ -955,6 +1017,55 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 
 
+<!-- DYNAMIC SCHEDULE BLOCK MODAL -->
+<div class="modal fade" id="blockScheduleModal" tabindex="-1">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <h5 class="modal-title">Define Class Schedule Blocks</h5>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="block_sched_offering_id">
+        <input type="hidden" id="block_sched_lec_units">
+        <input type="hidden" id="block_sched_lab_units">
+        <input type="hidden" id="block_sched_total_units">
+
+        <div class="mb-3">
+          <strong id="block_sched_subject_label"></strong><br>
+          <small class="text-muted" id="block_sched_section_label"></small>
+        </div>
+
+        <div class="coverage-summary mb-3" id="scheduleBlockCoverageSummary">
+          <strong>Schedule coverage will appear here.</strong>
+        </div>
+
+        <div class="schedule-block-toolbar mb-3">
+          <button type="button" class="btn btn-outline-primary btn-sm" id="btnAddLectureBlock">
+            <i class="bx bx-plus me-1"></i> Add Lecture Schedule
+          </button>
+          <button type="button" class="btn btn-outline-success btn-sm" id="btnAddLabBlock">
+            <i class="bx bx-plus me-1"></i> Add Lab Schedule
+          </button>
+        </div>
+
+        <div id="scheduleBlockList"></div>
+      </div>
+
+      <div class="modal-footer">
+        <button class="btn btn-outline-danger me-auto d-none" id="btnClearBlockSchedule">
+          <i class="bx bx-trash me-1"></i> Clear Schedule
+        </button>
+        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="button" class="btn btn-primary" id="btnSaveScheduleBlocks">
+          <i class="bx bx-save me-1"></i> Save Schedule Blocks
+        </button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
 <!-- ROOM MATRIX MODAL -->
 <div class="modal fade" id="matrixModal" tabindex="-1">
@@ -1116,6 +1227,462 @@ while ($ay = $ayQ->fetch_assoc()) {
         setRoomOptions("#lab_room_id", [], "Select laboratory room...");
         termRoomCache = [];
         termRoomCacheKey = "";
+    }
+
+    let scheduleBlockState = null;
+    let scheduleBlockCounter = 0;
+
+    function createScheduleBlockKey() {
+        scheduleBlockCounter += 1;
+        return `draft_${scheduleBlockCounter}`;
+    }
+
+    function normalizeScheduleBlockType(type) {
+        return String(type || "").toUpperCase() === "LAB" ? "LAB" : "LEC";
+    }
+
+    function isLabCreditSchedule(lecUnits, labUnits, totalUnits) {
+        return Number(labUnits) > 0 && Math.abs((Number(lecUnits) + Number(labUnits)) - Number(totalUnits)) < 0.0001;
+    }
+
+    function getLabContactHours(lecUnits, labUnits, totalUnits) {
+        if (Number(labUnits) <= 0) {
+            return 0;
+        }
+        return isLabCreditSchedule(lecUnits, labUnits, totalUnits)
+            ? Number(labUnits) * 3
+            : Number(labUnits);
+    }
+
+    function getRequiredMinutesByTypeClient() {
+        const lecUnits = Number($("#block_sched_lec_units").val() || 0);
+        const labUnits = Number($("#block_sched_lab_units").val() || 0);
+        const totalUnits = Number($("#block_sched_total_units").val() || 0);
+
+        return {
+            LEC: Math.max(0, Math.round(lecUnits * 60)),
+            LAB: Math.max(0, Math.round(getLabContactHours(lecUnits, labUnits, totalUnits) * 60))
+        };
+    }
+
+    function getBlockWeeklyMinutes(block) {
+        const days = Array.isArray(block?.days) ? block.days : [];
+        const timeStart = String(block?.time_start || "");
+        const timeEnd = String(block?.time_end || "");
+        if (!timeStart || !timeEnd || timeEnd <= timeStart || days.length === 0) {
+            return 0;
+        }
+
+        const [startHour, startMinute] = timeStart.split(":").map(Number);
+        const [endHour, endMinute] = timeEnd.split(":").map(Number);
+        const minutes = ((endHour * 60) + endMinute) - ((startHour * 60) + startMinute);
+        return minutes > 0 ? minutes * days.length : 0;
+    }
+
+    function getScheduledMinutesByTypeClient(blocks) {
+        const totals = { LEC: 0, LAB: 0 };
+
+        (blocks || []).forEach(block => {
+            const type = normalizeScheduleBlockType(block?.type);
+            totals[type] += getBlockWeeklyMinutes(block);
+        });
+
+        return totals;
+    }
+
+    function formatCoverageMinutes(minutes) {
+        const hours = Number(minutes || 0) / 60;
+        return `${hours % 1 === 0 ? hours.toFixed(0) : hours.toFixed(1)} hrs`;
+    }
+
+    function createScheduleBlock(type, source = {}) {
+        return {
+            block_key: String(source.block_key || (source.schedule_id ? `existing_${source.schedule_id}` : createScheduleBlockKey())),
+            schedule_id: parseInt(source.schedule_id, 10) || 0,
+            type: normalizeScheduleBlockType(source.type || type),
+            room_id: source.room_id ? String(source.room_id) : "",
+            time_start: String(source.time_start || ""),
+            time_end: String(source.time_end || ""),
+            days: Array.isArray(source.days) ? source.days.filter(day => SCHEDULE_DAY_ORDER.includes(day)) : [],
+            suggestions: Array.isArray(source.suggestions) ? source.suggestions : [],
+            suggestionsVisible: Boolean(source.suggestionsVisible)
+        };
+    }
+
+    function getRequiredScheduleTypesClient() {
+        return Number($("#block_sched_lab_units").val() || 0) > 0 ? ["LEC", "LAB"] : ["LEC"];
+    }
+
+    function getScheduleBlockLabel(block, indexMap) {
+        const type = normalizeScheduleBlockType(block.type);
+        indexMap[type] = (indexMap[type] || 0) + 1;
+        return type === "LAB" ? `Laboratory ${indexMap[type]}` : `Lecture ${indexMap[type]}`;
+    }
+
+    function renderScheduleBlockCoverageSummary() {
+        if (!scheduleBlockState) {
+            $("#scheduleBlockCoverageSummary").html("<strong>Schedule coverage will appear here.</strong>");
+            return;
+        }
+
+        const required = getRequiredMinutesByTypeClient();
+        const requiredTypes = getRequiredScheduleTypesClient();
+        const scheduled = getScheduledMinutesByTypeClient(scheduleBlockState.blocks);
+
+        let statusTitle = "Not Scheduled";
+        let statusClass = "bg-secondary";
+        const hasAny = requiredTypes.some(type => (scheduled[type] || 0) > 0);
+        const complete = requiredTypes.every(type => {
+            const requiredMinutes = Number(required[type] || 0);
+            return requiredMinutes <= 0 || Number(scheduled[type] || 0) >= requiredMinutes;
+        });
+
+        if (hasAny && complete) {
+            statusTitle = "Fully Scheduled";
+            statusClass = "bg-success";
+        } else if (hasAny) {
+            statusTitle = "Partially Scheduled";
+            statusClass = "bg-warning text-dark";
+        }
+
+        const details = requiredTypes.map(type => {
+            const label = type === "LAB" ? "Laboratory" : "Lecture";
+            return `
+                <div class="coverage-detail">
+                    <span class="badge ${type === "LAB" ? "bg-label-success text-success" : "bg-label-primary text-primary"} me-1">${escapeHtml(label)}</span>
+                    ${escapeHtml(formatCoverageMinutes(scheduled[type] || 0))} / ${escapeHtml(formatCoverageMinutes(required[type] || 0))}
+                </div>
+            `;
+        }).join("");
+
+        $("#scheduleBlockCoverageSummary").html(`
+            <div class="d-flex flex-wrap justify-content-between align-items-start gap-3">
+                <div>
+                    <strong>${escapeHtml(statusTitle)}</strong>
+                    <div class="coverage-detail mt-1">Coverage is based on total scheduled weekly minutes per lecture/lab type.</div>
+                </div>
+                <span class="badge ${statusClass}">${escapeHtml(statusTitle)}</span>
+            </div>
+            <div class="mt-2">${details}</div>
+        `);
+    }
+
+    function renderBlockSuggestionCards(block) {
+        if (!Array.isArray(block.suggestions) || block.suggestions.length === 0) {
+            return `<div class="suggestion-empty">No conflict-free suggestions found for this block.</div>`;
+        }
+
+        return block.suggestions.map(item => `
+            <div class="suggestion-card ${escapeHtml(item.fit_class || "valid")}">
+                <div class="d-flex justify-content-between align-items-start gap-2">
+                    <div class="d-flex flex-wrap gap-2">
+                        <span class="suggestion-fit ${escapeHtml(item.fit_class || "valid")}">${escapeHtml(item.fit_label || "Valid Slot")}</span>
+                        <span class="suggestion-chip">${escapeHtml(item.pattern_label || "Suggested Slot")}</span>
+                    </div>
+                    <button
+                        type="button"
+                        class="btn btn-sm btn-outline-primary btn-use-block-suggestion"
+                        data-block-key="${escapeHtml(block.block_key)}"
+                        data-room-id="${escapeHtml(item.room_id || "")}"
+                        data-time-start="${escapeHtml(item.time_start || "")}"
+                        data-time-end="${escapeHtml(item.time_end || "")}"
+                        data-days='${escapeHtml(JSON.stringify(item.days || []))}'
+                    >
+                        Use
+                    </button>
+                </div>
+                <div class="suggestion-slot mt-2">${escapeHtml(item.days_label || "")} • ${escapeHtml(item.time_label || "")}</div>
+                <div class="suggestion-meta mt-1">${escapeHtml(item.room_label || "")}</div>
+                <div class="suggestion-reasons mt-2">
+                    ${(item.reasons || []).map(reason => `<span class="suggestion-reason">${escapeHtml(reason)}</span>`).join("")}
+                </div>
+            </div>
+        `).join("");
+    }
+
+    function renderScheduleBlocks() {
+        const list = $("#scheduleBlockList");
+
+        if (!scheduleBlockState || !Array.isArray(scheduleBlockState.blocks) || scheduleBlockState.blocks.length === 0) {
+            list.html(`
+                <div class="schedule-block-empty">
+                    No schedule blocks yet. Add a lecture or laboratory block to begin.
+                </div>
+            `);
+            renderScheduleBlockCoverageSummary();
+            return;
+        }
+
+        const indexMap = { LEC: 0, LAB: 0 };
+        const html = scheduleBlockState.blocks.map(block => {
+            const label = getScheduleBlockLabel(block, indexMap);
+            const type = normalizeScheduleBlockType(block.type);
+            const typeBadgeClass = type === "LAB" ? "bg-label-success text-success" : "bg-label-primary text-primary";
+            const roomPlaceholder = type === "LAB" ? "Select laboratory room..." : "Select lecture room...";
+            const roomOptionsHtml = buildRoomOptionsHtml(filterRoomsForSchedule(type), roomPlaceholder);
+            const dayButtons = SCHEDULE_DAY_ORDER.map(day => `
+                <input
+                    type="checkbox"
+                    class="btn-check schedule-block-day"
+                    id="sched_${escapeHtml(block.block_key)}_${day}"
+                    data-block-key="${escapeHtml(block.block_key)}"
+                    value="${day}"
+                >
+                <label class="btn btn-outline-secondary btn-sm" for="sched_${escapeHtml(block.block_key)}_${day}">${day}</label>
+            `).join("");
+
+            return `
+                <div class="schedule-block-card" data-schedule-block="${escapeHtml(block.block_key)}">
+                    <div class="schedule-block-header">
+                        <div>
+                            <span class="badge ${typeBadgeClass} mb-2">${escapeHtml(label)}</span>
+                            <div class="schedule-block-meta">This block can be assigned to a different faculty later.</div>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-outline-danger btn-sm btn-remove-schedule-block"
+                            data-block-key="${escapeHtml(block.block_key)}"
+                        >
+                            Remove
+                        </button>
+                    </div>
+
+                    <div class="row g-3">
+                        <div class="col-lg-4">
+                            <label class="form-label">Days</label>
+                            <div class="schedule-block-days">${dayButtons}</div>
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Time</label>
+                            <div class="d-flex gap-2">
+                                <input type="time" class="form-control schedule-block-time-start" data-block-key="${escapeHtml(block.block_key)}" min="07:30" max="17:30" value="${escapeHtml(block.time_start || "")}">
+                                <input type="time" class="form-control schedule-block-time-end" data-block-key="${escapeHtml(block.block_key)}" min="07:30" max="17:30" value="${escapeHtml(block.time_end || "")}">
+                            </div>
+                        </div>
+                        <div class="col-lg-4">
+                            <label class="form-label">Room</label>
+                            <select class="form-select schedule-block-room" data-block-key="${escapeHtml(block.block_key)}">
+                                ${roomOptionsHtml}
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="mt-3">
+                        <button
+                            type="button"
+                            class="btn btn-outline-primary btn-sm btn-block-suggestions"
+                            data-block-key="${escapeHtml(block.block_key)}"
+                        >
+                            <i class="bx bx-bulb me-1"></i>${block.suggestionsVisible ? "Hide Suggested Schedule" : "Show Suggested Schedule"}
+                        </button>
+                    </div>
+
+                    <div class="suggestion-panel mt-3 ${block.suggestionsVisible ? "" : "d-none"}" id="blockSuggestionPanel_${escapeHtml(block.block_key)}">
+                        <div class="suggestion-board">
+                            <div class="d-flex justify-content-between align-items-start gap-3">
+                                <div>
+                                    <div class="step-label mb-1">Suggested Slots</div>
+                                    <div class="schedule-hint mb-0">
+                                        Ranked conflict-free options for this ${type === "LAB" ? "laboratory" : "lecture"} block.
+                                    </div>
+                                </div>
+                                <button type="button" class="btn btn-outline-primary btn-sm btn-refresh-block-suggestions" data-block-key="${escapeHtml(block.block_key)}">
+                                    Refresh
+                                </button>
+                            </div>
+                            <div class="suggestion-list mt-3" id="blockSuggestionBoard_${escapeHtml(block.block_key)}">
+                                ${block.suggestionsVisible ? renderBlockSuggestionCards(block) : '<div class="suggestion-empty">Suggestions will load when you open this panel.</div>'}
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            `;
+        }).join("");
+
+        list.html(html);
+
+        scheduleBlockState.blocks.forEach(block => {
+            const root = $(`[data-schedule-block="${block.block_key}"]`);
+            root.find(".schedule-block-room").val(String(block.room_id || ""));
+            (block.days || []).forEach(day => {
+                root.find(`.schedule-block-day[value="${day}"]`).prop("checked", true);
+            });
+        });
+
+        $("#btnAddLabBlock").prop("disabled", !getRequiredScheduleTypesClient().includes("LAB"));
+        renderScheduleBlockCoverageSummary();
+    }
+
+    function syncBlocksFromDom() {
+        if (!scheduleBlockState) {
+            return;
+        }
+
+        scheduleBlockState.blocks = scheduleBlockState.blocks.map(block => {
+            const root = $(`[data-schedule-block="${block.block_key}"]`);
+            if (!root.length) {
+                return block;
+            }
+
+            const days = [];
+            root.find(".schedule-block-day:checked").each(function () {
+                days.push($(this).val());
+            });
+
+            return {
+                ...block,
+                room_id: root.find(".schedule-block-room").val() || "",
+                time_start: root.find(".schedule-block-time-start").val() || "",
+                time_end: root.find(".schedule-block-time-end").val() || "",
+                days
+            };
+        });
+    }
+
+    function collectScheduleBlockDrafts() {
+        syncBlocksFromDom();
+        return (scheduleBlockState?.blocks || []).map(block => ({
+            block_key: block.block_key,
+            schedule_id: block.schedule_id || 0,
+            type: block.type,
+            room_id: block.room_id || "",
+            time_start: block.time_start || "",
+            time_end: block.time_end || "",
+            days: Array.isArray(block.days) ? block.days : []
+        }));
+    }
+
+    function addScheduleBlock(type) {
+        if (!scheduleBlockState) {
+            return;
+        }
+
+        scheduleBlockState.blocks.push(createScheduleBlock(type));
+        renderScheduleBlocks();
+    }
+
+    function removeScheduleBlock(blockKey) {
+        if (!scheduleBlockState) {
+            return;
+        }
+
+        scheduleBlockState.blocks = scheduleBlockState.blocks.filter(block => block.block_key !== blockKey);
+        renderScheduleBlocks();
+    }
+
+    function openScheduleBlockModal(button) {
+        const offeringId = parseInt(button.data("offeringId"), 10) || 0;
+        const labUnits = Number(button.data("labUnits")) || 0;
+        const lecUnits = Number(button.data("lecUnits")) || 0;
+        const totalUnits = Number(button.data("totalUnits")) || 0;
+        const subjectLabel = `${button.data("subCode")} — ${button.data("subDesc")}`;
+        const sectionLabel = `Section: ${button.data("section")}`;
+
+        if (!offeringId) {
+            Swal.fire("Error", "Missing offering reference.", "error");
+            return;
+        }
+
+        loadTermRoomOptions(false).done(function () {
+            if (filterRoomsForSchedule("LEC").length === 0) {
+                Swal.fire("Room Setup Issue", "No lecture-compatible rooms are available for the selected AY and Semester.", "warning");
+                return;
+            }
+
+            if (labUnits > 0 && filterRoomsForSchedule("LAB").length === 0) {
+                Swal.fire("Room Setup Issue", "No laboratory-compatible rooms are available for the selected AY and Semester.", "warning");
+                return;
+            }
+
+            $.ajax({
+                url: "../backend/query_class_schedule.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    load_schedule_blocks: 1,
+                    offering_id: offeringId
+                },
+                success: function (res) {
+                    if (!res || res.status !== "ok") {
+                        Swal.fire("Error", (res && res.message) ? res.message : "Failed to load schedule blocks.", "error");
+                        return;
+                    }
+
+                    const requiredTypes = Array.isArray(res.required_types) && res.required_types.length > 0
+                        ? res.required_types
+                        : (labUnits > 0 ? ["LEC", "LAB"] : ["LEC"]);
+                    const blocks = Array.isArray(res.blocks) && res.blocks.length > 0
+                        ? res.blocks.map(block => createScheduleBlock(block.type, block))
+                        : requiredTypes.map(type => createScheduleBlock(type));
+
+                    scheduleBlockState = {
+                        offeringId,
+                        subjectLabel,
+                        sectionLabel,
+                        blocks
+                    };
+
+                    $("#block_sched_offering_id").val(String(offeringId));
+                    $("#block_sched_subject_label").text(subjectLabel);
+                    $("#block_sched_section_label").text(sectionLabel);
+                    $("#block_sched_lec_units").val(String(lecUnits));
+                    $("#block_sched_lab_units").val(String(labUnits));
+                    $("#block_sched_total_units").val(String(totalUnits));
+                    $("#btnClearBlockSchedule")
+                        .data("offering-id", offeringId)
+                        .data("subject-label", subjectLabel)
+                        .toggleClass("d-none", !(Array.isArray(res.blocks) && res.blocks.length > 0));
+
+                    renderScheduleBlocks();
+                    $("#blockScheduleModal").modal("show");
+                },
+                error: function (xhr) {
+                    Swal.fire("Error", xhr.responseText || "Failed to load schedule blocks.", "error");
+                }
+            });
+        }).fail(function (message) {
+            Swal.fire("Room Setup Issue", message || "No room is available for selected AY and Semester.", "warning");
+        });
+    }
+
+    function loadSuggestionsForBlock(blockKey) {
+        if (!scheduleBlockState) {
+            return;
+        }
+
+        syncBlocksFromDom();
+        const block = scheduleBlockState.blocks.find(item => item.block_key === blockKey);
+        if (!block) {
+            return;
+        }
+
+        const board = $(`#blockSuggestionBoard_${blockKey}`);
+        board.html(`<div class="suggestion-empty">Loading suggestions...</div>`);
+
+        $.ajax({
+            url: "../backend/load_schedule_suggestions.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                offering_id: scheduleBlockState.offeringId,
+                target_type: block.type,
+                target_key: block.block_key,
+                drafts_json: JSON.stringify(collectScheduleBlockDrafts())
+            },
+            success: function (res) {
+                if (!res || res.status !== "ok") {
+                    board.html(`<div class="suggestion-empty">${escapeHtml((res && res.message) ? res.message : "Failed to load suggestions.")}</div>`);
+                    return;
+                }
+
+                block.suggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
+                block.suggestionsVisible = true;
+                renderScheduleBlocks();
+            },
+            error: function () {
+                board.html(`<div class="suggestion-empty">Failed to load suggestions.</div>`);
+            }
+        });
     }
 
     function abortScheduleListRequest() {
@@ -1675,6 +2242,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                         $("#scheduleModal").modal("hide");
                         $("#dualScheduleModal").modal("hide");
+                        $("#blockScheduleModal").modal("hide");
 
                         setTimeout(function () {
                             loadScheduleTable();
@@ -2334,6 +2902,212 @@ success: function (res) {
         }
     });
 
+});
+
+$("#blockScheduleModal").on("hidden.bs.modal", function () {
+    scheduleBlockState = null;
+    $("#scheduleBlockList").empty();
+    $("#scheduleBlockCoverageSummary").html("<strong>Schedule coverage will appear here.</strong>");
+});
+
+$("#btnAddLectureBlock").on("click", function () {
+    addScheduleBlock("LEC");
+});
+
+$("#btnAddLabBlock").on("click", function () {
+    if (!getRequiredScheduleTypesClient().includes("LAB")) {
+        Swal.fire("Lecture Only Subject", "This subject does not allow laboratory schedule blocks.", "warning");
+        return;
+    }
+    addScheduleBlock("LAB");
+});
+
+$("#btnClearBlockSchedule").on("click", function () {
+    clearScheduleForOffering(
+        $(this).data("offering-id"),
+        $(this).data("subject-label")
+    );
+});
+
+$(document).on("input change", "#blockScheduleModal .schedule-block-day, #blockScheduleModal .schedule-block-time-start, #blockScheduleModal .schedule-block-time-end, #blockScheduleModal .schedule-block-room", function () {
+    syncBlocksFromDom();
+    renderScheduleBlockCoverageSummary();
+});
+
+$(document).on("click", "#blockScheduleModal .btn-remove-schedule-block", function () {
+    removeScheduleBlock(String($(this).data("blockKey") || ""));
+});
+
+$(document).on("click", "#blockScheduleModal .btn-block-suggestions", function () {
+    const blockKey = String($(this).data("blockKey") || "");
+    if (!scheduleBlockState) {
+        return;
+    }
+
+    const block = scheduleBlockState.blocks.find(item => item.block_key === blockKey);
+    if (!block) {
+        return;
+    }
+
+    if (block.suggestionsVisible) {
+        block.suggestionsVisible = false;
+        renderScheduleBlocks();
+        return;
+    }
+
+    block.suggestionsVisible = true;
+    renderScheduleBlocks();
+    loadSuggestionsForBlock(blockKey);
+});
+
+$(document).on("click", "#blockScheduleModal .btn-refresh-block-suggestions", function () {
+    loadSuggestionsForBlock(String($(this).data("blockKey") || ""));
+});
+
+$(document).on("click", "#blockScheduleModal .btn-use-block-suggestion", function () {
+    if (!scheduleBlockState) {
+        return;
+    }
+
+    const blockKey = String($(this).data("blockKey") || "");
+    const block = scheduleBlockState.blocks.find(item => item.block_key === blockKey);
+    if (!block) {
+        return;
+    }
+
+    let days = [];
+    try {
+        days = JSON.parse($(this).attr("data-days") || "[]");
+    } catch (error) {
+        days = [];
+    }
+
+    block.room_id = String($(this).data("roomId") || "");
+    block.time_start = String($(this).data("timeStart") || "");
+    block.time_end = String($(this).data("timeEnd") || "");
+    block.days = Array.isArray(days) ? days.filter(day => SCHEDULE_DAY_ORDER.includes(day)) : [];
+    block.suggestionsVisible = false;
+    renderScheduleBlocks();
+});
+
+$(document).off("click", ".btn-schedule").on("click", ".btn-schedule", function () {
+    openScheduleBlockModal($(this));
+});
+
+$(document).off("click", "#btnSaveScheduleBlocks").on("click", "#btnSaveScheduleBlocks", function (event) {
+    event.preventDefault();
+    event.stopPropagation();
+
+    if (!scheduleBlockState) {
+        Swal.fire("Error", "No schedule block context is loaded.", "error");
+        return;
+    }
+
+    syncBlocksFromDom();
+
+    if (!Array.isArray(scheduleBlockState.blocks) || scheduleBlockState.blocks.length === 0) {
+        Swal.fire("Missing Blocks", "Add at least one lecture or laboratory block before saving.", "warning");
+        return;
+    }
+
+    const labels = [];
+    const labelIndexMap = { LEC: 0, LAB: 0 };
+    scheduleBlockState.blocks.forEach(block => {
+        labels.push(getScheduleBlockLabel(block, labelIndexMap));
+    });
+
+    for (let i = 0; i < scheduleBlockState.blocks.length; i++) {
+        const block = scheduleBlockState.blocks[i];
+        const label = labels[i];
+
+        if (!block.room_id || !block.time_start || !block.time_end || !Array.isArray(block.days) || block.days.length === 0) {
+            Swal.fire("Incomplete Block", `${label} is incomplete.`, "warning");
+            return;
+        }
+
+        if (block.time_end <= block.time_start) {
+            Swal.fire("Invalid Time Range", `${label} must end later than it starts.`, "warning");
+            return;
+        }
+
+        if (!isWithinSupportedScheduleWindow(block.time_start, block.time_end)) {
+            Swal.fire("Unsupported Time Window", `${label} must stay within 7:30 AM to 5:30 PM.`, "warning");
+            return;
+        }
+    }
+
+    for (let i = 0; i < scheduleBlockState.blocks.length; i++) {
+        for (let j = i + 1; j < scheduleBlockState.blocks.length; j++) {
+            const left = scheduleBlockState.blocks[i];
+            const right = scheduleBlockState.blocks[j];
+
+            const overlapDays = (left.days || []).filter(day => (right.days || []).includes(day));
+            if (overlapDays.length === 0) {
+                continue;
+            }
+
+            if (!(left.time_start < right.time_end && left.time_end > right.time_start)) {
+                continue;
+            }
+
+            Swal.fire(
+                "Internal Schedule Conflict",
+                `${labels[i]} overlaps with ${labels[j]}.`,
+                "error"
+            );
+            return;
+        }
+    }
+
+    $.ajax({
+        url: "../backend/query_class_schedule.php",
+        type: "POST",
+        dataType: "json",
+        data: {
+            save_schedule_blocks: 1,
+            offering_id: $("#block_sched_offering_id").val(),
+            blocks: scheduleBlockState.blocks.map(block => ({
+                schedule_id: block.schedule_id || 0,
+                type: block.type,
+                room_id: block.room_id,
+                time_start: block.time_start,
+                time_end: block.time_end,
+                days_json: JSON.stringify(block.days || [])
+            }))
+        },
+        success: function (res) {
+            if (res.status === "conflict") {
+                Swal.fire({
+                    icon: "error",
+                    title: "Schedule Conflict",
+                    html: res.message,
+                    allowOutsideClick: false,
+                    customClass: { popup: "swal-top" }
+                });
+                return;
+            }
+
+            if (res.status === "ok") {
+                Swal.fire({
+                    icon: "success",
+                    title: "Schedule Saved",
+                    timer: 1200,
+                    showConfirmButton: false
+                });
+
+                $("#blockScheduleModal").modal("hide");
+                setTimeout(function () {
+                    loadScheduleTable();
+                }, 300);
+                return;
+            }
+
+            Swal.fire("Error", res.message || "Unknown error.", "error");
+        },
+        error: function (xhr) {
+            Swal.fire("Error", xhr.responseText || "Failed to save schedule blocks.", "error");
+        }
+    });
 });
 
 });
