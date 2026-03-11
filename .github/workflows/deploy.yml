@@ -1,0 +1,31 @@
+name: Deploy SYNK to Lightsail
+
+on:
+  push:
+    branches:
+      - main
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout Repository
+        uses: actions/checkout@v4
+
+      - name: Deploy to Lightsail
+        uses: appleboy/ssh-action@v1.0.3
+        with:
+          host: ${{ secrets.LIGHTSAIL_HOST }}
+          username: ${{ secrets.LIGHTSAIL_USER }}
+          key: ${{ secrets.LIGHTSAIL_SSH_KEY }}
+          script: |
+            cd /opt/bitnami/apache/htdocs
+
+            git --git-dir=/opt/bitnami/apache/htdocs/synk/.git --work-tree=/opt/bitnami/apache/htdocs fetch origin main
+            git --git-dir=/opt/bitnami/apache/htdocs/synk/.git --work-tree=/opt/bitnami/apache/htdocs reset --hard origin/main
+
+            sudo cp /opt/bitnami/apache/backup_synk/db.php /opt/bitnami/apache/htdocs/backend/db.php
+            sudo cp /opt/bitnami/apache/backup_synk/auth_config.php /opt/bitnami/apache/htdocs/backend/auth_config.php
+
+            sudo /opt/bitnami/ctlscript.sh restart apache
