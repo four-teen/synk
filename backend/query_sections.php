@@ -42,13 +42,20 @@ if (isset($_POST['load_grouped_sections'])) {
             s.full_section,
             s.status,
             p.program_code,
-            p.program_name
+            CONCAT(
+                p.program_name,
+                IF(
+                    TRIM(COALESCE(p.major, '')) <> '',
+                    CONCAT(' (Major in ', p.major, ')'),
+                    ''
+                )
+            ) AS program_name
         FROM tbl_sections s
         JOIN tbl_program p ON p.program_id = s.program_id
         WHERE p.college_id = ?
           AND s.ay_id = ?
           AND s.semester = ?
-        ORDER BY p.program_code ASC, s.year_level ASC, s.section_name ASC
+        ORDER BY p.program_code ASC, p.program_name ASC, p.major ASC, s.year_level ASC, s.section_name ASC
     ";
 
     $stmt = $conn->prepare($sql);

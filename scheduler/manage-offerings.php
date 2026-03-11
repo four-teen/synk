@@ -26,6 +26,30 @@ $csrf_token = $_SESSION['csrf_token'];
 $currentTerm = synk_fetch_current_academic_term($conn);
 $default_ay_id = (int)$currentTerm['ay_id'];
 $default_semester = (int)$currentTerm['semester'];
+
+function synk_title_case_display($value) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+
+    $value = preg_replace('/\s+/', ' ', $value);
+    $value = ucwords(strtolower($value));
+
+    $smallWords = ['And', 'Of', 'In', 'On', 'To', 'For', 'The', 'A', 'An', 'At', 'By', 'From'];
+    $parts = explode(' ', $value);
+
+    foreach ($parts as $index => $part) {
+        if ($index === 0) {
+            continue;
+        }
+        if (in_array($part, $smallWords, true)) {
+            $parts[$index] = strtolower($part);
+        }
+    }
+
+    return implode(' ', $parts);
+}
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -53,6 +77,13 @@ $default_semester = (int)$currentTerm['semester'];
         }
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 38px !important;
+        }
+        .select2-container--default .select2-selection--single .select2-selection__rendered,
+        .select2-results__option {
+            font-family: inherit !important;
+            font-size: 0.95rem !important;
+            font-weight: 400;
+            line-height: 1.45 !important;
         }
         .page-loader-inline {
             display: inline-flex;
@@ -104,18 +135,25 @@ $default_semester = (int)$currentTerm['semester'];
                         SELECT h.prospectus_id,
                                h.effective_sy,
                                p.program_code,
-                               p.program_name
+                               p.program_name,
+                               COALESCE(p.major, '') AS major
                         FROM tbl_prospectus_header h
                         JOIN tbl_program p ON p.program_id = h.program_id
                         WHERE p.college_id = ?
-                        ORDER BY p.program_name
+                        ORDER BY p.program_name, p.major, h.effective_sy DESC
                     ");
                     $stmtProg->bind_param("i", $collegeId);
                     $stmtProg->execute();
                     $q = $stmtProg->get_result();
 
                     while ($r = $q->fetch_assoc()) {
-                        $label = $r['program_code'] . ' — ' . $r['program_name'] . ' (SY ' . $r['effective_sy'] . ')';
+                        $programCode = strtoupper(trim((string)($r['program_code'] ?? '')));
+                        $programName = synk_title_case_display($r['program_name'] ?? '');
+                        $major = synk_title_case_display($r['major'] ?? '');
+                        if ($major !== '') {
+                            $programName .= ' (Major in ' . $major . ')';
+                        }
+                        $label = $programCode . ' - ' . $programName . ' (SY ' . $r['effective_sy'] . ')';
                         echo "<option value='{$r['prospectus_id']}'>".htmlspecialchars($label)."</option>";
                     }
                     ?>
@@ -372,10 +410,11 @@ $('#semester').on('change', tryAutoLoadOfferings);
     const summary = v.summary || {};
     const blockers = Array.isArray(v.blockers) ? v.blockers : [];
     const warnings = Array.isArray(v.warnings) ? v.warnings : [];
+    const fullProgramLabel = formatProgramDisplayLabel(v.program_code, v.program_name, v.major);
 
     let html = `
       <div class="text-start">
-        <div><strong>Program:</strong> ${(v.program_code || "")} ${(v.program_name || "")}</div>
+        <div><strong>Program:</strong> ${fullProgramLabel || "-"}</div>
         <div><strong>AY:</strong> ${v.ay_label || "-"}</div>
         <div><strong>Semester:</strong> ${semLabel(v.semester || "")}</div>
         <hr class="my-2">
@@ -554,19 +593,50 @@ function yearLabel(year) {
   return `Year ${year}`;
 }
 
+function toDisplayCase(value) {
+  const text = String(value || "").trim().replace(/\s+/g, " ");
+  if (!text) return "";
+
+  const lower = text.toLowerCase();
+  const titled = lower.replace(/\b([a-z])/g, function (_, letter) {
+    return letter.toUpperCase();
+  });
+  const words = titled.split(" ");
+  const smallWords = new Set(["and", "of", "in", "on", "to", "for", "the", "a", "an", "at", "by", "from"]);
+
+  return words.map(function (word, index) {
+    if (index > 0 && smallWords.has(word.toLowerCase())) {
+      return word.toLowerCase();
+    }
+    return word;
+  }).join(" ");
+}
+
+function formatProgramDisplayLabel(programCode, programName, major) {
+  const code = String(programCode || "").trim().toUpperCase();
+  const name = toDisplayCase(programName);
+  const majorLabel = toDisplayCase(major);
+  let label = [code, name].filter(Boolean).join(" - ");
+
+  if (majorLabel) {
+    label += `${label ? " " : ""}(Major in ${majorLabel})`;
+  }
+
+  return label;
+}
+
 function renderProspectusPreview(data) {
   const header = data.header || {};
   const structure = data.structure || {};
   const subjects = data.subjects || {};
 
-  const programName = header.program_name || "";
-  const programCode = header.program_code || "";
-  const major = (header.major || "").trim();
+  const programName = toDisplayCase(header.program_name || "");
+  const programCode = String(header.program_code || "").trim().toUpperCase();
+  const major = toDisplayCase(header.major || "");
   const cmo = header.cmo_no || "-";
   const sy = header.effective_sy || "-";
 
-  let title = `${programCode} - ${programName}`;
-  if (major) title += ` (${major})`;
+  const title = formatProgramDisplayLabel(programCode, programName, major);
 
   let html = `
     <div class="mb-3">

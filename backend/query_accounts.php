@@ -5,9 +5,17 @@ require_once 'db.php';
 require_once 'auth_config.php';
 require_once 'auth_useraccount.php';
 
+$responseFormat = strtolower(trim((string)($_POST['response_format'] ?? $_GET['response_format'] ?? '')));
+$wantsJsonResponse = $responseFormat === 'json';
+
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     http_response_code(403);
-    echo 'unauthorized';
+    if ($wantsJsonResponse) {
+        header('Content-Type: application/json; charset=utf-8');
+        echo json_encode(['status' => 'unauthorized']);
+    } else {
+        echo 'unauthorized';
+    }
     exit;
 }
 
@@ -51,6 +59,19 @@ function query_accounts_role_label(string $role): string
     }
 
     return strtoupper($role);
+}
+
+function query_accounts_missing_required_columns(mysqli $conn, array $requiredColumns): array
+{
+    $missing = [];
+
+    foreach ($requiredColumns as $column) {
+        if (!synk_useraccount_has_column($conn, $column)) {
+            $missing[] = $column;
+        }
+    }
+
+    return $missing;
 }
 
 function query_accounts_build_insert(mysqli $conn, array $payload): array
@@ -224,6 +245,30 @@ function query_accounts_render_college_access_html(array $accessRows): string
     return implode('', $chunks);
 }
 
+function query_accounts_payload_from_row(array $row, array $accessRows): array
+{
+    return [
+        'id' => (int)($row['user_id'] ?? 0),
+        'username' => (string)($row['username'] ?? ''),
+        'email' => (string)($row['email'] ?? ''),
+        'provider' => (string)($row['auth_provider'] ?? 'legacy'),
+        'role' => (string)($row['role'] ?? ''),
+        'role_label' => query_accounts_role_label((string)($row['role'] ?? '')),
+        'status' => (string)($row['status'] ?? ''),
+        'college_ids' => array_values(array_map(function ($item) {
+            return (int)($item['college_id'] ?? 0);
+        }, $accessRows)),
+        'default_college_id' => synk_scheduler_default_college_id($accessRows),
+        'college_access' => array_values(array_map(function ($item) {
+            return [
+                'college_id' => (int)($item['college_id'] ?? 0),
+                'display_label' => (string)($item['display_label'] ?? ''),
+                'is_default' => !empty($item['is_default'])
+            ];
+        }, $accessRows))
+    ];
+}
+
 if (isset($_POST['load_accounts'])) {
     $fields = ['u.*', 'c.college_code', 'c.college_name'];
     $sql = "
@@ -235,9 +280,41 @@ if (isset($_POST['load_accounts'])) {
     ";
 
     $res = $conn->query($sql);
-    $i = 1;
+    $rows = [];
+    $schedulerFallbackCollegeMap = [];
 
     while ($row = $res->fetch_assoc()) {
+        $rows[] = $row;
+        if ((string)($row['role'] ?? '') === 'scheduler') {
+            $schedulerFallbackCollegeMap[(int)($row['user_id'] ?? 0)] = (int)($row['college_id'] ?? 0);
+        }
+    }
+
+    $schedulerAccessByUser = synk_resolve_scheduler_access_rows_bulk($conn, $schedulerFallbackCollegeMap);
+
+    if ($wantsJsonResponse) {
+        header('Content-Type: application/json; charset=utf-8');
+
+        $accounts = [];
+        foreach ($rows as $row) {
+            $accessRows = [];
+            if ((string)($row['role'] ?? '') === 'scheduler') {
+                $accessRows = $schedulerAccessByUser[(int)($row['user_id'] ?? 0)] ?? [];
+            }
+
+            $accounts[] = query_accounts_payload_from_row($row, $accessRows);
+        }
+
+        echo json_encode([
+            'status' => 'ok',
+            'accounts' => $accounts
+        ]);
+        exit;
+    }
+
+    $i = 1;
+
+    foreach ($rows as $row) {
         $roleLabel = query_accounts_role_label($row['role']);
         $providerBadge = query_accounts_provider_badge($row['auth_provider'] ?? 'legacy');
 
@@ -246,7 +323,7 @@ if (isset($_POST['load_accounts'])) {
         $defaultCollegeId = '';
 
         if ((string)($row['role'] ?? '') === 'scheduler') {
-            $accessRows = synk_resolve_scheduler_access_rows($conn, (int)$row['user_id'], (int)($row['college_id'] ?? 0));
+            $accessRows = $schedulerAccessByUser[(int)($row['user_id'] ?? 0)] ?? [];
             $collegeIds = array_values(array_map(function ($item) {
                 return (int)($item['college_id'] ?? 0);
             }, $accessRows));
@@ -297,6 +374,15 @@ if (isset($_POST['load_accounts'])) {
 }
 
 if (isset($_POST['save_account'])) {
+    $missingColumns = query_accounts_missing_required_columns(
+        $conn,
+        ['username', 'email', 'password', 'role', 'college_id', 'status']
+    );
+    if (!empty($missingColumns)) {
+        echo 'schema_error';
+        exit;
+    }
+
     $validation = query_accounts_validate_payload($_POST, $allowedDomain, false);
     if (isset($validation['error'])) {
         echo $validation['error'];
@@ -358,6 +444,15 @@ if (isset($_POST['save_account'])) {
 }
 
 if (isset($_POST['update_account'])) {
+    $missingColumns = query_accounts_missing_required_columns(
+        $conn,
+        ['user_id', 'username', 'email', 'role', 'college_id', 'status']
+    );
+    if (!empty($missingColumns)) {
+        echo 'schema_error';
+        exit;
+    }
+
     $validation = query_accounts_validate_payload($_POST, $allowedDomain, true);
     if (isset($validation['error'])) {
         echo $validation['error'];

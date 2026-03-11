@@ -152,6 +152,160 @@ function synk_build_scheduler_access_fallback(mysqli $conn, int $collegeId): arr
     return [$row];
 }
 
+function synk_fetch_scheduler_access_rows_bulk(mysqli $conn, array $userIds): array
+{
+    $userIds = array_values(array_unique(array_filter(array_map('intval', $userIds), function ($value) {
+        return $value > 0;
+    })));
+
+    if (empty($userIds) || !synk_ensure_scheduler_access_table($conn)) {
+        return [];
+    }
+
+    $rowsByUser = [];
+    $userIdList = implode(', ', $userIds);
+    $sql = "
+        SELECT
+            access.user_id,
+            access.college_id,
+            access.is_default,
+            c.college_code,
+            c.college_name,
+            c.campus_id,
+            cp.campus_name
+        FROM tbl_user_college_access access
+        INNER JOIN tbl_college c
+            ON c.college_id = access.college_id
+        LEFT JOIN tbl_campus cp
+            ON cp.campus_id = c.campus_id
+        WHERE access.user_id IN ({$userIdList})
+          AND access.status = 'active'
+          AND c.status = 'active'
+        ORDER BY access.user_id ASC, access.is_default DESC, c.college_name ASC, c.college_code ASC
+    ";
+
+    $result = $conn->query($sql);
+    if (!$result) {
+        return [];
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $userId = (int)($row['user_id'] ?? 0);
+        if ($userId <= 0) {
+            continue;
+        }
+
+        $row['college_id'] = (int)($row['college_id'] ?? 0);
+        $row['campus_id'] = (int)($row['campus_id'] ?? 0);
+        $row['is_default'] = (int)($row['is_default'] ?? 0) === 1;
+        $row['display_label'] = synk_scheduler_access_option_label($row);
+
+        if (!isset($rowsByUser[$userId])) {
+            $rowsByUser[$userId] = [];
+        }
+
+        $rowsByUser[$userId][] = $row;
+    }
+
+    $result->close();
+
+    return $rowsByUser;
+}
+
+function synk_fetch_college_access_fallback_rows_bulk(mysqli $conn, array $collegeIds): array
+{
+    $collegeIds = array_values(array_unique(array_filter(array_map('intval', $collegeIds), function ($value) {
+        return $value > 0;
+    })));
+
+    if (empty($collegeIds)) {
+        return [];
+    }
+
+    $collegeIdList = implode(', ', $collegeIds);
+    $sql = "
+        SELECT
+            c.college_id,
+            c.college_code,
+            c.college_name,
+            c.campus_id,
+            cp.campus_name
+        FROM tbl_college c
+        LEFT JOIN tbl_campus cp
+            ON cp.campus_id = c.campus_id
+        WHERE c.college_id IN ({$collegeIdList})
+          AND c.status = 'active'
+    ";
+
+    $result = $conn->query($sql);
+    if (!$result) {
+        return [];
+    }
+
+    $rowsByCollege = [];
+    while ($row = $result->fetch_assoc()) {
+        $collegeId = (int)($row['college_id'] ?? 0);
+        if ($collegeId <= 0) {
+            continue;
+        }
+
+        $row['college_id'] = $collegeId;
+        $row['campus_id'] = (int)($row['campus_id'] ?? 0);
+        $row['is_default'] = true;
+        $row['display_label'] = synk_scheduler_access_option_label($row);
+        $rowsByCollege[$collegeId] = $row;
+    }
+
+    $result->close();
+
+    return $rowsByCollege;
+}
+
+function synk_resolve_scheduler_access_rows_bulk(mysqli $conn, array $userFallbackCollegeMap): array
+{
+    $normalizedFallbacks = [];
+    foreach ($userFallbackCollegeMap as $userId => $fallbackCollegeId) {
+        $safeUserId = (int)$userId;
+        if ($safeUserId <= 0) {
+            continue;
+        }
+
+        $normalizedFallbacks[$safeUserId] = (int)$fallbackCollegeId;
+    }
+
+    if (empty($normalizedFallbacks)) {
+        return [];
+    }
+
+    $rowsByUser = synk_fetch_scheduler_access_rows_bulk($conn, array_keys($normalizedFallbacks));
+    $fallbackCollegeIds = [];
+
+    foreach ($normalizedFallbacks as $userId => $fallbackCollegeId) {
+        if (!isset($rowsByUser[$userId]) || empty($rowsByUser[$userId])) {
+            if ($fallbackCollegeId > 0) {
+                $fallbackCollegeIds[] = $fallbackCollegeId;
+            }
+        }
+    }
+
+    $fallbackRowsByCollege = synk_fetch_college_access_fallback_rows_bulk($conn, $fallbackCollegeIds);
+
+    foreach ($normalizedFallbacks as $userId => $fallbackCollegeId) {
+        if (isset($rowsByUser[$userId]) && !empty($rowsByUser[$userId])) {
+            continue;
+        }
+
+        if ($fallbackCollegeId > 0 && isset($fallbackRowsByCollege[$fallbackCollegeId])) {
+            $rowsByUser[$userId] = [$fallbackRowsByCollege[$fallbackCollegeId]];
+            continue;
+        }
+
+        $rowsByUser[$userId] = [];
+    }
+
+    return $rowsByUser;
+}
+
 function synk_resolve_scheduler_access_rows(mysqli $conn, int $userId, int $fallbackCollegeId = 0): array
 {
     $rows = synk_fetch_scheduler_access_rows($conn, $userId);

@@ -761,12 +761,19 @@ $default_semester = (int)$currentTerm['semester'];
                         <option value="">Select Program</option>
                         <?php
                             $q = mysqli_query($conn, "
-                                SELECT program_id, program_code, program_name
+                                SELECT program_id, program_code, program_name, COALESCE(major, '') AS major
                                 FROM tbl_program
                                 WHERE college_id='$college_id'
-                                ORDER BY program_code ASC
+                                ORDER BY program_code ASC, program_name ASC, major ASC
                             ");
                             while ($r = mysqli_fetch_assoc($q)) {
+                                $major = trim((string)($r['major'] ?? ''));
+                                if ($major !== '') {
+                                    $baseProgramName = trim((string)($r['program_name'] ?? ''));
+                                    $r['program_name'] = $baseProgramName !== ''
+                                        ? $baseProgramName . ' (Major in ' . $major . ')'
+                                        : 'Major in ' . $major;
+                                }
                                 echo "<option value='".(int)$r['program_id']."' data-code='".htmlspecialchars($r['program_code'], ENT_QUOTES)."'>
                                         ".htmlspecialchars($r['program_code'])." — ".htmlspecialchars($r['program_name'])."
                                       </option>";

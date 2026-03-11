@@ -161,6 +161,7 @@ function get_offering_context(mysqli $conn, int $prospectusId, int $ayId, int $s
         'program_id' => 0,
         'program_code' => '',
         'program_name' => '',
+        'major' => '',
         'ay_label' => '',
         'subjectsByYear' => [],
         'sectionsByYear' => [],
@@ -190,7 +191,7 @@ function get_offering_context(mysqli $conn, int $prospectusId, int $ayId, int $s
     }
 
     $progStmt = $conn->prepare("
-        SELECT h.program_id, p.program_code, p.program_name
+        SELECT h.program_id, p.program_code, p.program_name, COALESCE(p.major, '') AS major
         FROM tbl_prospectus_header h
         INNER JOIN tbl_program p ON p.program_id = h.program_id
         WHERE h.prospectus_id = ?
@@ -210,6 +211,7 @@ function get_offering_context(mysqli $conn, int $prospectusId, int $ayId, int $s
     $ctx['program_id'] = (int)$prog['program_id'];
     $ctx['program_code'] = (string)$prog['program_code'];
     $ctx['program_name'] = (string)$prog['program_name'];
+    $ctx['major'] = trim((string)($prog['major'] ?? ''));
 
     $sub = $conn->prepare("
         SELECT ps.ps_id, pys.year_level
@@ -352,6 +354,7 @@ if (isset($_POST['validate_offerings_context'])) {
             : 'Validation failed. Please fix required data before generating.',
         'program_code' => $context['program_code'],
         'program_name' => $context['program_name'],
+        'major' => $context['major'],
         'ay_label' => $context['ay_label'],
         'semester' => $semester,
         'summary' => $context['summary'],

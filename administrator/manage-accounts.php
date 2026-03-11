@@ -460,12 +460,12 @@
 
             <div class="col-md-6">
               <label class="form-label">Display Name <span class="text-danger">*</span></label>
-              <input type="text" name="username" class="form-control" required>
+              <input type="text" name="username" id="add_username" class="form-control" required>
             </div>
 
             <div class="col-md-6">
               <label class="form-label">SKSU Email <span class="text-danger">*</span></label>
-              <input type="email" name="email" class="form-control" placeholder="name@sksu.edu.ph" required>
+              <input type="email" name="email" id="add_email" class="form-control" placeholder="name@sksu.edu.ph" required>
             </div>
 
             <div class="col-md-6">
@@ -495,7 +495,7 @@
 
             <div class="col-md-6">
               <label class="form-label">Status</label>
-              <select name="status" class="form-select">
+              <select name="status" id="add_status" class="form-select">
                 <option value="active">Active</option>
                 <option value="inactive">Inactive</option>
               </select>
@@ -506,8 +506,8 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnSaveAccount">Save</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" form="addAccountForm" class="btn btn-primary" id="btnSaveAccount">Save</button>
       </div>
 
     </div>
@@ -580,8 +580,8 @@
       </div>
 
       <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
-        <button class="btn btn-primary" id="btnUpdateAccount">Update</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Cancel</button>
+        <button type="submit" form="editAccountForm" class="btn btn-primary" id="btnUpdateAccount">Update</button>
       </div>
 
     </div>
@@ -666,6 +666,86 @@ $("#btnClearAccountSearch").on("click", function() {
 // ------------------------------------
 // LOAD ACCOUNTS LIST
 // ------------------------------------
+function providerLabelText(provider) {
+  return String(provider || "").toLowerCase() === "google" ? "GOOGLE" : "LEGACY";
+}
+
+function buildProviderBadgeHtml(provider) {
+  return String(provider || "").toLowerCase() === "google"
+    ? "<span class='badge bg-label-primary'>GOOGLE</span>"
+    : "<span class='badge bg-label-secondary'>LEGACY</span>";
+}
+
+function buildStatusBadgeHtml(status) {
+  return String(status || "").toLowerCase() === "active"
+    ? "<span class='badge bg-success'>ACTIVE</span>"
+    : "<span class='badge bg-secondary'>INACTIVE</span>";
+}
+
+function buildCollegeAccessHtml(accessRows) {
+  if (!Array.isArray(accessRows) || accessRows.length === 0) {
+    return "<span class='text-muted'>N/A</span>";
+  }
+
+  return accessRows.map(function(row) {
+    const label = escapeHtml(row && row.display_label ? row.display_label : "College");
+    const defaultBadge = row && row.is_default
+      ? " <span class='badge bg-label-primary ms-1'>Default</span>"
+      : "";
+
+    return "<div class='small text-wrap mb-1'>" + label + defaultBadge + "</div>";
+  }).join("");
+}
+
+function buildCollegeAccessText(accessRows) {
+  if (!Array.isArray(accessRows) || accessRows.length === 0) {
+    return "N/A";
+  }
+
+  return accessRows.map(function(row) {
+    const label = row && row.display_label ? String(row.display_label) : "College";
+    return row && row.is_default ? label + " Default" : label;
+  }).join(" ");
+}
+
+function normalizeAccountRecord(rawAccount) {
+  const accessRows = Array.isArray(rawAccount && rawAccount.college_access) ? rawAccount.college_access : [];
+  const provider = String(rawAccount && rawAccount.provider ? rawAccount.provider : "legacy");
+  const roleValue = String(rawAccount && rawAccount.role ? rawAccount.role : "");
+  const roleText = String(rawAccount && rawAccount.role_label ? rawAccount.role_label : roleValue);
+  const statusValue = String(rawAccount && rawAccount.status ? rawAccount.status : "inactive").toLowerCase();
+  const collegeIds = Array.isArray(rawAccount && rawAccount.college_ids)
+    ? rawAccount.college_ids.map(function(value) { return String(value); })
+    : [];
+  const collegeText = buildCollegeAccessText(accessRows);
+
+  return {
+    id: String(rawAccount && rawAccount.id ? rawAccount.id : ""),
+    username: String(rawAccount && rawAccount.username ? rawAccount.username : ""),
+    email: String(rawAccount && rawAccount.email ? rawAccount.email : ""),
+    accessHtml: buildProviderBadgeHtml(provider),
+    accessText: providerLabelText(provider),
+    roleText: roleText,
+    roleValue: roleValue,
+    collegeHtml: buildCollegeAccessHtml(accessRows),
+    collegeText: collegeText,
+    collegeIds: collegeIds,
+    collegeIdsAttr: JSON.stringify(collegeIds),
+    defaultCollegeValue: String(rawAccount && rawAccount.default_college_id ? rawAccount.default_college_id : ""),
+    statusHtml: buildStatusBadgeHtml(statusValue),
+    statusText: statusValue.toUpperCase(),
+    statusValue: statusValue,
+    searchText: [
+      rawAccount && rawAccount.username ? rawAccount.username : "",
+      rawAccount && rawAccount.email ? rawAccount.email : "",
+      providerLabelText(provider),
+      roleText,
+      collegeText,
+      statusValue.toUpperCase()
+    ].join(" ").toLowerCase()
+  };
+}
+
 function loadAccounts() {
   $("#accountsMeta").text("Loading accounts...");
   $("#accountsScrollHint").text("");
@@ -673,91 +753,31 @@ function loadAccounts() {
   $.ajax({
     url: "../backend/query_accounts.php",
     type: "POST",
-    data: { load_accounts: 1 },
-    success: function(data) {
-      const trimmed = $.trim(data);
-
-      if (trimmed === "unauthorized") {
+    dataType: "json",
+    data: { load_accounts: 1, response_format: "json" },
+    success: function(response) {
+      if (response && response.status === "unauthorized") {
         window.location = "../index.php";
         return;
       }
 
-      if (
-        trimmed.indexOf("Fatal error") !== -1 ||
-        trimmed.indexOf("Parse error") !== -1 ||
-        trimmed.indexOf("Warning:") !== -1 ||
-        (trimmed !== "" && trimmed.indexOf("<tr") === -1)
-      ) {
+      if (!response || response.status !== "ok" || !Array.isArray(response.accounts)) {
         renderAccountsLoadError();
         return;
       }
 
-      accountState.allAccounts = parseAccountRows(trimmed);
+      accountState.allAccounts = response.accounts.map(normalizeAccountRecord);
       applyAccountSearch();
     },
-    error: function() {
+    error: function(xhr) {
+      if (xhr && xhr.status === 403) {
+        window.location = "../index.php";
+        return;
+      }
+
       renderAccountsLoadError();
     }
   });
-}
-
-function parseAccountRows(html) {
-  const $tbody = $("<tbody>").html(html);
-  const accounts = [];
-
-  $tbody.find("tr").each(function() {
-    const $row = $(this);
-    const $cells = $row.children("td");
-    const $editButton = $row.find(".btnEditAccount").first();
-    const $deleteButton = $row.find(".btnDeleteAccount").first();
-
-    if ($cells.length < 8 || $editButton.length === 0 || $deleteButton.length === 0) {
-      return;
-    }
-
-    const username = $cells.eq(1).text().trim();
-    const email = $cells.eq(2).text().trim();
-    const accessText = $cells.eq(3).text().trim();
-    const roleText = $cells.eq(4).text().trim();
-    const collegeText = $cells.eq(5).text().trim();
-    const statusText = $cells.eq(6).text().trim();
-    const collegeIdsAttr = String($editButton.attr("data-college-ids") || "[]");
-    let collegeIds = [];
-
-    try {
-      collegeIds = JSON.parse(collegeIdsAttr);
-    } catch (error) {
-      collegeIds = [];
-    }
-
-    accounts.push({
-      id: String($editButton.data("id") || $deleteButton.data("id") || ""),
-      username: username,
-      email: email,
-      accessHtml: $.trim($cells.eq(3).html()),
-      accessText: accessText,
-      roleText: roleText,
-      roleValue: String($editButton.data("role") || ""),
-      collegeHtml: $.trim($cells.eq(5).html()),
-      collegeText: collegeText === "" ? "N/A" : collegeText,
-      collegeIds: Array.isArray(collegeIds) ? collegeIds.map(String) : [],
-      collegeIdsAttr: collegeIdsAttr,
-      defaultCollegeValue: String($editButton.attr("data-default-college") || ""),
-      statusHtml: $.trim($cells.eq(6).html()),
-      statusText: statusText,
-      statusValue: String($editButton.data("status") || ""),
-      searchText: [
-        username,
-        email,
-        accessText,
-        roleText,
-        collegeText,
-        statusText
-      ].join(" ").toLowerCase()
-    });
-  });
-
-  return accounts;
 }
 
 function applyAccountSearch() {
@@ -1053,6 +1073,125 @@ function toggleCollegeAccessFields(mode, role, preferredDefaultValue) {
   $("#" + mode + "_college_ids").trigger("change.select2");
 }
 
+function buildAccountPayload(mode) {
+  const payload = {
+    username: $.trim($("#" + mode + "_username").val()),
+    email: $.trim($("#" + mode + "_email").val()),
+    role: $("#" + mode + "_role").val(),
+    status: $("#" + mode + "_status").val() || "active"
+  };
+
+  if (mode === "edit") {
+    payload.user_id = $("#" + mode + "_user_id").val();
+  }
+
+  if (payload.role === "scheduler") {
+    payload.college_ids = ($("#" + mode + "_college_ids").val() || []).map(String);
+    payload.default_college_id = $("#" + mode + "_default_college_id").val();
+  }
+
+  return payload;
+}
+
+function hideAccountModal(modalId) {
+  const modalEl = document.getElementById(modalId);
+  if (!modalEl) {
+    return;
+  }
+
+  const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+  modalInstance.hide();
+}
+
+function showAccountModal(modalId) {
+  const modalEl = document.getElementById(modalId);
+  if (!modalEl) {
+    return;
+  }
+
+  const modalInstance = bootstrap.Modal.getInstance(modalEl) || bootstrap.Modal.getOrCreateInstance(modalEl);
+  modalInstance.show();
+}
+
+function handleAccountMutationResponse(mode, responseText) {
+  const res = $.trim(responseText);
+  const actionLabel = mode === "add" ? "Save" : "Update";
+
+  if (res === "unauthorized") {
+    Swal.fire("Session Expired", "Please sign in again.", "warning").then(() => {
+      window.location = "../index.php";
+    });
+    return;
+  }
+  if (res === "missing") {
+    Swal.fire("Missing Data", "Please fill all required fields.", "warning");
+    return;
+  }
+  if (res === "invalid_domain") {
+    Swal.fire("Invalid Email", "Only @sksu.edu.ph email addresses are allowed.", "warning");
+    return;
+  }
+  if (res === "invalid_role") {
+    Swal.fire("Invalid Role", "Only Administrator and Scheduler roles are supported in Synk.", "warning");
+    return;
+  }
+  if (res === "invalid_status") {
+    Swal.fire("Invalid Status", "Please choose a valid account status.", "warning");
+    return;
+  }
+  if (res === "need_college") {
+    Swal.fire("Missing College Access", "Select at least one college for the scheduler.", "warning");
+    return;
+  }
+  if (res === "dup_email") {
+    Swal.fire("Duplicate Email", "This email is already in use.", "warning");
+    return;
+  }
+  if (res === "schema_error") {
+    Swal.fire("Schema Mismatch", "The account form fields do not match the current tbl_useraccount columns.", "error");
+    return;
+  }
+  if (res === "save_failed") {
+    Swal.fire(actionLabel + " Failed", "The account could not be saved. Please verify the account schema and try again.", "error");
+    return;
+  }
+  if (res !== "success") {
+    Swal.fire(actionLabel + " Failed", res !== "" ? res : "Please try again later.", "error");
+    return;
+  }
+
+  Swal.fire({
+    icon: "success",
+    title: mode === "add" ? "Saved!" : "Updated!",
+    text: mode === "add" ? "Access account added successfully." : "Access account updated successfully.",
+    timer: 1200,
+    showConfirmButton: false
+  });
+
+  if (mode === "add") {
+    $("#addAccountForm")[0].reset();
+    resetCollegeAccessFields("add");
+    $("#add_college_wrapper").hide();
+    $("#add_default_college_wrapper").hide();
+    hideAccountModal("addAccountModal");
+  } else {
+    hideAccountModal("editAccountModal");
+  }
+
+  loadAccounts();
+}
+
+function submitAccountForm(mode) {
+  const payload = buildAccountPayload(mode);
+  payload[mode === "add" ? "save_account" : "update_account"] = 1;
+
+  $.post("../backend/query_accounts.php", payload, function(res) {
+    handleAccountMutationResponse(mode, res);
+  }).fail(function() {
+    Swal.fire(mode === "add" ? "Save Failed" : "Update Failed", "The account request could not be completed right now.", "error");
+  });
+}
+
 $("#add_role").on("change", function() {
   toggleCollegeAccessFields("add", $(this).val(), $("#add_default_college_id").val());
 });
@@ -1072,67 +1211,9 @@ $("#edit_college_ids").on("change", function() {
 // ------------------------------------
 // SAVE ACCOUNT
 // ------------------------------------
-$("#btnSaveAccount").click(function () {
-
-  $.post(
-    "../backend/query_accounts.php",
-    $("#addAccountForm").serialize() + "&save_account=1",
-    function(res) {
-
-      res = res.trim();
-
-      if (res === "unauthorized") {
-        Swal.fire("Session Expired", "Please sign in again.", "warning").then(() => {
-          window.location = "../index.php";
-        });
-        return;
-      }
-      if (res === "missing") {
-        Swal.fire("Missing Data", "Please fill all required fields.", "warning");
-        return;
-      }
-      if (res === "invalid_domain") {
-        Swal.fire("Invalid Email", "Only @sksu.edu.ph email addresses are allowed.", "warning");
-        return;
-      }
-      if (res === "invalid_role") {
-        Swal.fire("Invalid Role", "Only Administrator and Scheduler roles are supported in Synk.", "warning");
-        return;
-      }
-      if (res === "invalid_status") {
-        Swal.fire("Invalid Status", "Please choose a valid account status.", "warning");
-        return;
-      }
-      if (res === "need_college") {
-        Swal.fire("Missing College Access", "Select at least one college for the scheduler.", "warning");
-        return;
-      }
-      if (res === "dup_email") {
-        Swal.fire("Duplicate Email", "This email is already in use.", "warning");
-        return;
-      }
-      if (res !== "success") {
-        Swal.fire("Save Failed", "Please try again later.", "error");
-        return;
-      }
-
-      Swal.fire({
-        icon: "success",
-        title: "Saved!",
-        text: "Access account added successfully.",
-        timer: 1200,
-        showConfirmButton: false
-      });
-
-      $("#addAccountForm")[0].reset();
-      resetCollegeAccessFields("add");
-      $("#add_college_wrapper").hide();
-      $("#add_default_college_wrapper").hide();
-      $("#addAccountModal").modal("hide");
-      loadAccounts();
-    }
-  );
-
+$("#addAccountForm").on("submit", function (event) {
+  event.preventDefault();
+  submitAccountForm("add");
 });
 
 // ------------------------------------
@@ -1164,7 +1245,7 @@ $(document).on("click", ".btnEditAccount", function () {
     toggleCollegeAccessFields("edit", role, "");
   }
 
-  $("#editAccountModal").modal("show");
+  showAccountModal("editAccountModal");
 });
 
 $("#addAccountModal").on("shown.bs.modal", function() {
@@ -1178,63 +1259,9 @@ $("#editAccountModal").on("shown.bs.modal", function() {
 // ------------------------------------
 // UPDATE ACCOUNT
 // ------------------------------------
-$("#btnUpdateAccount").click(function () {
-
-  $.post(
-    "../backend/query_accounts.php",
-    $("#editAccountForm").serialize() + "&update_account=1",
-    function(res) {
-
-      res = res.trim();
-
-      if (res === "unauthorized") {
-        Swal.fire("Session Expired", "Please sign in again.", "warning").then(() => {
-          window.location = "../index.php";
-        });
-        return;
-      }
-      if (res === "missing") {
-        Swal.fire("Missing Data", "Please fill all required fields.", "warning");
-        return;
-      }
-      if (res === "invalid_domain") {
-        Swal.fire("Invalid Email", "Only @sksu.edu.ph email addresses are allowed.", "warning");
-        return;
-      }
-      if (res === "invalid_role") {
-        Swal.fire("Invalid Role", "Only Administrator and Scheduler roles are supported in Synk.", "warning");
-        return;
-      }
-      if (res === "invalid_status") {
-        Swal.fire("Invalid Status", "Please choose a valid account status.", "warning");
-        return;
-      }
-      if (res === "need_college") {
-        Swal.fire("Missing College Access", "Select at least one college for the scheduler.", "warning");
-        return;
-      }
-      if (res === "dup_email") {
-        Swal.fire("Duplicate Email", "This email is already in use.", "warning");
-        return;
-      }
-      if (res !== "success") {
-        Swal.fire("Update Failed", "Please try again later.", "error");
-        return;
-      }
-
-      Swal.fire({
-        icon: "success",
-        title: "Updated!",
-        text: "Access account updated successfully.",
-        timer: 1200,
-        showConfirmButton: false
-      });
-
-      $("#editAccountModal").modal("hide");
-      loadAccounts();
-    }
-  );
-
+$("#editAccountForm").on("submit", function (event) {
+  event.preventDefault();
+  submitAccountForm("edit");
 });
 
 // ------------------------------------
