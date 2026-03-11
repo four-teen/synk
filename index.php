@@ -553,7 +553,7 @@ if (isset($_POST['login'])) {
 
           <div class="card login-card">
             <div class="card-body">
-              <div class="login-brand">sksu synk sksu</div>
+              <div class="login-brand">sksu synk</div>
 
               <h1 class="login-title">Master Scheduling Workspace</h1>
               <p class="login-subtitle">
