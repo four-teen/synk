@@ -3,7 +3,7 @@
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1" />
-  <title>SYNK Systems — Under Construction</title>
+  <title>SYNK Systems — Under Construction </title>
   <meta name="description" content="SYNK Systems is currently under construction." />
   <style>
     :root { color-scheme: light dark; }
