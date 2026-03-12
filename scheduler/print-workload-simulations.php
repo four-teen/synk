@@ -48,22 +48,12 @@ function format_load_number($value): string
 
 function render_partner_bits(array $row, bool $showType): string
 {
-    $bits = [];
-    $partnerLabel = trim((string)($row['partner_label'] ?? ''));
-    if ($partnerLabel !== '') {
-        $bits[] = '<span class="partner-pill">' . h($partnerLabel) . '</span>';
-    }
-
     if ($showType) {
         $type = strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))) === 'LAB' ? 'LAB' : 'LEC';
-        $bits[] = '<span class="type-pill ' . strtolower($type) . '">' . h($type) . '</span>';
+        return '<div class="desc-type-text">' . h($type) . '</div>';
     }
 
-    if (empty($bits)) {
-        return '';
-    }
-
-    return '<div class="desc-bits">' . implode('', $bits) . '</div>';
+    return '';
 }
 
 $ayLabel = '';
@@ -116,34 +106,47 @@ if ($collegeId > 0 && $ayId > 0 && $semester > 0 && synk_table_exists($conn, 'tb
     <title>Print Workload Simulations</title>
     <style>
         body { font-family: Arial, sans-serif; margin: 0; background: #f4f6fa; color: #1f2937; }
-        .page-shell { max-width: 1080px; margin: 0 auto; padding: 24px; }
+        .page-shell { max-width: 230mm; margin: 0 auto; padding: 18px; }
         .toolbar { display: flex; justify-content: space-between; align-items: center; margin-bottom: 18px; }
         .toolbar .btn { padding: 10px 16px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; cursor: pointer; }
-        .report-sheet { background: #fff; border: 1px solid #dbe5f1; box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08); padding: 24px; }
+        .report-sheet {
+            width: 210mm;
+            min-height: 297mm;
+            margin: 0 auto 16px;
+            box-sizing: border-box;
+            background: #fff;
+            border: 1px solid #dbe5f1;
+            box-shadow: 0 10px 30px rgba(15, 23, 42, 0.08);
+            padding: 12mm 12mm 14mm;
+        }
         .report-header { text-align: center; margin-bottom: 18px; }
         .report-title { font-size: 24px; font-weight: 700; margin-bottom: 4px; }
         .report-subtitle { font-size: 13px; color: #64748b; }
         .faculty-block { margin-top: 18px; page-break-inside: avoid; }
-        .faculty-block + .faculty-block { border-top: 2px solid #dbe5f1; padding-top: 18px; }
         .faculty-name { font-size: 18px; font-weight: 700; margin-bottom: 10px; }
         table { width: 100%; border-collapse: collapse; }
         th, td { border: 1px solid #d7e1ec; padding: 6px 8px; font-size: 12px; vertical-align: middle; }
         th { background: #f8fafc; text-transform: uppercase; letter-spacing: 0.04em; font-size: 11px; color: #475569; }
         tfoot td, tfoot th { background: #f8fafc; font-weight: 700; }
         .code { font-weight: 700; white-space: nowrap; }
-        .partner-pill, .type-pill { display: inline-flex; align-items: center; justify-content: center; border-radius: 999px; padding: 2px 8px; font-size: 10px; font-weight: 700; text-transform: uppercase; margin-right: 4px; }
-        .partner-pill { background: #eef2f7; color: #52657d; }
-        .type-pill.lec { background: #e8e9ff; color: #5d68f4; }
-        .type-pill.lab { background: #fff0cf; color: #c98900; }
-        .desc-bits { margin-top: 4px; }
+        .desc-type-text { margin-top: 4px; font-size: 10px; font-weight: 700; letter-spacing: 0.04em; color: #64748b; }
         .muted { color: #64748b; }
         .load-status { margin-left: 6px; font-size: 10px; text-transform: uppercase; }
+        .faculty-sheet { break-after: page; page-break-after: always; }
+        .faculty-sheet:last-of-type { break-after: auto; page-break-after: auto; }
         @media print {
+            @page { size: A4 portrait; margin: 10mm; }
             body { background: #fff; }
             .page-shell { max-width: none; padding: 0; }
             .toolbar { display: none; }
-            .report-sheet { box-shadow: none; border: none; padding: 0; }
-            .faculty-block + .faculty-block { page-break-before: always; border-top: none; }
+            .report-sheet {
+                width: auto;
+                min-height: auto;
+                margin: 0;
+                box-shadow: none;
+                border: none;
+                padding: 0;
+            }
         }
     </style>
 </head>
@@ -156,19 +159,26 @@ if ($collegeId > 0 && $ayId > 0 && $semester > 0 && synk_table_exists($conn, 'tb
         <button type="button" class="btn" onclick="window.print()">Print</button>
     </div>
 
-    <div class="report-sheet">
-        <div class="report-header">
-            <div class="report-title">Faculty Workload Simulations</div>
-            <div class="report-subtitle">
-                <?= h($collegeName) ?> | <?= h(semester_print_label($semester)) ?><?= $ayLabel !== '' ? ' | AY ' . h($ayLabel) : '' ?>
+    <?php if (empty($facultyRows)): ?>
+        <div class="report-sheet">
+            <div class="report-header">
+                <div class="report-title">Faculty Workload Simulations</div>
+                <div class="report-subtitle">
+                    <?= h($collegeName) ?> | <?= h(semester_print_label($semester)) ?><?= $ayLabel !== '' ? ' | AY ' . h($ayLabel) : '' ?>
+                </div>
             </div>
-        </div>
-
-        <?php if (empty($facultyRows)): ?>
             <p class="muted">No saved simulation workload was found for this term.</p>
-        <?php endif; ?>
+        </div>
+    <?php endif; ?>
 
-        <?php foreach ($facultyRows as $facultyRow): ?>
+    <?php foreach ($facultyRows as $facultyRow): ?>
+        <div class="report-sheet faculty-sheet">
+            <div class="report-header">
+                <div class="report-title">Faculty Workload Simulations</div>
+                <div class="report-subtitle">
+                    <?= h($collegeName) ?> | <?= h(semester_print_label($semester)) ?><?= $ayLabel !== '' ? ' | AY ' . h($ayLabel) : '' ?>
+                </div>
+            </div>
             <?php
             $rows = synk_fetch_saved_workload_simulation_rows($conn, $collegeId, (int)$facultyRow['faculty_id'], $ayId, $semester);
             $meta = synk_fetch_workload_simulation_designation_meta($conn, $collegeId, (int)$facultyRow['faculty_id'], $ayId, $semester);
@@ -307,8 +317,8 @@ if ($collegeId > 0 && $ayId > 0 && $semester > 0 && synk_table_exists($conn, 'tb
                     </tfoot>
                 </table>
             </div>
-        <?php endforeach; ?>
-    </div>
+        </div>
+    <?php endforeach; ?>
 </div>
 </body>
 </html>
