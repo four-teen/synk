@@ -39,6 +39,47 @@ function normalizeCampusLabel($campusName) {
     return $label !== '' ? $label . ' CAMPUS' : 'CAMPUS';
 }
 
+function synk_title_case_display($value) {
+    $value = trim((string)$value);
+    if ($value === '') {
+        return '';
+    }
+
+    $value = preg_replace('/\s+/', ' ', $value);
+    $value = ucwords(strtolower($value));
+
+    $smallWords = ['And', 'Of', 'In', 'On', 'To', 'For', 'The', 'A', 'An', 'At', 'By', 'From'];
+    $parts = explode(' ', $value);
+
+    foreach ($parts as $index => $part) {
+        if ($index === 0) {
+            continue;
+        }
+
+        if (in_array($part, $smallWords, true)) {
+            $parts[$index] = strtolower($part);
+        }
+    }
+
+    return implode(' ', $parts);
+}
+
+function formatProgramDisplayLabel($programCode, $programName, $major = '') {
+    $code = strtoupper(trim((string)$programCode));
+    $name = synk_title_case_display($programName);
+    $major = synk_title_case_display($major);
+
+    $label = trim($code !== '' && $name !== ''
+        ? $code . ' - ' . $name
+        : ($code !== '' ? $code : $name));
+
+    if ($major !== '') {
+        $label = trim($label !== '' ? $label . ' major in ' . $major : $major);
+    }
+
+    return $label;
+}
+
 function h($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
@@ -98,6 +139,7 @@ if ($collegeId > 0) {
             h.prospectus_id,
             p.program_code,
             p.program_name,
+            COALESCE(p.major, '') AS major,
             h.effective_sy
         FROM tbl_prospectus_header h
         INNER JOIN tbl_program p ON p.program_id = h.program_id
@@ -126,11 +168,11 @@ if ($prospectus_id !== '') {
             continue;
         }
 
-        $programCode = trim((string)($option['program_code'] ?? ''));
-        $programName = trim((string)($option['program_name'] ?? ''));
-        $selectedProgramLabel = trim($programCode !== '' && $programName !== ''
-            ? $programCode . ' - ' . $programName
-            : ($programCode !== '' ? $programCode : $programName));
+        $selectedProgramLabel = formatProgramDisplayLabel(
+            $option['program_code'] ?? '',
+            $option['program_name'] ?? '',
+            $option['major'] ?? ''
+        );
         break;
     }
 }
@@ -642,11 +684,18 @@ if ($hasFilters && $collegeId > 0) {
                     <select name="prospectus_id" id="prospectusSelect" class="form-select" required>
                       <option value="">Select prospectus...</option>
                       <?php foreach ($prospectusOptions as $option): ?>
+                        <?php
+                        $optionProgramLabel = formatProgramDisplayLabel(
+                            $option['program_code'] ?? '',
+                            $option['program_name'] ?? '',
+                            $option['major'] ?? ''
+                        );
+                        ?>
                         <option
                           value="<?= h($option['prospectus_id']) ?>"
                           <?= $prospectus_id === (string)$option['prospectus_id'] ? 'selected' : '' ?>
                         >
-                          <?= h($option['program_code']) ?> - <?= h($option['program_name']) ?> (SY <?= h($option['effective_sy']) ?>)
+                          <?= h($optionProgramLabel) ?> (SY <?= h($option['effective_sy']) ?>)
                         </option>
                       <?php endforeach; ?>
                     </select>
