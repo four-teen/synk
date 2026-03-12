@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/offering_enrollee_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 
 header('Content-Type: application/json');
@@ -467,9 +468,14 @@ if (isset($_POST['load_faculty_workload'])) {
     $rows = [];
     $preparations = [];
     $facultyName = '';
+    $offeringIds = [];
 
     while ($row = $res->fetch_assoc()) {
         $facultyName = $facultyName !== '' ? $facultyName : (string)($row['faculty_name'] ?? '');
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId > 0) {
+            $offeringIds[$offeringId] = true;
+        }
 
         $type = strtoupper(trim((string)($row['type'] ?? 'LEC')));
         $lecUnits = (float)($row['lec_units'] ?? 0);
@@ -516,6 +522,14 @@ if (isset($_POST['load_faculty_workload'])) {
     }
 
     $stmt->close();
+    $studentCountMap = synk_fetch_offering_enrollee_count_map($conn, array_keys($offeringIds));
+    foreach ($rows as &$workloadRow) {
+        $workloadRow['student_count'] = synk_offering_enrollee_count_for_map(
+            $studentCountMap,
+            (int)($workloadRow['offering_id'] ?? 0)
+        );
+    }
+    unset($workloadRow);
 
     $designationName = '';
     $designationUnits = 0.0;

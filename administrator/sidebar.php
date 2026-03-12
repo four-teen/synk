@@ -149,6 +149,15 @@ $sidebarSections = [
                         'pages' => ['manage-prospectus-browser.php', 'view-prospectus.php'],
                     ],
                     [
+                        'key' => 'offering_enrollees',
+                        'href' => 'manage-offering-enrollees.php',
+                        'icon_bg' => 'bg-label-warning',
+                        'icon' => 'bx-group',
+                        'title' => 'Offering Enrollees',
+                        'description' => 'Set dummy enrollee counts for generated offerings',
+                        'pages' => ['manage-offering-enrollees.php'],
+                    ],
+                    [
                         'key' => 'institutional_report',
                         'href' => 'institutional_report.php',
                         'icon_bg' => 'bg-label-info',

@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/offering_enrollee_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 
@@ -194,6 +195,8 @@ while ($row = $res->fetch_assoc()) {
 
 $stmt->close();
 
+$studentCountMap = synk_fetch_offering_enrollee_count_map($conn, array_keys($offeringIds));
+
 $contextTotals = [];
 if (!empty($offeringIds)) {
     $offeringIdList = implode(',', array_map('intval', array_keys($offeringIds)));
@@ -310,7 +313,7 @@ foreach ($rawRows as $rawRow) {
         'lec' => $metrics['lec'],
         'lab' => $metrics['lab'],
         'faculty_load' => $metrics['faculty_load'],
-        'student_count' => 0
+        'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, (int)$rawRow['offering_id'])
     ];
 }
 

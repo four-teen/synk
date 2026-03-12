@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/offering_enrollee_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 
@@ -223,6 +224,7 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
 
     $stmt->close();
 
+    $studentCountMap = synk_fetch_offering_enrollee_count_map($conn, array_keys($offerings));
     $rows = [];
 
     foreach ($offerings as $offering) {
@@ -313,7 +315,7 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
                 'lec' => $metrics['lec'],
                 'lab' => $metrics['lab'],
                 'faculty_load' => $metrics['faculty_load'],
-                'student_count' => 0
+                'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, $offeringId)
             ];
         }
 
@@ -359,7 +361,7 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
                 'lec' => $metrics['lec'],
                 'lab' => $metrics['lab'],
                 'faculty_load' => $metrics['faculty_load'],
-                'student_count' => 0
+                'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, $offeringId)
             ];
         }
 
@@ -405,7 +407,7 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
                 'lec' => $metrics['lec'],
                 'lab' => $metrics['lab'],
                 'faculty_load' => $metrics['faculty_load'],
-                'student_count' => 0
+                'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, $offeringId)
             ];
         }
     }
