@@ -119,6 +119,22 @@ if ($collegeId > 0) {
     }
 }
 
+$selectedProgramLabel = '';
+if ($prospectus_id !== '') {
+    foreach ($prospectusOptions as $option) {
+        if ((string)($option['prospectus_id'] ?? '') !== $prospectus_id) {
+            continue;
+        }
+
+        $programCode = trim((string)($option['program_code'] ?? ''));
+        $programName = trim((string)($option['program_name'] ?? ''));
+        $selectedProgramLabel = trim($programCode !== '' && $programName !== ''
+            ? $programCode . ' - ' . $programName
+            : ($programCode !== '' ? $programCode : $programName));
+        break;
+    }
+}
+
 $hasFilters = $prospectus_id !== '' && $ay_id !== '' && $semester !== '';
 $courses = [];
 
@@ -384,9 +400,17 @@ if ($hasFilters && $collegeId > 0) {
       line-height: 1.05;
     }
 
+    .print-title .program-line,
     .print-title .campus-line,
     .print-title .term-line {
       margin-top: 2px;
+    }
+
+    .print-title .program-line {
+      font-weight: 700;
+      font-size: 13px;
+      line-height: 1.08;
+      text-transform: uppercase;
     }
 
     .group-title {
@@ -710,6 +734,9 @@ if ($hasFilters && $collegeId > 0) {
                       <div class="print-title">
                         <div class="uni">SULTAN KUDARAT STATE UNIVERSITY</div>
                         <div class="main">ALPHABETICAL LIST OF COURSES</div>
+                        <?php if ($selectedProgramLabel !== ''): ?>
+                          <div class="program-line"><?= h($selectedProgramLabel) ?></div>
+                        <?php endif; ?>
                         <div class="campus-line"><?= h($campusLabel) ?></div>
                         <div class="term-line"><?= h(semesterLabel($semester)) ?>, AY <?= h($ayLabel) ?></div>
                       </div>
