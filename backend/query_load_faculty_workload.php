@@ -37,6 +37,59 @@ function workload_title_case(string $value): string
     return (string)$value;
 }
 
+function workload_context_key_from_values(int $groupId, int $scheduleId, int $offeringId): string
+{
+    if ($groupId > 0) {
+        return 'group:' . $groupId;
+    }
+
+    if ($scheduleId > 0) {
+        return 'schedule:' . $scheduleId;
+    }
+
+    return 'offering:' . $offeringId;
+}
+
+function workload_build_share_metrics(
+    float $subjectUnits,
+    float $lecUnits,
+    float $labHoursTotal,
+    array $contextTotals,
+    array $ownedTotals
+): array {
+    $totalCount = (int)($contextTotals['total_count'] ?? 0);
+    $totalLecCount = max(0, (int)($contextTotals['lec_count'] ?? 0));
+    $totalLabCount = max(0, (int)($contextTotals['lab_count'] ?? 0));
+    $ownedCount = (int)($ownedTotals['total_count'] ?? 0);
+    $ownedLecCount = max(0, (int)($ownedTotals['lec_count'] ?? 0));
+    $ownedLabCount = max(0, (int)($ownedTotals['lab_count'] ?? 0));
+
+    $ownsAllRows = $totalCount > 0 && $ownedCount >= $totalCount;
+    $lectureUnitsPerRow = $totalLecCount > 0 ? ($lecUnits / $totalLecCount) : 0.0;
+    $labHoursPerRow = $totalLabCount > 0 ? ($labHoursTotal / $totalLabCount) : 0.0;
+
+    if ($ownsAllRows) {
+        $displayLec = $lecUnits;
+        $displayLab = $labHoursTotal;
+    } elseif ($ownedLecCount > 0 && $ownedLabCount === 0) {
+        $displayLec = $lectureUnitsPerRow * $ownedLecCount;
+        $displayLab = 0.0;
+    } elseif ($ownedLecCount === 0 && $ownedLabCount > 0) {
+        $displayLab = $labHoursPerRow * $ownedLabCount;
+        $displayLec = max(0.0, $subjectUnits - $displayLab);
+    } else {
+        $displayLec = $lectureUnitsPerRow * $ownedLecCount;
+        $displayLab = $labHoursPerRow * $ownedLabCount;
+    }
+
+    return [
+        'units' => round($subjectUnits, 2),
+        'lec' => round($displayLec, 2),
+        'lab' => round($displayLab, 2),
+        'faculty_load' => round($displayLec + ($displayLab * SYNK_LAB_LOAD_MULTIPLIER), 2)
+    ];
+}
+
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
@@ -48,6 +101,7 @@ $assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'se
 
 $selectParts = [
     'fw.workload_id',
+    'cs.schedule_id',
     'o.offering_id',
     $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
     $classScheduleHasType ? 'cs.schedule_type AS type' : "'LEC' AS type",
@@ -101,7 +155,9 @@ $stmt->execute();
 $res = $stmt->get_result();
 
 $rows = [];
+$rawRows = [];
 $preparations = [];
+$offeringIds = [];
 
 while ($row = $res->fetch_assoc()) {
     $days_arr = json_decode((string)$row['days_json'], true);
@@ -109,49 +165,26 @@ while ($row = $res->fetch_assoc()) {
         $days_arr = [];
     }
 
-    $rowType = strtoupper(trim((string)($row['type'] ?? 'LEC')));
-    $subjectUnits = synk_subject_units_total(
-        (float)($row['lec_units'] ?? 0),
-        (float)($row['lab_units'] ?? 0),
-        (float)($row['total_units'] ?? 0)
-    );
-    $metrics = synk_schedule_block_metrics_from_row([
-        'schedule_type' => $rowType,
-        'days' => $days_arr,
-        'time_start' => (string)$row['time_start'],
-        'time_end' => (string)$row['time_end'],
-        'lec_units' => (float)($row['lec_units'] ?? 0),
-        'lab_units' => (float)($row['lab_units'] ?? 0),
-        'total_units' => (float)($row['total_units'] ?? 0)
-    ]);
-
-    $fullSection = trim((string)($row['full_section'] ?? ''));
-    if ($fullSection === '') {
-        $fullSection = trim((string)($row['section'] ?? ''));
-    }
-
-    $rows[] = [
+    $rawRows[] = [
         'workload_id' => (int)$row['workload_id'],
+        'schedule_id' => (int)($row['schedule_id'] ?? 0),
         'offering_id' => (int)$row['offering_id'],
         'group_id' => (int)($row['group_id'] ?? 0),
         'sub_code' => (string)$row['sub_code'],
         'desc' => (string)$row['desc'],
-        'course' => $fullSection,
         'section' => (string)$row['section'],
-        'type' => $rowType,
-        'days' => implode(", ", $days_arr),
-        'time' => date("g:iA", strtotime((string)$row['time_start'])) . "-" .
-                  date("g:iA", strtotime((string)$row['time_end'])),
+        'full_section' => (string)($row['full_section'] ?? ''),
+        'type' => strtoupper(trim((string)($row['type'] ?? 'LEC'))),
+        'days_arr' => $days_arr,
+        'time_start' => (string)$row['time_start'],
+        'time_end' => (string)$row['time_end'],
         'room' => (string)($row['room'] ?? ''),
         'lec_units' => (float)($row['lec_units'] ?? 0),
         'lab_units' => (float)($row['lab_units'] ?? 0),
-        'subject_units' => round($subjectUnits, 2),
-        'units' => $metrics['units'],
-        'lec' => $metrics['hours_lec'],
-        'lab' => $metrics['hours_lab'],
-        'faculty_load' => $metrics['faculty_load'],
-        'student_count' => 0
+        'total_units' => (float)($row['total_units'] ?? 0)
     ];
+
+    $offeringIds[(int)$row['offering_id']] = true;
 
     $preparationKey = trim((string)$row['sub_code']);
     if ($preparationKey !== '') {
@@ -160,6 +193,126 @@ while ($row = $res->fetch_assoc()) {
 }
 
 $stmt->close();
+
+$contextTotals = [];
+if (!empty($offeringIds)) {
+    $offeringIdList = implode(',', array_map('intval', array_keys($offeringIds)));
+    $contextSelectParts = [
+        'cs.schedule_id',
+        'cs.offering_id',
+        $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
+        $classScheduleHasType ? 'cs.schedule_type AS type' : "'LEC' AS type"
+    ];
+    $contextSql = "
+        SELECT
+            " . implode(",\n            ", $contextSelectParts) . "
+        FROM tbl_class_schedule cs
+        WHERE cs.offering_id IN ({$offeringIdList})
+    ";
+
+    $contextRes = $conn->query($contextSql);
+    if ($contextRes instanceof mysqli_result) {
+        while ($contextRow = $contextRes->fetch_assoc()) {
+            $contextKey = workload_context_key_from_values(
+                (int)($contextRow['group_id'] ?? 0),
+                (int)($contextRow['schedule_id'] ?? 0),
+                (int)($contextRow['offering_id'] ?? 0)
+            );
+
+            if (!isset($contextTotals[$contextKey])) {
+                $contextTotals[$contextKey] = [
+                    'total_count' => 0,
+                    'lec_count' => 0,
+                    'lab_count' => 0
+                ];
+            }
+
+            $contextTotals[$contextKey]['total_count']++;
+            $contextType = strtoupper(trim((string)($contextRow['type'] ?? 'LEC')));
+            if ($contextType === 'LAB') {
+                $contextTotals[$contextKey]['lab_count']++;
+            } else {
+                $contextTotals[$contextKey]['lec_count']++;
+            }
+        }
+        $contextRes->free();
+    }
+}
+
+$ownedTotals = [];
+foreach ($rawRows as $rawRow) {
+    $contextKey = workload_context_key_from_values(
+        (int)($rawRow['group_id'] ?? 0),
+        (int)($rawRow['schedule_id'] ?? 0),
+        (int)($rawRow['offering_id'] ?? 0)
+    );
+
+    if (!isset($ownedTotals[$contextKey])) {
+        $ownedTotals[$contextKey] = [
+            'total_count' => 0,
+            'lec_count' => 0,
+            'lab_count' => 0
+        ];
+    }
+
+    $ownedTotals[$contextKey]['total_count']++;
+    if (($rawRow['type'] ?? 'LEC') === 'LAB') {
+        $ownedTotals[$contextKey]['lab_count']++;
+    } else {
+        $ownedTotals[$contextKey]['lec_count']++;
+    }
+}
+
+foreach ($rawRows as $rawRow) {
+    $lecUnits = (float)($rawRow['lec_units'] ?? 0);
+    $labValue = (float)($rawRow['lab_units'] ?? 0);
+    $totalUnits = (float)($rawRow['total_units'] ?? 0);
+    $labIsCredit = ($labValue > 0) && (abs(($lecUnits + $labValue) - $totalUnits) < 0.0001);
+    $labHours = $labIsCredit ? ($labValue * SYNK_LAB_CONTACT_HOURS_PER_UNIT) : $labValue;
+    $subjectUnits = $totalUnits > 0
+        ? $totalUnits
+        : ($lecUnits + ($labIsCredit ? $labValue : 0));
+    $contextKey = workload_context_key_from_values(
+        (int)($rawRow['group_id'] ?? 0),
+        (int)($rawRow['schedule_id'] ?? 0),
+        (int)($rawRow['offering_id'] ?? 0)
+    );
+    $metrics = workload_build_share_metrics(
+        $subjectUnits,
+        $lecUnits,
+        $labHours,
+        $contextTotals[$contextKey] ?? [],
+        $ownedTotals[$contextKey] ?? []
+    );
+    $fullSection = trim((string)($rawRow['full_section'] ?? ''));
+    if ($fullSection === '') {
+        $fullSection = trim((string)($rawRow['section'] ?? ''));
+    }
+
+    $rows[] = [
+        'workload_id' => (int)$rawRow['workload_id'],
+        'schedule_id' => (int)$rawRow['schedule_id'],
+        'offering_id' => (int)$rawRow['offering_id'],
+        'group_id' => (int)($rawRow['group_id'] ?? 0),
+        'sub_code' => (string)$rawRow['sub_code'],
+        'desc' => (string)$rawRow['desc'],
+        'course' => $fullSection,
+        'section' => (string)$rawRow['section'],
+        'type' => (string)$rawRow['type'],
+        'days' => implode(", ", $rawRow['days_arr'] ?? []),
+        'time' => date("g:iA", strtotime((string)$rawRow['time_start'])) . "-" .
+                  date("g:iA", strtotime((string)$rawRow['time_end'])),
+        'room' => (string)($rawRow['room'] ?? ''),
+        'lec_units' => round($lecUnits, 2),
+        'lab_units' => round($labValue, 2),
+        'subject_units' => round($subjectUnits, 2),
+        'units' => $metrics['units'],
+        'lec' => $metrics['lec'],
+        'lab' => $metrics['lab'],
+        'faculty_load' => $metrics['faculty_load'],
+        'student_count' => 0
+    ];
+}
 
 $designationName = '';
 $designationUnits = 0.0;

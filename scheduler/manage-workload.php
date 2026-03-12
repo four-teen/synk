@@ -914,7 +914,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
             <div class="print-note-title">Note:</div>
             <div class="print-note-line">Regular number of students in the class:</div>
             <div class="print-note-line indent">Lecture: 40, Lab: 25</div>
-            <div class="print-note-line">Load of teaching lab only 0.8 per contact hour/week/semester. Load of teaching lecture only 1.0 per contact hour/week/semester.</div>
+            <div class="print-note-line">Load of teaching lab only 0.75 per contact hour/week/semester. Load of teaching lecture only 1.0 per contact hour/week/semester.</div>
             <div class="print-note-line">Thesis in final adviser:</div>
             <div class="print-note-line indent">0-15 students, 1 unit</div>
             <div class="print-note-line indent">16-30 students, 2 units</div>
@@ -1205,8 +1205,19 @@ $(document).ready(function () {
         $("#totalStudents").text("");
     }
 
-    function buildWorkloadDescription(row) {
-        return escapeHtml(row?.desc || "");
+    function buildWorkloadDescription(row, isPaired = false) {
+        const description = escapeHtml(row?.desc || "");
+        if (!isPaired) {
+            return description;
+        }
+
+        const type = String(row?.type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC";
+        return `
+            ${description}
+            <span class="schedule-partner-note">
+                <span class="type-pill ${type.toLowerCase()}">${type}</span>
+            </span>
+        `;
     }
 
     function getDisplayUnits(row) {
@@ -1233,20 +1244,27 @@ $(document).ready(function () {
         return toNumber(row?.hours_lec);
     }
 
-    function getUnitTotalKey(row) {
-        const offeringId = Number(row?.offering_id) || 0;
-        if (offeringId > 0) {
-            return `offering:${offeringId}`;
-        }
-
+    function getWorkloadGroupKey(row) {
         const groupId = Number(row?.group_id) || 0;
         if (groupId > 0) {
             return `group:${groupId}`;
         }
 
-        const subjectCode = String(row?.sub_code || row?.subject_code || "").trim();
-        const courseLabel = String(row?.course || row?.section || row?.section_name || "").trim();
-        return `${subjectCode}|${courseLabel}`;
+        const offeringId = Number(row?.offering_id) || 0;
+        if (offeringId > 0) {
+            return `offering:${offeringId}`;
+        }
+
+        return `workload:${Number(row?.workload_id) || 0}`;
+    }
+
+    function buildRemoveWorkloadButton(row) {
+        return `
+            <button class="btn btn-sm btn-delete-workload btnRemoveWL"
+                    data-id="${escapeHtml(row.workload_id)}">
+                <i class="bx bx-trash"></i>
+            </button>
+        `;
     }
 
     function getSelectedContext() {
@@ -1475,7 +1493,7 @@ $(document).ready(function () {
             const rowsData = payload.rows;
             const meta = payload.meta || {};
             const preparationSet = new Set();
-            const unitTotalKeys = new Set();
+            const countedGroups = new Set();
             let totalLEC = 0;
             let totalLAB = 0;
             let totalUNIT = 0;
@@ -1484,22 +1502,65 @@ $(document).ready(function () {
 
             for (let i = 0; i < rowsData.length; i++) {
                 const row = rowsData[i];
-                const displayUnits = getDisplayUnits(row);
-                const displayLabUnits = getDisplayLabUnits(row);
-                const displayLecUnits = getDisplayLecUnits(row);
-                const unitTotalKey = getUnitTotalKey(row);
-                totalLOAD += toNumber(row.faculty_load);
+                const groupKey = getWorkloadGroupKey(row);
+                const groupRows = [row];
 
-                if (!unitTotalKeys.has(unitTotalKey)) {
+                while ((i + groupRows.length) < rowsData.length) {
+                    const candidateRow = rowsData[i + groupRows.length];
+                    if (getWorkloadGroupKey(candidateRow) !== groupKey) {
+                        break;
+                    }
+                    groupRows.push(candidateRow);
+                }
+
+                const displayUnits = toNumber(row.units);
+                const displayLabUnits = toNumber(row.lab);
+                const displayLecUnits = toNumber(row.lec);
+                const isMergedGroup = groupRows.length > 1;
+
+                if (!countedGroups.has(groupKey)) {
+                    countedGroups.add(groupKey);
                     totalUNIT += displayUnits;
                     totalLAB += displayLabUnits;
                     totalLEC += displayLecUnits;
-                    unitTotalKeys.add(unitTotalKey);
+                    totalLOAD += toNumber(row.faculty_load);
                 }
 
                 const preparationKey = String(row.sub_code || "").trim();
                 if (preparationKey !== "") {
                     preparationSet.add(preparationKey);
+                }
+
+                if (isMergedGroup) {
+                    const mergedStudents = groupRows.reduce(function (maxValue, groupRow) {
+                        return Math.max(maxValue, toNumber(groupRow.student_count));
+                    }, 0);
+
+                    groupRows.forEach(function (groupRow, groupIndex) {
+                        rows += `
+                            <tr class="${groupIndex === 0 ? "paired-row paired-anchor" : "paired-row"}">
+                                <td class="workload-code">${escapeHtml(groupRow.sub_code)}</td>
+                                <td class="workload-desc">${buildWorkloadDescription(groupRow, true)}</td>
+                                <td>${escapeHtml(groupRow.course || groupRow.section)}</td>
+                                <td class="workload-days">${escapeHtml(groupRow.days)}</td>
+                                <td class="workload-time">${formatCompactTime(groupRow.time)}</td>
+                                <td class="workload-room">${escapeHtml(groupRow.room)}</td>
+                                ${groupIndex === 0 ? `
+                                    <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayUnits)}</td>
+                                    <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayLabUnits)}</td>
+                                    <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayLecUnits)}</td>
+                                    <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(row.faculty_load)}</td>
+                                    <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatStudentCount(mergedStudents)}</td>
+                                ` : ""}
+                                <td class="text-end screen-only">
+                                    ${buildRemoveWorkloadButton(groupRow)}
+                                </td>
+                            </tr>
+                        `;
+                    });
+
+                    i += groupRows.length - 1;
+                    continue;
                 }
 
                 rows += `
@@ -1516,10 +1577,7 @@ $(document).ready(function () {
                         <td class="text-center fw-semibold">${formatNumber(row.faculty_load)}</td>
                         <td class="text-center">${formatStudentCount(row.student_count)}</td>
                         <td class="text-end screen-only">
-                            <button class="btn btn-sm btn-delete-workload btnRemoveWL"
-                                    data-id="${row.workload_id}">
-                                <i class="bx bx-trash"></i>
-                            </button>
+                            ${buildRemoveWorkloadButton(row)}
                         </td>
                     </tr>
                 `;
