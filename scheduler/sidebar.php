@@ -103,6 +103,15 @@ $sidebarSections = [
                         'pages' => ['manage-workload.php', 'manage-workload_v1.php', 'manage-workload_v2.php', 'manage-workload_bkup.php', 'manage-workload_bkup2.php'],
                     ],
                     [
+                        'key' => 'workload_simulations',
+                        'href' => 'manage-workload-simulations.php',
+                        'icon_bg' => 'bg-label-danger',
+                        'icon' => 'bx-git-compare',
+                        'title' => 'Workload Simulations',
+                        'description' => 'Test non-blocking faculty load scenarios across generated offerings',
+                        'pages' => ['manage-workload-simulations.php'],
+                    ],
+                    [
                         'key' => 'room_utilization',
                         'href' => 'manage-room-utilization.php',
                         'icon_bg' => 'bg-label-info',

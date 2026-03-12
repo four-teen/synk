@@ -439,6 +439,23 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         </div>
                       </a>
 
+                      <a href="manage-workload-simulations.php" class="workspace-card-link">
+                        <div class="workspace-card shadow-sm">
+                          <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                              <div class="workspace-icon bg-danger">
+                                <i class="bx bx-git-compare"></i>
+                              </div>
+                              <div>
+                                <h6 class="mb-1 fw-bold text-dark">Workload Simulations</h6>
+                                <small class="text-muted">Test what-if faculty loading without blocking conflicts</small>
+                              </div>
+                            </div>
+                            <i class="bx bx-chevron-right text-danger fs-4"></i>
+                          </div>
+                        </div>
+                      </a>
+
                       <a href="manage-class-schedule.php" class="workspace-card-link">
                         <div class="workspace-card shadow-sm">
                           <div class="d-flex justify-content-between align-items-center gap-3">
