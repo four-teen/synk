@@ -2,6 +2,12 @@
     session_start();
     ob_start();
     include '../backend/db.php';
+
+    if (empty($_SESSION['csrf_token'])) {
+        $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
+    }
+
+    $csrfToken = (string)$_SESSION['csrf_token'];
 ?>
 <!DOCTYPE html>
 <html
@@ -630,6 +636,41 @@ $prog = $conn->query("
 
 
 <script>
+const CSRF_TOKEN = <?= json_encode($csrfToken) ?>;
+
+$.ajaxPrefilter(function (options) {
+    if (String(options.type || "GET").toUpperCase() !== "POST") {
+        return;
+    }
+
+    if (typeof options.data === "string") {
+        if (options.data.indexOf("csrf_token=") === -1) {
+            const tokenPair = "csrf_token=" + encodeURIComponent(CSRF_TOKEN);
+            options.data = options.data ? (options.data + "&" + tokenPair) : tokenPair;
+        }
+        return;
+    }
+
+    if (Array.isArray(options.data)) {
+        const hasToken = options.data.some(function (item) {
+            return item && item.name === "csrf_token";
+        });
+
+        if (!hasToken) {
+            options.data.push({ name: "csrf_token", value: CSRF_TOKEN });
+        }
+        return;
+    }
+
+    if ($.isPlainObject(options.data)) {
+        if (!Object.prototype.hasOwnProperty.call(options.data, "csrf_token")) {
+            options.data.csrf_token = CSRF_TOKEN;
+        }
+        return;
+    }
+
+    options.data = { csrf_token: CSRF_TOKEN };
+});
 
 // ===============================
 // EDIT SUBJECTS

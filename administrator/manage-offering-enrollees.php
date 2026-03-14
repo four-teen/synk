@@ -4,6 +4,7 @@ ob_start();
 
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/offering_enrollee_helper.php';
 
 if (!isset($_SESSION['user_id']) || (string)($_SESSION['role'] ?? '') !== 'admin') {
     header('Location: ../index.php');
@@ -18,6 +19,7 @@ $csrfToken = (string)$_SESSION['csrf_token'];
 $currentTerm = synk_fetch_current_academic_term($conn);
 $defaultAyId = (int)($currentTerm['ay_id'] ?? 0);
 $defaultSemester = (int)($currentTerm['semester'] ?? 1);
+$defaultSectionCapacity = synk_default_section_enrollee_count();
 
 function synk_admin_enrollee_h($value): string
 {
@@ -185,7 +187,7 @@ $pageData = [
 
         .oe-summary-grid {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
             gap: 1rem;
         }
 
@@ -318,7 +320,7 @@ $pageData = [
           <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3 mb-4">
             <div>
               <h4 class="fw-bold mb-1"><i class="bx bx-group me-2"></i> Offering Enrollees</h4>
-              <p class="text-muted mb-0">Set temporary dummy enrollee counts for generated offerings per college, program, academic year, and semester.</p>
+              <p class="text-muted mb-0">Set temporary section-based dummy enrollee counts for generated offerings per college, program, academic year, and semester.</p>
             </div>
             <div id="storageStatusChip" class="oe-status-chip missing">
               <i class="bx bx-error-circle"></i>
@@ -329,7 +331,7 @@ $pageData = [
           <div class="card mb-4">
             <div class="card-body">
               <div class="alert alert-info mb-0">
-                These values are saved per generated offering, so the same counts can be reused later by workload, room, and reporting pages without touching actual enrolment records.
+                Counts are managed per section. Unsaved sections default to <?= synk_admin_enrollee_h($defaultSectionCapacity); ?> students, editing one offering updates the same headcount across that section, and saved values are still written per generated offering for workload, room, and reporting pages.
               </div>
             </div>
           </div>
@@ -337,7 +339,7 @@ $pageData = [
           <div class="card mb-4">
             <div class="card-header">
               <h5 class="m-0">Scope Filters</h5>
-              <small class="text-muted">Load generated offerings first, then apply a bulk dummy count or edit rows one by one.</small>
+              <small class="text-muted">Load generated offerings first, then adjust the shared section headcount for each distinct section.</small>
             </div>
             <div class="card-body">
               <div class="row g-3">
@@ -379,15 +381,15 @@ $pageData = [
             <div class="card-header d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-3">
               <div>
                 <h5 class="m-0">Bulk Enrollee Tools</h5>
-                <small class="text-muted">Use the current program filter to apply one dummy count across all loaded offerings quickly.</small>
+                <small class="text-muted">Use the current program filter to apply one shared section headcount across all loaded sections quickly.</small>
               </div>
               <div class="oe-toolbar">
                 <div class="oe-toolbar-field">
-                  <label class="form-label mb-1">Dummy Count</label>
-                  <input type="number" min="0" step="1" id="oeBulkCount" class="form-control" placeholder="e.g. 45">
+                  <label class="form-label mb-1">Section Headcount</label>
+                  <input type="number" min="0" step="1" id="oeBulkCount" class="form-control" placeholder="e.g. <?= (int)$defaultSectionCapacity; ?>">
                 </div>
                 <button id="oeApplyBulk" type="button" class="btn btn-outline-primary">
-                  <i class="bx bx-spreadsheet me-1"></i> Apply to Loaded Rows
+                  <i class="bx bx-spreadsheet me-1"></i> Apply to Loaded Sections
                 </button>
                 <button id="oeSaveAll" type="button" class="btn btn-primary">
                   <i class="bx bx-save me-1"></i> Save All
@@ -403,14 +405,19 @@ $pageData = [
               <div class="oe-summary-subtext">Generated subject offerings in the selected scope</div>
             </div>
             <div class="oe-summary-card">
+              <div class="oe-summary-label">Distinct Sections</div>
+              <div class="oe-summary-value" id="oeSummarySections">0</div>
+              <div class="oe-summary-subtext">Unique sections represented by the loaded offerings</div>
+            </div>
+            <div class="oe-summary-card">
               <div class="oe-summary-label">Programs In Scope</div>
               <div class="oe-summary-value" id="oeSummaryPrograms">0</div>
               <div class="oe-summary-subtext">Affected programs under the current filter</div>
             </div>
             <div class="oe-summary-card">
-              <div class="oe-summary-label">Dummy Enrollees Total</div>
+              <div class="oe-summary-label">Estimated Students</div>
               <div class="oe-summary-value" id="oeSummaryEnrollees">0</div>
-              <div class="oe-summary-subtext">Combined dummy headcount across the loaded offerings</div>
+              <div class="oe-summary-subtext">Distinct-section headcount, not offering rows multiplied</div>
             </div>
           </div>
 
@@ -418,7 +425,7 @@ $pageData = [
             <div class="card-header d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
               <div>
                 <h5 class="m-0">Generated Offerings</h5>
-                <small class="text-muted">Only offerings already generated in <code>tbl_prospectus_offering</code> are listed here.</small>
+                <small class="text-muted">Only offerings already generated in <code>tbl_prospectus_offering</code> are listed here. Section headcount repeats per subject row, but the student total counts each section once.</small>
               </div>
               <small class="text-muted" id="oeScopeLabel">Choose a scope to load offerings.</small>
             </div>
@@ -481,6 +488,10 @@ $(function () {
 
     function formatNumber(value) {
         return String(Math.max(0, Math.round(toNumber(value))));
+    }
+
+    function normalizeEnrolleeValue(value) {
+        return Math.max(0, Math.round(toNumber(value)));
     }
 
     function semesterLabel(value) {
@@ -602,13 +613,14 @@ $(function () {
 
     function setSummary(summary) {
         $("#oeSummaryOfferings").text(formatNumber(summary && summary.total_offerings));
+        $("#oeSummarySections").text(formatNumber(summary && summary.total_sections));
         $("#oeSummaryPrograms").text(formatNumber(summary && summary.programs_in_scope));
         $("#oeSummaryEnrollees").text(formatNumber(summary && summary.total_dummy_enrollees));
     }
 
     function setTableLoading(message) {
         loadedRows = [];
-        setSummary({ total_offerings: 0, programs_in_scope: 0, total_dummy_enrollees: 0 });
+        setSummary({ total_offerings: 0, total_sections: 0, programs_in_scope: 0, total_dummy_enrollees: 0 });
         $saveButton.prop("disabled", true);
         $applyBulkButton.prop("disabled", true);
         $tableWrap.html(`
@@ -649,7 +661,7 @@ $(function () {
                             <th>Course</th>
                             <th>Course No.</th>
                             <th>Course Description</th>
-                            <th class="text-end">Dummy Enrollees</th>
+                            <th class="text-end">Section Headcount</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -663,8 +675,9 @@ $(function () {
         }
 
         const rowsHtml = rows.map(function (row) {
+            const sectionKey = getSectionKey(row);
             return `
-                <tr data-offering-id="${escapeHtml(row.offering_id)}">
+                <tr data-offering-id="${escapeHtml(row.offering_id)}" data-section-key="${escapeHtml(sectionKey)}">
                     <td><div class="oe-program">${escapeHtml(row.program_label || "")}</div></td>
                     <td>${escapeHtml(row.course || row.section_name || "")}</td>
                     <td class="oe-course-code">${escapeHtml(row.sub_code || "")}</td>
@@ -676,6 +689,7 @@ $(function () {
                             step="1"
                             class="form-control oe-input ms-auto enrollee-input"
                             data-offering-id="${escapeHtml(row.offering_id)}"
+                            data-section-key="${escapeHtml(sectionKey)}"
                             value="${escapeHtml(formatNumber(row.total_enrollees || 0))}"
                         >
                     </td>
@@ -691,7 +705,7 @@ $(function () {
                         <th>Course</th>
                         <th>Course No.</th>
                         <th>Course Description</th>
-                        <th class="text-end">Dummy Enrollees</th>
+                        <th class="text-end">Section Headcount</th>
                     </tr>
                 </thead>
                 <tbody>${rowsHtml}</tbody>
@@ -699,12 +713,51 @@ $(function () {
         `);
     }
 
+    function getSectionKey(row) {
+        const rawKey = String(row && row.section_key || "").trim();
+        if (rawKey !== "") {
+            return rawKey;
+        }
+
+        const sectionId = Number(row && row.section_id) || 0;
+        if (sectionId > 0) {
+            return `section:${sectionId}`;
+        }
+
+        return `offering:${Number(row && row.offering_id) || 0}`;
+    }
+
+    function collectSectionMetrics(rows) {
+        const sectionCountMap = {};
+
+        (Array.isArray(rows) ? rows : []).forEach(function (row) {
+            const sectionKey = getSectionKey(row);
+            const count = normalizeEnrolleeValue(row && row.total_enrollees);
+
+            if (!Object.prototype.hasOwnProperty.call(sectionCountMap, sectionKey)) {
+                sectionCountMap[sectionKey] = count;
+                return;
+            }
+
+            sectionCountMap[sectionKey] = Math.max(sectionCountMap[sectionKey], count);
+        });
+
+        return {
+            total_sections: Object.keys(sectionCountMap).length,
+            total_dummy_enrollees: Object.values(sectionCountMap).reduce(function (sum, count) {
+                return sum + normalizeEnrolleeValue(count);
+            }, 0)
+        };
+    }
+
     function hydrateRows(rows) {
         loadedRows = Array.isArray(rows) ? rows.map(function (row) {
             return Object.assign({}, row, {
                 offering_id: Number(row.offering_id) || 0,
                 program_id: Number(row.program_id) || 0,
-                total_enrollees: Math.max(0, Math.round(toNumber(row.total_enrollees)))
+                section_id: Number(row.section_id) || 0,
+                section_key: String(row.section_key || "").trim(),
+                total_enrollees: normalizeEnrolleeValue(row.total_enrollees)
             });
         }) : [];
 
@@ -714,16 +767,37 @@ $(function () {
     }
 
     function syncRowDataFromInputs() {
-        const inputMap = {};
+        const sectionMap = {};
         $tableWrap.find(".enrollee-input").each(function () {
-            const offeringId = Number($(this).data("offering-id")) || 0;
-            inputMap[offeringId] = Math.max(0, Math.round(toNumber($(this).val())));
+            const sectionKey = String($(this).data("section-key") || "").trim();
+            if (sectionKey === "") {
+                return;
+            }
+
+            sectionMap[sectionKey] = normalizeEnrolleeValue($(this).val());
         });
 
         loadedRows = loadedRows.map(function (row) {
-            const offeringId = Number(row.offering_id) || 0;
-            if (Object.prototype.hasOwnProperty.call(inputMap, offeringId)) {
-                row.total_enrollees = inputMap[offeringId];
+            const sectionKey = getSectionKey(row);
+            if (Object.prototype.hasOwnProperty.call(sectionMap, sectionKey)) {
+                row.total_enrollees = sectionMap[sectionKey];
+            }
+            return row;
+        });
+    }
+
+    function applySectionCount(sectionKey, value) {
+        const normalizedValue = normalizeEnrolleeValue(value);
+
+        $tableWrap.find(".enrollee-input").each(function () {
+            if (String($(this).data("section-key") || "").trim() === sectionKey) {
+                $(this).val(String(normalizedValue));
+            }
+        });
+
+        loadedRows = loadedRows.map(function (row) {
+            if (getSectionKey(row) === sectionKey) {
+                row.total_enrollees = normalizedValue;
             }
             return row;
         });
@@ -735,14 +809,14 @@ $(function () {
             return;
         }
 
+        const sectionMetrics = collectSectionMetrics(loadedRows);
         setSummary({
             total_offerings: loadedRows.length,
+            total_sections: sectionMetrics.total_sections,
             programs_in_scope: new Set(loadedRows.map(function (row) {
                 return Number(row.program_id) || 0;
             })).size,
-            total_dummy_enrollees: loadedRows.reduce(function (sum, row) {
-                return sum + Math.max(0, Math.round(toNumber(row.total_enrollees)));
-            }, 0)
+            total_dummy_enrollees: sectionMetrics.total_dummy_enrollees
         });
     }
 
@@ -803,9 +877,12 @@ $(function () {
             return;
         }
 
-        const bulkValue = Math.max(0, Math.round(toNumber($bulkCount.val())));
+        const bulkValue = normalizeEnrolleeValue($bulkCount.val());
         $tableWrap.find(".enrollee-input").val(String(bulkValue));
-        syncRowDataFromInputs();
+        loadedRows = loadedRows.map(function (row) {
+            row.total_enrollees = bulkValue;
+            return row;
+        });
         refreshSummaryFromRows();
     }
 
@@ -875,7 +952,8 @@ $(function () {
     $saveButton.on("click", saveAll);
 
     $tableWrap.on("input", ".enrollee-input", function () {
-        syncRowDataFromInputs();
+        const sectionKey = String($(this).data("section-key") || "").trim();
+        applySectionCount(sectionKey, $(this).val());
         refreshSummaryFromRows();
     });
 });

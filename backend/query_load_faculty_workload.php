@@ -51,46 +51,6 @@ function workload_context_key_from_values(int $groupId, int $scheduleId, int $of
     return 'offering:' . $offeringId;
 }
 
-function workload_build_share_metrics(
-    float $subjectUnits,
-    float $lecUnits,
-    float $labHoursTotal,
-    array $contextTotals,
-    array $ownedTotals
-): array {
-    $totalCount = (int)($contextTotals['total_count'] ?? 0);
-    $totalLecCount = max(0, (int)($contextTotals['lec_count'] ?? 0));
-    $totalLabCount = max(0, (int)($contextTotals['lab_count'] ?? 0));
-    $ownedCount = (int)($ownedTotals['total_count'] ?? 0);
-    $ownedLecCount = max(0, (int)($ownedTotals['lec_count'] ?? 0));
-    $ownedLabCount = max(0, (int)($ownedTotals['lab_count'] ?? 0));
-
-    $ownsAllRows = $totalCount > 0 && $ownedCount >= $totalCount;
-    $lectureUnitsPerRow = $totalLecCount > 0 ? ($lecUnits / $totalLecCount) : 0.0;
-    $labHoursPerRow = $totalLabCount > 0 ? ($labHoursTotal / $totalLabCount) : 0.0;
-
-    if ($ownsAllRows) {
-        $displayLec = $lecUnits;
-        $displayLab = $labHoursTotal;
-    } elseif ($ownedLecCount > 0 && $ownedLabCount === 0) {
-        $displayLec = $lectureUnitsPerRow * $ownedLecCount;
-        $displayLab = 0.0;
-    } elseif ($ownedLecCount === 0 && $ownedLabCount > 0) {
-        $displayLab = $labHoursPerRow * $ownedLabCount;
-        $displayLec = max(0.0, $subjectUnits - $displayLab);
-    } else {
-        $displayLec = $lectureUnitsPerRow * $ownedLecCount;
-        $displayLab = $labHoursPerRow * $ownedLabCount;
-    }
-
-    return [
-        'units' => round($subjectUnits, 2),
-        'lec' => round($displayLec, 2),
-        'lab' => round($displayLab, 2),
-        'faculty_load' => round($displayLec + ($displayLab * SYNK_LAB_LOAD_MULTIPLIER), 2)
-    ];
-}
-
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
@@ -231,18 +191,18 @@ if (!empty($offeringIds)) {
             }
 
             $contextTotals[$contextKey]['total_count']++;
-            $contextType = strtoupper(trim((string)($contextRow['type'] ?? 'LEC')));
-            if ($contextType === 'LAB') {
+            if (strtoupper(trim((string)($contextRow['type'] ?? 'LEC'))) === 'LAB') {
                 $contextTotals[$contextKey]['lab_count']++;
-            } else {
-                $contextTotals[$contextKey]['lec_count']++;
+                continue;
             }
+
+            $contextTotals[$contextKey]['lec_count']++;
         }
         $contextRes->free();
     }
 }
 
-$ownedTotals = [];
+$ownedContextRows = [];
 foreach ($rawRows as $rawRow) {
     $contextKey = workload_context_key_from_values(
         (int)($rawRow['group_id'] ?? 0),
@@ -250,43 +210,46 @@ foreach ($rawRows as $rawRow) {
         (int)($rawRow['offering_id'] ?? 0)
     );
 
-    if (!isset($ownedTotals[$contextKey])) {
-        $ownedTotals[$contextKey] = [
-            'total_count' => 0,
-            'lec_count' => 0,
-            'lab_count' => 0
-        ];
+    if (!isset($ownedContextRows[$contextKey])) {
+        $ownedContextRows[$contextKey] = [];
     }
 
-    $ownedTotals[$contextKey]['total_count']++;
-    if (($rawRow['type'] ?? 'LEC') === 'LAB') {
-        $ownedTotals[$contextKey]['lab_count']++;
-    } else {
-        $ownedTotals[$contextKey]['lec_count']++;
-    }
+    $ownedContextRows[$contextKey][] = [
+        'schedule_type' => (string)($rawRow['type'] ?? 'LEC'),
+        'days' => $rawRow['days_arr'] ?? [],
+        'time_start' => (string)($rawRow['time_start'] ?? ''),
+        'time_end' => (string)($rawRow['time_end'] ?? ''),
+        'lec_units' => (float)($rawRow['lec_units'] ?? 0),
+        'lab_units' => (float)($rawRow['lab_units'] ?? 0),
+        'total_units' => (float)($rawRow['total_units'] ?? 0)
+    ];
+}
+
+$ownedContextMetrics = [];
+foreach ($ownedContextRows as $contextKey => $contextRows) {
+    $ownedContextMetrics[$contextKey] = synk_schedule_sum_display_metrics(
+        $contextRows,
+        $contextTotals[$contextKey] ?? []
+    );
 }
 
 foreach ($rawRows as $rawRow) {
     $lecUnits = (float)($rawRow['lec_units'] ?? 0);
     $labValue = (float)($rawRow['lab_units'] ?? 0);
     $totalUnits = (float)($rawRow['total_units'] ?? 0);
-    $labIsCredit = ($labValue > 0) && (abs(($lecUnits + $labValue) - $totalUnits) < 0.0001);
-    $labHours = $labIsCredit ? ($labValue * SYNK_LAB_CONTACT_HOURS_PER_UNIT) : $labValue;
-    $subjectUnits = $totalUnits > 0
-        ? $totalUnits
-        : ($lecUnits + ($labIsCredit ? $labValue : 0));
+    $subjectUnits = synk_subject_units_total($lecUnits, $labValue, $totalUnits);
     $contextKey = workload_context_key_from_values(
         (int)($rawRow['group_id'] ?? 0),
         (int)($rawRow['schedule_id'] ?? 0),
         (int)($rawRow['offering_id'] ?? 0)
     );
-    $metrics = workload_build_share_metrics(
-        $subjectUnits,
-        $lecUnits,
-        $labHours,
-        $contextTotals[$contextKey] ?? [],
-        $ownedTotals[$contextKey] ?? []
-    );
+    $metrics = $ownedContextMetrics[$contextKey] ?? [
+        'units' => 0.0,
+        'lec' => 0.0,
+        'lab' => 0.0,
+        'lab_hours' => 0.0,
+        'faculty_load' => 0.0
+    ];
     $fullSection = trim((string)($rawRow['full_section'] ?? ''));
     if ($fullSection === '') {
         $fullSection = trim((string)($rawRow['section'] ?? ''));
@@ -309,10 +272,11 @@ foreach ($rawRows as $rawRow) {
         'lec_units' => round($lecUnits, 2),
         'lab_units' => round($labValue, 2),
         'subject_units' => round($subjectUnits, 2),
-        'units' => $metrics['units'],
-        'lec' => $metrics['lec'],
-        'lab' => $metrics['lab'],
-        'faculty_load' => $metrics['faculty_load'],
+        'units' => round((float)($metrics['units'] ?? 0), 2),
+        'lec' => round((float)($metrics['lec'] ?? 0), 2),
+        'lab' => round((float)($metrics['lab'] ?? 0), 2),
+        'lab_hours' => round((float)($metrics['lab_hours'] ?? 0), 2),
+        'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
         'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, (int)$rawRow['offering_id'])
     ];
 }

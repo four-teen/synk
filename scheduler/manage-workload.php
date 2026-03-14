@@ -840,7 +840,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
                     <th rowspan="2" class="time-head">Time</th>
                     <th rowspan="2" class="room-head">Room</th>
                     <th rowspan="2" class="text-center unit-head">Unit</th>
-                    <th colspan="2" class="text-center hours-group-head">Unit Breakdown</th>
+                    <th colspan="2" class="text-center hours-group-head">No. of Hours</th>
                     <th rowspan="2" class="text-center load-head">Load</th>
                     <th rowspan="2" class="text-center students-head"># of<br>Students</th>
                     <th rowspan="2" class="text-end screen-only">Action</th>
@@ -994,8 +994,8 @@ if ($facultyStmt instanceof mysqli_stmt) {
                     <th>Time</th>
                     <th>Room</th>
                     <th class="text-center">Units</th>
-                    <th class="text-center">Lab</th>
-                    <th class="text-center">Lec</th>
+                    <th class="text-center">Lab Hrs</th>
+                    <th class="text-center">Lec Hrs</th>
                 </tr>
             </thead>
             <tbody id="scheduledClassTbody">
@@ -1221,6 +1221,10 @@ $(document).ready(function () {
     }
 
     function getDisplayUnits(row) {
+        if (row && Object.prototype.hasOwnProperty.call(row, "units")) {
+            return toNumber(row.units);
+        }
+
         if (row && Object.prototype.hasOwnProperty.call(row, "subject_units")) {
             return toNumber(row.subject_units);
         }
@@ -1229,6 +1233,10 @@ $(document).ready(function () {
     }
 
     function getDisplayLabUnits(row) {
+        if (row && Object.prototype.hasOwnProperty.call(row, "hours_lab")) {
+            return toNumber(row.hours_lab);
+        }
+
         if (row && Object.prototype.hasOwnProperty.call(row, "lab_units")) {
             return toNumber(row.lab_units);
         }
@@ -1237,6 +1245,10 @@ $(document).ready(function () {
     }
 
     function getDisplayLecUnits(row) {
+        if (row && Object.prototype.hasOwnProperty.call(row, "hours_lec")) {
+            return toNumber(row.hours_lec);
+        }
+
         if (row && Object.prototype.hasOwnProperty.call(row, "lec_units")) {
             return toNumber(row.lec_units);
         }

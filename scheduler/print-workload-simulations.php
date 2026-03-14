@@ -46,6 +46,29 @@ function format_load_number($value): string
         : rtrim(rtrim(number_format($number, 2, '.', ''), '0'), '.');
 }
 
+function sum_simulation_group_metrics(array $rows): array
+{
+    $totals = [
+        'units' => 0.0,
+        'lab' => 0.0,
+        'lec' => 0.0,
+        'faculty_load' => 0.0
+    ];
+
+    foreach ($rows as $row) {
+        $totals['units'] += (float)($row['units'] ?? 0);
+        $totals['lab'] += (float)($row['lab'] ?? 0);
+        $totals['lec'] += (float)($row['lec'] ?? 0);
+        $totals['faculty_load'] += (float)($row['faculty_load'] ?? 0);
+    }
+
+    foreach ($totals as $key => $value) {
+        $totals[$key] = round((float)$value, 2);
+    }
+
+    return $totals;
+}
+
 function render_partner_bits(array $row, bool $showType): string
 {
     if ($showType) {
@@ -209,13 +232,13 @@ if ($collegeId > 0 && $ayId > 0 && $semester > 0 && synk_table_exists($conn, 'tb
                             <th rowspan="2">Time</th>
                             <th rowspan="2">Room</th>
                             <th rowspan="2">Unit</th>
-                            <th colspan="2">Unit Breakdown</th>
+                            <th colspan="2">No. of Hours</th>
                             <th rowspan="2">Load</th>
                             <th rowspan="2">Students</th>
                         </tr>
                         <tr>
-                            <th>Lab</th>
-                            <th>Lec</th>
+                            <th>Lab Hrs</th>
+                            <th>Lec Hrs</th>
                         </tr>
                     </thead>
                     <tbody>
@@ -228,26 +251,7 @@ if ($collegeId > 0 && $ayId > 0 && $semester > 0 && synk_table_exists($conn, 'tb
                         <?php foreach ($grouped as $groupRows): ?>
                             <?php
                             $first = $groupRows[0];
-                            $ownedTotals = ['total_count' => 0, 'lec_count' => 0, 'lab_count' => 0];
-                            foreach ($groupRows as $groupRow) {
-                                $ownedTotals['total_count']++;
-                                if (strtoupper((string)($groupRow['schedule_type'] ?? 'LEC')) === 'LAB') {
-                                    $ownedTotals['lab_count']++;
-                                } else {
-                                    $ownedTotals['lec_count']++;
-                                }
-                            }
-                            $metrics = synk_workload_simulation_build_share_metrics(
-                                (float)($first['subject_units'] ?? 0),
-                                (float)($first['lec_units'] ?? 0),
-                                (float)($first['lab_hours_total'] ?? 0),
-                                [
-                                    'total_count' => (int)($first['context_total_count'] ?? 0),
-                                    'lec_count' => (int)($first['context_lec_count'] ?? 0),
-                                    'lab_count' => (int)($first['context_lab_count'] ?? 0)
-                                ],
-                                $ownedTotals
-                            );
+                            $metrics = sum_simulation_group_metrics($groupRows);
                             $totalUnit += (float)$metrics['units'];
                             $totalLab += (float)$metrics['lab'];
                             $totalLec += (float)$metrics['lec'];

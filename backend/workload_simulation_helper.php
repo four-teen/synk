@@ -46,46 +46,6 @@ function synk_workload_simulation_partner_label(int $groupId, int $offeringId, i
     return 'PAIR';
 }
 
-function synk_workload_simulation_build_share_metrics(
-    float $subjectUnits,
-    float $lecUnits,
-    float $labHoursTotal,
-    array $contextTotals,
-    array $ownedTotals
-): array {
-    $totalCount = max(0, (int)($contextTotals['total_count'] ?? 0));
-    $totalLecCount = max(0, (int)($contextTotals['lec_count'] ?? 0));
-    $totalLabCount = max(0, (int)($contextTotals['lab_count'] ?? 0));
-    $ownedCount = max(0, (int)($ownedTotals['total_count'] ?? 0));
-    $ownedLecCount = max(0, (int)($ownedTotals['lec_count'] ?? 0));
-    $ownedLabCount = max(0, (int)($ownedTotals['lab_count'] ?? 0));
-
-    $ownsAllRows = $totalCount > 0 && $ownedCount >= $totalCount;
-    $lectureUnitsPerRow = $totalLecCount > 0 ? ($lecUnits / $totalLecCount) : 0.0;
-    $labHoursPerRow = $totalLabCount > 0 ? ($labHoursTotal / $totalLabCount) : 0.0;
-
-    if ($ownsAllRows) {
-        $displayLec = $lecUnits;
-        $displayLab = $labHoursTotal;
-    } elseif ($ownedLecCount > 0 && $ownedLabCount === 0) {
-        $displayLec = $lectureUnitsPerRow * $ownedLecCount;
-        $displayLab = 0.0;
-    } elseif ($ownedLecCount === 0 && $ownedLabCount > 0) {
-        $displayLab = $labHoursPerRow * $ownedLabCount;
-        $displayLec = max(0.0, $subjectUnits - $displayLab);
-    } else {
-        $displayLec = $lectureUnitsPerRow * $ownedLecCount;
-        $displayLab = $labHoursPerRow * $ownedLabCount;
-    }
-
-    return [
-        'units' => round($subjectUnits, 2),
-        'lec' => round($displayLec, 2),
-        'lab' => round($displayLab, 2),
-        'faculty_load' => round($displayLec + ($displayLab * SYNK_LAB_LOAD_MULTIPLIER), 2)
-    ];
-}
-
 function synk_workload_simulation_normalize_days($daysJson): array
 {
     $days = json_decode((string)$daysJson, true);
@@ -233,7 +193,7 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
         $labUnits = (float)$offering['lab_units'];
         $totalUnits = (float)$offering['total_units'];
         $subjectUnits = synk_subject_units_total($lecUnits, $labUnits, $totalUnits);
-        $labHoursTotal = synk_lab_contact_hours($lecUnits, $labUnits, $totalUnits);
+        $labHoursTotal = max(0.0, $labUnits);
         $scheduledRows = $offering['scheduled_rows'];
         $scheduledLecCount = 0;
         $scheduledLabCount = 0;
@@ -269,17 +229,12 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
 
         foreach ($scheduledRows as $scheduledRow) {
             $type = (string)($scheduledRow['schedule_type'] ?? 'LEC');
-            $ownedTotals = [
-                'total_count' => 1,
-                'lec_count' => $type === 'LAB' ? 0 : 1,
-                'lab_count' => $type === 'LAB' ? 1 : 0
-            ];
-            $metrics = synk_workload_simulation_build_share_metrics(
-                $subjectUnits,
+            $metrics = synk_schedule_row_display_metrics(
+                $type,
                 $lecUnits,
-                $labHoursTotal,
-                $contextTotals,
-                $ownedTotals
+                $labUnits,
+                $totalUnits,
+                $contextTotals
             );
 
             $rows[] = [
@@ -311,21 +266,21 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
                 'context_total_count' => (int)$contextTotals['total_count'],
                 'context_lec_count' => (int)$contextTotals['lec_count'],
                 'context_lab_count' => (int)$contextTotals['lab_count'],
-                'units' => $metrics['units'],
-                'lec' => $metrics['lec'],
-                'lab' => $metrics['lab'],
-                'faculty_load' => $metrics['faculty_load'],
+                'units' => round((float)($metrics['units'] ?? 0), 2),
+                'lec' => round((float)($metrics['lec'] ?? 0), 2),
+                'lab' => round((float)($metrics['lab'] ?? 0), 2),
+                'lab_hours' => round((float)($metrics['lab_hours'] ?? 0), 2),
+                'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
                 'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, $offeringId)
             ];
         }
 
         if ($needsVirtualLec) {
-            $metrics = synk_workload_simulation_build_share_metrics(
-                $subjectUnits,
+            $metrics = synk_schedule_component_display_totals(
+                'LEC',
                 $lecUnits,
-                $labHoursTotal,
-                $contextTotals,
-                ['total_count' => 1, 'lec_count' => 1, 'lab_count' => 0]
+                $labUnits,
+                $totalUnits
             );
 
             $rows[] = [
@@ -357,21 +312,21 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
                 'context_total_count' => (int)$contextTotals['total_count'],
                 'context_lec_count' => (int)$contextTotals['lec_count'],
                 'context_lab_count' => (int)$contextTotals['lab_count'],
-                'units' => $metrics['units'],
-                'lec' => $metrics['lec'],
-                'lab' => $metrics['lab'],
-                'faculty_load' => $metrics['faculty_load'],
+                'units' => round((float)($metrics['units'] ?? 0), 2),
+                'lec' => round((float)($metrics['lec'] ?? 0), 2),
+                'lab' => round((float)($metrics['lab'] ?? 0), 2),
+                'lab_hours' => round((float)($metrics['lab_hours'] ?? 0), 2),
+                'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
                 'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, $offeringId)
             ];
         }
 
         if ($needsVirtualLab) {
-            $metrics = synk_workload_simulation_build_share_metrics(
-                $subjectUnits,
+            $metrics = synk_schedule_component_display_totals(
+                'LAB',
                 $lecUnits,
-                $labHoursTotal,
-                $contextTotals,
-                ['total_count' => 1, 'lec_count' => 0, 'lab_count' => 1]
+                $labUnits,
+                $totalUnits
             );
 
             $rows[] = [
@@ -403,10 +358,11 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
                 'context_total_count' => (int)$contextTotals['total_count'],
                 'context_lec_count' => (int)$contextTotals['lec_count'],
                 'context_lab_count' => (int)$contextTotals['lab_count'],
-                'units' => $metrics['units'],
-                'lec' => $metrics['lec'],
-                'lab' => $metrics['lab'],
-                'faculty_load' => $metrics['faculty_load'],
+                'units' => round((float)($metrics['units'] ?? 0), 2),
+                'lec' => round((float)($metrics['lec'] ?? 0), 2),
+                'lab' => round((float)($metrics['lab'] ?? 0), 2),
+                'lab_hours' => round((float)($metrics['lab_hours'] ?? 0), 2),
+                'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
                 'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, $offeringId)
             ];
         }

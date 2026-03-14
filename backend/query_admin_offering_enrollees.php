@@ -46,6 +46,56 @@ function synk_admin_enrollee_program_label(array $row): string
     return trim($label);
 }
 
+function synk_admin_enrollee_section_key(array $row): string
+{
+    $sectionId = (int)($row['section_id'] ?? 0);
+    if ($sectionId > 0) {
+        return 'section:' . $sectionId;
+    }
+
+    $programId = (int)($row['program_id'] ?? 0);
+    $yearLevel = (int)($row['year_level'] ?? 0);
+    $course = trim((string)($row['course'] ?? $row['full_section'] ?? $row['section_name'] ?? ''));
+    if ($course === '') {
+        $course = 'section';
+    }
+
+    return 'fallback:' . $programId . ':' . $yearLevel . ':' . strtolower($course);
+}
+
+function synk_admin_enrollee_resolve_section_count(array $counts, int $fallbackCount = 0): int
+{
+    $frequencyMap = [];
+
+    foreach ($counts as $count) {
+        $value = max(0, (int)$count);
+        if ($value <= 0) {
+            continue;
+        }
+
+        $frequencyMap[$value] = (int)($frequencyMap[$value] ?? 0) + 1;
+    }
+
+    if (empty($frequencyMap)) {
+        return max(0, $fallbackCount);
+    }
+
+    $bestCount = max(0, $fallbackCount);
+    $bestFrequency = -1;
+
+    foreach ($frequencyMap as $value => $frequency) {
+        $value = (int)$value;
+        $frequency = (int)$frequency;
+
+        if ($frequency > $bestFrequency || ($frequency === $bestFrequency && $value > $bestCount)) {
+            $bestCount = $value;
+            $bestFrequency = $frequency;
+        }
+    }
+
+    return $bestCount;
+}
+
 function synk_admin_enrollee_scope_from_post(): array
 {
     return [
@@ -138,8 +188,10 @@ function synk_admin_enrollee_fetch_scope_offerings(mysqli $conn, array $scope): 
         'rows' => [],
         'summary' => [
             'total_offerings' => 0,
+            'total_sections' => 0,
             'programs_in_scope' => 0,
             'total_dummy_enrollees' => 0,
+            'default_section_capacity' => synk_default_section_enrollee_count(),
         ],
     ];
 
@@ -171,6 +223,7 @@ function synk_admin_enrollee_fetch_scope_offerings(mysqli $conn, array $scope): 
             p.program_name,
             COALESCE(p.major, '') AS major,
             pys.year_level,
+            sec.section_id,
             sec.section_name,
             sec.full_section,
             sm.sub_code,
@@ -210,6 +263,7 @@ function synk_admin_enrollee_fetch_scope_offerings(mysqli $conn, array $scope): 
             'major' => (string)($row['major'] ?? ''),
             'program_label' => synk_admin_enrollee_program_label($row),
             'year_level' => (int)($row['year_level'] ?? 0),
+            'section_id' => (int)($row['section_id'] ?? 0),
             'section_name' => (string)($row['section_name'] ?? ''),
             'course' => trim((string)($row['full_section'] ?? '')) !== ''
                 ? (string)$row['full_section']
@@ -226,10 +280,37 @@ function synk_admin_enrollee_fetch_scope_offerings(mysqli $conn, array $scope): 
         array_column($rows, 'offering_id')
     );
 
-    $totalSaved = 0;
+    $defaultSectionCount = synk_default_section_enrollee_count();
+    $sectionSavedCounts = [];
+
+    foreach ($rows as $row) {
+        $sectionKey = synk_admin_enrollee_section_key($row);
+        if (!isset($sectionSavedCounts[$sectionKey])) {
+            $sectionSavedCounts[$sectionKey] = [];
+        }
+
+        $savedCount = synk_offering_enrollee_count_for_map($countMap, (int)$row['offering_id']);
+        if ($savedCount > 0) {
+            $sectionSavedCounts[$sectionKey][] = $savedCount;
+        }
+    }
+
+    $sectionCountMap = [];
+    foreach ($rows as $row) {
+        $sectionKey = synk_admin_enrollee_section_key($row);
+        if (isset($sectionCountMap[$sectionKey])) {
+            continue;
+        }
+
+        $sectionCountMap[$sectionKey] = synk_admin_enrollee_resolve_section_count(
+            $sectionSavedCounts[$sectionKey] ?? [],
+            $defaultSectionCount
+        );
+    }
+
     foreach ($rows as &$row) {
-        $row['total_enrollees'] = synk_offering_enrollee_count_for_map($countMap, (int)$row['offering_id']);
-        $totalSaved += (int)$row['total_enrollees'];
+        $row['section_key'] = synk_admin_enrollee_section_key($row);
+        $row['total_enrollees'] = (int)($sectionCountMap[$row['section_key']] ?? $defaultSectionCount);
     }
     unset($row);
 
@@ -237,8 +318,10 @@ function synk_admin_enrollee_fetch_scope_offerings(mysqli $conn, array $scope): 
         'rows' => $rows,
         'summary' => [
             'total_offerings' => count($rows),
+            'total_sections' => count($sectionCountMap),
             'programs_in_scope' => count(array_unique(array_column($rows, 'program_id'))),
-            'total_dummy_enrollees' => $totalSaved,
+            'total_dummy_enrollees' => array_sum($sectionCountMap),
+            'default_section_capacity' => $defaultSectionCount,
         ],
     ];
 }
@@ -288,24 +371,51 @@ if ($action === 'save_counts') {
     }
 
     $scopeRows = synk_admin_enrollee_fetch_scope_offerings($conn, $scope);
-    $allowedIds = [];
+    $allowedOfferingSections = [];
+    $sectionOfferingIds = [];
     foreach (($scopeRows['rows'] ?? []) as $row) {
-        $allowedIds[(int)($row['offering_id'] ?? 0)] = true;
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        $sectionKey = trim((string)($row['section_key'] ?? ''));
+        if ($offeringId <= 0 || $sectionKey === '') {
+            continue;
+        }
+
+        $allowedOfferingSections[$offeringId] = $sectionKey;
+        if (!isset($sectionOfferingIds[$sectionKey])) {
+            $sectionOfferingIds[$sectionKey] = [];
+        }
+
+        $sectionOfferingIds[$sectionKey][] = $offeringId;
     }
 
-    $normalizedEntries = [];
+    $sectionEntries = [];
     foreach ($entries as $entry) {
         if (!is_array($entry)) {
             continue;
         }
 
         $offeringId = (int)($entry['offering_id'] ?? 0);
-        if ($offeringId <= 0 || !isset($allowedIds[$offeringId])) {
+        if ($offeringId <= 0 || !isset($allowedOfferingSections[$offeringId])) {
             continue;
         }
 
         $count = max(0, (int)($entry['total_enrollees'] ?? 0));
-        $normalizedEntries[$offeringId] = $count;
+        $sectionKey = $allowedOfferingSections[$offeringId];
+
+        if (!isset($sectionEntries[$sectionKey])) {
+            $sectionEntries[$sectionKey] = [];
+        }
+
+        $sectionEntries[$sectionKey][] = $count;
+    }
+
+    $normalizedEntries = [];
+    foreach ($sectionEntries as $sectionKey => $counts) {
+        $sectionCount = synk_admin_enrollee_resolve_section_count($counts, 0);
+
+        foreach (($sectionOfferingIds[$sectionKey] ?? []) as $offeringId) {
+            $normalizedEntries[(int)$offeringId] = $sectionCount;
+        }
     }
 
     $userId = (int)($_SESSION['user_id'] ?? 0);

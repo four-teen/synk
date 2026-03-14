@@ -98,11 +98,105 @@ function synk_required_minutes_by_type(float $lecUnits, float $labValue, float $
 
 function synk_subject_units_total(float $lecUnits, float $labValue, float $totalUnits): float
 {
-    if ($totalUnits > 0) {
-        return $totalUnits;
+    return round(max(0.0, $lecUnits) + (max(0.0, $labValue) / SYNK_LAB_CONTACT_HOURS_PER_UNIT), 2);
+}
+
+function synk_prospectus_component_totals(float $lecUnits, float $labValue, float $totalUnits): array
+{
+    $lectureHours = max(0.0, $lecUnits);
+    $labHours = max(0.0, $labValue);
+    $labUnits = $labHours / SYNK_LAB_CONTACT_HOURS_PER_UNIT;
+
+    return [
+        'LEC' => [
+            'units' => $lectureHours,
+            'hours_lec' => $lectureHours,
+            'hours_lab' => 0.0,
+            'faculty_load' => $lectureHours
+        ],
+        'LAB' => [
+            'units' => $labUnits,
+            'hours_lec' => 0.0,
+            'hours_lab' => $labHours,
+            'faculty_load' => $labHours * SYNK_LAB_LOAD_MULTIPLIER
+        ]
+    ];
+}
+
+function synk_schedule_row_count_totals(array $rows, string $typeKey = 'schedule_type'): array
+{
+    $totals = [
+        'total_count' => 0,
+        'lec_count' => 0,
+        'lab_count' => 0
+    ];
+
+    foreach ($rows as $row) {
+        $type = synk_normalize_schedule_type((string)($row[$typeKey] ?? 'LEC'));
+        $totals['total_count']++;
+
+        if ($type === 'LAB') {
+            $totals['lab_count']++;
+            continue;
+        }
+
+        $totals['lec_count']++;
     }
 
-    return $lecUnits + (synk_lab_is_credit($lecUnits, $labValue, $totalUnits) ? $labValue : 0);
+    return $totals;
+}
+
+function synk_schedule_context_display_metrics(
+    float $lecUnits,
+    float $labValue,
+    float $totalUnits,
+    array $contextTotals,
+    array $ownedTotals
+): array {
+    $componentTotals = synk_prospectus_component_totals($lecUnits, $labValue, $totalUnits);
+    $totalLecCount = max(0, (int)($contextTotals['lec_count'] ?? 0));
+    $totalLabCount = max(0, (int)($contextTotals['lab_count'] ?? 0));
+    $ownedLecCount = max(0, min((int)($ownedTotals['lec_count'] ?? 0), $totalLecCount));
+    $ownedLabCount = max(0, min((int)($ownedTotals['lab_count'] ?? 0), $totalLabCount));
+    $lecRatio = $totalLecCount > 0 ? ($ownedLecCount / $totalLecCount) : 0.0;
+    // A faculty who owns any lab meeting keeps the full prospectus lab component.
+    $labRatio = ($totalLabCount > 0 && $ownedLabCount > 0) ? 1.0 : 0.0;
+
+    $lectureHours = ((float)$componentTotals['LEC']['hours_lec']) * $lecRatio;
+    $labHours = ((float)$componentTotals['LAB']['hours_lab']) * $labRatio;
+    $units = (((float)$componentTotals['LEC']['units']) * $lecRatio) +
+        (((float)$componentTotals['LAB']['units']) * $labRatio);
+
+    return [
+        'units' => round($units, 2),
+        'lec' => round($lectureHours, 2),
+        'lab' => round($labHours, 2),
+        'lab_hours' => round($labHours, 2),
+        'faculty_load' => round($lectureHours + ($labHours * SYNK_LAB_LOAD_MULTIPLIER), 2)
+    ];
+}
+
+function synk_schedule_row_display_metrics(
+    string $scheduleType,
+    float $lecUnits,
+    float $labValue,
+    float $totalUnits,
+    array $contextTotals
+): array {
+    $normalizedType = synk_normalize_schedule_type($scheduleType);
+    $ownedTotals = [
+        'total_count' => 1,
+        'lec_count' => $normalizedType === 'LAB' ? 0 : 1,
+        'lab_count' => $normalizedType === 'LAB' ? 1 : 0
+    ];
+
+    return synk_schedule_context_display_metrics(
+        $lecUnits,
+        $labValue,
+        $totalUnits,
+        $contextTotals,
+        $ownedTotals
+    );
 }
 
 function synk_schedule_component_totals(float $lecUnits, float $labValue, float $totalUnits): array
@@ -123,6 +217,29 @@ function synk_schedule_component_totals(float $lecUnits, float $labValue, float 
             'hours_lab' => $labHours,
             'faculty_load' => $labHours * SYNK_LAB_LOAD_MULTIPLIER
         ]
+    ];
+}
+
+function synk_schedule_component_display_totals(
+    string $scheduleType,
+    float $lecUnits,
+    float $labValue,
+    float $totalUnits
+): array {
+    $normalizedType = synk_normalize_schedule_type($scheduleType);
+    $component = synk_prospectus_component_totals($lecUnits, $labValue, $totalUnits)[$normalizedType] ?? [
+        'units' => 0.0,
+        'hours_lec' => 0.0,
+        'hours_lab' => 0.0,
+        'faculty_load' => 0.0
+    ];
+
+    return [
+        'units' => round((float)($component['units'] ?? 0), 2),
+        'lec' => round((float)($component['hours_lec'] ?? 0), 2),
+        'lab' => round((float)($component['hours_lab'] ?? 0), 2),
+        'lab_hours' => round((float)($component['hours_lab'] ?? 0), 2),
+        'faculty_load' => round((float)($component['faculty_load'] ?? 0), 2)
     ];
 }
 
@@ -179,6 +296,91 @@ function synk_schedule_block_metrics_from_row(array $row): array
         (float)($row['lec_units'] ?? 0),
         (float)($row['lab_units'] ?? 0),
         (float)($row['total_units'] ?? 0)
+    );
+}
+
+function synk_schedule_block_display_metrics(
+    string $scheduleType,
+    int $weeklyMinutes,
+    float $lecUnits,
+    float $labValue,
+    float $totalUnits
+): array {
+    $normalizedType = synk_normalize_schedule_type($scheduleType);
+    $metrics = synk_schedule_block_metrics(
+        $normalizedType,
+        $weeklyMinutes,
+        $lecUnits,
+        $labValue,
+        $totalUnits
+    );
+
+    return [
+        'units' => round((float)($metrics['units'] ?? 0), 2),
+        'lec' => $normalizedType === 'LEC'
+            ? round((float)($metrics['hours_lec'] ?? 0), 2)
+            : 0.0,
+        'lab' => $normalizedType === 'LAB'
+            ? round((float)($metrics['hours_lab'] ?? 0), 2)
+            : 0.0,
+        'lab_hours' => $normalizedType === 'LAB'
+            ? round((float)($metrics['hours_lab'] ?? 0), 2)
+            : 0.0,
+        'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
+        'weekly_minutes' => (int)($metrics['weekly_minutes'] ?? 0),
+        'required_minutes' => (int)($metrics['required_minutes'] ?? 0),
+        'coverage_ratio' => round((float)($metrics['coverage_ratio'] ?? 0), 4)
+    ];
+}
+
+function synk_schedule_block_display_metrics_from_row(array $row): array
+{
+    $days = [];
+
+    if (isset($row['days']) && is_array($row['days'])) {
+        $days = $row['days'];
+    } elseif (isset($row['days_json'])) {
+        $decoded = json_decode((string)$row['days_json'], true);
+        $days = is_array($decoded) ? $decoded : [];
+    }
+
+    return synk_schedule_block_display_metrics(
+        (string)($row['schedule_type'] ?? 'LEC'),
+        synk_schedule_weekly_minutes(
+            $days,
+            (string)($row['time_start'] ?? ''),
+            (string)($row['time_end'] ?? '')
+        ),
+        (float)($row['lec_units'] ?? 0),
+        (float)($row['lab_units'] ?? 0),
+        (float)($row['total_units'] ?? 0)
+    );
+}
+
+function synk_schedule_sum_display_metrics(array $rows, array $contextTotals = []): array
+{
+    if (empty($rows)) {
+        return [
+            'units' => 0.0,
+            'lec' => 0.0,
+            'lab' => 0.0,
+            'lab_hours' => 0.0,
+            'faculty_load' => 0.0
+        ];
+    }
+
+    $first = $rows[0];
+    $ownedTotals = synk_schedule_row_count_totals($rows);
+    if (empty($contextTotals)) {
+        $contextTotals = $ownedTotals;
+    }
+
+    return synk_schedule_context_display_metrics(
+        (float)($first['lec_units'] ?? 0),
+        (float)($first['lab_units'] ?? 0),
+        (float)($first['total_units'] ?? 0),
+        $contextTotals,
+        $ownedTotals
     );
 }
 

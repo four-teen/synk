@@ -81,6 +81,19 @@ if ($ay_id <= 0) {
     $ayStmt->close();
 }
 
+function class_schedule_loader_context_key_from_values(int $groupId, int $scheduleId, int $offeringId): string
+{
+    if ($groupId > 0) {
+        return 'group:' . $groupId;
+    }
+
+    if ($scheduleId > 0) {
+        return 'schedule:' . $scheduleId;
+    }
+
+    return 'offering:' . $offeringId;
+}
+
 /* =====================================================
    MAIN QUERY
    PURPOSE:
@@ -157,51 +170,121 @@ $res = $stmt->get_result();
 /* =====================================================
    FORMAT OUTPUT
 ===================================================== */
-$data = [];
+$rawRows = [];
+$offeringIds = [];
 
 while ($row = $res->fetch_assoc()) {
-    $days_arr = json_decode($row['days_json'], true);
+    $days_arr = json_decode((string)($row['days_json'] ?? '[]'), true);
     if (!is_array($days_arr)) {
         $days_arr = [];
     }
 
-    $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? 'LEC')));
+    $rawRows[] = [
+        'schedule_id' => (int)($row['schedule_id'] ?? 0),
+        'offering_id' => (int)($row['offering_id'] ?? 0),
+        'group_id' => (int)($row['schedule_group_id'] ?? 0),
+        'schedule_type' => strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))),
+        'subject_code' => (string)($row['sub_code'] ?? ''),
+        'subject_description' => (string)($row['sub_description'] ?? ''),
+        'section_name' => (string)($row['section_name'] ?? ''),
+        'days_arr' => $days_arr,
+        'time_start' => (string)($row['time_start'] ?? ''),
+        'time_end' => (string)($row['time_end'] ?? ''),
+        'room_code' => (string)($row['room_code'] ?? ''),
+        'lec_units' => (float)($row['lec_units'] ?? 0),
+        'lab_units' => (float)($row['lab_units'] ?? 0),
+        'total_units' => (float)($row['total_units'] ?? 0)
+    ];
+
+    $offeringIds[(int)($row['offering_id'] ?? 0)] = true;
+}
+
+$data = [];
+$contextTotals = [];
+if (!empty($offeringIds)) {
+    $offeringIdList = implode(',', array_map('intval', array_keys($offeringIds)));
+    $contextSelectParts = [
+        'cs.schedule_id',
+        'cs.offering_id',
+        $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
+        $classScheduleHasType ? 'cs.schedule_type AS type' : "'LEC' AS type"
+    ];
+    $contextSql = "
+        SELECT
+            " . implode(",\n            ", $contextSelectParts) . "
+        FROM tbl_class_schedule cs
+        WHERE cs.offering_id IN ({$offeringIdList})
+    ";
+
+    $contextRes = $conn->query($contextSql);
+    if ($contextRes instanceof mysqli_result) {
+        while ($contextRow = $contextRes->fetch_assoc()) {
+            $contextKey = class_schedule_loader_context_key_from_values(
+                (int)($contextRow['group_id'] ?? 0),
+                (int)($contextRow['schedule_id'] ?? 0),
+                (int)($contextRow['offering_id'] ?? 0)
+            );
+
+            if (!isset($contextTotals[$contextKey])) {
+                $contextTotals[$contextKey] = [
+                    'total_count' => 0,
+                    'lec_count' => 0,
+                    'lab_count' => 0
+                ];
+            }
+
+            $contextTotals[$contextKey]['total_count']++;
+            if (strtoupper(trim((string)($contextRow['type'] ?? 'LEC'))) === 'LAB') {
+                $contextTotals[$contextKey]['lab_count']++;
+                continue;
+            }
+
+            $contextTotals[$contextKey]['lec_count']++;
+        }
+        $contextRes->free();
+    }
+}
+
+foreach ($rawRows as $row) {
     $subjectUnits = synk_subject_units_total(
-        (float)$row['lec_units'],
-        (float)$row['lab_units'],
-        (float)$row['total_units']
+        (float)($row['lec_units'] ?? 0),
+        (float)($row['lab_units'] ?? 0),
+        (float)($row['total_units'] ?? 0)
     );
-    $metrics = synk_schedule_block_metrics_from_row([
-        'schedule_type' => $scheduleType,
-        'days' => $days_arr,
-        'time_start' => (string)$row['time_start'],
-        'time_end' => (string)$row['time_end'],
-        'lec_units' => (float)$row['lec_units'],
-        'lab_units' => (float)$row['lab_units'],
-        'total_units' => (float)$row['total_units']
-    ]);
+    $contextKey = class_schedule_loader_context_key_from_values(
+        (int)($row['group_id'] ?? 0),
+        (int)($row['schedule_id'] ?? 0),
+        (int)($row['offering_id'] ?? 0)
+    );
+    $metrics = synk_schedule_row_display_metrics(
+        (string)($row['schedule_type'] ?? 'LEC'),
+        (float)($row['lec_units'] ?? 0),
+        (float)($row['lab_units'] ?? 0),
+        (float)($row['total_units'] ?? 0),
+        $contextTotals[$contextKey] ?? []
+    );
 
     $data[] = [
-        'schedule_id' => (int)$row['schedule_id'],
-        'offering_id' => (int)$row['offering_id'],
-        'group_id' => $row['schedule_group_id'],
-        'schedule_type' => $scheduleType,
-        'subject_code' => $row['sub_code'],
-        'subject_description' => $row['sub_description'],
-        'section_name' => $row['section_name'],
-        'days' => implode(", ", $days_arr),
-        'time' => date("g:iA", strtotime($row['time_start'])) . "-" .
-                  date("g:iA", strtotime($row['time_end'])),
-        'room_code' => $row['room_code'] ?? '',
-        'lec_units' => (float)$row['lec_units'],
-        'lab_units' => (float)$row['lab_units'],
+        'schedule_id' => (int)($row['schedule_id'] ?? 0),
+        'offering_id' => (int)($row['offering_id'] ?? 0),
+        'group_id' => (int)($row['group_id'] ?? 0),
+        'schedule_type' => (string)($row['schedule_type'] ?? 'LEC'),
+        'subject_code' => (string)($row['subject_code'] ?? ''),
+        'subject_description' => (string)($row['subject_description'] ?? ''),
+        'section_name' => (string)($row['section_name'] ?? ''),
+        'days' => implode(", ", $row['days_arr'] ?? []),
+        'time' => date("g:iA", strtotime((string)($row['time_start'] ?? ''))) . "-" .
+                  date("g:iA", strtotime((string)($row['time_end'] ?? ''))),
+        'room_code' => (string)($row['room_code'] ?? ''),
+        'lec_units' => round((float)($row['lec_units'] ?? 0), 2),
+        'lab_units' => round((float)($row['lab_units'] ?? 0), 2),
         'subject_units' => round($subjectUnits, 2),
-        'units' => $metrics['units'],
-        'hours_lec' => $metrics['hours_lec'],
-        'hours_lab' => $metrics['hours_lab'],
-        'faculty_load' => $metrics['faculty_load'],
-        'weekly_minutes' => $metrics['weekly_minutes'],
-        'coverage_ratio' => $metrics['coverage_ratio']
+        'units' => round((float)($metrics['units'] ?? 0), 2),
+        'hours_lec' => round((float)($metrics['lec'] ?? 0), 2),
+        'hours_lab' => round((float)($metrics['lab'] ?? 0), 2),
+        'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
+        'weekly_minutes' => 0,
+        'coverage_ratio' => 0
     ];
 }
 

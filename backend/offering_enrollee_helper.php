@@ -12,6 +12,11 @@ function synk_offering_enrollee_table_exists(mysqli $conn): bool
     return synk_table_exists($conn, synk_offering_enrollee_table_name());
 }
 
+function synk_default_section_enrollee_count(): int
+{
+    return 50;
+}
+
 function synk_normalize_offering_ids(array $offeringIds): array
 {
     $normalized = [];

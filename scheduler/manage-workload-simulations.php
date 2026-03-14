@@ -365,14 +365,14 @@ while ($ayResult && ($row = mysqli_fetch_assoc($ayResult))) {
                                         <th rowspan="2">Time</th>
                                         <th rowspan="2">Room</th>
                                         <th rowspan="2" class="text-center">Unit</th>
-                                        <th colspan="2" class="text-center">Unit Breakdown</th>
+                                        <th colspan="2" class="text-center">No. of Hours</th>
                                         <th rowspan="2" class="text-center">Load</th>
                                         <th rowspan="2" class="text-center"># of Students</th>
                                         <th rowspan="2" class="text-end">Action</th>
                                     </tr>
                                     <tr>
-                                        <th class="text-center">Lab</th>
-                                        <th class="text-center">Lec</th>
+                                        <th class="text-center">Lab Hrs</th>
+                                        <th class="text-center">Lec Hrs</th>
                                     </tr>
                                 </thead>
                                 <tbody id="simulationWorkloadTbody"></tbody>
@@ -799,38 +799,25 @@ function getLoadStatus(loadValue) {
     return { label: "Underload", className: "underload" };
 }
 
-function buildShareMetrics(subjectUnits, lecUnits, labHoursTotal, contextTotals, ownedTotals) {
-    const totalCount = Math.max(0, Number(contextTotals?.total_count) || 0);
-    const totalLecCount = Math.max(0, Number(contextTotals?.lec_count) || 0);
-    const totalLabCount = Math.max(0, Number(contextTotals?.lab_count) || 0);
-    const ownedCount = Math.max(0, Number(ownedTotals?.total_count) || 0);
-    const ownedLecCount = Math.max(0, Number(ownedTotals?.lec_count) || 0);
-    const ownedLabCount = Math.max(0, Number(ownedTotals?.lab_count) || 0);
-    const ownsAllRows = totalCount > 0 && ownedCount >= totalCount;
-    const lectureUnitsPerRow = totalLecCount > 0 ? (lecUnits / totalLecCount) : 0;
-    const labHoursPerRow = totalLabCount > 0 ? (labHoursTotal / totalLabCount) : 0;
-
-    let displayLec = 0;
-    let displayLab = 0;
-
-    if (ownsAllRows) {
-        displayLec = lecUnits;
-        displayLab = labHoursTotal;
-    } else if (ownedLecCount > 0 && ownedLabCount === 0) {
-        displayLec = lectureUnitsPerRow * ownedLecCount;
-    } else if (ownedLecCount === 0 && ownedLabCount > 0) {
-        displayLab = labHoursPerRow * ownedLabCount;
-        displayLec = Math.max(0, subjectUnits - displayLab);
-    } else {
-        displayLec = lectureUnitsPerRow * ownedLecCount;
-        displayLab = labHoursPerRow * ownedLabCount;
-    }
+function sumSimulationGroupMetrics(rows) {
+    const totals = rows.reduce(function (carry, row) {
+        carry.units += toNumber(row?.units);
+        carry.lab += toNumber(row?.lab);
+        carry.lec += toNumber(row?.lec);
+        carry.faculty_load += toNumber(row?.faculty_load);
+        return carry;
+    }, {
+        units: 0,
+        lab: 0,
+        lec: 0,
+        faculty_load: 0
+    });
 
     return {
-        units: Number(subjectUnits.toFixed(2)),
-        lec: Number(displayLec.toFixed(2)),
-        lab: Number(displayLab.toFixed(2)),
-        faculty_load: Number((displayLec + (displayLab * 0.75)).toFixed(2))
+        units: Number(totals.units.toFixed(2)),
+        lab: Number(totals.lab.toFixed(2)),
+        lec: Number(totals.lec.toFixed(2)),
+        faculty_load: Number(totals.faculty_load.toFixed(2))
     };
 }
 
@@ -1040,26 +1027,7 @@ function renderSimulationWorkload() {
         }
 
         const first = groupRows[0];
-        const ownedTotals = groupRows.reduce(function (carry, row) {
-            carry.total_count += 1;
-            if (String(row.schedule_type || "LEC").toUpperCase() === "LAB") {
-                carry.lab_count += 1;
-            } else {
-                carry.lec_count += 1;
-            }
-            return carry;
-        }, { total_count: 0, lec_count: 0, lab_count: 0 });
-        const metrics = buildShareMetrics(
-            toNumber(first.subject_units),
-            toNumber(first.lec_units),
-            toNumber(first.lab_hours_total),
-            {
-                total_count: Number(first.context_total_count) || 0,
-                lec_count: Number(first.context_lec_count) || 0,
-                lab_count: Number(first.context_lab_count) || 0
-            },
-            ownedTotals
-        );
+        const metrics = sumSimulationGroupMetrics(groupRows);
 
         totalUnit += metrics.units;
         totalLab += metrics.lab;
