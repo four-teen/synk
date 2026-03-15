@@ -109,6 +109,77 @@ body.swal2-shown .modal {
     font-weight: 700;
 }
 
+.schedule-pan-shell {
+    overflow-x: auto;
+    cursor: grab;
+    touch-action: pan-y;
+    scrollbar-width: thin;
+}
+
+.schedule-pan-shell.is-pan-active {
+    cursor: grabbing;
+}
+
+.schedule-pan-shell.is-pan-active,
+.schedule-pan-shell.is-pan-active * {
+    user-select: none;
+}
+
+.schedule-offerings-table {
+    min-width: 1220px;
+}
+
+.schedule-offerings-table th,
+.schedule-offerings-table td {
+    vertical-align: middle;
+}
+
+.schedule-hours-col {
+    width: 68px;
+    min-width: 68px;
+}
+
+.schedule-action-col {
+    min-width: 92px;
+    white-space: nowrap;
+}
+
+.schedule-stack-item {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.3rem;
+    padding: 0.15rem 0;
+}
+
+.schedule-stack-item + .schedule-stack-item {
+    margin-top: 0.35rem;
+}
+
+.schedule-stack-item.empty {
+    min-height: 2.4rem;
+    justify-content: center;
+}
+
+.schedule-stack-badge {
+    display: inline-flex;
+    justify-content: center;
+}
+
+.schedule-stack-value {
+    display: block;
+    font-size: 0.85rem;
+    line-height: 1.2;
+    text-align: center;
+    white-space: nowrap;
+}
+
+.schedule-stack-value.is-room {
+    max-width: 150px;
+    white-space: normal;
+    word-break: break-word;
+}
+
 .schedule-search-shell {
     max-width: 520px;
 }
@@ -2616,6 +2687,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     },
                     function (rows) {
                         $("#scheduleListContainer").html(rows);
+                        initializeScheduleTablePan();
                         applyScheduleSearchFilter();
                     }
                 ).fail(function (xhr) {
@@ -2628,6 +2700,108 @@ while ($ay = $ayQ->fetch_assoc()) {
                     console.error(xhr.responseText);
                 });
             });
+    }
+
+    function initializeScheduleTablePan() {
+        $("#scheduleListContainer .schedule-pan-shell").each(function () {
+            const shell = this;
+            if (shell.dataset.panReady === "1") {
+                return;
+            }
+
+            shell.dataset.panReady = "1";
+
+            let activePointerId = null;
+            let startX = 0;
+            let startScrollLeft = 0;
+            let isDragging = false;
+            let suppressClick = false;
+
+            function finishPan(event) {
+                if (activePointerId === null) {
+                    return;
+                }
+
+                if (event && typeof event.pointerId !== "undefined" && event.pointerId !== activePointerId) {
+                    return;
+                }
+
+                const wasDragging = isDragging;
+                if (shell.releasePointerCapture && shell.hasPointerCapture && shell.hasPointerCapture(activePointerId)) {
+                    try {
+                        shell.releasePointerCapture(activePointerId);
+                    } catch (error) {
+                        // Ignore release failures for browsers that auto-release capture.
+                    }
+                }
+
+                activePointerId = null;
+                isDragging = false;
+                shell.classList.remove("is-pan-active");
+
+                if (!wasDragging) {
+                    suppressClick = false;
+                }
+            }
+
+            shell.addEventListener("pointerdown", function (event) {
+                if (typeof event.button !== "undefined" && event.button !== 0) {
+                    return;
+                }
+
+                if (shell.scrollWidth <= shell.clientWidth + 4) {
+                    return;
+                }
+
+                activePointerId = event.pointerId;
+                startX = event.clientX;
+                startScrollLeft = shell.scrollLeft;
+                isDragging = false;
+                suppressClick = false;
+
+                if (shell.setPointerCapture) {
+                    try {
+                        shell.setPointerCapture(activePointerId);
+                    } catch (error) {
+                        // Ignore browsers that do not support pointer capture in this context.
+                    }
+                }
+            });
+
+            shell.addEventListener("pointermove", function (event) {
+                if (activePointerId === null || event.pointerId !== activePointerId) {
+                    return;
+                }
+
+                const deltaX = event.clientX - startX;
+                if (!isDragging && Math.abs(deltaX) > 6) {
+                    isDragging = true;
+                    shell.classList.add("is-pan-active");
+                }
+
+                if (!isDragging) {
+                    return;
+                }
+
+                shell.scrollLeft = startScrollLeft - deltaX;
+                suppressClick = true;
+                event.preventDefault();
+            });
+
+            shell.addEventListener("pointerup", finishPan);
+            shell.addEventListener("pointercancel", finishPan);
+            shell.addEventListener("lostpointercapture", finishPan);
+
+            shell.addEventListener("click", function (event) {
+                if (!suppressClick) {
+                    return;
+                }
+
+                suppressClick = false;
+                event.preventDefault();
+                event.stopPropagation();
+            }, true);
+        });
     }
 
     let autoDraftState = null;

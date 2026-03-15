@@ -57,6 +57,23 @@ function contact_hours_value($hours) {
         : number_format($value, 1);
 }
 
+function schedule_stack_item_html($badgeHtml, $value, $valueClass = '') {
+    $className = 'schedule-stack-value';
+    if ($valueClass !== '') {
+        $className .= ' ' . trim($valueClass);
+    }
+
+    return
+        "<div class='schedule-stack-item'>" .
+            "<div class='schedule-stack-badge'>{$badgeHtml}</div>" .
+            "<div class='{$className}'>" . htmlspecialchars((string)$value) . "</div>" .
+        "</div>";
+}
+
+function schedule_stack_empty_html() {
+    return "<div class='schedule-stack-item empty'><div class='schedule-stack-value text-muted'>-</div></div>";
+}
+
 function offering_schedule_status_badge(array $row): array
 {
     $required = synk_required_minutes_by_type(
@@ -204,8 +221,8 @@ foreach ($grouped as $yearLevel => $rows) {
     echo "    <span>" . htmlspecialchars(year_label($yearLevel)) . "</span>";
     echo "    <span class='badge bg-label-primary schedule-group-count' data-total-count='" . count($offerings) . "'>" . count($offerings) . " class(es)</span>";
     echo "  </div>";
-    echo "  <div class='table-responsive'>";
-    echo "    <table class='table table-bordered table-hover mb-0'>";
+    echo "  <div class='table-responsive schedule-pan-shell'>";
+    echo "    <table class='table table-bordered table-hover mb-0 schedule-offerings-table'>";
     echo "      <thead>";
     echo "        <tr>";
     echo "          <th>Section</th>";
@@ -213,11 +230,11 @@ foreach ($grouped as $yearLevel => $rows) {
     echo "          <th>Description</th>";
     echo "          <th class='text-center text-nowrap'>LEC Hrs</th>";
     echo "          <th class='text-center text-nowrap'>LAB Hrs</th>";
-    echo "          <th>Days</th>";
-    echo "          <th>Time</th>";
-    echo "          <th>Room</th>";
+    echo "          <th class='text-center'>Days</th>";
+    echo "          <th class='text-center'>Time</th>";
+    echo "          <th class='text-center'>Room</th>";
     echo "          <th>Status</th>";
-    echo "          <th>Action</th>";
+    echo "          <th class='text-center schedule-action-col'>Action</th>";
     echo "        </tr>";
     echo "      </thead>";
     echo "      <tbody>";
@@ -235,21 +252,21 @@ foreach ($grouped as $yearLevel => $rows) {
             $label = block_badge_html($type, $sequenceByType[$type]);
             $daysText = !empty($entry['days']) ? implode('', $entry['days']) : '-';
             $timeText = ($entry['time_start'] !== '' && $entry['time_end'] !== '')
-                ? htmlspecialchars(date('h:i A', strtotime($entry['time_start']))) . " - " . htmlspecialchars(date('h:i A', strtotime($entry['time_end'])))
+                ? date('h:i A', strtotime($entry['time_start'])) . " - " . date('h:i A', strtotime($entry['time_end']))
                 : '-';
             $roomText = $entry['room_label'] !== ''
-                ? htmlspecialchars($entry['room_label'])
+                ? $entry['room_label']
                 : '-';
 
-            $daysParts[] = "<div class='text-nowrap mb-1'>{$label}" . htmlspecialchars($daysText) . "</div>";
-            $timeParts[] = "<div class='text-nowrap mb-1'>{$label}{$timeText}</div>";
-            $roomParts[] = "<div class='text-nowrap mb-1'>{$label}{$roomText}</div>";
+            $daysParts[] = schedule_stack_item_html($label, $daysText, 'is-days');
+            $timeParts[] = schedule_stack_item_html($label, $timeText, 'is-time');
+            $roomParts[] = schedule_stack_item_html($label, $roomText, 'is-room');
         }
 
         if (empty($daysParts)) {
-            $daysParts[] = "<div class='text-nowrap mb-1 text-muted'>-</div>";
-            $timeParts[] = "<div class='text-nowrap mb-1 text-muted'>-</div>";
-            $roomParts[] = "<div class='text-nowrap mb-1 text-muted'>-</div>";
+            $daysParts[] = schedule_stack_empty_html();
+            $timeParts[] = schedule_stack_empty_html();
+            $roomParts[] = schedule_stack_empty_html();
         }
 
         $searchText = strtolower(trim(
@@ -262,13 +279,13 @@ foreach ($grouped as $yearLevel => $rows) {
         echo "  <td>" . htmlspecialchars((string)$row['section_name']) . "</td>";
         echo "  <td class='text-nowrap'>" . htmlspecialchars(strtoupper((string)$row['sub_code'])) . "</td>";
         echo "  <td>" . htmlspecialchars(strtoupper((string)$row['sub_description'])) . "</td>";
-        echo "  <td class='text-center fw-semibold'>" . htmlspecialchars(contact_hours_value($row['lec_units'])) . "</td>";
-        echo "  <td class='text-center fw-semibold'>" . htmlspecialchars(contact_hours_value($row['lab_units'])) . "</td>";
+        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['lec_units'])) . "</td>";
+        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['lab_units'])) . "</td>";
         echo "  <td class='text-center'>" . implode('', $daysParts) . "</td>";
         echo "  <td class='text-center'>" . implode('', $timeParts) . "</td>";
         echo "  <td class='text-center'>" . implode('', $roomParts) . "</td>";
         echo "  <td class='text-center'>{$status['badge']}</td>";
-        echo "  <td class='text-center'>";
+        echo "  <td class='text-center schedule-action-col'>";
         echo "    <button class='btn {$status['button_class']} btn-sm btn-schedule'";
         echo "      data-offering-id='" . (int)$row['offering_id'] . "'";
         echo "      data-sub-code='" . htmlspecialchars((string)$row['sub_code'], ENT_QUOTES) . "'";
