@@ -216,6 +216,78 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
       .dashboard-scope-toggle .btn {
         min-width: 7.5rem;
       }
+
+      .kpi-actionable {
+        cursor: pointer;
+      }
+
+      .kpi-actionable:focus {
+        outline: none;
+        box-shadow: 0 0 0 0.2rem rgba(255, 171, 0, 0.18);
+      }
+
+      .unscheduled-summary-card {
+        border: 1px solid #e5e9f2;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #fafcff 100%);
+        padding: 1rem 1.1rem;
+      }
+
+      .unscheduled-summary-metric {
+        min-width: 8rem;
+      }
+
+      .unscheduled-list-shell {
+        border: 1px solid #e2e8f3;
+        border-radius: 14px;
+        background: #fff;
+        overflow: hidden;
+      }
+
+      .unscheduled-list-shell .table-responsive {
+        max-height: 62vh;
+      }
+
+      .unscheduled-list-table th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f8fafc;
+        white-space: nowrap;
+        font-size: 0.76rem;
+        text-transform: uppercase;
+        letter-spacing: 0.03em;
+      }
+
+      .unscheduled-list-table td {
+        vertical-align: top;
+        font-size: 0.88rem;
+      }
+
+      .unscheduled-list-table .hours-col {
+        width: 76px;
+        min-width: 76px;
+        text-align: center;
+        font-weight: 600;
+      }
+
+      .unscheduled-list-empty,
+      .unscheduled-list-loading {
+        min-height: 220px;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        text-align: center;
+        color: #8592a3;
+        padding: 1.5rem;
+      }
+
+      .unscheduled-list-loading .loader-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-weight: 600;
+      }
     </style>
   </head>
 
@@ -324,7 +396,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                             </div>
 
                             <div class="col-md-3 col-6">
-                              <div class="kpi-box kpi-warning text-center" id="cardUnscheduled">
+                              <div class="kpi-box kpi-warning text-center kpi-actionable" id="cardUnscheduled" role="button" tabindex="0" aria-label="Open unscheduled classes list">
                                 <div class="kpi-icon bg-warning">
                                   <i class="bx bx-error-circle"></i>
                                 </div>
@@ -522,6 +594,49 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               </div>
             </div>
 
+            <div class="modal fade" id="unscheduledClassesModal" tabindex="-1" aria-labelledby="unscheduledClassesModalLabel" aria-hidden="true">
+              <div class="modal-dialog modal-xl modal-dialog-scrollable">
+                <div class="modal-content">
+                  <div class="modal-header">
+                    <div>
+                      <h5 class="modal-title mb-0" id="unscheduledClassesModalLabel">Unscheduled Classes</h5>
+                      <div class="small text-muted mt-1" id="unscheduledClassesModalSubtitle">Review classes that still have no saved schedule rows for the active dashboard scope.</div>
+                    </div>
+                    <div class="d-flex align-items-center gap-2">
+                      <button type="button" class="btn btn-outline-primary btn-sm btn-print-unscheduled" disabled>
+                        <i class="bx bx-printer me-1"></i> Print A4
+                      </button>
+                      <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                    </div>
+                  </div>
+                  <div class="modal-body">
+                    <div class="unscheduled-summary-card mb-3" id="unscheduledClassesSummary">
+                      <strong>Loading unscheduled classes...</strong>
+                    </div>
+
+                    <div class="small text-muted mb-3">
+                      This list follows the same dashboard rule as the card count: it includes offerings with no saved lecture or laboratory schedule rows yet.
+                    </div>
+
+                    <div class="unscheduled-list-shell" id="unscheduledClassesListContainer">
+                      <div class="unscheduled-list-loading">
+                        <div class="loader-inline">
+                          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                          <span>Loading unscheduled classes...</span>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                  <div class="modal-footer">
+                    <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-primary btn-print-unscheduled" disabled>
+                      <i class="bx bx-printer me-1"></i> Print A4 List
+                    </button>
+                  </div>
+                </div>
+              </div>
+            </div>
+
             <?php include '../footer.php'; ?>
 
             <div class="content-backdrop fade"></div>
@@ -546,8 +661,26 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
         let schedulingProgressChart = null;
         let scheduleHeatmapChart = null;
         let weeklyPressureChart = null;
+        let unscheduledClassesRequest = null;
+        let unscheduledClassesState = null;
         let dashboardScope = "college";
         const campusViewEnabled = <?php echo $campusViewEnabled ? 'true' : 'false'; ?>;
+        const defaultCollegeName = <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>;
+        const defaultCampusName = <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?>;
+        const dashboardTermText = <?php echo json_encode($academicTermText); ?>;
+        const unscheduledModal = document.getElementById("unscheduledClassesModal");
+        const unscheduledModalTitle = document.getElementById("unscheduledClassesModalSubtitle");
+        const unscheduledSummary = document.getElementById("unscheduledClassesSummary");
+        const unscheduledListContainer = document.getElementById("unscheduledClassesListContainer");
+
+        function escapeHtml(value) {
+          return String(value == null ? "" : value)
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#39;");
+        }
 
         function buildInlineLoader(message) {
           return (
@@ -556,6 +689,323 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               '<span>' + message + "</span>" +
             "</div>"
           );
+        }
+
+        function yearLevelLabel(value) {
+          const year = Number(value) || 0;
+          if (year <= 0) {
+            return "--";
+          }
+
+          if (year === 1) return "1st Year";
+          if (year === 2) return "2nd Year";
+          if (year === 3) return "3rd Year";
+          if (year === 4) return "4th Year";
+          if (year === 5) return "5th Year";
+          if (year === 6) return "6th Year";
+          return year + "th Year";
+        }
+
+        function formatHoursValue(value) {
+          const number = Number(value) || 0;
+          return Number.isInteger(number) ? String(number) : number.toFixed(1).replace(/\.0$/, "");
+        }
+
+        function activeScopeType() {
+          return dashboardScope === "campus" && campusViewEnabled ? "campus" : "college";
+        }
+
+        function activeScopeLabel() {
+          return activeScopeType() === "campus" ? defaultCampusName : defaultCollegeName;
+        }
+
+        function setUnscheduledPrintButtonsDisabled(disabled) {
+          document.querySelectorAll(".btn-print-unscheduled").forEach(function (button) {
+            button.disabled = disabled;
+          });
+        }
+
+        function setUnscheduledModalLoadingState() {
+          unscheduledClassesState = null;
+          setUnscheduledPrintButtonsDisabled(true);
+
+          if (unscheduledModalTitle) {
+            unscheduledModalTitle.textContent = "Loading unscheduled classes for the active dashboard scope.";
+          }
+
+          if (unscheduledSummary) {
+            unscheduledSummary.innerHTML = "<strong>Loading unscheduled classes...</strong>";
+          }
+
+          if (unscheduledListContainer) {
+            unscheduledListContainer.innerHTML =
+              '<div class="unscheduled-list-loading">' + buildInlineLoader("Loading unscheduled classes...") + "</div>";
+          }
+        }
+
+        function renderUnscheduledSummary(payload) {
+          if (!unscheduledSummary) {
+            return;
+          }
+
+          const safePayload = payload && typeof payload === "object" ? payload : {};
+          const scopeType = safePayload.scope === "campus" && campusViewEnabled ? "campus" : "college";
+          const scopeLabel = safePayload.scope_label || (scopeType === "campus" ? defaultCampusName : defaultCollegeName);
+          const termText = safePayload.term_text || dashboardTermText;
+          const total = Number(safePayload.total) || 0;
+
+          unscheduledSummary.innerHTML =
+            '<div class="d-flex flex-wrap justify-content-between align-items-start gap-3">' +
+              '<div>' +
+                '<strong>' + escapeHtml(total + " unscheduled class" + (total === 1 ? "" : "es")) + "</strong>" +
+                '<div class="small text-muted mt-1">Scope: ' + escapeHtml(scopeLabel) + "</div>" +
+                '<div class="small text-muted">Term: ' + escapeHtml(termText) + "</div>" +
+              "</div>" +
+              '<div class="unscheduled-summary-metric text-md-end">' +
+                '<span class="badge bg-label-warning text-warning">Needs Scheduling</span>' +
+              "</div>" +
+            "</div>";
+        }
+
+        function renderUnscheduledList(payload) {
+          const safePayload = payload && typeof payload === "object" ? payload : {};
+          const rows = Array.isArray(safePayload.rows) ? safePayload.rows : [];
+          const scopeType = safePayload.scope === "campus" && campusViewEnabled ? "campus" : "college";
+          const scopeLabel = safePayload.scope_label || (scopeType === "campus" ? defaultCampusName : defaultCollegeName);
+          const total = Number(safePayload.total) || rows.length;
+
+          if (unscheduledModalTitle) {
+            unscheduledModalTitle.textContent =
+              total > 0
+                ? "Review the current term list below, then print it on A4 if needed."
+                : "No unscheduled classes were found for " + scopeLabel + ".";
+          }
+
+          renderUnscheduledSummary({
+            scope: scopeType,
+            scope_label: scopeLabel,
+            term_text: safePayload.term_text || dashboardTermText,
+            total: total
+          });
+
+          if (!unscheduledListContainer) {
+            return;
+          }
+
+          if (rows.length === 0) {
+            unscheduledListContainer.innerHTML =
+              '<div class="unscheduled-list-empty">' +
+                '<div><strong>No unscheduled classes found.</strong><div class="small text-muted mt-2">Everything in the current dashboard scope already has at least one saved schedule row.</div></div>' +
+              "</div>";
+            setUnscheduledPrintButtonsDisabled(true);
+            return;
+          }
+
+          let headerHtml =
+            "<tr>" +
+              "<th>#</th>";
+
+          if (scopeType === "campus") {
+            headerHtml += "<th>College</th>";
+          }
+
+          headerHtml +=
+              "<th>Program</th>" +
+              "<th>Year</th>" +
+              "<th>Section</th>" +
+              "<th>Subject Code</th>" +
+              "<th>Description</th>" +
+              '<th class="hours-col">LEC</th>' +
+              '<th class="hours-col">LAB</th>' +
+            "</tr>";
+
+          const rowsHtml = rows.map(function (row, index) {
+            let cells =
+              "<td>" + escapeHtml(index + 1) + "</td>";
+
+            if (scopeType === "campus") {
+              cells += "<td>" + escapeHtml(row.college_label || "--") + "</td>";
+            }
+
+            cells +=
+              "<td>" + escapeHtml(row.program_label || "--") + "</td>" +
+              "<td>" + escapeHtml(yearLevelLabel(row.year_level)) + "</td>" +
+              "<td>" + escapeHtml(row.section_name || "--") + "</td>" +
+              '<td class="text-nowrap">' + escapeHtml(row.sub_code || "--") + "</td>" +
+              "<td>" + escapeHtml(row.sub_description || "--") + "</td>" +
+              '<td class="hours-col">' + escapeHtml(formatHoursValue(row.lec_units)) + "</td>" +
+              '<td class="hours-col">' + escapeHtml(formatHoursValue(row.lab_units)) + "</td>";
+
+            return "<tr>" + cells + "</tr>";
+          }).join("");
+
+          unscheduledListContainer.innerHTML =
+            '<div class="table-responsive">' +
+              '<table class="table table-bordered table-hover mb-0 unscheduled-list-table">' +
+                "<thead>" + headerHtml + "</thead>" +
+                "<tbody>" + rowsHtml + "</tbody>" +
+              "</table>" +
+            "</div>";
+
+          setUnscheduledPrintButtonsDisabled(false);
+        }
+
+        function openUnscheduledClassesModal() {
+          if (!unscheduledModal) {
+            return;
+          }
+
+          setUnscheduledModalLoadingState();
+          const modalInstance = bootstrap.Modal.getOrCreateInstance(unscheduledModal);
+          modalInstance.show();
+          loadUnscheduledClassesList();
+        }
+
+        function loadUnscheduledClassesList() {
+          if (unscheduledClassesRequest && unscheduledClassesRequest.readyState !== 4) {
+            unscheduledClassesRequest.abort();
+          }
+
+          setUnscheduledModalLoadingState();
+
+          unscheduledClassesRequest = $.ajax({
+            url: "../backend/dashboard_unscheduled_classes.php",
+            type: "POST",
+            dataType: "json",
+            data: { scope: dashboardScope },
+            success: function (payload) {
+              unscheduledClassesState = payload || {};
+              renderUnscheduledList(unscheduledClassesState);
+            },
+            error: function (xhr) {
+              if (xhr.statusText === "abort") {
+                return;
+              }
+
+              if (unscheduledModalTitle) {
+                unscheduledModalTitle.textContent = "Unable to load the unscheduled classes list.";
+              }
+
+              if (unscheduledSummary) {
+                unscheduledSummary.innerHTML = "<strong>Unable to load the unscheduled classes list.</strong>";
+              }
+
+              if (unscheduledListContainer) {
+                unscheduledListContainer.innerHTML =
+                  '<div class="unscheduled-list-empty">' +
+                    '<div><strong>Unable to load unscheduled classes.</strong><div class="small text-muted mt-2">Please try again.</div></div>' +
+                  "</div>";
+              }
+
+              setUnscheduledPrintButtonsDisabled(true);
+              console.error("Dashboard unscheduled classes error:", xhr.responseText);
+            }
+          });
+        }
+
+        function buildUnscheduledPrintHtml(payload) {
+          const safePayload = payload && typeof payload === "object" ? payload : {};
+          const rows = Array.isArray(safePayload.rows) ? safePayload.rows : [];
+          const scopeType = safePayload.scope === "campus" && campusViewEnabled ? "campus" : "college";
+          const scopeLabel = safePayload.scope_label || (scopeType === "campus" ? defaultCampusName : defaultCollegeName);
+          const termText = safePayload.term_text || dashboardTermText;
+          const printedAt = new Date().toLocaleString();
+
+          let headerHtml =
+            "<tr>" +
+              "<th>#</th>";
+
+          if (scopeType === "campus") {
+            headerHtml += "<th>College</th>";
+          }
+
+          headerHtml +=
+              "<th>Program</th>" +
+              "<th>Year</th>" +
+              "<th>Section</th>" +
+              "<th>Subject Code</th>" +
+              "<th>Description</th>" +
+              "<th>LEC</th>" +
+              "<th>LAB</th>" +
+            "</tr>";
+
+          const rowsHtml = rows.length > 0
+            ? rows.map(function (row, index) {
+                let cells =
+                  "<td>" + escapeHtml(index + 1) + "</td>";
+
+                if (scopeType === "campus") {
+                  cells += "<td>" + escapeHtml(row.college_label || "--") + "</td>";
+                }
+
+                cells +=
+                  "<td>" + escapeHtml(row.program_label || "--") + "</td>" +
+                  "<td>" + escapeHtml(yearLevelLabel(row.year_level)) + "</td>" +
+                  "<td>" + escapeHtml(row.section_name || "--") + "</td>" +
+                  "<td>" + escapeHtml(row.sub_code || "--") + "</td>" +
+                  "<td>" + escapeHtml(row.sub_description || "--") + "</td>" +
+                  "<td>" + escapeHtml(formatHoursValue(row.lec_units)) + "</td>" +
+                  "<td>" + escapeHtml(formatHoursValue(row.lab_units)) + "</td>";
+
+                return "<tr>" + cells + "</tr>";
+              }).join("")
+            : "<tr><td colspan='" + (scopeType === "campus" ? 9 : 8) + "'>No unscheduled classes found for this scope.</td></tr>";
+
+          return (
+            "<!DOCTYPE html>" +
+            '<html lang="en"><head><meta charset="utf-8">' +
+            "<title>Unscheduled Classes List</title>" +
+            "<style>" +
+              "@page { size: A4 portrait; margin: 12mm; }" +
+              "body { font-family: Arial, sans-serif; color: #1f2937; margin: 0; font-size: 12px; }" +
+              ".report-header { margin-bottom: 14px; }" +
+              ".report-title { font-size: 20px; font-weight: 700; margin: 0 0 6px; }" +
+              ".report-subtitle { margin: 0; color: #4b5563; line-height: 1.45; }" +
+              ".report-note { margin: 12px 0 14px; padding: 10px 12px; background: #f8fafc; border: 1px solid #d9e2ef; border-radius: 8px; }" +
+              ".report-meta { display: flex; flex-wrap: wrap; gap: 14px; margin-top: 8px; color: #4b5563; }" +
+              "table { width: 100%; border-collapse: collapse; }" +
+              "thead { display: table-header-group; }" +
+              "tr { page-break-inside: avoid; }" +
+              "th, td { border: 1px solid #d7dee8; padding: 7px 8px; vertical-align: top; }" +
+              "th { background: #eef3f9; text-align: left; font-size: 11px; text-transform: uppercase; letter-spacing: 0.03em; }" +
+              "td { font-size: 11px; }" +
+              ".hours-col { width: 42px; text-align: center; font-weight: 700; }" +
+            "</style></head><body>" +
+              '<div class="report-header">' +
+                '<p class="report-title">Unscheduled Classes List</p>' +
+                '<p class="report-subtitle">Scope: ' + escapeHtml(scopeLabel) + "<br>Term: " + escapeHtml(termText) + "</p>" +
+                '<div class="report-meta">' +
+                  "<span>Total Classes: " + escapeHtml(rows.length) + "</span>" +
+                  "<span>Printed: " + escapeHtml(printedAt) + "</span>" +
+                "</div>" +
+              "</div>" +
+              '<div class="report-note">This report lists offerings with no saved lecture or laboratory schedule rows yet.</div>' +
+              "<table>" +
+                "<thead>" + headerHtml + "</thead>" +
+                "<tbody>" + rowsHtml + "</tbody>" +
+              "</table>" +
+            "</body></html>"
+          );
+        }
+
+        function printUnscheduledClassesList() {
+          if (!unscheduledClassesState || !Array.isArray(unscheduledClassesState.rows)) {
+            return;
+          }
+
+          const printWindow = window.open("", "_blank", "width=960,height=1200");
+          if (!printWindow) {
+            window.alert("Please allow pop-ups so the unscheduled classes list can be printed.");
+            return;
+          }
+
+          printWindow.document.open();
+          printWindow.document.write(buildUnscheduledPrintHtml(unscheduledClassesState));
+          printWindow.document.close();
+          printWindow.focus();
+          window.setTimeout(function () {
+            printWindow.print();
+          }, 250);
         }
 
         function animateCount(elementId, target) {
@@ -1226,8 +1676,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           applyDashboardScopeMeta({
             scope: dashboardScope,
             scope_label: dashboardScope === "campus"
-              ? <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?>
-              : <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>
+              ? defaultCampusName
+              : defaultCollegeName
           });
 
           if (schedulingProgressChart) {
@@ -1318,8 +1768,42 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             dashboardScope = requestedScope;
             setScopeButtons();
             loadDashboardData();
+
+            if (unscheduledModal && unscheduledModal.classList.contains("show")) {
+              loadUnscheduledClassesList();
+            }
           });
         });
+
+        const unscheduledCard = document.getElementById("cardUnscheduled");
+        if (unscheduledCard) {
+          unscheduledCard.addEventListener("click", function () {
+            openUnscheduledClassesModal();
+          });
+
+          unscheduledCard.addEventListener("keydown", function (event) {
+            if (event.key !== "Enter" && event.key !== " ") {
+              return;
+            }
+
+            event.preventDefault();
+            openUnscheduledClassesModal();
+          });
+        }
+
+        document.querySelectorAll(".btn-print-unscheduled").forEach(function (button) {
+          button.addEventListener("click", function () {
+            printUnscheduledClassesList();
+          });
+        });
+
+        if (unscheduledModal) {
+          unscheduledModal.addEventListener("hidden.bs.modal", function () {
+            if (unscheduledClassesRequest && unscheduledClassesRequest.readyState !== 4) {
+              unscheduledClassesRequest.abort();
+            }
+          });
+        }
 
         setScopeButtons();
         loadDashboardData();
