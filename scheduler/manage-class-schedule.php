@@ -523,6 +523,26 @@ body.swal2-shown .modal {
     box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.14);
 }
 
+.matrix-entry-actionable {
+    cursor: pointer;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, opacity 0.15s ease;
+}
+
+.matrix-entry-actionable:hover,
+.matrix-entry-actionable:focus {
+    transform: translateY(-1px);
+    box-shadow:
+        inset 0 0 0 1px rgba(255, 255, 255, 0.2),
+        0 6px 14px rgba(15, 23, 42, 0.18);
+    opacity: 0.98;
+    outline: none;
+}
+
+.matrix-entry-readonly {
+    cursor: help;
+    opacity: 0.88;
+}
+
 .matrix-entry:last-child {
     margin-bottom: 0;
 }
@@ -2661,7 +2681,49 @@ while ($ay = $ayQ->fetch_assoc()) {
     }
 
 
-    function loadScheduleTable(forceRoomReload = true) {
+    function captureWindowScrollPosition() {
+        return {
+            left: window.pageXOffset || document.documentElement.scrollLeft || 0,
+            top: window.pageYOffset || document.documentElement.scrollTop || 0
+        };
+    }
+
+    function restoreWindowScrollPosition(position) {
+        if (!position) {
+            return;
+        }
+
+        window.scrollTo(
+            Number(position.left || 0),
+            Number(position.top || 0)
+        );
+    }
+
+    function captureMatrixScrollState() {
+        const wrap = $("#matrixContainer .matrix-scroll-wrap").get(0);
+        return {
+            left: wrap ? wrap.scrollLeft : 0,
+            top: wrap ? wrap.scrollTop : 0
+        };
+    }
+
+    function restoreMatrixScrollState(state) {
+        if (!state) {
+            return;
+        }
+
+        const wrap = $("#matrixContainer .matrix-scroll-wrap").get(0);
+        if (!wrap) {
+            return;
+        }
+
+        wrap.scrollLeft = Number(state.left || 0);
+        wrap.scrollTop = Number(state.top || 0);
+    }
+
+    function loadScheduleTable(forceRoomReload = true, options = {}) {
+        const preservePagePosition = options.preservePagePosition !== false;
+        const pagePosition = preservePagePosition ? captureWindowScrollPosition() : null;
 
         const pid = $("#prospectus_id").val();
         const ay  = $("#ay_id").val();
@@ -2689,6 +2751,11 @@ while ($ay = $ayQ->fetch_assoc()) {
                         $("#scheduleListContainer").html(rows);
                         initializeScheduleTablePan();
                         applyScheduleSearchFilter();
+                        if (pagePosition) {
+                            window.requestAnimationFrame(function () {
+                                restoreWindowScrollPosition(pagePosition);
+                            });
+                        }
                     }
                 ).fail(function (xhr) {
                     if (xhr.statusText === "abort") {
@@ -2698,8 +2765,75 @@ while ($ay = $ayQ->fetch_assoc()) {
                         "<div class='text-center text-danger py-4'>Failed to load classes.</div>"
                     );
                     console.error(xhr.responseText);
+                    if (pagePosition) {
+                        window.requestAnimationFrame(function () {
+                            restoreWindowScrollPosition(pagePosition);
+                        });
+                    }
                 });
             });
+    }
+
+    function loadRoomTimeMatrix(openModal = false, options = {}) {
+        const preservePosition = options.preservePosition !== false;
+        const pagePosition = preservePosition ? captureWindowScrollPosition() : null;
+        const matrixScrollState = preservePosition ? captureMatrixScrollState() : null;
+        const ay = $("#ay_id").val();
+        const sem = $("#semester").val();
+
+        if (!ay || !sem) {
+            if (openModal) {
+                Swal.fire(
+                    "Missing Filters",
+                    "Please select Academic Year and Semester first.",
+                    "warning"
+                );
+            }
+            return;
+        }
+
+        if (openModal) {
+            $("#matrixModal").modal("show");
+        }
+
+        $("#matrixContainer").html(`
+            <div class="text-center text-muted py-5">
+              Loading room utilization for ${escapeHtml(scheduleWindowLabel())}...
+            </div>
+        `);
+
+        $.post(
+            "../backend/load_room_time_matrix.php",
+            {
+                ay_id: ay,
+                semester: sem
+            },
+            function (html) {
+                $("#matrixContainer").html(html);
+                if (preservePosition) {
+                    window.requestAnimationFrame(function () {
+                        restoreMatrixScrollState(matrixScrollState);
+                        restoreWindowScrollPosition(pagePosition);
+                    });
+                }
+            }
+        ).fail(function (xhr) {
+            $("#matrixContainer").html(
+                "<div class='text-danger text-center'>Failed to load matrix.</div>"
+            );
+            console.error(xhr.responseText);
+            if (pagePosition) {
+                window.requestAnimationFrame(function () {
+                    restoreWindowScrollPosition(pagePosition);
+                });
+            }
+        });
+    }
+
+    function refreshRoomTimeMatrixIfOpen() {
+        if ($("#matrixModal").hasClass("show")) {
+            loadRoomTimeMatrix(false);
+        }
     }
 
     function initializeScheduleTablePan() {
@@ -3263,26 +3397,19 @@ while ($ay = $ayQ->fetch_assoc()) {
         }, 120);
     }
 
-    function clearScheduleForOffering(offeringId, subjectLabel) {
+    function clearScheduleForOffering(offeringId, subjectLabel, options = {}) {
         if (!offeringId) {
             Swal.fire("Error", "Missing offering reference.", "error");
             return;
         }
 
         const label = subjectLabel || "this class";
+        const confirmTitle = options.confirmTitle || "Clear Schedule?";
+        const confirmHtml = options.confirmHtml || `This will remove all saved schedules for <b>${escapeHtml(label)}</b>, including paired lecture and laboratory rows if this offering has both.`;
+        const confirmButtonText = options.confirmButtonText || "Yes, clear it";
+        const successTitle = options.successTitle || "Schedule Cleared";
 
-        Swal.fire({
-            icon: "warning",
-            title: "Clear Schedule?",
-            html: `This will remove all saved schedules for <b>${escapeHtml(label)}</b>.`,
-            showCancelButton: true,
-            confirmButtonText: "Yes, clear it",
-            cancelButtonText: "Cancel",
-            allowOutsideClick: false,
-            customClass: { popup: "swal-top" }
-        }).then(function (result) {
-            if (!result.isConfirmed) return;
-
+        const runClearRequest = function () {
             $.ajax({
                 url: "../backend/query_class_schedule.php",
                 type: "POST",
@@ -3295,7 +3422,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     if (res.status === "ok") {
                         Swal.fire({
                             icon: "success",
-                            title: "Schedule Cleared",
+                            title: successTitle,
                             timer: 1200,
                             showConfirmButton: false
                         });
@@ -3306,6 +3433,10 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                         setTimeout(function () {
                             loadScheduleTable();
+                            refreshRoomTimeMatrixIfOpen();
+                            if (typeof options.afterSuccess === "function") {
+                                options.afterSuccess(res);
+                            }
                         }, 300);
                         return;
                     }
@@ -3316,6 +3447,20 @@ while ($ay = $ayQ->fetch_assoc()) {
                     Swal.fire("Error", xhr.responseText || "Failed to clear schedule.", "error");
                 }
             });
+        };
+
+        Swal.fire({
+            icon: "warning",
+            title: confirmTitle,
+            html: confirmHtml,
+            showCancelButton: true,
+            confirmButtonText: confirmButtonText,
+            cancelButtonText: "Cancel",
+            allowOutsideClick: false,
+            customClass: { popup: "swal-top" }
+        }).then(function (result) {
+            if (!result.isConfirmed) return;
+            runClearRequest();
         });
     }
 
@@ -3591,43 +3736,49 @@ scheduleAutoLoad(true);
 
 
 $("#btnShowMatrix").on("click", function () {
+  loadRoomTimeMatrix(true);
+});
 
-  const ay  = $("#ay_id").val();
-  const sem = $("#semester").val();
+$(document).on("click", ".matrix-entry", function (event) {
+  const entry = $(this);
+  const offeringId = Number(entry.data("offeringId") || 0);
+  const removable = String(entry.attr("data-removable") || entry.data("removable") || "0") === "1";
+  const subCode = String(entry.data("subCode") || "").trim();
+  const sectionName = String(entry.data("sectionName") || "").trim();
+  const typeLabel = String(entry.data("typeLabel") || "").trim();
+  const collegeCode = String(entry.data("collegeCode") || "").trim();
+  const labelParts = [subCode, sectionName].filter(Boolean);
+  const offeringLabel = labelParts.join(" - ") || "this offering";
 
-  if (!ay || !sem) {
-    Swal.fire(
-      "Missing Filters",
-      "Please select Academic Year and Semester first.",
-      "warning"
-    );
+  event.preventDefault();
+
+  if (!removable || !offeringId) {
+    const ownerLine = collegeCode ? ` It belongs to <b>${escapeHtml(collegeCode)}</b>.` : "";
+    Swal.fire({
+      icon: "info",
+      title: "View-Only Schedule",
+      html: `This matrix entry cannot be removed from your scheduler account.${ownerLine}`,
+      customClass: { popup: "swal-top" }
+    });
     return;
   }
 
-  $("#matrixModal").modal("show");
-
-  $("#matrixContainer").html(`
-    <div class="text-center text-muted py-5">
-      Loading room utilization for ${escapeHtml(scheduleWindowLabel())}...
-    </div>
-  `);
-
-  $.post(
-    "../backend/load_room_time_matrix.php",
-    {
-      ay_id: ay,
-      semester: sem
-    },
-    function (html) {
-      $("#matrixContainer").html(html);
-    }
-  ).fail(function (xhr) {
-    $("#matrixContainer").html(
-      "<div class='text-danger text-center'>Failed to load matrix.</div>"
-    );
-    console.error(xhr.responseText);
+  const blockLabel = typeLabel ? `<b>${escapeHtml(typeLabel)}</b>` : "this";
+  clearScheduleForOffering(offeringId, offeringLabel, {
+    confirmTitle: "Remove Offering Schedule?",
+    confirmHtml: `You selected the ${blockLabel} block for <b>${escapeHtml(offeringLabel)}</b> in the Room-Time Matrix.<br><br>Removing it here clears the <b>entire offering schedule</b>, including any paired lecture and laboratory rows.`,
+    confirmButtonText: "Remove Entire Schedule",
+    successTitle: "Offering Schedule Removed"
   });
+});
 
+$(document).on("keydown", ".matrix-entry", function (event) {
+  if (event.key !== "Enter" && event.key !== " ") {
+    return;
+  }
+
+  event.preventDefault();
+  $(this).trigger("click");
 });
 
 

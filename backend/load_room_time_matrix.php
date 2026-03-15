@@ -172,6 +172,7 @@ $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
 
 $schedSql = "
     SELECT
+        o.offering_id,
         cs.schedule_id,
         cs.room_id,
         cs.schedule_type,
@@ -180,7 +181,8 @@ $schedSql = "
         cs.days_json,
         sm.sub_code,
         sec.section_name,
-        c.college_code
+        c.college_code,
+        p.college_id AS offering_college_id
     FROM tbl_class_schedule cs
     INNER JOIN tbl_prospectus_offering o ON o.offering_id = cs.offering_id
     {$liveOfferingJoins}
@@ -214,6 +216,7 @@ while ($row = $schedRes->fetch_assoc()) {
     }
 
     $item = [
+        'offering_id' => (int)$row['offering_id'],
         'schedule_id' => (int)$row['schedule_id'],
         'schedule_type' => strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))),
         'time_start' => (string)$row['time_start'],
@@ -221,7 +224,8 @@ while ($row = $schedRes->fetch_assoc()) {
         'sub_code' => (string)$row['sub_code'],
         'section_name' => (string)$row['section_name'],
         'college_code' => (string)($row['college_code'] ?? ''),
-        'subject_class' => subject_color_class($row['sub_code'] ?? '')
+        'subject_class' => subject_color_class($row['sub_code'] ?? ''),
+        'can_remove' => $role === 'scheduler' && (int)($row['offering_college_id'] ?? 0) === $college_id
     ];
 
     foreach ($decodedDays as $dayToken) {
@@ -248,6 +252,9 @@ echo "<div class='mb-3 small text-muted matrix-meta-note'>";
 echo "This matrix follows the " . h($policySourceLabel) . " window of " . h($policyWindowLabel) . ".";
 echo " Time labels use 12-hour format, and each column is a 30-minute time block.";
 echo " The same subject keeps the same color across the matrix. Shared rooms include schedules from every college using that room.";
+if ($role === 'scheduler') {
+    echo " Click a colored schedule block to remove the entire offering schedule, including paired lecture and laboratory rows.";
+}
 if (!empty($schedulePolicy['blocked_days_label']) && $schedulePolicy['blocked_days_label'] !== 'None') {
     echo " Blocked days: " . h($schedulePolicy['blocked_days_label']) . ".";
 }
@@ -343,9 +350,22 @@ foreach ($rooms as $roomId => $roomLabel) {
             foreach ($currentItems as $item) {
                 $typeLabel = $item['schedule_type'] === 'LAB' ? 'LAB' : 'LEC';
                 $collegeSuffix = $item['college_code'] !== '' ? " | " . $item['college_code'] : '';
+                $entryClass = 'matrix-entry ' . $item['subject_class'] . ($item['can_remove'] ? ' matrix-entry-actionable' : ' matrix-entry-readonly');
+                $entryTitle = trim($item['sub_code'] . ' - ' . $item['section_name']);
 
                 $entriesHtml[] = "
-                    <div class='matrix-entry " . h($item['subject_class']) . "'>
+                    <div
+                        class='" . h($entryClass) . "'
+                        data-offering-id='" . (int)$item['offering_id'] . "'
+                        data-removable='" . ($item['can_remove'] ? "1" : "0") . "'
+                        data-sub-code='" . h($item['sub_code']) . "'
+                        data-section-name='" . h($item['section_name']) . "'
+                        data-type-label='" . h($typeLabel) . "'
+                        data-college-code='" . h($item['college_code']) . "'
+                        title='" . h($item['can_remove'] ? "Click to remove this offering schedule" : "View-only entry from another college scope") . "'
+                        role='button'
+                        tabindex='0'
+                        aria-label='" . h($entryTitle . ' ' . $typeLabel) . "'>
                         <strong>" . h($item['sub_code']) . "</strong><br>
                         <small>" . h($item['section_name']) . " | " . h($typeLabel) . h($collegeSuffix) . "</small>
                     </div>
