@@ -11,7 +11,18 @@
 
 session_start();
 include 'db.php';
+require_once __DIR__ . '/academic_schedule_policy_helper.php';
 header('Content-Type: application/json');
+
+$schedulePolicy = synk_fetch_schedule_policy($conn);
+$selectedCollegeId = (int)($_GET['college_id'] ?? 0);
+$overrideColleges = synk_fetch_colleges_using_schedule_overrides($conn);
+$collegeOverridePolicy = $selectedCollegeId > 0
+    ? synk_fetch_college_schedule_policy_settings($conn, $selectedCollegeId)
+    : null;
+$collegeEffectivePolicy = $selectedCollegeId > 0
+    ? synk_fetch_effective_schedule_policy($conn, $selectedCollegeId)
+    : null;
 
 $sql = "
     SELECT 
@@ -35,12 +46,24 @@ if ($row = mysqli_fetch_assoc($res)) {
 
     echo json_encode([
         'status' => 'success',
+        'current_ay_id' => (int)($row['current_ay_id'] ?? 0),
+        'current_semester' => (int)($row['current_semester'] ?? 0),
         'academic_year' => $row['academic_year'],
-        'semester' => $semester_map[$row['current_semester']] ?? 'Unknown'
+        'semester' => $semester_map[$row['current_semester']] ?? 'Unknown',
+        'schedule_policy' => $schedulePolicy,
+        'override_colleges' => $overrideColleges,
+        'selected_college_id' => $selectedCollegeId,
+        'college_override_policy' => $collegeOverridePolicy,
+        'college_effective_policy' => $collegeEffectivePolicy
     ]);
 } else {
     echo json_encode([
         'status' => 'error',
-        'message' => 'Academic settings not found.'
+        'message' => 'Academic settings not found.',
+        'schedule_policy' => $schedulePolicy,
+        'override_colleges' => $overrideColleges,
+        'selected_college_id' => $selectedCollegeId,
+        'college_override_policy' => $collegeOverridePolicy,
+        'college_effective_policy' => $collegeEffectivePolicy
     ]);
 }

@@ -3,69 +3,276 @@
 |--------------------------------------------------------------------------
 | SAVE ACADEMIC SETTINGS
 |--------------------------------------------------------------------------
-| Purpose:
-| - Overwrites the SINGLE academic settings row
-| - Sets the current Academic Year and Semester globally
-|
-| Expected POST:
-| - ay_id        (int)
-| - semester     (int: 1,2,3)
-|
-| Behavior:
-| - UPDATE existing row
-| - No INSERT
+| Supports:
+| - Global academic term + default scheduling policy
+| - Per-college scheduling policy overrides
 |--------------------------------------------------------------------------
 */
 
 session_start();
 include 'db.php';
+require_once __DIR__ . '/academic_schedule_policy_helper.php';
 header('Content-Type: application/json');
 
+function academic_settings_response(array $payload): void
+{
+    echo json_encode($payload);
+    exit;
+}
+
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'admin') {
-    echo json_encode([
+    academic_settings_response([
         'status' => 'error',
         'message' => 'Unauthorized access.'
     ]);
-    exit;
 }
 
-$ay_id    = intval($_POST['ay_id'] ?? 0);
-$semester = intval($_POST['semester'] ?? 0);
-$user_id  = intval($_SESSION['user_id']);
+$userId = (int)($_SESSION['user_id'] ?? 0);
+$policyScope = trim((string)($_POST['policy_scope'] ?? 'global'));
 
-if ($ay_id <= 0 || !in_array($semester, [1,2,3])) {
-    echo json_encode([
+if ($policyScope === 'college_override') {
+    $collegeId = (int)($_POST['college_id'] ?? 0);
+    $isOverrideEnabled = ((int)($_POST['college_override_enabled'] ?? 0)) === 1;
+
+    if ($collegeId <= 0) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Please select a college for the override policy.'
+        ]);
+    }
+
+    $collegeStmt = $conn->prepare("
+        SELECT college_id
+        FROM tbl_college
+        WHERE college_id = ?
+        LIMIT 1
+    ");
+
+    if (!$collegeStmt) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Unable to validate the selected college.'
+        ]);
+    }
+
+    $collegeStmt->bind_param('i', $collegeId);
+    $collegeStmt->execute();
+    $collegeExists = $collegeStmt->get_result()->fetch_assoc() !== null;
+    $collegeStmt->close();
+
+    if (!$collegeExists) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'The selected college could not be found.'
+        ]);
+    }
+
+    $validation = synk_schedule_policy_validate_payload($_POST);
+    if (empty($validation['ok'])) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => (string)($validation['message'] ?? 'Invalid college override policy.')
+        ]);
+    }
+
+    $saved = synk_save_college_schedule_policy_settings(
+        $conn,
+        $collegeId,
+        (array)($validation['policy'] ?? []),
+        $isOverrideEnabled,
+        $userId
+    );
+
+    if (!$saved) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Failed to save the college scheduling policy override.'
+        ]);
+    }
+
+    academic_settings_response([
+        'status' => 'success',
+        'message' => $isOverrideEnabled
+            ? 'College scheduling policy override updated successfully.'
+            : 'College scheduling policy override saved and set to inherit the global default.',
+        'selected_college_id' => $collegeId,
+        'schedule_policy' => synk_fetch_schedule_policy($conn),
+        'college_override_policy' => synk_fetch_college_schedule_policy_settings($conn, $collegeId),
+        'college_effective_policy' => synk_fetch_effective_schedule_policy($conn, $collegeId)
+    ]);
+}
+
+if ($policyScope === 'academic_term') {
+    $ayId = (int)($_POST['ay_id'] ?? 0);
+    $semester = (int)($_POST['semester'] ?? 0);
+
+    if ($ayId <= 0 || !in_array($semester, [1, 2, 3], true)) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Invalid academic year or semester.'
+        ]);
+    }
+
+    $stmt = $conn->prepare("
+        UPDATE tbl_academic_settings
+        SET current_ay_id = ?,
+            current_semester = ?,
+            updated_by = ?,
+            date_updated = NOW()
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Failed to prepare academic term update.'
+        ]);
+    }
+
+    $stmt->bind_param('iii', $ayId, $semester, $userId);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if (!$ok) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Failed to update the academic term.'
+        ]);
+    }
+
+    academic_settings_response([
+        'status' => 'success',
+        'message' => 'Academic term updated successfully.',
+        'schedule_policy' => synk_fetch_schedule_policy($conn)
+    ]);
+}
+
+if ($policyScope === 'global_policy') {
+    $validation = synk_schedule_policy_validate_payload($_POST);
+    if (empty($validation['ok'])) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => (string)($validation['message'] ?? 'Invalid schedule policy.')
+        ]);
+    }
+
+    $policy = synk_schedule_policy_payload_to_array((array)($validation['policy'] ?? []));
+    synk_schedule_policy_ensure_columns($conn);
+
+    $blockedDaysJson = json_encode($policy['blocked_days']);
+    $blockedTimesJson = json_encode($policy['blocked_times']);
+
+    $stmt = $conn->prepare("
+        UPDATE tbl_academic_settings
+        SET schedule_day_start = ?,
+            schedule_day_end = ?,
+            blocked_schedule_days_json = ?,
+            blocked_schedule_times_json = ?,
+            updated_by = ?,
+            date_updated = NOW()
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Failed to prepare global schedule policy update.'
+        ]);
+    }
+
+    $stmt->bind_param(
+        'ssssi',
+        $policy['day_start'],
+        $policy['day_end'],
+        $blockedDaysJson,
+        $blockedTimesJson,
+        $userId
+    );
+
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    if (!$ok) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Failed to update the global schedule policy.'
+        ]);
+    }
+
+    academic_settings_response([
+        'status' => 'success',
+        'message' => 'Global schedule policy updated successfully.',
+        'schedule_policy' => synk_fetch_schedule_policy($conn)
+    ]);
+}
+
+$ayId = (int)($_POST['ay_id'] ?? 0);
+$semester = (int)($_POST['semester'] ?? 0);
+
+if ($ayId <= 0 || !in_array($semester, [1, 2, 3], true)) {
+    academic_settings_response([
         'status' => 'error',
         'message' => 'Invalid academic year or semester.'
     ]);
-    exit;
 }
 
-/*
-|--------------------------------------------------------------------------
-| OVERWRITE SETTINGS (SINGLE ROW)
-|--------------------------------------------------------------------------
-*/
+$validation = synk_schedule_policy_validate_payload($_POST);
+if (empty($validation['ok'])) {
+    academic_settings_response([
+        'status' => 'error',
+        'message' => (string)($validation['message'] ?? 'Invalid schedule policy.')
+    ]);
+}
+
+$policy = synk_schedule_policy_payload_to_array((array)($validation['policy'] ?? []));
+synk_schedule_policy_ensure_columns($conn);
+
+$blockedDaysJson = json_encode($policy['blocked_days']);
+$blockedTimesJson = json_encode($policy['blocked_times']);
+
 $stmt = $conn->prepare("
     UPDATE tbl_academic_settings
     SET current_ay_id = ?,
         current_semester = ?,
+        schedule_day_start = ?,
+        schedule_day_end = ?,
+        blocked_schedule_days_json = ?,
+        blocked_schedule_times_json = ?,
         updated_by = ?,
         date_updated = NOW()
     LIMIT 1
 ");
-$stmt->bind_param("iii", $ay_id, $semester, $user_id);
 
-if ($stmt->execute()) {
-    echo json_encode([
-        'status' => 'success',
-        'message' => 'Academic settings updated successfully.'
+if (!$stmt) {
+    academic_settings_response([
+        'status' => 'error',
+        'message' => 'Failed to prepare academic settings update.'
     ]);
-} else {
-    echo json_encode([
+}
+
+$stmt->bind_param(
+    'iissssi',
+    $ayId,
+    $semester,
+    $policy['day_start'],
+    $policy['day_end'],
+    $blockedDaysJson,
+    $blockedTimesJson,
+    $userId
+);
+
+$ok = $stmt->execute();
+$stmt->close();
+
+if (!$ok) {
+    academic_settings_response([
         'status' => 'error',
         'message' => 'Failed to update academic settings.'
     ]);
 }
 
-$stmt->close();
+academic_settings_response([
+    'status' => 'success',
+    'message' => 'Academic settings updated successfully.',
+    'schedule_policy' => synk_fetch_schedule_policy($conn)
+]);

@@ -3,6 +3,7 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
+require_once __DIR__ . '/academic_schedule_policy_helper.php';
 
 header('Content-Type: application/json');
 
@@ -79,9 +80,15 @@ function overlap_window_label($candidate, $other)
     return fmt_days($days) . ' ' . fmt_time($start) . '-' . fmt_time($end);
 }
 
-function outside_supported_schedule_window($timeStart, $timeEnd)
+function outside_supported_schedule_window($timeStart, $timeEnd, array $policy)
 {
-    return $timeStart < '07:30:00' || $timeEnd > '17:30:00';
+    return !synk_schedule_policy_is_within_window($timeStart, $timeEnd, $policy)
+        || synk_schedule_policy_blocked_time_overlap($timeStart, $timeEnd, $policy) !== null;
+}
+
+function uses_blocked_schedule_day(array $days, array $policy): bool
+{
+    return !empty(synk_schedule_policy_disallowed_days($days, $policy));
 }
 
 function esc($txt)
@@ -110,6 +117,7 @@ $college_id = (int)($_SESSION['college_id'] ?? 0);
 if ($college_id <= 0) {
     respond('error', 'Missing college context.');
 }
+$schedulePolicy = synk_fetch_effective_schedule_policy($conn, $college_id);
 
 /* ===============================
    INPUTS
@@ -323,8 +331,11 @@ if (!empty($conflicts)) {
         $hitLabel = esc(strtoupper($a['sub_code'])) . " (" . esc($a['section_name']) . ", " . esc($a['schedule_type']) . ")";
         $hitWhen = esc(fmt_days($a['days'])) . " " . esc(fmt_time($a['time_start'])) . "-" . esc(fmt_time($a['time_end']));
         $overlapWhen = esc(overlap_window_label($c, $a));
-        $scheduleWarning = outside_supported_schedule_window($a['time_start'], $a['time_end'])
-            ? "<br><small class='text-warning'>Existing class is stored outside the normal 7:30AM-5:30PM scheduling window.</small>"
+        $scheduleWarning = (
+            outside_supported_schedule_window($a['time_start'], $a['time_end'], $schedulePolicy)
+            || uses_blocked_schedule_day($a['days'], $schedulePolicy)
+        )
+            ? "<br><small class='text-warning'>Existing class is stored outside the configured scheduling policy (" . esc($schedulePolicy['window_label']) . ").</small>"
             : "";
 
         $items[] = "<li><b>{$candLabel}</b> conflicts with <b>{$hitLabel}</b><br><small>Selected: {$candWhen}<br>Existing: {$hitWhen}<br>Overlap: {$overlapWhen}</small>{$scheduleWarning}</li>";

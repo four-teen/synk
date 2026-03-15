@@ -3,6 +3,7 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/academic_schedule_policy_helper.php';
 
 header('Content-Type: application/json');
 
@@ -35,6 +36,8 @@ $target_key = trim((string)($_POST['target_key'] ?? ''));
 if ($college_id <= 0 || $offering_id <= 0 || !in_array($target_type, ['LEC', 'LAB'], true)) {
     respond('error', 'Missing scheduling context.');
 }
+
+$schedulePolicy = synk_fetch_effective_schedule_policy($conn, $college_id);
 
 function day_order() {
     return ['M', 'T', 'W', 'Th', 'F', 'S'];
@@ -635,9 +638,12 @@ foreach ($drafts as $draft) {
 
 $desiredMinutes = desired_weekly_minutes($target_type, $targetDraft, $drafts, $context);
 $patterns = build_schedule_patterns($target_type, $desiredMinutes);
+$patterns = array_values(array_filter($patterns, static function (array $pattern) use ($schedulePolicy): bool {
+    return empty(array_intersect($pattern['days'] ?? [], $schedulePolicy['blocked_days'] ?? []));
+}));
 $candidates = [];
-$dayStart = (7 * 60) + 30;
-$dayEnd = (17 * 60) + 30;
+$dayStart = time_to_minutes((string)($schedulePolicy['day_start'] ?? '07:30:00'));
+$dayEnd = time_to_minutes((string)($schedulePolicy['day_end'] ?? '17:30:00'));
 
 foreach ($patterns as $pattern) {
     $meetingMinutes = (int)($pattern['meeting_minutes'] ?? 0);
@@ -665,6 +671,10 @@ foreach ($patterns as $pattern) {
                 'time_label' => minutes_to_label($start) . ' - ' . minutes_to_label($end),
                 'pattern_label' => $pattern['label']
             ];
+
+            if (synk_schedule_policy_blocked_time_overlap($candidate['time_start'], $candidate['time_end'], $schedulePolicy) !== null) {
+                continue;
+            }
 
             if (candidate_has_conflict($candidate, $snapshotByDay, $context, $drafts, $target_key)) {
                 continue;

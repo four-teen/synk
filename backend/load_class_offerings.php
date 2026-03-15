@@ -50,6 +50,13 @@ function block_badge_html($type, $sequence) {
     return "<span class='badge {$badgeClass} me-1'>{$prefix} {$sequence}</span>";
 }
 
+function contact_hours_value($hours) {
+    $value = (float)$hours;
+    return floor($value) == $value
+        ? number_format($value, 0)
+        : number_format($value, 1);
+}
+
 function offering_schedule_status_badge(array $row): array
 {
     $required = synk_required_minutes_by_type(
@@ -204,6 +211,8 @@ foreach ($grouped as $yearLevel => $rows) {
     echo "          <th>Section</th>";
     echo "          <th>Subject</th>";
     echo "          <th>Description</th>";
+    echo "          <th class='text-center text-nowrap'>LEC Hrs</th>";
+    echo "          <th class='text-center text-nowrap'>LAB Hrs</th>";
     echo "          <th>Days</th>";
     echo "          <th>Time</th>";
     echo "          <th>Room</th>";
@@ -253,6 +262,8 @@ foreach ($grouped as $yearLevel => $rows) {
         echo "  <td>" . htmlspecialchars((string)$row['section_name']) . "</td>";
         echo "  <td class='text-nowrap'>" . htmlspecialchars(strtoupper((string)$row['sub_code'])) . "</td>";
         echo "  <td>" . htmlspecialchars(strtoupper((string)$row['sub_description'])) . "</td>";
+        echo "  <td class='text-center fw-semibold'>" . htmlspecialchars(contact_hours_value($row['lec_units'])) . "</td>";
+        echo "  <td class='text-center fw-semibold'>" . htmlspecialchars(contact_hours_value($row['lab_units'])) . "</td>";
         echo "  <td class='text-center'>" . implode('', $daysParts) . "</td>";
         echo "  <td class='text-center'>" . implode('', $timeParts) . "</td>";
         echo "  <td class='text-center'>" . implode('', $roomParts) . "</td>";

@@ -4,11 +4,9 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/academic_schedule_policy_helper.php';
 
 header('Content-Type: application/json');
-
-define('SYNK_SCHEDULE_DAY_START', '07:30:00');
-define('SYNK_SCHEDULE_DAY_END', '17:30:00');
 
 /* =====================================================
    RESPONSE HELPER
@@ -38,6 +36,7 @@ $college_id = (int)($_SESSION['college_id'] ?? 0);
 if ($college_id <= 0) {
     respond("error", "Missing college context.");
 }
+$schedulePolicy = synk_fetch_effective_schedule_policy($conn, $college_id);
 
 /* =====================================================
    HELPERS
@@ -71,11 +70,35 @@ function normalize_time_input($value) {
     return strlen($value) === 5 ? $value . ':00' : $value;
 }
 
-function validate_time_window($timeStart, $timeEnd, $label) {
-    if ($timeStart < SYNK_SCHEDULE_DAY_START || $timeEnd > SYNK_SCHEDULE_DAY_END) {
+function validate_time_window($timeStart, $timeEnd, $label, array $policy) {
+    if (!synk_schedule_policy_is_within_window($timeStart, $timeEnd, $policy)) {
         respond(
             "error",
-            "{$label} must stay within the supported scheduling window of 7:30 AM to 5:30 PM."
+            "{$label} must stay within the supported scheduling window of " . $policy['window_label'] . "."
+        );
+    }
+}
+
+function validate_schedule_policy($days, $timeStart, $timeEnd, $label, array $policy) {
+    $disallowedDays = synk_schedule_policy_disallowed_days((array)$days, $policy);
+    if (!empty($disallowedDays)) {
+        respond(
+            "error",
+            "{$label} uses blocked day(s): " . implode(', ', $disallowedDays) . "."
+        );
+    }
+
+    validate_time_window($timeStart, $timeEnd, $label, $policy);
+
+    $blockedTime = synk_schedule_policy_blocked_time_overlap($timeStart, $timeEnd, $policy);
+    if ($blockedTime !== null) {
+        respond(
+            "error",
+            "{$label} overlaps the blocked time range of " .
+            synk_schedule_policy_window_label(
+                (string)($blockedTime['start'] ?? ''),
+                (string)($blockedTime['end'] ?? '')
+            ) . "."
         );
     }
 }
@@ -153,6 +176,56 @@ function load_context_live($conn, $offering_id, $college_id) {
     $stmt->bind_param("ii", $offering_id, $college_id);
     $stmt->execute();
     return $stmt->get_result()->fetch_assoc();
+}
+
+function load_scoped_offerings_for_term($conn, $prospectus_id, $ay_id, $semester, $college_id) {
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            o.offering_id,
+            o.ay_id,
+            o.semester,
+            o.status AS offering_status,
+            sec.section_name,
+            sm.sub_code,
+            sm.sub_description
+        FROM tbl_prospectus_offering o
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        WHERE o.prospectus_id = ?
+          AND o.ay_id = ?
+          AND o.semester = ?
+          AND p.college_id = ?
+        ORDER BY sec.section_name ASC, sm.sub_code ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iiii", $prospectus_id, $ay_id, $semester, $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $rows[] = [
+            'offering_id' => (int)$row['offering_id'],
+            'ay_id' => (int)$row['ay_id'],
+            'semester' => (int)$row['semester'],
+            'offering_status' => strtolower(trim((string)($row['offering_status'] ?? 'pending'))),
+            'section_name' => (string)($row['section_name'] ?? ''),
+            'sub_code' => (string)($row['sub_code'] ?? ''),
+            'sub_description' => (string)($row['sub_description'] ?? '')
+        ];
+    }
+
+    $stmt->close();
+    return $rows;
 }
 
 function room_access_table_exists($conn) {
@@ -411,6 +484,85 @@ function load_workload_faculties_for_offering($conn, $offering_id, $ay_id, $seme
 
     $stmt->close();
     return $faculties;
+}
+
+function load_workload_faculty_map_for_offerings($conn, array $offering_ids, $ay_id, $semester) {
+    $map = [];
+    if (empty($offering_ids)) {
+        return $map;
+    }
+
+    $safeIds = array_map('intval', array_values(array_unique($offering_ids)));
+    $sql = "
+        SELECT
+            cs.offering_id,
+            CONCAT(
+                f.last_name,
+                ', ',
+                f.first_name,
+                CASE
+                    WHEN COALESCE(f.ext_name, '') <> '' THEN CONCAT(' ', f.ext_name)
+                    ELSE ''
+                END
+            ) AS faculty_name
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = fw.faculty_id
+        WHERE cs.offering_id IN (" . implode(',', $safeIds) . ")
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+        GROUP BY cs.offering_id, fw.faculty_id, faculty_name
+        ORDER BY faculty_name ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return $map;
+    }
+
+    $stmt->bind_param("ii", $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $offeringId = (int)$row['offering_id'];
+        if (!isset($map[$offeringId])) {
+            $map[$offeringId] = [];
+        }
+
+        $map[$offeringId][] = (string)$row['faculty_name'];
+    }
+
+    $stmt->close();
+    return $map;
+}
+
+function load_schedule_row_counts_for_offerings($conn, array $offering_ids) {
+    $counts = [];
+    if (empty($offering_ids)) {
+        return $counts;
+    }
+
+    $safeIds = array_map('intval', array_values(array_unique($offering_ids)));
+    $sql = "
+        SELECT offering_id, COUNT(*) AS row_count
+        FROM tbl_class_schedule
+        WHERE offering_id IN (" . implode(',', $safeIds) . ")
+        GROUP BY offering_id
+    ";
+
+    $res = $conn->query($sql);
+    if (!($res instanceof mysqli_result)) {
+        return $counts;
+    }
+
+    while ($row = $res->fetch_assoc()) {
+        $counts[(int)$row['offering_id']] = (int)$row['row_count'];
+    }
+
+    return $counts;
 }
 
 function load_other_faculty_workload_rows($conn, $faculty_id, $ay_id, $semester, $offering_id) {
@@ -843,7 +995,7 @@ if (isset($_POST['save_schedule_blocks'])) {
             respond("error", "{$label} must end later than it starts.");
         }
 
-        validate_time_window($timeStart, $timeEnd, $label);
+        validate_schedule_policy($days, $timeStart, $timeEnd, $label, $schedulePolicy);
         validate_room_for_schedule($conn, $roomId, $college_id, (int)$ctx['ay_id'], (int)$ctx['semester'], $rawType);
 
         $normalized[] = [
@@ -1008,6 +1160,124 @@ if (isset($_POST['load_dual_schedule'])) {
 }
 
 /* =====================================================
+   CLEAR ALL SCHEDULES IN CURRENT COLLEGE SCOPE
+===================================================== */
+if (isset($_POST['clear_all_college_schedules'])) {
+    $prospectus_id = (int)($_POST['prospectus_id'] ?? 0);
+    $ay_id = (int)($_POST['ay_id'] ?? 0);
+    $semester = (int)($_POST['semester'] ?? 0);
+
+    if (!$prospectus_id || !$ay_id || !in_array($semester, [1, 2, 3], true)) {
+        respond("error", "Select Prospectus, Academic Year, and Semester first.");
+    }
+
+    $offerings = load_scoped_offerings_for_term($conn, $prospectus_id, $ay_id, $semester, $college_id);
+    if (empty($offerings)) {
+        respond("ok", "No class offerings found for the selected scope.", [
+            "scoped_offering_count" => 0,
+            "clearable_offering_count" => 0,
+            "cleared_offering_count" => 0,
+            "deleted_schedule_row_count" => 0,
+            "reset_offering_count" => 0,
+            "skipped_count" => 0,
+            "skipped" => []
+        ]);
+    }
+
+    $offeringIds = array_map(static function ($offering) {
+        return (int)$offering['offering_id'];
+    }, $offerings);
+
+    $workloadMap = load_workload_faculty_map_for_offerings($conn, $offeringIds, $ay_id, $semester);
+    $scheduleCounts = load_schedule_row_counts_for_offerings($conn, $offeringIds);
+
+    $clearableIds = [];
+    $skipped = [];
+
+    foreach ($offerings as $offering) {
+        $offeringId = (int)$offering['offering_id'];
+        if ($offering['offering_status'] === 'locked') {
+            $skipped[] = [
+                "offering_id" => $offeringId,
+                "sub_code" => (string)$offering['sub_code'],
+                "section_name" => (string)$offering['section_name'],
+                "reason" => "This offering is locked and cannot be cleared in bulk."
+            ];
+            continue;
+        }
+
+        $facultyNames = $workloadMap[$offeringId] ?? [];
+        if (!empty($facultyNames)) {
+            $skipped[] = [
+                "offering_id" => $offeringId,
+                "sub_code" => (string)$offering['sub_code'],
+                "section_name" => (string)$offering['section_name'],
+                "reason" => "Assigned in Faculty Workload to " . implode(', ', $facultyNames) . "."
+            ];
+            continue;
+        }
+
+        $clearableIds[] = $offeringId;
+    }
+
+    $deletedRows = 0;
+    $resetOfferings = 0;
+    $clearedOfferingCount = 0;
+
+    foreach ($clearableIds as $offeringId) {
+        if (($scheduleCounts[$offeringId] ?? 0) > 0) {
+            $clearedOfferingCount++;
+        }
+    }
+
+    if (!empty($clearableIds)) {
+        $safeIds = array_map('intval', array_values(array_unique($clearableIds)));
+        $idList = implode(',', $safeIds);
+
+        $conn->begin_transaction();
+        try {
+            if (!$conn->query("
+                DELETE FROM tbl_class_schedule
+                WHERE offering_id IN ({$idList})
+            ")) {
+                throw new RuntimeException("Failed to clear scoped schedule rows.");
+            }
+            $deletedRows = max(0, (int)$conn->affected_rows);
+
+            if (!$conn->query("
+                UPDATE tbl_prospectus_offering
+                SET status = 'pending'
+                WHERE offering_id IN ({$idList})
+                  AND (status IS NULL OR status != 'locked')
+            ")) {
+                throw new RuntimeException("Failed to reset offering status.");
+            }
+            $resetOfferings = max(0, (int)$conn->affected_rows);
+
+            $conn->commit();
+        } catch (Throwable $e) {
+            $conn->rollback();
+            respond("error", "Failed to clear schedules for the selected scope.");
+        }
+    }
+
+    $status = !empty($skipped) ? "partial" : "ok";
+    $message = ($deletedRows > 0 || $resetOfferings > 0)
+        ? "Schedules cleared for the selected scope."
+        : "No existing schedules were found to clear for the selected scope.";
+
+    respond($status, $message, [
+        "scoped_offering_count" => count($offerings),
+        "clearable_offering_count" => count($clearableIds),
+        "cleared_offering_count" => $clearedOfferingCount,
+        "deleted_schedule_row_count" => $deletedRows,
+        "reset_offering_count" => $resetOfferings,
+        "skipped_count" => count($skipped),
+        "skipped" => $skipped
+    ]);
+}
+
+/* =====================================================
    CLEAR SCHEDULE (LECTURE + LAB)
 ===================================================== */
 if (isset($_POST['clear_schedule'])) {
@@ -1088,7 +1358,8 @@ if (
     !isset($_POST['save_schedule']) &&
     !isset($_POST['save_dual_schedule']) &&
     !isset($_POST['save_schedule_blocks']) &&
-    !isset($_POST['clear_schedule'])
+    !isset($_POST['clear_schedule']) &&
+    !isset($_POST['clear_all_college_schedules'])
 ) {
     respond("error", "Invalid request.");
 }
@@ -1111,7 +1382,7 @@ if (isset($_POST['save_schedule'])) {
         respond("error", "End time must be later than start time.");
     }
 
-    validate_time_window($time_start, $time_end, 'Lecture schedule');
+    validate_schedule_policy($days, $time_start, $time_end, 'Lecture schedule', $schedulePolicy);
 
     $ctx = load_context_live($conn, $offering_id, $college_id);
     if (!$ctx) {
@@ -1224,10 +1495,12 @@ if (isset($_POST['save_dual_schedule'])) {
             respond("error", "{$type} end time must be later than start.");
         }
 
-        validate_time_window(
+        validate_schedule_policy(
+            $days,
             $timeStart,
             $timeEnd,
-            $type === 'LAB' ? 'Laboratory schedule' : 'Lecture schedule'
+            $type === 'LAB' ? 'Laboratory schedule' : 'Lecture schedule',
+            $schedulePolicy
         );
 
         $norm[] = [

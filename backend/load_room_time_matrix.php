@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/academic_schedule_policy_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
     echo "<div class='text-danger text-center'>Unauthorized access.</div>";
@@ -34,12 +35,42 @@ if ($college_id <= 0 || $ay_id <= 0 || !in_array($semester, [1, 2, 3], true)) {
     exit;
 }
 
+$schedulePolicy = synk_fetch_effective_schedule_policy($conn, $college_id);
+
 function h($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
-function time_compact_label($time) {
-    return date("H:i", strtotime($time));
+function time_policy_label($time) {
+    return synk_schedule_policy_time_label((string)$time);
+}
+
+function build_policy_time_slots(array $schedulePolicy, int $slotMinutes = 30): array {
+    $slotMinutes = max(5, $slotMinutes);
+    $dayStart = synk_schedule_policy_normalize_time((string)($schedulePolicy['day_start'] ?? ''), '07:30:00');
+    $dayEnd = synk_schedule_policy_normalize_time((string)($schedulePolicy['day_end'] ?? ''), '17:30:00');
+    $cursor = strtotime($dayStart);
+    $end = strtotime($dayEnd);
+
+    if ($cursor === false || $end === false || $cursor >= $end) {
+        return [];
+    }
+
+    $slots = [];
+    while ($cursor < $end) {
+        $slotEnd = min(strtotime("+{$slotMinutes} minutes", $cursor), $end);
+        if ($slotEnd === false || $slotEnd <= $cursor) {
+            break;
+        }
+
+        $slots[] = [
+            'start' => date("H:i:s", $cursor),
+            'end' => date("H:i:s", $slotEnd)
+        ];
+        $cursor = $slotEnd;
+    }
+
+    return $slots;
 }
 
 function normalize_day_token($day) {
@@ -81,16 +112,11 @@ if (!$hasAccessTable || $hasAccessTable->num_rows === 0) {
     exit;
 }
 
-$timeSlots = [];
-$cursor = strtotime("07:30");
-$end = strtotime("17:30");
-
-while ($cursor < $end) {
-    $timeSlots[] = [
-        'start' => date("H:i:s", $cursor),
-        'end' => date("H:i:s", strtotime("+30 minutes", $cursor))
-    ];
-    $cursor = strtotime("+30 minutes", $cursor);
+// Build the matrix columns directly from the effective schedule policy window.
+$timeSlots = build_policy_time_slots($schedulePolicy, 30);
+if (empty($timeSlots)) {
+    echo "<div class='text-danger text-center'>Invalid scheduling window for the selected policy.</div>";
+    exit;
 }
 
 $roomsStmt = $conn->prepare("
@@ -209,8 +235,25 @@ while ($row = $schedRes->fetch_assoc()) {
 }
 $schedStmt->close();
 
+$policySourceLabel = trim((string)($schedulePolicy['source_label'] ?? 'Scheduling policy'));
+$policyWindowLabel = trim((string)($schedulePolicy['window_label'] ?? ''));
+if ($policyWindowLabel === '') {
+    $policyWindowLabel = synk_schedule_policy_window_label(
+        (string)($schedulePolicy['day_start'] ?? '07:30:00'),
+        (string)($schedulePolicy['day_end'] ?? '17:30:00')
+    );
+}
+
 echo "<div class='mb-3 small text-muted matrix-meta-note'>";
-echo "Each column is a 30-minute time block. The same subject keeps the same color across the matrix. Shared rooms include schedules from every college using that room.";
+echo "This matrix follows the " . h($policySourceLabel) . " window of " . h($policyWindowLabel) . ".";
+echo " Time labels use 12-hour format, and each column is a 30-minute time block.";
+echo " The same subject keeps the same color across the matrix. Shared rooms include schedules from every college using that room.";
+if (!empty($schedulePolicy['blocked_days_label']) && $schedulePolicy['blocked_days_label'] !== 'None') {
+    echo " Blocked days: " . h($schedulePolicy['blocked_days_label']) . ".";
+}
+if (!empty($schedulePolicy['blocked_times_label']) && $schedulePolicy['blocked_times_label'] !== 'None') {
+    echo " Blocked times: " . h($schedulePolicy['blocked_times_label']) . ".";
+}
 echo "</div>";
 
 echo "<div class='matrix-shell'>";
@@ -228,7 +271,7 @@ echo "<th class='matrix-room'>Room</th>";
 echo "<th class='matrix-day'>Day</th>";
 
 foreach ($timeSlots as $slot) {
-    echo "<th class='text-center matrix-slot-header'><div class='matrix-time-slot'><span>" . h(time_compact_label($slot['start'])) . "</span><span>" . h(time_compact_label($slot['end'])) . "</span></div></th>";
+    echo "<th class='text-center matrix-slot-header'><div class='matrix-time-slot'><span>" . h(time_policy_label($slot['start'])) . "</span><span>" . h(time_policy_label($slot['end'])) . "</span></div></th>";
 }
 
 echo "</tr></thead><tbody>";
