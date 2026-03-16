@@ -77,7 +77,7 @@ $data = [];
 while ($row = $res->fetch_assoc()) {
     $data[] = [
         "faculty" => $row['faculty_name'],
-        "units"   => (int)$row['total_units']
+        "units"   => round((float)($row['total_units'] ?? 0), 2)
     ];
 }
 

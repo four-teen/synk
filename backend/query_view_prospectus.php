@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/schedule_block_helper.php';
 
 header('Content-Type: application/json');
 
@@ -23,6 +24,21 @@ $pid = intval($_GET['prospectus_id'] ?? 0);
 if ($pid <= 0) {
     echo json_encode(["error" => "Invalid prospectus id"]);
     exit;
+}
+
+function normalize_prospectus_subject_values(float $lecHours, float $labValue, ?float $storedTotalUnits = null): array
+{
+    $safeLecHours = max(0.0, $lecHours);
+    $displayLabHours = round(
+        synk_lab_contact_hours($safeLecHours, max(0.0, $labValue), (float)($storedTotalUnits ?? 0.0)),
+        2
+    );
+
+    return [
+        'lec_units' => round($safeLecHours, 2),
+        'lab_units' => $displayLabHours,
+        'total_units' => round(synk_subject_units_total($safeLecHours, $displayLabHours, 0.0), 2)
+    ];
 }
 
 if ($role === 'scheduler') {
@@ -117,17 +133,18 @@ while ($row = $detailRes->fetch_assoc()) {
         $subjects[$year][$sem] = [];
     }
 
-    $lec = (int)($row['lec_units'] ?? 0);
-    $lab = (int)($row['lab_units'] ?? 0);
+    $normalized = normalize_prospectus_subject_values(
+        (float)($row['lec_units'] ?? 0),
+        (float)($row['lab_units'] ?? 0),
+        isset($row['total_units']) && $row['total_units'] !== null ? (float)$row['total_units'] : null
+    );
 
     $subjects[$year][$sem][] = [
         'sub_code' => $row['sub_code'],
         'sub_description' => $row['sub_description'],
-        'lec_units' => $lec,
-        'lab_units' => $lab,
-        'total_units' => isset($row['total_units']) && $row['total_units'] !== null
-            ? (int)$row['total_units']
-            : ($lec + $lab),
+        'lec_units' => $normalized['lec_units'],
+        'lab_units' => $normalized['lab_units'],
+        'total_units' => $normalized['total_units'],
         'prerequisites' => trim((string)($row['prerequisites'] ?? '')) !== ''
             ? trim((string)$row['prerequisites'])
             : 'None',

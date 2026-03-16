@@ -3,6 +3,7 @@ session_start();
 ob_start();
 
 include '../backend/db.php';
+require_once __DIR__ . '/schedule_block_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
     echo "ERROR|Unauthorized access.";
@@ -99,6 +100,32 @@ function can_access_ps($conn, $ps_id, $role, $myCollege) {
     return $ok;
 }
 
+function prospectus_total_units_from_hours(float $lecHours, float $labHours): float
+{
+    return round(synk_subject_units_total($lecHours, $labHours, 0.0), 2);
+}
+
+function prospectus_display_values(float $lecHours, float $labValue, ?float $storedTotalUnits = null): array
+{
+    $safeLecHours = max(0.0, $lecHours);
+    $displayLabHours = round(
+        synk_lab_contact_hours($safeLecHours, max(0.0, $labValue), (float)($storedTotalUnits ?? 0.0)),
+        2
+    );
+
+    return [
+        'lec_hours' => round($safeLecHours, 2),
+        'lab_hours' => $displayLabHours,
+        'total_units' => prospectus_total_units_from_hours($safeLecHours, $displayLabHours)
+    ];
+}
+
+function prospectus_number_display($value): string
+{
+    $formatted = number_format((float)$value, 2, '.', '');
+    return rtrim(rtrim($formatted, '0'), '.');
+}
+
 // ======================================================
 // EDIT SUBJECT ADDED TO PROSPECTUS
 // ======================================================
@@ -126,9 +153,9 @@ if (isset($_POST['update_prospectus_subject'])) {
     $ps_id  = intval($_POST['ps_id'] ?? 0);
     $sub_id = intval($_POST['sub_id'] ?? 0);
 
-    $lec   = intval($_POST['lec_units'] ?? 0);
-    $lab   = intval($_POST['lab_units'] ?? 0);
-    $total = intval($_POST['total_units'] ?? ($lec + $lab));
+    $lec   = (float)($_POST['lec_units'] ?? 0);
+    $lab   = (float)($_POST['lab_units'] ?? 0);
+    $total = prospectus_total_units_from_hours($lec, $lab);
     $sort  = intval($_POST['sort_order'] ?? 1);
 
     $prereq_text = $_POST['prerequisites'] ?? '';
@@ -142,12 +169,9 @@ if (isset($_POST['update_prospectus_subject'])) {
         echo "ERROR|Unauthorized subject access.|Update blocked.";
         exit;
     }
-    if ($lec < 0 || $lab < 0 || $total < 0 || $sort < 1) {
+    if ($lec < 0 || $lab < 0 || $sort < 1) {
         echo "ERROR|Invalid input|Units and sort order are invalid.";
         exit;
-    }
-    if ($total < ($lec + $lab)) {
-        $total = $lec + $lab;
     }
 
     $sql = "UPDATE tbl_prospectus_subjects
@@ -155,7 +179,7 @@ if (isset($_POST['update_prospectus_subject'])) {
                 prerequisites = ?, prerequisite_sub_ids = ?
             WHERE ps_id = ?";
     $stmt = $conn->prepare($sql);
-    $stmt->bind_param("iiiiissi", $sub_id, $lec, $lab, $total, $sort, $prereq_text, $prereq_ids, $ps_id);
+    $stmt->bind_param("idddissi", $sub_id, $lec, $lab, $total, $sort, $prereq_text, $prereq_ids, $ps_id);
 
     if ($stmt->execute()) {
         echo "OK|UPDATED|Subject updated successfully.";
@@ -579,9 +603,9 @@ if (isset($_POST['save_prospectus_subject'])) {
 
     $pys_id        = intval($_POST['pys_id'] ?? 0);
     $sub_id        = intval($_POST['sub_id'] ?? 0);
-    $lec_units     = intval($_POST['lec_units'] ?? 0);
-    $lab_units     = intval($_POST['lab_units'] ?? 0);
-    $total_units   = intval($_POST['total_units'] ?? 0); // NEW FIELD
+    $lec_units     = (float)($_POST['lec_units'] ?? 0);
+    $lab_units     = (float)($_POST['lab_units'] ?? 0);
+    $total_units   = prospectus_total_units_from_hours($lec_units, $lab_units);
     $sort_order    = intval($_POST['sort_order'] ?? 1);
     $prerequisites = trim($_POST['prerequisites'] ?? '');
     $prereq_ids_json = $_POST['prerequisite_sub_ids'] ?? null;
@@ -594,12 +618,9 @@ if (isset($_POST['save_prospectus_subject'])) {
         echo "ERROR|0|Unauthorized Year/Sem access.";
         exit;
     }
-    if ($lec_units < 0 || $lab_units < 0 || $total_units < 0 || $sort_order < 1) {
+    if ($lec_units < 0 || $lab_units < 0 || $sort_order < 1) {
         echo "ERROR|0|Invalid units or sort order.";
         exit;
-    }
-    if ($total_units < ($lec_units + $lab_units)) {
-        $total_units = $lec_units + $lab_units;
     }
 
     global $conn;
@@ -636,7 +657,7 @@ if (isset($_POST['save_prospectus_subject'])) {
     }
 
 $stmt->bind_param(
-    "iiiiissi",
+    "iidddssi",
     $pys_id,
     $sub_id,
     $lec_units,
@@ -763,11 +784,17 @@ if (isset($_POST['load_year_sem'])) {
         $ctr             = 1;
 
             while ($s = $sub_res->fetch_assoc()) {
-                $lecu   = (int)$s['lec_units'];
-                $labu   = (int)$s['lab_units'];
-                $t_units = isset($s['total_units']) ? (int)$s['total_units'] : ($lecu + $labu);
-                $total_lec_sum += $lecu;
-                $total_lab_sum += $labu;
+                $lecu   = (float)$s['lec_units'];
+                $labu   = (float)$s['lab_units'];
+                $storedTotal = isset($s['total_units']) && $s['total_units'] !== null
+                    ? (float)$s['total_units']
+                    : null;
+                $displayValues = prospectus_display_values($lecu, $labu, $storedTotal);
+                $displayLecHours = $displayValues['lec_hours'];
+                $displayLabHours = $displayValues['lab_hours'];
+                $t_units = $displayValues['total_units'];
+                $total_lec_sum += $displayLecHours;
+                $total_lab_sum += $displayLabHours;
                 $total_units_sum += $t_units;
 
                 $ps_id   = $s['ps_id'];
@@ -780,9 +807,9 @@ if (isset($_POST['load_year_sem'])) {
                     <td class="text-center">' . $ctr++ . '</td>
                     <td>' . $code . '</td>
                     <td>' . $title . '</td>
-                    <td class="text-center">' . $lecu . '</td>
-                    <td class="text-center">' . $labu . '</td>
-                    <td class="text-center">' . $t_units . '</td>
+                    <td class="text-center">' . prospectus_number_display($displayLecHours) . '</td>
+                    <td class="text-center">' . prospectus_number_display($displayLabHours) . '</td>
+                    <td class="text-center">' . prospectus_number_display($t_units) . '</td>
                     <td>' . $prereq . '</td>
                     <td class="text-center text-nowrap">
                       <!-- EDIT (NEW) -->
@@ -833,7 +860,7 @@ if (isset($_POST['load_year_sem'])) {
                     </span>
 
                     <span class="badge bg-label-primary ms-2">
-                        Total Units: <?= $total_units_sum ?>
+                        Total Units: <?= prospectus_number_display($total_units_sum) ?>
                     </span>
 
                 </button>
@@ -872,8 +899,8 @@ if (isset($_POST['load_year_sem'])) {
                       <th style="width: 40px;" class="text-center">#</th>
                       <th style="width: 120px;">Course Code</th>
                       <th>Descriptive Title</th>
-                      <th style="width: 70px;" class="text-center">Lec</th>
-                      <th style="width: 70px;" class="text-center">Lab</th>
+                      <th style="width: 70px;" class="text-center">Lec Hrs</th>
+                      <th style="width: 70px;" class="text-center">Lab Hrs</th>
                       <th style="width: 80px;" class="text-center">Units</th>
                       <th style="width: 150px;">Pre-Requisites</th>
                       <th style="width: 60px;" class="text-center">Action</th>
@@ -885,9 +912,9 @@ if (isset($_POST['load_year_sem'])) {
                   <tfoot>
                     <tr>
                       <th colspan="3" class="text-end">Totals</th>
-                      <th class="text-center"><?= $total_lec_sum ?></th>
-                      <th class="text-center"><?= $total_lab_sum ?></th>
-                      <th class="text-center"><?= $total_units_sum ?></th>
+                      <th class="text-center"><?= prospectus_number_display($total_lec_sum) ?></th>
+                      <th class="text-center"><?= prospectus_number_display($total_lab_sum) ?></th>
+                      <th class="text-center"><?= prospectus_number_display($total_units_sum) ?></th>
                       <th colspan="2"></th>
                     </tr>
                   </tfoot>

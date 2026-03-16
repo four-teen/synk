@@ -89,6 +89,11 @@ table.prospectus-table td {
     <script src="../assets/js/dashboards-analytics.js"></script>
 <script>
 
+function formatUnits(value) {
+  const numeric = Number(value) || 0;
+  return Number.isInteger(numeric) ? String(numeric) : numeric.toFixed(2).replace(/\.?0+$/, "");
+}
+
 function renderSemesterTable(list) {
 
   let lecSum = 0, labSum = 0, unitSum = 0;
@@ -105,17 +110,21 @@ function renderSemesterTable(list) {
     `;
   } else {
     list.forEach(r => {
-      lecSum  += parseInt(r.lec_units) || 0;
-      labSum  += parseInt(r.lab_units) || 0;
-      unitSum += parseInt(r.total_units) || 0;
+      const lec = Number(r.lec_units) || 0;
+      const lab = Number(r.lab_units) || 0;
+      const totalUnits = Number(r.total_units) || 0;
+
+      lecSum  += lec;
+      labSum  += lab;
+      unitSum += totalUnits;
 
       rows += `
         <tr>
           <td>${r.sub_code}</td>
           <td>${r.sub_description}</td>
-          <td class="text-center">${r.lec_units}</td>
-          <td class="text-center">${r.lab_units}</td>
-          <td class="text-center">${r.total_units}</td>
+          <td class="text-center">${formatUnits(lec)}</td>
+          <td class="text-center">${formatUnits(lab)}</td>
+          <td class="text-center">${formatUnits(totalUnits)}</td>
           <td>${r.prerequisites || 'None'}</td>
         </tr>
       `;
@@ -124,9 +133,9 @@ function renderSemesterTable(list) {
     rows += `
       <tr class="total-row">
         <td colspan="2" class="text-end">Total</td>
-        <td class="text-center">${lecSum}</td>
-        <td class="text-center">${labSum}</td>
-        <td class="text-center">${unitSum}</td>
+        <td class="text-center">${formatUnits(lecSum)}</td>
+        <td class="text-center">${formatUnits(labSum)}</td>
+        <td class="text-center">${formatUnits(unitSum)}</td>
         <td></td>
       </tr>
     `;
@@ -139,8 +148,8 @@ function renderSemesterTable(list) {
           <tr>
             <th style="width:120px;">Course Code</th>
             <th>Course Title</th>
-            <th class="text-center" style="width:60px;">Lec</th>
-            <th class="text-center" style="width:60px;">Lab</th>
+            <th class="text-center" style="width:60px;">Lec Hrs</th>
+            <th class="text-center" style="width:60px;">Lab Hrs</th>
             <th class="text-center" style="width:70px;">Units</th>
             <th style="width:140px;">Pre-Req</th>
           </tr>

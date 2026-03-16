@@ -812,7 +812,7 @@ CREATE TABLE `tbl_prospectus_subjects` (
   `sub_id` int(10) UNSIGNED NOT NULL,
   `lec_units` tinyint(3) UNSIGNED DEFAULT 0,
   `lab_units` tinyint(3) UNSIGNED DEFAULT 0,
-  `total_units` tinyint(4) DEFAULT NULL,
+  `total_units` decimal(6,2) DEFAULT NULL,
   `prerequisites` varchar(255) DEFAULT NULL,
   `sort_order` int(10) UNSIGNED DEFAULT 1
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

@@ -422,21 +422,22 @@ $prog = $conn->query("
           <!-- UNITS -->
           <div class="row">
               <div class="col-md-3 mb-3">
-                  <label class="form-label">Lec</label>
+                  <label class="form-label">Lec Hours</label>
                   <input type="number" name="lec_units" id="ps_lec_units"
-                         class="form-control calc-units" min="0" value="0">
+                         class="form-control calc-units" min="0" step="1" value="0">
               </div>
 
               <div class="col-md-3 mb-3">
-                  <label class="form-label">Lab</label>
+                  <label class="form-label">Lab Hours</label>
                   <input type="number" name="lab_units" id="ps_lab_units"
-                         class="form-control calc-units" min="0" value="0">
+                         class="form-control calc-units" min="0" step="1" value="0">
               </div>
 
               <div class="col-md-3 mb-3">
                   <label class="form-label">Total Units</label>
                   <input type="number" name="total_units" id="ps_total_units"
-                         class="form-control" min="0" value="0">
+                         class="form-control" min="0" step="0.01" value="0" readonly>
+                  <small class="text-muted">Auto: Lec Hours + (Lab Hours / 3)</small>
               </div>
 
               <div class="col-md-3 mb-3">
@@ -532,18 +533,19 @@ $prog = $conn->query("
           <!-- UNITS -->
           <div class="row">
             <div class="col-md-3 mb-3">
-              <label class="form-label">Lec</label>
-              <input type="number" name="lec_units" id="edit_lec_units" class="form-control" min="0" value="0">
+              <label class="form-label">Lec Hours</label>
+              <input type="number" name="lec_units" id="edit_lec_units" class="form-control" min="0" step="1" value="0">
             </div>
 
             <div class="col-md-3 mb-3">
-              <label class="form-label">Lab</label>
-              <input type="number" name="lab_units" id="edit_lab_units" class="form-control" min="0" value="0">
+              <label class="form-label">Lab Hours</label>
+              <input type="number" name="lab_units" id="edit_lab_units" class="form-control" min="0" step="1" value="0">
             </div>
 
             <div class="col-md-3 mb-3">
               <label class="form-label">Total Units</label>
-              <input type="number" name="total_units" id="edit_total_units" class="form-control" min="0" value="0">
+              <input type="number" name="total_units" id="edit_total_units" class="form-control" min="0" step="0.01" value="0" readonly>
+              <small class="text-muted">Auto: Lec Hours + (Lab Hours / 3)</small>
             </div>
 
             <div class="col-md-3 mb-3">
@@ -672,6 +674,47 @@ $.ajaxPrefilter(function (options) {
     options.data = { csrf_token: CSRF_TOKEN };
 });
 
+const LAB_HOURS_PER_UNIT = 3;
+
+function roundProspectusUnits(value) {
+    return Math.round((Number(value) + Number.EPSILON) * 100) / 100;
+}
+
+function formatProspectusUnits(value) {
+    const rounded = roundProspectusUnits(Math.max(0, Number(value) || 0));
+    return Number.isInteger(rounded) ? String(rounded) : rounded.toFixed(2).replace(/\.?0+$/, "");
+}
+
+function syncProspectusTotalUnits(lecSelector, labSelector, totalSelector) {
+    const lecHours = Math.max(0, Number($(lecSelector).val()) || 0);
+    const labHours = Math.max(0, Number($(labSelector).val()) || 0);
+    const totalUnits = roundProspectusUnits(lecHours + (labHours / LAB_HOURS_PER_UNIT));
+
+    $(totalSelector).val(formatProspectusUnits(totalUnits));
+    return totalUnits;
+}
+
+function normalizeProspectusHours(lecValue, labValue, totalUnitsValue) {
+    const lecHours = Math.max(0, Number(lecValue) || 0);
+    const rawLabValue = Math.max(0, Number(labValue) || 0);
+    const storedTotalUnits = Math.max(0, Number(totalUnitsValue) || 0);
+    const legacyLabCredits =
+        rawLabValue > 0 && Math.abs((lecHours + rawLabValue) - storedTotalUnits) < 0.0001;
+
+    return {
+        lecHours,
+        labHours: legacyLabCredits ? (rawLabValue * LAB_HOURS_PER_UNIT) : rawLabValue
+    };
+}
+
+$(document).on("input change", "#ps_lec_units, #ps_lab_units", function () {
+    syncProspectusTotalUnits("#ps_lec_units", "#ps_lab_units", "#ps_total_units");
+});
+
+$(document).on("input change", "#edit_lec_units, #edit_lab_units", function () {
+    syncProspectusTotalUnits("#edit_lec_units", "#edit_lab_units", "#edit_total_units");
+});
+
 // ===============================
 // EDIT SUBJECTS
 // ===============================
@@ -749,11 +792,12 @@ $(document).on("click", ".btnEditSubject", function () {
       function(resp){
 
         let item = JSON.parse(resp);
+        const normalized = normalizeProspectusHours(item.lec_units, item.lab_units, item.total_units);
 
         $("#edit_sub_id").val(item.sub_id).trigger("change");
-        $("#edit_lec_units").val(item.lec_units);
-        $("#edit_lab_units").val(item.lab_units);
-        $("#edit_total_units").val(item.total_units);
+        $("#edit_lec_units").val(formatProspectusUnits(normalized.lecHours));
+        $("#edit_lab_units").val(formatProspectusUnits(normalized.labHours));
+        syncProspectusTotalUnits("#edit_lec_units", "#edit_lab_units", "#edit_total_units");
         $("#edit_sort_order").val(item.sort_order);
 
         // prerequisites selected IDs (JSON)
@@ -1291,6 +1335,9 @@ $(document).on("click", ".btnAddSubject", function () {
     console.log("PYS SENT:", pys);   // ← ADD THIS
     // $("#ps_pys_id").val(pys);
     $('#subjectModal').find('#ps_pys_id').val(pys);
+    $("#ps_lec_units").val("0");
+    $("#ps_lab_units").val("0");
+    syncProspectusTotalUnits("#ps_lec_units", "#ps_lab_units", "#ps_total_units");
 
     // Load prerequisite options (AJAX)
     loadPrerequisiteOptions($("#prospectus_id").val()).then(() => {
@@ -1407,6 +1454,9 @@ formData.push({ name: "save_prospectus_subject", value: 1 });
           // Clear subject & prerequisites
           $("#ps_sub_id").val("").trigger("change");
           $("#ps_prerequisites").val([]).trigger("change");
+          $("#ps_lec_units").val("0");
+          $("#ps_lab_units").val("0");
+          syncProspectusTotalUnits("#ps_lec_units", "#ps_lab_units", "#ps_total_units");
 
           // ✅ Increment sort order automatically
           let currentSort = parseInt($("#ps_sort_order").val()) || 1;
