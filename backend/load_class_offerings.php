@@ -57,6 +57,20 @@ function contact_hours_value($hours) {
         : number_format($value, 1);
 }
 
+function normalize_prospectus_contact_hours(float $lecHours, float $labValue, ?float $storedTotalUnits = null): array
+{
+    $safeLecHours = max(0.0, $lecHours);
+    $safeLabValue = max(0.0, $labValue);
+    $safeTotalUnits = (float)($storedTotalUnits ?? 0.0);
+    $labContactHours = synk_lab_contact_hours($safeLecHours, $safeLabValue, $safeTotalUnits);
+
+    return [
+        'lec_units' => round($safeLecHours, 2),
+        'lab_units' => round($labContactHours, 2),
+        'total_units' => round(synk_subject_units_total($safeLecHours, $labContactHours, 0.0), 2)
+    ];
+}
+
 function schedule_stack_item_html($badgeHtml, $value, $valueClass = '') {
     $className = 'schedule-stack-value';
     if ($valueClass !== '') {
@@ -178,6 +192,12 @@ while ($row = $res->fetch_assoc()) {
     $offeringId = (int)$row['offering_id'];
 
     if (!isset($grouped[$yearLevel][$offeringId])) {
+        $displayHours = normalize_prospectus_contact_hours(
+            (float)$row['lec_units'],
+            (float)$row['lab_units'],
+            isset($row['total_units']) ? (float)$row['total_units'] : null
+        );
+
         $grouped[$yearLevel][$offeringId] = [
             'offering_id' => $offeringId,
             'section_name' => (string)$row['section_name'],
@@ -186,6 +206,8 @@ while ($row = $res->fetch_assoc()) {
             'lab_units' => (float)$row['lab_units'],
             'lec_units' => (float)$row['lec_units'],
             'total_units' => (float)$row['total_units'],
+            'display_lab_units' => (float)$displayHours['lab_units'],
+            'display_lec_units' => (float)$displayHours['lec_units'],
             'entries' => []
         ];
     }
@@ -279,8 +301,8 @@ foreach ($grouped as $yearLevel => $rows) {
         echo "  <td>" . htmlspecialchars((string)$row['section_name']) . "</td>";
         echo "  <td class='text-nowrap'>" . htmlspecialchars(strtoupper((string)$row['sub_code'])) . "</td>";
         echo "  <td>" . htmlspecialchars(strtoupper((string)$row['sub_description'])) . "</td>";
-        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['lec_units'])) . "</td>";
-        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['lab_units'])) . "</td>";
+        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lec_units'])) . "</td>";
+        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lab_units'])) . "</td>";
         echo "  <td class='text-center'>" . implode('', $daysParts) . "</td>";
         echo "  <td class='text-center'>" . implode('', $timeParts) . "</td>";
         echo "  <td class='text-center'>" . implode('', $roomParts) . "</td>";
