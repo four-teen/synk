@@ -468,6 +468,127 @@ if ($facultyStmt instanceof mysqli_stmt) {
             color: #c98900;
         }
 
+        #scheduledClassTbody tr.linked-schedule-row td {
+            background-image: linear-gradient(to right, rgba(93, 104, 244, 0.045), rgba(93, 104, 244, 0));
+        }
+
+        #scheduledClassTbody tr.linked-schedule-row td:first-child {
+            position: relative;
+            padding-left: 1.35rem;
+        }
+
+        #scheduledClassTbody tr.linked-schedule-row td:first-child::before {
+            content: "";
+            position: absolute;
+            left: 0.45rem;
+            width: 4px;
+            background: var(--schedule-pair-color, #5d68f4);
+            box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.85);
+        }
+
+        #scheduledClassTbody tr.linked-schedule-start td:first-child::before {
+            top: 22%;
+            bottom: -1px;
+            border-radius: 999px 999px 0 0;
+        }
+
+        #scheduledClassTbody tr.linked-schedule-middle td:first-child::before {
+            top: -1px;
+            bottom: -1px;
+            border-radius: 0;
+        }
+
+        #scheduledClassTbody tr.linked-schedule-end td:first-child::before {
+            top: -1px;
+            bottom: 22%;
+            border-radius: 0 0 999px 999px;
+        }
+
+        .scheduled-pair-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.4rem;
+            margin-top: 0.35rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #5f728b;
+        }
+
+        .scheduled-pair-note::before {
+            content: "";
+            width: 0.55rem;
+            height: 0.55rem;
+            border-radius: 999px;
+            background: var(--schedule-pair-color, #5d68f4);
+            box-shadow: 0 0 0 2px rgba(93, 104, 244, 0.12);
+        }
+
+        .floating-apply-bar {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 1rem;
+            z-index: 1085;
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 1rem;
+            min-width: 320px;
+            max-width: min(480px, calc(100vw - 2rem));
+            padding: 0.85rem 1rem;
+            border: 1px solid #d9e4f2;
+            border-radius: 16px;
+            background: rgba(255, 255, 255, 0.96);
+            box-shadow: 0 18px 40px rgba(18, 38, 63, 0.16);
+            backdrop-filter: blur(14px);
+            opacity: 0;
+            transform: translateY(18px);
+            pointer-events: none;
+            transition: opacity 0.22s ease, transform 0.22s ease;
+        }
+
+        .floating-apply-bar.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+            pointer-events: auto;
+        }
+
+        .floating-apply-meta {
+            min-width: 0;
+        }
+
+        .floating-apply-label {
+            display: block;
+            font-size: 0.78rem;
+            font-weight: 700;
+            color: #4f6279;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+
+        .floating-apply-count {
+            display: block;
+            margin-top: 0.12rem;
+            font-size: 0.82rem;
+            color: #6b7e96;
+            white-space: nowrap;
+        }
+
+        @media (max-width: 767.98px) {
+            .floating-apply-bar {
+                left: 1rem;
+                right: 1rem;
+                bottom: 0.85rem;
+                min-width: 0;
+                flex-wrap: wrap;
+                gap: 0.75rem;
+                padding: 0.8rem 0.9rem;
+            }
+
+            .floating-apply-bar .btn {
+                width: 100%;
+            }
+        }
+
         .btn-delete-workload {
             border-color: #ff5f4d;
             color: #ff5f4d;
@@ -1009,11 +1130,21 @@ if ($facultyStmt instanceof mysqli_stmt) {
             Lecture and laboratory entries pulled from <strong>Class Scheduling</strong>
         </small>
 
-        <button class="btn btn-primary" id="btnApplyToWorkload">
+        <button class="btn btn-primary btnApplyToWorkloadTrigger" id="btnApplyToWorkload" disabled>
             <i class="bx bx-check"></i> Apply to Workload
         </button>
     </div>
 </div>
+</div>
+
+<div class="floating-apply-bar screen-only" id="floatingApplyBar">
+    <div class="floating-apply-meta">
+        <span class="floating-apply-label">Apply To Workload</span>
+        <span class="floating-apply-count" id="floatingApplyCount">Select scheduled classes to apply.</span>
+    </div>
+    <button class="btn btn-primary btnApplyToWorkloadTrigger" id="btnApplyToWorkloadFloating" disabled>
+        <i class="bx bx-check me-1"></i> Apply to Workload
+    </button>
 </div>
 
 <?php include '../footer.php'; ?>
@@ -1045,6 +1176,7 @@ let currentSemesterNum = null;
 let scheduledClassesRequest = null;
 let workloadListRequest = null;
 let selectionRequestToken = 0;
+const SCHEDULE_PAIR_COLORS = ["#22a06b", "#e85d75", "#5d68f4", "#d39c0f", "#2e8de4", "#8a63f7"];
 
 $(document).ready(function () {
 
@@ -1185,11 +1317,41 @@ $(document).ready(function () {
         `;
     }
 
+    function setApplyWorkloadButtonsDisabled(disabled) {
+        $("#btnApplyToWorkload, #btnApplyToWorkloadFloating").prop("disabled", Boolean(disabled));
+    }
+
+    function updateApplyWorkloadControls() {
+        const cardVisible = $("#scheduledClassCard").is(":visible");
+        const total = $(".chkSchedule").length;
+        const checked = $(".chkSchedule:checked").length;
+
+        if (!cardVisible) {
+            $("#floatingApplyBar").removeClass("is-visible");
+            $("#floatingApplyCount").text("Select scheduled classes to apply.");
+            $("#checkAllSchedules").prop("disabled", true).prop("checked", false);
+            setApplyWorkloadButtonsDisabled(true);
+            return;
+        }
+
+        $("#floatingApplyBar").addClass("is-visible");
+        $("#checkAllSchedules").prop("disabled", total === 0);
+        setApplyWorkloadButtonsDisabled(!(total > 0 && checked > 0));
+
+        if (total === 0) {
+            $("#floatingApplyCount").text("No scheduled classes available.");
+            return;
+        }
+
+        $("#floatingApplyCount").text(`${checked} of ${total} class${total === 1 ? "" : "es"} selected`);
+    }
+
     function setScheduledClassesLoadingState(message = "Loading scheduled classes...") {
         $("#scheduledClassCard").show();
         $("#checkAllSchedules").prop("checked", false);
-        $("#btnApplyToWorkload").prop("disabled", true);
+        setApplyWorkloadButtonsDisabled(true);
         $("#scheduledClassTbody").html(buildLoadingRow(11, message));
+        updateApplyWorkloadControls();
     }
 
     function setWorkloadLoadingState(message = "Loading faculty workload...") {
@@ -1270,6 +1432,48 @@ $(document).ready(function () {
         return `workload:${Number(row?.workload_id) || 0}`;
     }
 
+    function getScheduledClassGroupKey(row) {
+        const groupId = Number(row?.group_id) || 0;
+        if (groupId > 0) {
+            return `group:${groupId}`;
+        }
+
+        const offeringId = Number(row?.offering_id) || 0;
+        if (offeringId > 0) {
+            return `offering:${offeringId}`;
+        }
+
+        return `schedule:${Number(row?.schedule_id) || 0}`;
+    }
+
+    function getSchedulePairColor(groupKey) {
+        const text = String(groupKey || "");
+        let hash = 0;
+
+        for (let i = 0; i < text.length; i++) {
+            hash = ((hash << 5) - hash) + text.charCodeAt(i);
+            hash |= 0;
+        }
+
+        return SCHEDULE_PAIR_COLORS[Math.abs(hash) % SCHEDULE_PAIR_COLORS.length];
+    }
+
+    function getSchedulePairRowClass(index, total) {
+        if (total <= 1) {
+            return "";
+        }
+
+        if (index === 0) {
+            return "linked-schedule-start";
+        }
+
+        if (index === (total - 1)) {
+            return "linked-schedule-end";
+        }
+
+        return "linked-schedule-middle";
+    }
+
     function buildRemoveWorkloadButton(row) {
         return `
             <button class="btn btn-sm btn-delete-workload btnRemoveWL"
@@ -1315,7 +1519,7 @@ $(document).ready(function () {
         $("#scheduledClassCard").hide();
         $("#workloadCard").hide();
         $("#checkAllSchedules").prop("checked", false);
-        $("#btnApplyToWorkload").prop("disabled", true);
+        setApplyWorkloadButtonsDisabled(true);
         $("#workloadTbody").html("");
         $("#designationText").text("");
         $("#designationLOAD").text("");
@@ -1329,6 +1533,7 @@ $(document).ready(function () {
         setPrintField("#printSemesterAy", "");
         setPrintField("#printDesignation", "");
         setPrintField("#printConforme", "");
+        updateApplyWorkloadControls();
     }
 
     function refreshWorkloadPanels() {
@@ -1388,48 +1593,76 @@ $(document).ready(function () {
                         </td>
                     </tr>
                 `);
-                $("#btnApplyToWorkload").prop("disabled", true);
+                updateApplyWorkloadControls();
                 return;
             }
 
             let rows = "";
-            data.forEach(item => {
-                const type = String(item.schedule_type || "").toUpperCase();
-                const displayUnits = getDisplayUnits(item);
-                const displayLabUnits = getDisplayLabUnits(item);
-                const displayLecUnits = getDisplayLecUnits(item);
-                const typeBadge = type === "LAB"
-                    ? '<span class="type-pill lab">LAB</span>'
-                    : '<span class="type-pill lec">LEC</span>';
-                rows += `
-                    <tr>
-                        <td>
-                            <input type="checkbox"
-                                   class="chkSchedule"
-                                   value="${escapeHtml(item.schedule_id)}">
-                        </td>
-                        <td>${escapeHtml(item.subject_code)}</td>
-                        <td>${escapeHtml(item.subject_description)}</td>
-                        <td>${escapeHtml(item.section_name)}</td>
-                        <td class="text-center">${typeBadge}</td>
-                        <td>${escapeHtml(item.days)}</td>
-                        <td>${escapeHtml(item.time)}</td>
-                        <td>${escapeHtml(item.room_code)}</td>
-                        <td class="text-center">${formatNumber(displayUnits)}</td>
-                        <td class="text-center">${formatNumber(displayLabUnits)}</td>
-                        <td class="text-center">${formatNumber(displayLecUnits)}</td>
-                    </tr>
-                `;
-            });
+            for (let i = 0; i < data.length; i++) {
+                const item = data[i];
+                const groupKey = getScheduledClassGroupKey(item);
+                const groupRows = [item];
+
+                while ((i + groupRows.length) < data.length) {
+                    const candidateRow = data[i + groupRows.length];
+                    if (getScheduledClassGroupKey(candidateRow) !== groupKey) {
+                        break;
+                    }
+                    groupRows.push(candidateRow);
+                }
+
+                const pairColor = groupRows.length > 1 ? getSchedulePairColor(groupKey) : "";
+
+                groupRows.forEach(function (groupRow, groupIndex) {
+                    const type = String(groupRow.schedule_type || "").toUpperCase();
+                    const displayUnits = getDisplayUnits(groupRow);
+                    const displayLabUnits = getDisplayLabUnits(groupRow);
+                    const displayLecUnits = getDisplayLecUnits(groupRow);
+                    const typeBadge = type === "LAB"
+                        ? '<span class="type-pill lab">LAB</span>'
+                        : '<span class="type-pill lec">LEC</span>';
+                    const rowClass = groupRows.length > 1
+                        ? `linked-schedule-row ${getSchedulePairRowClass(groupIndex, groupRows.length)}`
+                        : "";
+                    const rowStyle = groupRows.length > 1
+                        ? ` style="--schedule-pair-color: ${pairColor};"`
+                        : "";
+                    const partnerNote = (groupRows.length > 1 && groupIndex === 0)
+                        ? `<span class="scheduled-pair-note" style="--schedule-pair-color: ${pairColor};">Linked lecture/lab partner</span>`
+                        : "";
+
+                    rows += `
+                        <tr class="${rowClass}"${rowStyle}>
+                            <td>
+                                <input type="checkbox"
+                                       class="chkSchedule"
+                                       value="${escapeHtml(groupRow.schedule_id)}">
+                            </td>
+                            <td>${escapeHtml(groupRow.subject_code)}</td>
+                            <td>${escapeHtml(groupRow.subject_description)}${partnerNote}</td>
+                            <td>${escapeHtml(groupRow.section_name)}</td>
+                            <td class="text-center">${typeBadge}</td>
+                            <td>${escapeHtml(groupRow.days)}</td>
+                            <td>${escapeHtml(groupRow.time)}</td>
+                            <td>${escapeHtml(groupRow.room_code)}</td>
+                            <td class="text-center">${formatNumber(displayUnits)}</td>
+                            <td class="text-center">${formatNumber(displayLabUnits)}</td>
+                            <td class="text-center">${formatNumber(displayLecUnits)}</td>
+                        </tr>
+                    `;
+                });
+
+                i += groupRows.length - 1;
+            }
             $("#scheduledClassTbody").html(rows);
-            $("#btnApplyToWorkload").prop("disabled", false);
+            updateApplyWorkloadControls();
         }).fail(function (xhr, status) {
             if (status === "abort" || requestToken !== selectionRequestToken) {
                 return;
             }
 
             showInvalid();
-            $("#btnApplyToWorkload").prop("disabled", true);
+            updateApplyWorkloadControls();
         });
     }
 
@@ -1442,16 +1675,19 @@ $(document).ready(function () {
                 </td>
             </tr>
         `);
+        updateApplyWorkloadControls();
     }
 
     $(document).on("change", "#checkAllSchedules", function () {
         $(".chkSchedule").prop("checked", $(this).is(":checked"));
+        updateApplyWorkloadControls();
     });
 
     $(document).on("change", ".chkSchedule", function () {
         const total = $(".chkSchedule").length;
         const checked = $(".chkSchedule:checked").length;
         $("#checkAllSchedules").prop("checked", total > 0 && total === checked);
+        updateApplyWorkloadControls();
     });
 
     /* =========================================================
@@ -1702,7 +1938,7 @@ $(document).ready(function () {
     /* =========================================================
        APPLY TO WORKLOAD
     ========================================================= */
-    $("#btnApplyToWorkload").on("click", function () {
+    $(document).on("click", ".btnApplyToWorkloadTrigger", function () {
 
         let faculty_id = $("#faculty_id").val();
         let ay_text    = $("#fw_ay").val();

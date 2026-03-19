@@ -104,7 +104,7 @@ function synk_subject_units_total(float $lecUnits, float $labValue, float $total
 function synk_prospectus_component_totals(float $lecUnits, float $labValue, float $totalUnits): array
 {
     $lectureHours = max(0.0, $lecUnits);
-    $labHours = max(0.0, $labValue);
+    $labHours = synk_lab_contact_hours($lecUnits, $labValue, $totalUnits);
     $labUnits = $labHours / SYNK_LAB_CONTACT_HOURS_PER_UNIT;
 
     return [
