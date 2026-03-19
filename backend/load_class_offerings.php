@@ -84,6 +84,18 @@ function schedule_stack_item_html($badgeHtml, $value, $valueClass = '') {
         "</div>";
 }
 
+function schedule_room_stack_item_html($badgeHtml, $value, $roomId, $scheduleType, $offeringId) {
+    $safeRoomId = (int)$roomId;
+    $safeType = htmlspecialchars((string)$scheduleType, ENT_QUOTES);
+    $safeOfferingId = (int)$offeringId;
+
+    return
+        "<div class='schedule-stack-item schedule-room-entry' data-room-id='{$safeRoomId}' data-schedule-type='{$safeType}' data-offering-id='{$safeOfferingId}'>" .
+            "<div class='schedule-stack-badge'>{$badgeHtml}</div>" .
+            "<div class='schedule-stack-value is-room'>" . htmlspecialchars((string)$value) . "</div>" .
+        "</div>";
+}
+
 function schedule_stack_empty_html() {
     return "<div class='schedule-stack-item empty'><div class='schedule-stack-value text-muted'>-</div></div>";
 }
@@ -282,7 +294,13 @@ foreach ($grouped as $yearLevel => $rows) {
 
             $daysParts[] = schedule_stack_item_html($label, $daysText, 'is-days');
             $timeParts[] = schedule_stack_item_html($label, $timeText, 'is-time');
-            $roomParts[] = schedule_stack_item_html($label, $roomText, 'is-room');
+            $roomParts[] = schedule_room_stack_item_html(
+                $label,
+                $roomText,
+                (int)$entry['room_id'],
+                $type,
+                (int)$row['offering_id']
+            );
         }
 
         if (empty($daysParts)) {

@@ -836,6 +836,391 @@ body.swal2-shown .modal {
         table-layout: auto;
     }
   }
+
+.room-browser-launcher {
+    position: fixed;
+    right: 0.9rem;
+    top: 52%;
+    transform: translateY(-50%);
+    z-index: 1031;
+    border: 0;
+    border-radius: 22px;
+    background: linear-gradient(180deg, #eef3ff 0%, #dfe8ff 100%);
+    color: #4154d8;
+    box-shadow: 0 20px 42px rgba(65, 84, 216, 0.2);
+    padding: 0.95rem 0.65rem;
+    display: inline-flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 0.55rem;
+    transition: transform 0.2s ease, box-shadow 0.2s ease, right 0.2s ease;
+}
+
+.room-browser-launcher:hover,
+.room-browser-launcher:focus-visible {
+    right: 1.1rem;
+    transform: translateY(-50%) scale(1.01);
+    box-shadow: 0 24px 48px rgba(65, 84, 216, 0.24);
+}
+
+.room-browser-launcher:focus-visible {
+    outline: 3px solid rgba(65, 84, 216, 0.2);
+    outline-offset: 2px;
+}
+
+.room-browser-launcher-icon {
+    width: 2.2rem;
+    height: 2.2rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.82);
+    box-shadow: inset 0 0 0 1px rgba(91, 108, 255, 0.12);
+    font-size: 1.15rem;
+}
+
+.room-browser-launcher-label {
+    writing-mode: vertical-rl;
+    transform: rotate(180deg);
+    text-transform: uppercase;
+    letter-spacing: 0.14em;
+    font-size: 0.7rem;
+    font-weight: 800;
+}
+
+#roomBrowserDrawer {
+    width: min(430px, calc(100vw - 1rem));
+    border-left: 1px solid #dbe3f6;
+    box-shadow: -24px 0 48px rgba(25, 40, 90, 0.14);
+}
+
+#roomBrowserDrawer .offcanvas-header {
+    padding: 1.2rem 1.2rem 1rem;
+    background:
+        radial-gradient(circle at top right, rgba(120, 196, 255, 0.18), transparent 44%),
+        linear-gradient(180deg, #edf4ff 0%, #f8fbff 100%);
+    border-bottom: 1px solid #dbe3f6;
+}
+
+.room-browser-title {
+    display: flex;
+    align-items: center;
+    gap: 0.75rem;
+}
+
+.room-browser-title-icon {
+    width: 2.7rem;
+    height: 2.7rem;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 16px;
+    color: #4154d8;
+    background: rgba(255, 255, 255, 0.9);
+    box-shadow: inset 0 0 0 1px rgba(91, 108, 255, 0.12);
+    font-size: 1.3rem;
+}
+
+.room-browser-title h5 {
+    margin: 0;
+    font-weight: 700;
+    color: #22304c;
+}
+
+.room-browser-title p {
+    margin: 0.2rem 0 0;
+    color: #687796;
+    font-size: 0.86rem;
+}
+
+#roomBrowserDrawer .offcanvas-body {
+    padding: 1.2rem;
+    background:
+        radial-gradient(circle at top left, rgba(227, 237, 255, 0.62), transparent 32%),
+        linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%);
+}
+
+.room-browser-summary {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.75rem;
+    margin-bottom: 1rem;
+}
+
+.room-browser-metric {
+    border: 1px solid #dbe4f6;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.88);
+    padding: 0.85rem;
+    box-shadow: 0 12px 28px rgba(29, 43, 88, 0.05);
+}
+
+.room-browser-metric-label {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #7887a4;
+}
+
+.room-browser-metric-value {
+    display: block;
+    margin-top: 0.3rem;
+    font-size: 1.35rem;
+    font-weight: 800;
+    line-height: 1;
+    color: #22304c;
+}
+
+.room-browser-note {
+    margin-bottom: 1rem;
+    color: #6d7c98;
+    font-size: 0.84rem;
+}
+
+.room-browser-section {
+    border: 1px solid #dfe7f7;
+    border-radius: 20px;
+    background: rgba(255, 255, 255, 0.92);
+    box-shadow: 0 14px 30px rgba(29, 43, 88, 0.05);
+    padding: 1rem;
+}
+
+.room-browser-section + .room-browser-section {
+    margin-top: 1rem;
+}
+
+.room-browser-section-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    margin-bottom: 0.9rem;
+}
+
+.room-browser-section-title {
+    display: flex;
+    align-items: center;
+    gap: 0.6rem;
+}
+
+.room-browser-type-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    font-size: 0.77rem;
+    font-weight: 700;
+    letter-spacing: 0.02em;
+}
+
+.room-browser-type-chip.is-lecture {
+    background: #ecefff;
+    color: #5666ff;
+}
+
+.room-browser-type-chip.is-laboratory {
+    background: #fff2cf;
+    color: #b88004;
+}
+
+.room-browser-type-chip.is-flexible {
+    background: #e6f6f1;
+    color: #11806a;
+}
+
+.room-browser-section-title h6 {
+    margin: 0;
+    font-size: 0.98rem;
+    font-weight: 700;
+    color: #22304c;
+}
+
+.room-browser-section-subtitle {
+    margin-top: 0.2rem;
+    color: #74839e;
+    font-size: 0.8rem;
+}
+
+.room-browser-section-badges {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.4rem;
+}
+
+.room-browser-section-badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 0.28rem 0.65rem;
+    background: #f1f5ff;
+    color: #51617f;
+    font-size: 0.74rem;
+    font-weight: 700;
+}
+
+.room-browser-room-list {
+    display: grid;
+    gap: 0.8rem;
+}
+
+.room-browser-room-card {
+    border: 1px solid #e3eaf8;
+    border-radius: 18px;
+    background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+    padding: 0.9rem 0.95rem;
+    display: flex;
+    justify-content: space-between;
+    gap: 0.9rem;
+    align-items: flex-start;
+}
+
+.room-browser-room-card.is-active {
+    border-color: #bfd0ff;
+    box-shadow: 0 16px 34px rgba(67, 86, 219, 0.08);
+}
+
+.room-browser-room-card.is-idle {
+    opacity: 0.9;
+}
+
+.room-browser-room-name {
+    font-size: 0.96rem;
+    font-weight: 700;
+    color: #22304c;
+    line-height: 1.25;
+}
+
+.room-browser-room-note {
+    margin-top: 0.28rem;
+    color: #73829d;
+    font-size: 0.81rem;
+}
+
+.room-browser-room-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.42rem;
+    margin-top: 0.65rem;
+}
+
+.room-browser-room-tag {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 0.24rem 0.55rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    background: #eef3ff;
+    color: #50617e;
+}
+
+.room-browser-room-tag.is-lec {
+    background: #ecefff;
+    color: #5666ff;
+}
+
+.room-browser-room-tag.is-lab {
+    background: #fff2cf;
+    color: #b88004;
+}
+
+.room-browser-room-tag.is-shared {
+    background: #e8f6ff;
+    color: #0d6a92;
+}
+
+.room-browser-room-tag.is-owned {
+    background: #edf7ef;
+    color: #17784b;
+}
+
+.room-browser-count {
+    min-width: 76px;
+    text-align: right;
+}
+
+.room-browser-count-number {
+    display: block;
+    font-size: 1.35rem;
+    line-height: 1;
+    font-weight: 800;
+    color: #22304c;
+}
+
+.room-browser-count-label {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #7b89a4;
+}
+
+.room-browser-empty {
+    border: 1px dashed #cedaf4;
+    border-radius: 18px;
+    background: rgba(255, 255, 255, 0.82);
+    color: #60708f;
+    text-align: center;
+    padding: 1.15rem;
+    font-size: 0.9rem;
+}
+
+@media (max-width: 991.98px) {
+    .room-browser-launcher {
+        top: auto;
+        bottom: 1rem;
+        right: 1rem;
+        transform: none;
+        flex-direction: row;
+        padding: 0.8rem 1rem;
+        border-radius: 999px;
+    }
+
+    .room-browser-launcher:hover,
+    .room-browser-launcher:focus-visible {
+        right: 1rem;
+        transform: translateY(-2px);
+    }
+
+    .room-browser-launcher-label {
+        writing-mode: initial;
+        transform: none;
+        letter-spacing: 0.08em;
+    }
+
+    .room-browser-summary {
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+}
+
+@media (max-width: 575.98px) {
+    #roomBrowserDrawer {
+        width: 100vw;
+    }
+
+    .room-browser-summary {
+        grid-template-columns: 1fr;
+    }
+
+    .room-browser-section-header,
+    .room-browser-room-card {
+        flex-direction: column;
+    }
+
+    .room-browser-count {
+        min-width: 0;
+        text-align: left;
+    }
+}
   </style>
 </head>
 
@@ -993,11 +1378,48 @@ while ($ay = $ayQ->fetch_assoc()) {
     </div>
 </div>
 
+<button
+  type="button"
+  class="room-browser-launcher"
+  id="btnOpenRoomBrowser"
+  aria-controls="roomBrowserDrawer"
+  aria-label="Open room browser"
+>
+  <span class="room-browser-launcher-icon">
+    <i class="bx bx-buildings"></i>
+  </span>
+  <span class="room-browser-launcher-label">Room Browser</span>
+</button>
+
 </div>
 <?php include '../footer.php'; ?>
 </div>
 </div>
 </div>
+</div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="roomBrowserDrawer" aria-labelledby="roomBrowserDrawerLabel">
+  <div class="offcanvas-header">
+    <div class="room-browser-title">
+      <span class="room-browser-title-icon">
+        <i class="bx bx-door-open"></i>
+      </span>
+      <div>
+        <h5 id="roomBrowserDrawerLabel">Room Browser</h5>
+        <p>Browse accessible rooms by type and see how many scheduled classes are using each one.</p>
+      </div>
+    </div>
+    <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+  </div>
+  <div class="offcanvas-body">
+    <div class="room-browser-summary" id="roomBrowserSummary"></div>
+    <div class="room-browser-note">
+      Counts follow the current prospectus, academic term, semester, and subject search results shown on this page.
+    </div>
+    <div id="roomBrowserList">
+      <div class="room-browser-empty">Select a term to load the room browser.</div>
+    </div>
+  </div>
 </div>
 
 <!-- MODAL -->
@@ -1674,6 +2096,27 @@ while ($ay = $ayQ->fetch_assoc()) {
     let scheduleAutoLoadTimer = null;
     let singleSuggestionTimer = null;
     let dualSuggestionTimer = null;
+    let roomBrowserDrawerInstance = null;
+    const ROOM_BROWSER_TYPE_META = {
+        lecture: {
+            label: "Lecture Rooms",
+            icon: "bx-chalkboard",
+            chipClass: "is-lecture",
+            subtitle: "Standard lecture spaces available for lecture schedules."
+        },
+        laboratory: {
+            label: "Laboratory Rooms",
+            icon: "bx-chip",
+            chipClass: "is-laboratory",
+            subtitle: "Specialized laboratory spaces matched to lab schedules."
+        },
+        lec_lab: {
+            label: "Flexible Lec/Lab Rooms",
+            icon: "bx-layer",
+            chipClass: "is-flexible",
+            subtitle: "Rooms that can host either lecture or laboratory blocks."
+        }
+    };
     function escapeHtml(text) {
         return String(text || "")
             .replace(/&/g, "&amp;")
@@ -1697,6 +2140,184 @@ while ($ay = $ayQ->fetch_assoc()) {
         }
 
         return roomType === "lecture" || roomType === "lec_lab";
+    }
+
+    function formatCountLabel(count, singular, plural) {
+        const value = Number(count || 0);
+        const pluralLabel = plural || `${singular}s`;
+        return `${value} ${value === 1 ? singular : pluralLabel}`;
+    }
+
+    function getRoomBrowserTypeMeta(roomType) {
+        const normalized = normalizeRoomType(roomType);
+        return ROOM_BROWSER_TYPE_META[normalized] || ROOM_BROWSER_TYPE_META.lecture;
+    }
+
+    function buildRoomUsageMap() {
+        const counts = {};
+        const seenKeys = new Set();
+        const allRows = $("#scheduleListContainer tr.schedule-offering-row");
+        const trackedRows = allRows.filter("[data-search-match]");
+        const sourceRows = trackedRows.length > 0
+            ? trackedRows.filter("[data-search-match='1']")
+            : allRows;
+
+        sourceRows.find(".schedule-room-entry[data-room-id]").each(function () {
+            const item = $(this);
+            const roomId = parseInt(item.data("roomId"), 10) || 0;
+            if (!roomId) {
+                return;
+            }
+
+            if (!counts[roomId]) {
+                counts[roomId] = { total: 0, LEC: 0, LAB: 0 };
+            }
+
+            const type = String(item.data("scheduleType") || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC";
+            const offeringId = parseInt(item.data("offeringId"), 10) || 0;
+            const uniqueKey = `${roomId}|${offeringId}|${type}`;
+            if (seenKeys.has(uniqueKey)) {
+                return;
+            }
+            seenKeys.add(uniqueKey);
+
+            counts[roomId].total += 1;
+            counts[roomId][type] += 1;
+        });
+
+        return counts;
+    }
+
+    function buildRoomBrowserMetric(label, value) {
+        return `
+            <div class="room-browser-metric">
+                <span class="room-browser-metric-label">${escapeHtml(label)}</span>
+                <span class="room-browser-metric-value">${escapeHtml(String(value))}</span>
+            </div>
+        `;
+    }
+
+    function renderRoomBrowser() {
+        const summary = $("#roomBrowserSummary");
+        const list = $("#roomBrowserList");
+
+        if (summary.length === 0 || list.length === 0) {
+            return;
+        }
+
+        const ay = $("#ay_id").val();
+        const sem = $("#semester").val();
+        if (!ay || !sem) {
+            summary.html("");
+            list.html("<div class='room-browser-empty'>Select Academic Year and Semester to browse rooms for this term.</div>");
+            return;
+        }
+
+        const rooms = Array.isArray(termRoomCache) ? termRoomCache.slice() : [];
+        if (rooms.length === 0) {
+            summary.html("");
+            list.html("<div class='room-browser-empty'>No rooms are available for the selected term. Check room access for this college.</div>");
+            return;
+        }
+
+        const usageMap = buildRoomUsageMap();
+        const totalRooms = rooms.length;
+        const activeRooms = rooms.filter(room => Number((usageMap[room.room_id] || {}).total || 0) > 0).length;
+        const totalClasses = rooms.reduce(
+            (sum, room) => sum + Number((usageMap[room.room_id] || {}).total || 0),
+            0
+        );
+
+        summary.html(
+            buildRoomBrowserMetric("Rooms", totalRooms) +
+            buildRoomBrowserMetric("Active", activeRooms) +
+            buildRoomBrowserMetric("Classes", totalClasses)
+        );
+
+        const typeOrder = ["lecture", "laboratory", "lec_lab"];
+        const sectionsHtml = typeOrder.map(type => {
+            const meta = getRoomBrowserTypeMeta(type);
+            const typeRooms = rooms
+                .filter(room => normalizeRoomType(room.room_type) === type)
+                .sort((left, right) => {
+                    const usageDelta = Number((usageMap[right.room_id] || {}).total || 0) - Number((usageMap[left.room_id] || {}).total || 0);
+                    if (usageDelta !== 0) {
+                        return usageDelta;
+                    }
+                    return String(left.label || "").localeCompare(String(right.label || ""));
+                });
+
+            if (typeRooms.length === 0) {
+                return "";
+            }
+
+            const sectionUsage = typeRooms.reduce(
+                (sum, room) => sum + Number((usageMap[room.room_id] || {}).total || 0),
+                0
+            );
+
+            const cardsHtml = typeRooms.map(room => {
+                const usage = usageMap[room.room_id] || { total: 0, LEC: 0, LAB: 0 };
+                const accessType = String(room.access_type || "owner").toLowerCase() === "shared" ? "shared" : "owner";
+                const accessLabel = accessType === "shared" ? "Shared Access" : "Owned Room";
+                const accessNote = accessType === "shared" && room.owner_code
+                    ? `Shared from ${room.owner_code}`
+                    : "Managed within your college room list";
+                const tags = [];
+
+                if (usage.LEC > 0) {
+                    tags.push(`<span class="room-browser-room-tag is-lec">LEC ${escapeHtml(String(usage.LEC))}</span>`);
+                }
+                if (usage.LAB > 0) {
+                    tags.push(`<span class="room-browser-room-tag is-lab">LAB ${escapeHtml(String(usage.LAB))}</span>`);
+                }
+
+                tags.push(
+                    `<span class="room-browser-room-tag ${accessType === "shared" ? "is-shared" : "is-owned"}">${escapeHtml(accessLabel)}</span>`
+                );
+
+                return `
+                    <article class="room-browser-room-card ${usage.total > 0 ? "is-active" : "is-idle"}">
+                        <div>
+                            <div class="room-browser-room-name">${escapeHtml(room.label || "Unnamed Room")}</div>
+                            <div class="room-browser-room-note">${escapeHtml(accessNote)}</div>
+                            <div class="room-browser-room-tags">${tags.join("")}</div>
+                        </div>
+                        <div class="room-browser-count">
+                            <span class="room-browser-count-number">${escapeHtml(String(usage.total || 0))}</span>
+                            <span class="room-browser-count-label">${escapeHtml((usage.total || 0) === 1 ? "Class" : "Classes")}</span>
+                        </div>
+                    </article>
+                `;
+            }).join("");
+
+            return `
+                <section class="room-browser-section">
+                    <div class="room-browser-section-header">
+                        <div>
+                            <div class="room-browser-section-title">
+                                <span class="room-browser-type-chip ${meta.chipClass}">
+                                    <i class="bx ${meta.icon}"></i>
+                                    ${escapeHtml(meta.label)}
+                                </span>
+                            </div>
+                            <div class="room-browser-section-subtitle">${escapeHtml(meta.subtitle)}</div>
+                        </div>
+                        <div class="room-browser-section-badges">
+                            <span class="room-browser-section-badge">${escapeHtml(formatCountLabel(typeRooms.length, "room"))}</span>
+                            <span class="room-browser-section-badge">${escapeHtml(formatCountLabel(sectionUsage, "class", "classes"))}</span>
+                        </div>
+                    </div>
+                    <div class="room-browser-room-list">${cardsHtml}</div>
+                </section>
+            `;
+        }).join("");
+
+        list.html(
+            sectionsHtml !== ""
+                ? sectionsHtml
+                : "<div class='room-browser-empty'>No rooms matched the available room types for this term.</div>"
+        );
     }
 
     function buildRoomOptionsHtml(rooms, placeholder) {
@@ -1744,6 +2365,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         setRoomOptions("#lab_room_id", [], "Select laboratory room...");
         termRoomCache = [];
         termRoomCacheKey = "";
+        renderRoomBrowser();
     }
 
     let scheduleBlockState = null;
@@ -2223,6 +2845,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         $("#scheduleListContainer").html(
             `<div class="text-center text-${escapeHtml(tone)} py-4">${message}</div>`
         );
+        renderRoomBrowser();
     }
 
     function updateScheduleGroupCounts() {
@@ -2751,6 +3374,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         $("#scheduleListContainer").html(rows);
                         initializeScheduleTablePan();
                         applyScheduleSearchFilter();
+                        renderRoomBrowser();
                         if (pagePosition) {
                             window.requestAnimationFrame(function () {
                                 restoreWindowScrollPosition(pagePosition);
@@ -2764,6 +3388,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     $("#scheduleListContainer").html(
                         "<div class='text-center text-danger py-4'>Failed to load classes.</div>"
                     );
+                    renderRoomBrowser();
                     console.error(xhr.responseText);
                     if (pagePosition) {
                         window.requestAnimationFrame(function () {
@@ -3601,6 +4226,12 @@ resetSingleSuggestionPanel();
 resetDualSuggestionPanels();
 resetAutoDraftPreview();
 
+const roomBrowserElement = document.getElementById("roomBrowserDrawer");
+if (roomBrowserElement) {
+  roomBrowserDrawerInstance = bootstrap.Offcanvas.getOrCreateInstance(roomBrowserElement);
+}
+renderRoomBrowser();
+
 $("#prospectus_id, #ay_id, #semester").on("change", function () {
   if (this.id === "ay_id" || this.id === "semester") {
     clearTermRoomOptions();
@@ -3611,6 +4242,7 @@ $("#prospectus_id, #ay_id, #semester").on("change", function () {
 
 $("#scheduleSubjectSearch").on("input", function () {
   applyScheduleSearchFilter();
+  renderRoomBrowser();
 });
 
 $("#btnRefreshSingleSuggestions").on("click", function () {
@@ -3631,6 +4263,15 @@ $("#btnApplyAutoDraft").on("click", function () {
 
 $("#btnClearAllSchedules").on("click", function () {
   clearAllSchedulesInScope();
+});
+
+$("#btnOpenRoomBrowser").on("click", function () {
+  loadTermRoomOptions(false).always(function () {
+    renderRoomBrowser();
+    if (roomBrowserDrawerInstance) {
+      roomBrowserDrawerInstance.show();
+    }
+  });
 });
 
 $("#btnToggleSingleSuggestions").on("click", function () {

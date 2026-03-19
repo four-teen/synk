@@ -527,7 +527,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
             position: fixed;
             right: 1.25rem;
             bottom: 1rem;
-            z-index: 1085;
+            z-index: 1030;
             display: flex;
             align-items: center;
             justify-content: space-between;
@@ -550,6 +550,360 @@ if ($facultyStmt instanceof mysqli_stmt) {
             opacity: 1;
             transform: translateY(0);
             pointer-events: auto;
+        }
+
+        .faculty-browser-launcher {
+            position: fixed;
+            right: 0.9rem;
+            top: 52%;
+            transform: translateY(-50%);
+            z-index: 1031;
+            border: 0;
+            border-radius: 22px;
+            background: linear-gradient(180deg, #eef3ff 0%, #dfe8ff 100%);
+            color: #4154d8;
+            box-shadow: 0 20px 42px rgba(65, 84, 216, 0.2);
+            padding: 0.95rem 0.65rem;
+            display: inline-flex;
+            flex-direction: column;
+            align-items: center;
+            gap: 0.55rem;
+            transition: transform 0.2s ease, box-shadow 0.2s ease, right 0.2s ease;
+        }
+
+        .faculty-browser-launcher:hover,
+        .faculty-browser-launcher:focus-visible {
+            right: 1.1rem;
+            transform: translateY(-50%) scale(1.01);
+            box-shadow: 0 24px 48px rgba(65, 84, 216, 0.24);
+        }
+
+        .faculty-browser-launcher:focus-visible {
+            outline: 3px solid rgba(65, 84, 216, 0.2);
+            outline-offset: 2px;
+        }
+
+        .faculty-browser-launcher-icon {
+            width: 2.2rem;
+            height: 2.2rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.82);
+            box-shadow: inset 0 0 0 1px rgba(91, 108, 255, 0.12);
+            font-size: 1.15rem;
+        }
+
+        .faculty-browser-launcher-label {
+            writing-mode: vertical-rl;
+            transform: rotate(180deg);
+            text-transform: uppercase;
+            letter-spacing: 0.14em;
+            font-size: 0.7rem;
+            font-weight: 800;
+        }
+
+        #facultyBrowserDrawer {
+            width: min(430px, calc(100vw - 1rem));
+            border-left: 1px solid #dbe3f6;
+            box-shadow: -24px 0 48px rgba(25, 40, 90, 0.14);
+        }
+
+        #facultyBrowserDrawer .offcanvas-header {
+            padding: 1.2rem 1.2rem 1rem;
+            background:
+                radial-gradient(circle at top right, rgba(120, 196, 255, 0.18), transparent 44%),
+                linear-gradient(180deg, #edf4ff 0%, #f8fbff 100%);
+            border-bottom: 1px solid #dbe3f6;
+        }
+
+        .faculty-browser-title {
+            display: flex;
+            align-items: center;
+            gap: 0.75rem;
+        }
+
+        .faculty-browser-title-icon {
+            width: 2.7rem;
+            height: 2.7rem;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 16px;
+            color: #4154d8;
+            background: rgba(255, 255, 255, 0.9);
+            box-shadow: inset 0 0 0 1px rgba(91, 108, 255, 0.12);
+            font-size: 1.3rem;
+        }
+
+        .faculty-browser-title h5 {
+            margin: 0;
+            font-weight: 700;
+            color: #22304c;
+        }
+
+        .faculty-browser-title p {
+            margin: 0.2rem 0 0;
+            color: #687796;
+            font-size: 0.86rem;
+        }
+
+        #facultyBrowserDrawer .offcanvas-body {
+            padding: 1.2rem;
+            background:
+                radial-gradient(circle at top left, rgba(227, 237, 255, 0.62), transparent 32%),
+                linear-gradient(180deg, #fbfcff 0%, #f6f9ff 100%);
+        }
+
+        .faculty-browser-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.75rem;
+            margin-bottom: 1rem;
+        }
+
+        .faculty-browser-metric {
+            border: 1px solid #dbe4f6;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.88);
+            padding: 0.85rem;
+            box-shadow: 0 12px 28px rgba(29, 43, 88, 0.05);
+        }
+
+        .faculty-browser-metric-label {
+            display: block;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #7887a4;
+        }
+
+        .faculty-browser-metric-value {
+            display: block;
+            margin-top: 0.3rem;
+            font-size: 1.35rem;
+            font-weight: 800;
+            line-height: 1;
+            color: #22304c;
+        }
+
+        .faculty-browser-note {
+            margin-bottom: 1rem;
+            color: #6d7c98;
+            font-size: 0.84rem;
+        }
+
+        .faculty-browser-section {
+            border: 1px solid #dfe7f7;
+            border-radius: 20px;
+            background: rgba(255, 255, 255, 0.92);
+            box-shadow: 0 14px 30px rgba(29, 43, 88, 0.05);
+            padding: 1rem;
+        }
+
+        .faculty-browser-section + .faculty-browser-section {
+            margin-top: 1rem;
+        }
+
+        .faculty-browser-section-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: flex-start;
+            gap: 0.75rem;
+            margin-bottom: 0.9rem;
+        }
+
+        .faculty-browser-status-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.45rem;
+            border-radius: 999px;
+            padding: 0.35rem 0.75rem;
+            font-size: 0.77rem;
+            font-weight: 700;
+            letter-spacing: 0.02em;
+        }
+
+        .faculty-browser-status-chip.is-overload {
+            background: #fde8ea;
+            color: #a61c2d;
+        }
+
+        .faculty-browser-status-chip.is-normal {
+            background: #e7f5ef;
+            color: #0f6a42;
+        }
+
+        .faculty-browser-status-chip.is-underload {
+            background: #fff3cd;
+            color: #7a5a00;
+        }
+
+        .faculty-browser-section-subtitle {
+            margin-top: 0.2rem;
+            color: #74839e;
+            font-size: 0.8rem;
+        }
+
+        .faculty-browser-section-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 0.28rem 0.65rem;
+            background: #f1f5ff;
+            color: #51617f;
+            font-size: 0.74rem;
+            font-weight: 700;
+        }
+
+        .faculty-browser-list {
+            display: grid;
+            gap: 0.8rem;
+        }
+
+        .faculty-browser-card {
+            width: 100%;
+            border: 1px solid #e3eaf8;
+            border-radius: 18px;
+            background: linear-gradient(180deg, #ffffff 0%, #fcfdff 100%);
+            padding: 0.9rem 0.95rem;
+            display: flex;
+            justify-content: space-between;
+            gap: 0.9rem;
+            align-items: flex-start;
+            text-align: left;
+            cursor: pointer;
+            box-shadow: 0 8px 18px rgba(29, 43, 88, 0.04);
+            transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+        }
+
+        .faculty-browser-card:hover,
+        .faculty-browser-card:focus-visible {
+            transform: translateY(-1px);
+            box-shadow: 0 14px 28px rgba(29, 43, 88, 0.08);
+        }
+
+        .faculty-browser-card:focus-visible {
+            outline: 3px solid rgba(65, 84, 216, 0.18);
+            outline-offset: 2px;
+        }
+
+        .faculty-browser-card.is-current {
+            border-color: #7d8bff;
+            box-shadow: 0 16px 34px rgba(67, 86, 219, 0.12);
+        }
+
+        .faculty-browser-card.is-overload {
+            border-color: rgba(166, 28, 45, 0.18);
+        }
+
+        .faculty-browser-card.is-normal {
+            border-color: rgba(15, 106, 66, 0.18);
+        }
+
+        .faculty-browser-card.is-underload {
+            border-color: rgba(122, 90, 0, 0.18);
+        }
+
+        .faculty-browser-name {
+            font-size: 0.96rem;
+            font-weight: 700;
+            line-height: 1.25;
+        }
+
+        .faculty-browser-name.is-overload {
+            color: #a61c2d;
+        }
+
+        .faculty-browser-name.is-normal {
+            color: #0f6a42;
+        }
+
+        .faculty-browser-name.is-underload {
+            color: #7a5a00;
+        }
+
+        .faculty-browser-subtext {
+            margin-top: 0.28rem;
+            color: #73829d;
+            font-size: 0.81rem;
+        }
+
+        .faculty-browser-tags {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.42rem;
+            margin-top: 0.65rem;
+        }
+
+        .faculty-browser-tag {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            border-radius: 999px;
+            padding: 0.24rem 0.55rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            background: #eef3ff;
+            color: #50617e;
+        }
+
+        .faculty-browser-tag.is-overload {
+            background: #fde8ea;
+            color: #a61c2d;
+        }
+
+        .faculty-browser-tag.is-normal {
+            background: #e7f5ef;
+            color: #0f6a42;
+        }
+
+        .faculty-browser-tag.is-underload {
+            background: #fff3cd;
+            color: #7a5a00;
+        }
+
+        .faculty-browser-load {
+            min-width: 88px;
+            text-align: right;
+        }
+
+        .faculty-browser-load-number {
+            display: block;
+            font-size: 1.35rem;
+            line-height: 1;
+            font-weight: 800;
+            color: #22304c;
+        }
+
+        .faculty-browser-load-label {
+            display: block;
+            margin-top: 0.25rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            text-transform: uppercase;
+            letter-spacing: 0.08em;
+            color: #7b89a4;
+        }
+
+        .faculty-browser-empty {
+            border: 1px dashed #cedaf4;
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.82);
+            color: #60708f;
+            text-align: center;
+            padding: 1.15rem;
+            font-size: 0.9rem;
+        }
+
+        .faculty-browser-empty .spinner-border {
+            width: 1rem;
+            height: 1rem;
+            margin-right: 0.5rem;
+            vertical-align: text-bottom;
         }
 
         .floating-apply-meta {
@@ -586,6 +940,52 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
             .floating-apply-bar .btn {
                 width: 100%;
+            }
+
+            .faculty-browser-launcher {
+                top: auto;
+                bottom: 1rem;
+                right: 1rem;
+                transform: none;
+                flex-direction: row;
+                padding: 0.8rem 1rem;
+                border-radius: 999px;
+            }
+
+            .faculty-browser-launcher:hover,
+            .faculty-browser-launcher:focus-visible {
+                right: 1rem;
+                transform: translateY(-2px);
+            }
+
+            .faculty-browser-launcher-label {
+                writing-mode: initial;
+                transform: none;
+                letter-spacing: 0.08em;
+            }
+
+            .faculty-browser-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
+        }
+
+        @media (max-width: 575.98px) {
+            #facultyBrowserDrawer {
+                width: 100vw;
+            }
+
+            .faculty-browser-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .faculty-browser-section-header,
+            .faculty-browser-card {
+                flex-direction: column;
+            }
+
+            .faculty-browser-load {
+                min-width: 0;
+                text-align: left;
             }
         }
 
@@ -1147,10 +1547,47 @@ if ($facultyStmt instanceof mysqli_stmt) {
     </button>
 </div>
 
+<button
+    type="button"
+    class="faculty-browser-launcher screen-only"
+    id="btnOpenFacultyBrowser"
+    aria-controls="facultyBrowserDrawer"
+    aria-label="Open faculty workload overview"
+>
+    <span class="faculty-browser-launcher-icon">
+        <i class="bx bx-user-pin"></i>
+    </span>
+    <span class="faculty-browser-launcher-label">Faculty Load</span>
+</button>
+
 <?php include '../footer.php'; ?>
 
 </div>
 </div>
+</div>
+
+<div class="offcanvas offcanvas-end" tabindex="-1" id="facultyBrowserDrawer" aria-labelledby="facultyBrowserDrawerLabel">
+    <div class="offcanvas-header">
+        <div class="faculty-browser-title">
+            <span class="faculty-browser-title-icon">
+                <i class="bx bx-group"></i>
+            </span>
+            <div>
+                <h5 id="facultyBrowserDrawerLabel">Faculty Load Overview</h5>
+                <p>Browse faculty totals for the selected term and jump straight into any workload profile.</p>
+            </div>
+        </div>
+        <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
+    </div>
+    <div class="offcanvas-body">
+        <div class="faculty-browser-summary" id="facultyBrowserSummary"></div>
+        <div class="faculty-browser-note">
+            Uses the current A.Y. and semester on this page. Click a faculty card to load that faculty into the main workload panels.
+        </div>
+        <div id="facultyBrowserList">
+            <div class="faculty-browser-empty">Loading faculty workload overview...</div>
+        </div>
+    </div>
 </div>
 
 <!-- JS -->
@@ -1175,7 +1612,11 @@ let currentAyId = null;
 let currentSemesterNum = null;
 let scheduledClassesRequest = null;
 let workloadListRequest = null;
+let facultyOverviewRequest = null;
 let selectionRequestToken = 0;
+let facultyOverviewCacheKey = "";
+let facultyOverviewCache = [];
+let facultyBrowserDrawerInstance = null;
 const SCHEDULE_PAIR_COLORS = ["#22a06b", "#e85d75", "#5d68f4", "#d39c0f", "#2e8de4", "#8a63f7"];
 
 $(document).ready(function () {
@@ -1198,6 +1639,10 @@ $(document).ready(function () {
         "Midyear": 3
     };
     const WORKLOAD_COLLEGE_NAME = <?= json_encode($college_name) ?>;
+    const facultyBrowserElement = document.getElementById("facultyBrowserDrawer");
+    if (facultyBrowserElement) {
+        facultyBrowserDrawerInstance = bootstrap.Offcanvas.getOrCreateInstance(facultyBrowserElement);
+    }
 
     function escapeHtml(value) {
         return String(value ?? "")
@@ -1227,14 +1672,306 @@ $(document).ready(function () {
         const numericLoad = toNumber(loadValue);
 
         if (numericLoad > 21) {
-            return { label: "Overload", className: "overload" };
+            return { label: "Overload", className: "overload", drawerLabel: "Overload" };
         }
 
         if (numericLoad >= 18) {
-            return { label: "", className: "normal" };
+            return { label: "", className: "normal", drawerLabel: "Normal Load" };
         }
 
-        return { label: "Underload", className: "underload" };
+        return { label: "Underload", className: "underload", drawerLabel: "Underload" };
+    }
+
+    function getFacultyBrowserTermContext() {
+        const ayText = $("#fw_ay").val();
+        const ayId = Number($("#fw_ay option:selected").data("ay-id")) || 0;
+        const semesterUi = $("#fw_semester").val();
+        const semesterNum = SEMESTER_MAP[semesterUi] || 0;
+
+        if (!ayText || !ayId || !semesterUi || !semesterNum) {
+            return null;
+        }
+
+        return {
+            ayId,
+            ayText,
+            semesterUi,
+            semesterNum
+        };
+    }
+
+    function getFacultyOptionList() {
+        const items = [];
+        $("#faculty_id option").each(function () {
+            const option = $(this);
+            const facultyId = parseInt(option.val(), 10) || 0;
+            const fullName = String(option.text() || "").trim();
+
+            if (!facultyId || !fullName) {
+                return;
+            }
+
+            items.push({
+                faculty_id: facultyId,
+                full_name: fullName
+            });
+        });
+
+        return items;
+    }
+
+    function clearFacultyOverviewCache() {
+        abortPendingRequest(facultyOverviewRequest);
+        facultyOverviewRequest = null;
+        facultyOverviewCacheKey = "";
+        facultyOverviewCache = [];
+    }
+
+    function buildFacultyBrowserMetric(label, value) {
+        return `
+            <div class="faculty-browser-metric">
+                <span class="faculty-browser-metric-label">${escapeHtml(label)}</span>
+                <span class="faculty-browser-metric-value">${escapeHtml(String(value))}</span>
+            </div>
+        `;
+    }
+
+    function setFacultyBrowserMessage(message, isLoading = false) {
+        $("#facultyBrowserSummary").html("");
+        $("#facultyBrowserList").html(`
+            <div class="faculty-browser-empty">
+                ${isLoading ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' : ''}
+                ${escapeHtml(message)}
+            </div>
+        `);
+    }
+
+    function renderFacultyBrowser() {
+        const summary = $("#facultyBrowserSummary");
+        const list = $("#facultyBrowserList");
+        if (summary.length === 0 || list.length === 0) {
+            return;
+        }
+
+        const termContext = getFacultyBrowserTermContext();
+        const facultyOptions = getFacultyOptionList();
+        if (!termContext) {
+            setFacultyBrowserMessage("Select A.Y. and semester to browse faculty loads.");
+            return;
+        }
+
+        if (facultyOptions.length === 0) {
+            setFacultyBrowserMessage("No faculty options are available on this page.");
+            return;
+        }
+
+        if (facultyOverviewCacheKey === "" && facultyOverviewCache.length === 0) {
+            if (facultyOverviewRequest && facultyOverviewRequest.readyState !== 4) {
+                setFacultyBrowserMessage("Loading faculty workload overview...", true);
+                return;
+            }
+
+            setFacultyBrowserMessage("Open the drawer to load faculty workload overview.");
+            return;
+        }
+
+        const overviewMap = new Map(
+            (Array.isArray(facultyOverviewCache) ? facultyOverviewCache : []).map(item => [Number(item.faculty_id), item])
+        );
+        const currentFacultyId = String($("#faculty_id").val() || "");
+        const merged = facultyOptions.map(option => {
+            const summaryRow = overviewMap.get(option.faculty_id) || {};
+            const totalLoad = toNumber(summaryRow.total_load);
+            const workloadLoad = toNumber(summaryRow.workload_load);
+            const designationUnits = toNumber(summaryRow.designation_units);
+            const totalPreparations = Math.max(0, Number(summaryRow.total_preparations) || 0);
+            const loadStatus = getLoadStatus(totalLoad);
+
+            return {
+                faculty_id: option.faculty_id,
+                full_name: option.full_name,
+                total_load: totalLoad,
+                workload_load: workloadLoad,
+                designation_units: designationUnits,
+                total_preparations: totalPreparations,
+                designation_label: String(summaryRow.designation_label || "").trim(),
+                load_status: loadStatus
+            };
+        });
+
+        const sections = [
+            {
+                key: "overload",
+                title: "Overload",
+                subtitle: "Faculty above 21 teaching-load units for the selected term."
+            },
+            {
+                key: "normal",
+                title: "Normal Load",
+                subtitle: "Faculty within the regular workload band for the selected term."
+            },
+            {
+                key: "underload",
+                title: "Underload",
+                subtitle: "Faculty below the regular workload band for the selected term."
+            }
+        ];
+
+        const counts = {
+            overload: merged.filter(item => item.load_status.className === "overload").length,
+            normal: merged.filter(item => item.load_status.className === "normal").length,
+            underload: merged.filter(item => item.load_status.className === "underload").length
+        };
+
+        summary.html(
+            buildFacultyBrowserMetric("Overload", counts.overload) +
+            buildFacultyBrowserMetric("Normal", counts.normal) +
+            buildFacultyBrowserMetric("Underload", counts.underload)
+        );
+
+        const sectionsHtml = sections.map(section => {
+            const rows = merged
+                .filter(item => item.load_status.className === section.key)
+                .sort((left, right) => String(left.full_name).localeCompare(String(right.full_name)));
+
+            if (rows.length === 0) {
+                return "";
+            }
+
+            const cards = rows.map(item => {
+                const statusClass = item.load_status.className;
+                const prepLabel = `${item.total_preparations} prep${item.total_preparations === 1 ? "" : "s"}`;
+                const noteParts = [];
+
+                if (item.designation_label) {
+                    noteParts.push(item.designation_label);
+                }
+
+                if (item.designation_units > 0) {
+                    noteParts.push(`Designation ${formatNumber(item.designation_units)}`);
+                }
+
+                if (item.workload_load > 0) {
+                    noteParts.push(`Teaching ${formatNumber(item.workload_load)}`);
+                }
+
+                if (noteParts.length === 0) {
+                    noteParts.push("No assigned workload yet");
+                }
+
+                return `
+                    <button
+                        type="button"
+                        class="faculty-browser-card ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"} ${currentFacultyId === String(item.faculty_id) ? "is-current" : ""}"
+                        data-faculty-id="${escapeHtml(item.faculty_id)}"
+                    >
+                        <div>
+                            <div class="faculty-browser-name ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"}">
+                                ${escapeHtml(item.full_name)}
+                            </div>
+                            <div class="faculty-browser-subtext">${escapeHtml(noteParts.join(" | "))}</div>
+                            <div class="faculty-browser-tags">
+                                <span class="faculty-browser-tag ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"}">${escapeHtml(item.load_status.drawerLabel)}</span>
+                                <span class="faculty-browser-tag">${escapeHtml(prepLabel)}</span>
+                                ${currentFacultyId === String(item.faculty_id) ? '<span class="faculty-browser-tag">Selected</span>' : ""}
+                            </div>
+                        </div>
+                        <div class="faculty-browser-load">
+                            <span class="faculty-browser-load-number">${escapeHtml(formatNumber(item.total_load))}</span>
+                            <span class="faculty-browser-load-label">Total Load</span>
+                        </div>
+                    </button>
+                `;
+            }).join("");
+
+            return `
+                <section class="faculty-browser-section">
+                    <div class="faculty-browser-section-header">
+                        <div>
+                            <span class="faculty-browser-status-chip is-${escapeHtml(section.key)}">
+                                <i class="bx bx-user"></i>
+                                ${escapeHtml(section.title)}
+                            </span>
+                            <div class="faculty-browser-section-subtitle">${escapeHtml(section.subtitle)}</div>
+                        </div>
+                        <span class="faculty-browser-section-badge">${escapeHtml(String(rows.length))}</span>
+                    </div>
+                    <div class="faculty-browser-list">${cards}</div>
+                </section>
+            `;
+        }).join("");
+
+        list.html(
+            sectionsHtml !== ""
+                ? sectionsHtml
+                : "<div class='faculty-browser-empty'>No faculty load summary is available for the selected term.</div>"
+        );
+    }
+
+    function loadFacultyOverview(forceReload = false) {
+        const dfd = $.Deferred();
+        const termContext = getFacultyBrowserTermContext();
+        const facultyOptions = getFacultyOptionList();
+
+        if (!termContext) {
+            clearFacultyOverviewCache();
+            renderFacultyBrowser();
+            dfd.reject("missing_term");
+            return dfd.promise();
+        }
+
+        if (facultyOptions.length === 0) {
+            clearFacultyOverviewCache();
+            renderFacultyBrowser();
+            dfd.reject("missing_faculty");
+            return dfd.promise();
+        }
+
+        const facultyIds = facultyOptions.map(item => item.faculty_id);
+        const cacheKey = `${termContext.ayId}-${termContext.semesterNum}-${facultyIds.join(",")}`;
+
+        if (!forceReload && cacheKey === facultyOverviewCacheKey && facultyOverviewCache.length > 0) {
+            renderFacultyBrowser();
+            dfd.resolve(facultyOverviewCache);
+            return dfd.promise();
+        }
+
+        abortPendingRequest(facultyOverviewRequest);
+        setFacultyBrowserMessage("Loading faculty workload overview...", true);
+
+        facultyOverviewRequest = $.ajax({
+            url: "../backend/query_workload_faculty_overview.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                ay_id: termContext.ayId,
+                semester: termContext.semesterNum,
+                faculty_ids: facultyIds
+            }
+        }).done(function (response) {
+            if (!response || response.status !== "ok" || !Array.isArray(response.faculty)) {
+                clearFacultyOverviewCache();
+                setFacultyBrowserMessage((response && response.message) ? response.message : "Failed to load faculty workload overview.");
+                dfd.reject("invalid");
+                return;
+            }
+
+            facultyOverviewCacheKey = cacheKey;
+            facultyOverviewCache = response.faculty;
+            renderFacultyBrowser();
+            dfd.resolve(facultyOverviewCache);
+        }).fail(function (xhr, status) {
+            if (status === "abort") {
+                dfd.reject("abort");
+                return;
+            }
+
+            clearFacultyOverviewCache();
+            setFacultyBrowserMessage("Failed to load faculty workload overview.");
+            dfd.reject(xhr);
+        });
+
+        return dfd.promise();
     }
 
     function formatCompactTime(value) {
@@ -1534,6 +2271,7 @@ $(document).ready(function () {
         setPrintField("#printDesignation", "");
         setPrintField("#printConforme", "");
         updateApplyWorkloadControls();
+        renderFacultyBrowser();
     }
 
     function refreshWorkloadPanels() {
@@ -1910,6 +2648,7 @@ $(document).ready(function () {
                 { workload_id: id },
                 function () {
                     refreshWorkloadPanels();
+                    loadFacultyOverview(true);
                 }
             );
         });
@@ -1919,6 +2658,13 @@ $(document).ready(function () {
        AUTO LOAD ON SELECTION CHANGE
     ========================================================= */
     $("#faculty_id, #fw_ay, #fw_semester").on("change", function () {
+        const termChanged = this.id === "fw_ay" || this.id === "fw_semester";
+        if (termChanged) {
+            clearFacultyOverviewCache();
+            loadFacultyOverview(true);
+        } else {
+            renderFacultyBrowser();
+        }
 
         const context = getSelectedContext();
         if (!context) {
@@ -1933,6 +2679,33 @@ $(document).ready(function () {
         $("#scheduledClassCard").stop(true, true).slideDown();
 
         refreshWorkloadPanels();
+    });
+
+    $("#btnOpenFacultyBrowser").on("click", function () {
+        loadFacultyOverview(false).always(function () {
+            renderFacultyBrowser();
+            if (facultyBrowserDrawerInstance) {
+                facultyBrowserDrawerInstance.show();
+            }
+        });
+    });
+
+    $(document).on("click", ".faculty-browser-card", function () {
+        const facultyId = String($(this).data("facultyId") || "").trim();
+        if (!facultyId) {
+            return;
+        }
+
+        if ($("#faculty_id option[value='" + facultyId.replace(/'/g, "\\'") + "']").length === 0) {
+            return;
+        }
+
+        if (String($("#faculty_id").val() || "") !== facultyId) {
+            $("#faculty_id").val(facultyId).trigger("change");
+            return;
+        }
+
+        renderFacultyBrowser();
     });
 
     /* =========================================================
@@ -1980,6 +2753,7 @@ $(document).ready(function () {
                         "success"
                     );
                     refreshWorkloadPanels();
+                    loadFacultyOverview(true);
                     return;
                 }
 
@@ -1990,6 +2764,7 @@ $(document).ready(function () {
                         html: res.message || "Selected classes conflict with this faculty's current workload."
                     });
                     refreshWorkloadPanels();
+                    loadFacultyOverview(true);
                     return;
                 }
 
@@ -2053,6 +2828,8 @@ $(document).ready(function () {
         row.toggle(match);
     });
 });
+
+loadFacultyOverview(true);
 
 
     
