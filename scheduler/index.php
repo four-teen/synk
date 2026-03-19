@@ -434,7 +434,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         <div class="card-header d-flex justify-content-between align-items-center">
                           <div>
                             <h5 class="m-0" id="scheduleHeatmapTitle">Accessible Room Occupancy Heatmap</h5>
-                            <small class="text-muted" id="scheduleHeatmapSubtitle">Each cell shows the percentage of active rooms accessible to your college that are occupied during each weekday hour.</small>
+                            <small class="text-muted" id="scheduleHeatmapSubtitle">Each cell shows the percentage of active rooms accessible to your college that are occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM.</small>
                           </div>
                           <span class="badge bg-label-info" id="scheduleHeatmapBadge">Room Heat</span>
                         </div>
@@ -442,7 +442,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         <div class="card-body">
                           <div id="scheduleHeatmapChart" class="chart-shell"></div>
                           <p class="chart-insight mb-0" id="scheduleHeatmapInsight">
-                            This heat map highlights the busiest room-hours for scheduling.
+                            This heat map highlights the busiest 30-minute room intervals for scheduling.
                           </p>
                         </div>
                       </div>
@@ -1119,8 +1119,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
           if (scheduleHeatmapSubtitle) {
             scheduleHeatmapSubtitle.textContent = scopeType === "campus"
-              ? "Each cell shows the percentage of active campus rooms occupied during each weekday hour across all colleges in the current campus."
-              : "Each cell shows the percentage of active rooms accessible to your college that are occupied during each weekday hour.";
+              ? "Each cell shows the percentage of active campus rooms occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM across all colleges in the current campus."
+              : "Each cell shows the percentage of active rooms accessible to your college that are occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM.";
           }
 
           if (scheduleHeatmapBadge) {
@@ -1412,9 +1412,11 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             },
             xaxis: {
               labels: {
-                rotate: -35,
+                rotate: -55,
+                trim: false,
+                hideOverlappingLabels: false,
                 style: {
-                  fontSize: "11px",
+                  fontSize: "9px",
                   colors: "#697a8d"
                 }
               }
@@ -1456,7 +1458,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           if (peakPercent <= 0) {
             setInsight(
               "scheduleHeatmapInsight",
-              "No occupied room slots are mapped in the current weekday window across the " + poolLabel + " of " + totalRooms + " room" + (totalRooms === 1 ? "" : "s") + "."
+              "No occupied room slots are mapped between 7:00 AM and 6:00 PM across the " + poolLabel + " of " + totalRooms + " room" + (totalRooms === 1 ? "" : "s") + "."
             );
             return;
           }
@@ -1706,8 +1708,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           setInsight(
             "scheduleHeatmapInsight",
             dashboardScope === "campus"
-              ? "Loading which weekday hours have the highest room occupancy across the current campus."
-              : "Loading which weekday hours are busiest across rooms accessible to your college."
+              ? "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM have the highest room occupancy across the current campus."
+              : "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM are busiest across rooms accessible to your college."
           );
           setInsight(
             "weeklyPressureInsight",

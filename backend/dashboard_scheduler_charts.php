@@ -113,6 +113,21 @@ function dashboard_minutes_to_label(int $minutes): string
     return sprintf('%d:%02d %s', $displayHour, $mins, $suffix);
 }
 
+function dashboard_slot_label(int $startMinutes, int $endMinutes): string
+{
+    $startLabel = dashboard_minutes_to_label($startMinutes);
+    $endLabel = dashboard_minutes_to_label($endMinutes);
+    $startSuffix = substr($startLabel, -2);
+    $endSuffix = substr($endLabel, -2);
+
+    if ($startSuffix === $endSuffix) {
+        $startCore = preg_replace('/\s+[AP]M$/', '', $startLabel);
+        return $startCore . '-' . $endLabel;
+    }
+
+    return $startLabel . '-' . $endLabel;
+}
+
 function dashboard_overlap_hours(int $startMinutes, int $endMinutes, int $windowStartMinutes, int $windowEndMinutes): float
 {
     $effectiveStart = max($startMinutes, $windowStartMinutes);
@@ -324,15 +339,15 @@ $scheduleHeatmap = empty_dashboard_heatmap_payload();
 $heatmapSlotLabels = [];
 $heatmapDays = dashboard_heatmap_day_order();
 $dayWindowStartMinutes = 7 * 60;
-$dayWindowEndMinutes = $dayWindowStartMinutes + (8 * 60);
+$dayWindowEndMinutes = 18 * 60;
 $slotDefinitions = [];
 
-for ($slotMinutes = $dayWindowStartMinutes; $slotMinutes < $dayWindowEndMinutes; $slotMinutes += 60) {
-    $slotLabel = dashboard_minutes_to_label($slotMinutes);
+for ($slotMinutes = $dayWindowStartMinutes; $slotMinutes < $dayWindowEndMinutes; $slotMinutes += 30) {
+    $slotLabel = dashboard_slot_label($slotMinutes, $slotMinutes + 30);
     $slotDefinitions[] = [
         'label' => $slotLabel,
         'start' => $slotMinutes,
-        'end' => $slotMinutes + 60
+        'end' => $slotMinutes + 30
     ];
     $heatmapSlotLabels[] = $slotLabel;
 }
