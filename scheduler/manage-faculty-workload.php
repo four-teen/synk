@@ -17,6 +17,7 @@ $prospectus_id = (string)($_GET['prospectus_id'] ?? '');
 $ay_id = (string)($_GET['ay_id'] ?? ($currentTerm['ay_id'] ?? ''));
 $semester = (string)($_GET['semester'] ?? ($currentTerm['semester'] ?? ''));
 $doPrint = isset($_GET['print']) && $_GET['print'] === '1';
+$exportMode = strtolower(trim((string)($_GET['export'] ?? '')));
 
 function semesterLabel($sem) {
     switch ((string)$sem) {
@@ -82,6 +83,414 @@ function formatProgramDisplayLabel($programCode, $programName, $major = '') {
 
 function h($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
+}
+
+function excelXmlEscape($value) {
+    return htmlspecialchars((string)$value, ENT_QUOTES | ENT_XML1, 'UTF-8');
+}
+
+function buildScheduleDisplayParts(array $row): array {
+    $decodedDays = json_decode((string)($row['days_json'] ?? ''), true);
+    $days = (is_array($decodedDays) && !empty($decodedDays)) ? implode('', $decodedDays) : '-';
+    $time = (!empty($row['time_start']) && !empty($row['time_end']))
+        ? date("h:i A", strtotime((string)$row['time_start'])) . ' - ' . date("h:i A", strtotime((string)$row['time_end']))
+        : '-';
+    $roomName = trim((string)($row['room_name'] ?? ''));
+    $schedule = ($days === '-' && $time === '-') ? '-' : trim($days . ' ' . $time);
+
+    return [
+        'days' => $days,
+        'time' => $time,
+        'room' => $roomName !== '' ? $roomName : '-',
+        'schedule' => $schedule
+    ];
+}
+
+function excelCellXml($value, $styleId = 'Body', $mergeAcross = 0) {
+    $mergeAttr = $mergeAcross > 0 ? ' ss:MergeAcross="' . (int)$mergeAcross . '"' : '';
+    return '<Cell ss:StyleID="' . excelXmlEscape($styleId) . '"' . $mergeAttr . '><Data ss:Type="String">' . excelXmlEscape($value) . '</Data></Cell>';
+}
+
+function xlsxColumnNameFromIndex(int $index): string
+{
+    $name = '';
+
+    while ($index > 0) {
+        $index--;
+        $name = chr(65 + ($index % 26)) . $name;
+        $index = (int)floor($index / 26);
+    }
+
+    return $name;
+}
+
+function xlsxInlineCellXml(int $rowNumber, int $columnIndex, string $value, int $styleIndex = 0): string
+{
+    $cellRef = xlsxColumnNameFromIndex($columnIndex) . $rowNumber;
+    return '<c r="' . $cellRef . '" t="inlineStr" s="' . $styleIndex . '"><is><t xml:space="preserve">' . excelXmlEscape($value) . '</t></is></c>';
+}
+
+function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, string $campusLabel, string $semester, string $ayLabel): ?string
+{
+    if (!class_exists('ZipArchive')) {
+        return null;
+    }
+
+    $rowsXml = [];
+    $mergeRefs = [];
+    $rowNumber = 1;
+
+    $appendMergedRow = static function (string $value, int $styleIndex) use (&$rowsXml, &$mergeRefs, &$rowNumber): void {
+        $rowsXml[] = '<row r="' . $rowNumber . '">' . xlsxInlineCellXml($rowNumber, 1, $value, $styleIndex) . '</row>';
+        $mergeRefs[] = 'A' . $rowNumber . ':D' . $rowNumber;
+        $rowNumber++;
+    };
+
+    $appendMergedRow('SULTAN KUDARAT STATE UNIVERSITY', 1);
+    $appendMergedRow('ALPHABETICAL LIST OF COURSES', 2);
+
+    if ($programLabel !== '') {
+        $appendMergedRow($programLabel, 3);
+    }
+
+    $appendMergedRow($campusLabel, 3);
+    $appendMergedRow(semesterLabel($semester) . ', AY ' . ($ayLabel !== '' ? $ayLabel : '-'), 3);
+    $rowsXml[] = '<row r="' . $rowNumber . '"/>';
+    $rowNumber++;
+    $appendMergedRow('Program Offerings', 4);
+
+    $rowsXml[] = '<row r="' . $rowNumber . '">' .
+        xlsxInlineCellXml($rowNumber, 1, 'Course Code', 5) .
+        xlsxInlineCellXml($rowNumber, 2, 'Section', 5) .
+        xlsxInlineCellXml($rowNumber, 3, 'Class Schedule', 5) .
+        xlsxInlineCellXml($rowNumber, 4, 'Room', 5) .
+    '</row>';
+    $rowNumber++;
+
+    if (!empty($courses)) {
+        foreach ($courses as $code => $data) {
+            $rowsXml[] = '<row r="' . $rowNumber . '">' .
+                xlsxInlineCellXml($rowNumber, 1, (string)$code, 6) .
+                xlsxInlineCellXml($rowNumber, 2, (string)($data['desc'] ?? ''), 7) .
+            '</row>';
+            $mergeRefs[] = 'B' . $rowNumber . ':D' . $rowNumber;
+            $rowNumber++;
+
+            foreach (($data['rows'] ?? []) as $row) {
+                $display = buildScheduleDisplayParts((array)$row);
+                $rowsXml[] = '<row r="' . $rowNumber . '">' .
+                    xlsxInlineCellXml($rowNumber, 1, '', 0) .
+                    xlsxInlineCellXml($rowNumber, 2, (string)($row['section_name'] ?? '-'), 0) .
+                    xlsxInlineCellXml($rowNumber, 3, $display['schedule'], 0) .
+                    xlsxInlineCellXml($rowNumber, 4, $display['room'], 0) .
+                '</row>';
+                $rowNumber++;
+            }
+        }
+    } else {
+        $rowsXml[] = '<row r="' . $rowNumber . '">' . xlsxInlineCellXml($rowNumber, 1, 'No workload rows found for this filter.', 8) . '</row>';
+        $mergeRefs[] = 'A' . $rowNumber . ':D' . $rowNumber;
+    }
+
+    $mergeCellsXml = '';
+    if (!empty($mergeRefs)) {
+        $mergeCellsXml = '<mergeCells count="' . count($mergeRefs) . '">';
+        foreach ($mergeRefs as $mergeRef) {
+            $mergeCellsXml .= '<mergeCell ref="' . $mergeRef . '"/>';
+        }
+        $mergeCellsXml .= '</mergeCells>';
+    }
+
+    $sheetXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<worksheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' .
+            '<sheetViews><sheetView workbookViewId="0"/></sheetViews>' .
+            '<sheetFormatPr defaultRowHeight="15"/>' .
+            '<cols>' .
+                '<col min="1" max="1" width="18" customWidth="1"/>' .
+                '<col min="2" max="2" width="18" customWidth="1"/>' .
+                '<col min="3" max="3" width="32" customWidth="1"/>' .
+                '<col min="4" max="4" width="22" customWidth="1"/>' .
+            '</cols>' .
+            '<sheetData>' . implode('', $rowsXml) . '</sheetData>' .
+            $mergeCellsXml .
+        '</worksheet>';
+
+    $stylesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<styleSheet xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main">' .
+            '<fonts count="6">' .
+                '<font><sz val="11"/><name val="Calibri"/><family val="2"/></font>' .
+                '<font><b/><sz val="16"/><name val="Calibri"/><family val="2"/></font>' .
+                '<font><b/><sz val="12"/><name val="Calibri"/><family val="2"/></font>' .
+                '<font><b/><sz val="11"/><name val="Calibri"/><family val="2"/></font>' .
+                '<font><b/><sz val="11"/><name val="Calibri"/><family val="2"/><color rgb="FF334760"/></font>' .
+                '<font><i/><sz val="11"/><name val="Calibri"/><family val="2"/></font>' .
+            '</fonts>' .
+            '<fills count="4">' .
+                '<fill><patternFill patternType="none"/></fill>' .
+                '<fill><patternFill patternType="gray125"/></fill>' .
+                '<fill><patternFill patternType="solid"><fgColor rgb="FFEAF2FB"/><bgColor indexed="64"/></patternFill></fill>' .
+                '<fill><patternFill patternType="solid"><fgColor rgb="FFF7F7F7"/><bgColor indexed="64"/></patternFill></fill>' .
+            '</fills>' .
+            '<borders count="2">' .
+                '<border><left/><right/><top/><bottom/><diagonal/></border>' .
+                '<border><left style="thin"/><right style="thin"/><top style="thin"/><bottom style="thin"/><diagonal/></border>' .
+            '</borders>' .
+            '<cellStyleXfs count="1"><xf numFmtId="0" fontId="0" fillId="0" borderId="0"/></cellStyleXfs>' .
+            '<cellXfs count="9">' .
+                '<xf numFmtId="0" fontId="0" fillId="0" borderId="1" xfId="0" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>' .
+                '<xf numFmtId="0" fontId="1" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' .
+                '<xf numFmtId="0" fontId="2" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' .
+                '<xf numFmtId="0" fontId="3" fillId="0" borderId="0" xfId="0" applyFont="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' .
+                '<xf numFmtId="0" fontId="4" fillId="2" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>' .
+                '<xf numFmtId="0" fontId="3" fillId="3" borderId="1" xfId="0" applyFont="1" applyFill="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center" wrapText="1"/></xf>' .
+                '<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center"/></xf>' .
+                '<xf numFmtId="0" fontId="3" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment vertical="center" wrapText="1"/></xf>' .
+                '<xf numFmtId="0" fontId="5" fillId="0" borderId="1" xfId="0" applyFont="1" applyBorder="1" applyAlignment="1"><alignment horizontal="center" vertical="center"/></xf>' .
+            '</cellXfs>' .
+            '<cellStyles count="1"><cellStyle name="Normal" xfId="0" builtinId="0"/></cellStyles>' .
+        '</styleSheet>';
+
+    $contentTypesXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Types xmlns="http://schemas.openxmlformats.org/package/2006/content-types">' .
+            '<Default Extension="rels" ContentType="application/vnd.openxmlformats-package.relationships+xml"/>' .
+            '<Default Extension="xml" ContentType="application/xml"/>' .
+            '<Override PartName="/xl/workbook.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet.main+xml"/>' .
+            '<Override PartName="/xl/worksheets/sheet1.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' .
+            '<Override PartName="/xl/styles.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.styles+xml"/>' .
+            '<Override PartName="/docProps/core.xml" ContentType="application/vnd.openxmlformats-package.core-properties+xml"/>' .
+            '<Override PartName="/docProps/app.xml" ContentType="application/vnd.openxmlformats-officedocument.extended-properties+xml"/>' .
+        '</Types>';
+
+    $rootRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' .
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/officeDocument" Target="xl/workbook.xml"/>' .
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/package/2006/relationships/metadata/core-properties" Target="docProps/core.xml"/>' .
+            '<Relationship Id="rId3" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/extended-properties" Target="docProps/app.xml"/>' .
+        '</Relationships>';
+
+    $workbookXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<workbook xmlns="http://schemas.openxmlformats.org/spreadsheetml/2006/main" xmlns:r="http://schemas.openxmlformats.org/officeDocument/2006/relationships">' .
+            '<sheets>' .
+                '<sheet name="Faculty Workload" sheetId="1" r:id="rId1"/>' .
+            '</sheets>' .
+        '</workbook>';
+
+    $workbookRelsXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Relationships xmlns="http://schemas.openxmlformats.org/package/2006/relationships">' .
+            '<Relationship Id="rId1" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet1.xml"/>' .
+            '<Relationship Id="rId2" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/styles" Target="styles.xml"/>' .
+        '</Relationships>';
+
+    $timestamp = gmdate('Y-m-d\TH:i:s\Z');
+    $coreXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<cp:coreProperties xmlns:cp="http://schemas.openxmlformats.org/package/2006/metadata/core-properties" xmlns:dc="http://purl.org/dc/elements/1.1/" xmlns:dcterms="http://purl.org/dc/terms/" xmlns:dcmitype="http://purl.org/dc/dcmitype/" xmlns:xsi="http://www.w3.org/2001/XMLSchema-instance">' .
+            '<dc:title>Faculty Workload Report</dc:title>' .
+            '<dc:creator>Synk</dc:creator>' .
+            '<cp:lastModifiedBy>Synk</cp:lastModifiedBy>' .
+            '<dcterms:created xsi:type="dcterms:W3CDTF">' . $timestamp . '</dcterms:created>' .
+            '<dcterms:modified xsi:type="dcterms:W3CDTF">' . $timestamp . '</dcterms:modified>' .
+        '</cp:coreProperties>';
+
+    $appXml = '<?xml version="1.0" encoding="UTF-8" standalone="yes"?>' .
+        '<Properties xmlns="http://schemas.openxmlformats.org/officeDocument/2006/extended-properties" xmlns:vt="http://schemas.openxmlformats.org/officeDocument/2006/docPropsVTypes">' .
+            '<Application>Synk</Application>' .
+        '</Properties>';
+
+    $tempPath = tempnam(sys_get_temp_dir(), 'synk_xlsx_');
+    if ($tempPath === false) {
+        return null;
+    }
+
+    $zip = new ZipArchive();
+    if ($zip->open($tempPath, ZipArchive::CREATE | ZipArchive::OVERWRITE) !== true) {
+        @unlink($tempPath);
+        return null;
+    }
+
+    $zip->addFromString('[Content_Types].xml', $contentTypesXml);
+    $zip->addFromString('_rels/.rels', $rootRelsXml);
+    $zip->addFromString('docProps/core.xml', $coreXml);
+    $zip->addFromString('docProps/app.xml', $appXml);
+    $zip->addFromString('xl/workbook.xml', $workbookXml);
+    $zip->addFromString('xl/_rels/workbook.xml.rels', $workbookRelsXml);
+    $zip->addFromString('xl/styles.xml', $stylesXml);
+    $zip->addFromString('xl/worksheets/sheet1.xml', $sheetXml);
+    $zip->close();
+
+    $binary = file_get_contents($tempPath);
+    @unlink($tempPath);
+
+    return $binary === false ? null : $binary;
+}
+
+function buildFacultyWorkloadExcelWorkbook(array $courses, string $programLabel, string $campusLabel, string $semester, string $ayLabel): string
+{
+    $rows = [];
+    $rows[] = '<Row ss:Height="24">' . excelCellXml('SULTAN KUDARAT STATE UNIVERSITY', 'Title', 3) . '</Row>';
+    $rows[] = '<Row>' . excelCellXml('ALPHABETICAL LIST OF COURSES', 'Subtitle', 3) . '</Row>';
+
+    if ($programLabel !== '') {
+        $rows[] = '<Row>' . excelCellXml($programLabel, 'Meta', 3) . '</Row>';
+    }
+
+    $rows[] = '<Row>' . excelCellXml($campusLabel, 'Meta', 3) . '</Row>';
+    $rows[] = '<Row>' . excelCellXml(semesterLabel($semester) . ', AY ' . ($ayLabel !== '' ? $ayLabel : '-'), 'Meta', 3) . '</Row>';
+    $rows[] = '<Row/>';
+    $rows[] = '<Row>' . excelCellXml('Program Offerings', 'GroupTitle', 3) . '</Row>';
+    $rows[] = '<Row>' .
+        excelCellXml('Course Code', 'Header') .
+        excelCellXml('Section', 'Header') .
+        excelCellXml('Class Schedule', 'Header') .
+        excelCellXml('Room', 'Header') .
+    '</Row>';
+
+    if (!empty($courses)) {
+        foreach ($courses as $code => $data) {
+            $rows[] = '<Row>' .
+                excelCellXml($code, 'CourseCode') .
+                excelCellXml((string)($data['desc'] ?? ''), 'CourseDesc', 2) .
+            '</Row>';
+
+            foreach (($data['rows'] ?? []) as $row) {
+                $display = buildScheduleDisplayParts((array)$row);
+                $rows[] = '<Row>' .
+                    excelCellXml('', 'Body') .
+                    excelCellXml((string)($row['section_name'] ?? '-'), 'Body') .
+                    excelCellXml($display['schedule'], 'Body') .
+                    excelCellXml($display['room'], 'Body') .
+                '</Row>';
+            }
+        }
+    } else {
+        $rows[] = '<Row>' . excelCellXml('No workload rows found for this filter.', 'EmptyState', 3) . '</Row>';
+    }
+
+    return '<?xml version="1.0" encoding="UTF-8"?>' . "\n" .
+        '<?mso-application progid="Excel.Sheet"?>' . "\n" .
+        '<Workbook xmlns="urn:schemas-microsoft-com:office:spreadsheet" ' .
+        'xmlns:o="urn:schemas-microsoft-com:office:office" ' .
+        'xmlns:x="urn:schemas-microsoft-com:office:excel" ' .
+        'xmlns:ss="urn:schemas-microsoft-com:office:spreadsheet" ' .
+        'xmlns:html="http://www.w3.org/TR/REC-html40">' .
+            '<Styles>' .
+                '<Style ss:ID="Default" ss:Name="Normal">' .
+                    '<Alignment ss:Vertical="Center"/>' .
+                    '<Borders/>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Color="#000000"/>' .
+                    '<Interior/>' .
+                    '<NumberFormat/>' .
+                    '<Protection/>' .
+                '</Style>' .
+                '<Style ss:ID="Title">' .
+                    '<Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' .
+                    '<Font ss:FontName="Calibri" ss:Size="15" ss:Bold="1"/>' .
+                '</Style>' .
+                '<Style ss:ID="Subtitle">' .
+                    '<Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' .
+                    '<Font ss:FontName="Calibri" ss:Size="12" ss:Bold="1"/>' .
+                '</Style>' .
+                '<Style ss:ID="Meta">' .
+                    '<Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>' .
+                '</Style>' .
+                '<Style ss:ID="GroupTitle">' .
+                    '<Alignment ss:Vertical="Center"/>' .
+                    '<Borders>' .
+                        '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                    '</Borders>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>' .
+                    '<Interior ss:Color="#EAF2FB" ss:Pattern="Solid"/>' .
+                '</Style>' .
+                '<Style ss:ID="Header">' .
+                    '<Alignment ss:Horizontal="Center" ss:Vertical="Center" ss:WrapText="1"/>' .
+                    '<Borders>' .
+                        '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                    '</Borders>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>' .
+                    '<Interior ss:Color="#F7F7F7" ss:Pattern="Solid"/>' .
+                '</Style>' .
+                '<Style ss:ID="CourseCode">' .
+                    '<Alignment ss:Vertical="Center"/>' .
+                    '<Borders>' .
+                        '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                    '</Borders>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>' .
+                '</Style>' .
+                '<Style ss:ID="CourseDesc">' .
+                    '<Alignment ss:Vertical="Center" ss:WrapText="1"/>' .
+                    '<Borders>' .
+                        '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                    '</Borders>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Bold="1"/>' .
+                '</Style>' .
+                '<Style ss:ID="Body">' .
+                    '<Alignment ss:Vertical="Center" ss:WrapText="1"/>' .
+                    '<Borders>' .
+                        '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                    '</Borders>' .
+                '</Style>' .
+                '<Style ss:ID="EmptyState">' .
+                    '<Alignment ss:Horizontal="Center" ss:Vertical="Center"/>' .
+                    '<Borders>' .
+                        '<Border ss:Position="Bottom" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Left" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Right" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                        '<Border ss:Position="Top" ss:LineStyle="Continuous" ss:Weight="1"/>' .
+                    '</Borders>' .
+                    '<Font ss:FontName="Calibri" ss:Size="11" ss:Italic="1"/>' .
+                '</Style>' .
+            '</Styles>' .
+            '<Worksheet ss:Name="Faculty Workload">' .
+                '<Table>' .
+                    '<Column ss:AutoFitWidth="0" ss:Width="120"/>' .
+                    '<Column ss:AutoFitWidth="0" ss:Width="110"/>' .
+                    '<Column ss:AutoFitWidth="0" ss:Width="210"/>' .
+                    '<Column ss:AutoFitWidth="0" ss:Width="150"/>' .
+                    implode('', $rows) .
+                '</Table>' .
+                '<WorksheetOptions xmlns="urn:schemas-microsoft-com:office:excel">' .
+                    '<PageSetup>' .
+                        '<Layout x:Orientation="Portrait"/>' .
+                    '</PageSetup>' .
+                    '<ProtectObjects>False</ProtectObjects>' .
+                    '<ProtectScenarios>False</ProtectScenarios>' .
+                '</WorksheetOptions>' .
+            '</Worksheet>' .
+        '</Workbook>';
+}
+
+function buildReportFilename(string $programLabel, string $ayLabel, string $semester, string $extension = 'xlsx'): string
+{
+    $parts = [
+        'faculty_workload_report',
+        $programLabel !== '' ? $programLabel : 'program',
+        $ayLabel !== '' ? $ayLabel : 'ay',
+        semesterLabel($semester)
+    ];
+
+    $filename = implode('_', $parts);
+    $filename = preg_replace('/[^A-Za-z0-9]+/', '_', strtoupper($filename));
+    $filename = trim((string)$filename, '_');
+
+    $extension = preg_replace('/[^A-Za-z0-9]/', '', strtolower($extension));
+    $extension = $extension !== '' ? $extension : 'xlsx';
+
+    return ($filename !== '' ? $filename : 'FACULTY_WORKLOAD_REPORT') . '.' . $extension;
 }
 
 $campusLabel = 'CAMPUS';
@@ -233,6 +642,51 @@ if ($hasFilters && $collegeId > 0) {
         $stmt->close();
     }
 }
+
+$reportQuery = $hasFilters
+    ? http_build_query([
+        'prospectus_id' => $prospectus_id,
+        'ay_id' => $ay_id,
+        'semester' => $semester
+    ])
+    : '';
+$totalCourseCount = count($courses);
+$totalScheduleEntryCount = 0;
+foreach ($courses as $courseGroup) {
+    $totalScheduleEntryCount += count($courseGroup['rows'] ?? []);
+}
+$printReportUrl = $reportQuery !== '' ? ('?' . $reportQuery . '&print=1') : '';
+$excelReportUrl = $reportQuery !== '' ? ('?' . $reportQuery . '&export=excel') : '';
+
+if ($exportMode === 'excel' && $hasFilters) {
+    $xlsxBinary = buildFacultyWorkloadXlsxBinary($courses, $selectedProgramLabel, $campusLabel, $semester, $ayLabel);
+
+    while (ob_get_level() > 0) {
+        ob_end_clean();
+    }
+
+    if ($xlsxBinary !== null) {
+        $filename = buildReportFilename($selectedProgramLabel, $ayLabel, $semester, 'xlsx');
+        header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
+        header('Content-Disposition: attachment; filename="' . $filename . '"');
+        header('Cache-Control: max-age=0, no-cache, no-store, must-revalidate');
+        header('Pragma: no-cache');
+        header('X-Content-Type-Options: nosniff');
+        header('Content-Length: ' . strlen($xlsxBinary));
+        echo $xlsxBinary;
+        exit;
+    }
+
+    $filename = buildReportFilename($selectedProgramLabel, $ayLabel, $semester, 'xml');
+    $excelWorkbook = buildFacultyWorkloadExcelWorkbook($courses, $selectedProgramLabel, $campusLabel, $semester, $ayLabel);
+    header('Content-Type: application/xml; charset=UTF-8');
+    header('Content-Disposition: attachment; filename="' . $filename . '"');
+    header('Cache-Control: max-age=0, no-cache, no-store, must-revalidate');
+    header('Pragma: no-cache');
+    header('X-Content-Type-Options: nosniff');
+    echo $excelWorkbook;
+    exit;
+}
 ?>
 <!DOCTYPE html>
 <html
@@ -280,12 +734,176 @@ if ($hasFilters && $collegeId > 0) {
       font-size: 0.85rem;
     }
 
+    .report-filter-toolbar {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 1rem;
+      padding-top: 0.45rem;
+      border-top: 1px solid #e2ebf6;
+      margin-top: 0.35rem;
+    }
+
+    .report-filter-meta {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.7rem;
+      min-width: 0;
+    }
+
+    .report-filter-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      padding: 0.68rem 0.95rem;
+      border: 1px solid #d8e4f2;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.9);
+      color: #52637a;
+      font-size: 0.82rem;
+      line-height: 1.2;
+      box-shadow: 0 10px 18px rgba(52, 71, 96, 0.04);
+    }
+
+    .report-filter-chip i {
+      font-size: 1rem;
+      color: #696cff;
+    }
+
     .report-filter-actions {
       display: flex;
-      flex-direction: column;
-      gap: 0.65rem;
-      height: 100%;
       justify-content: flex-end;
+      flex: 0 0 auto;
+    }
+
+    .report-action-badges {
+      display: flex;
+      flex-wrap: wrap;
+      justify-content: flex-end;
+      gap: 0.7rem;
+    }
+
+    .report-action-badge {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.5rem;
+      white-space: nowrap;
+      padding: 0.72rem 1rem;
+      border: 1px solid #d8e4f2;
+      border-radius: 999px;
+      font-weight: 600;
+      font-size: 0.84rem;
+      line-height: 1;
+      text-decoration: none;
+      box-shadow: 0 10px 18px rgba(52, 71, 96, 0.05);
+      transition: transform 0.16s ease, box-shadow 0.16s ease, border-color 0.16s ease;
+    }
+
+    .report-action-badge i {
+      font-size: 1rem;
+    }
+
+    .report-action-badge:hover,
+    .report-action-badge:focus {
+      transform: translateY(-1px);
+      text-decoration: none;
+      box-shadow: 0 12px 24px rgba(52, 71, 96, 0.1);
+    }
+
+    .report-action-badge.is-print {
+      background: #f4f5ff;
+      border-color: #cfd4ff;
+      color: #5d63ff;
+    }
+
+    .report-action-badge.is-excel {
+      background: #f1fff4;
+      border-color: #bfe8c9;
+      color: #39a85a;
+    }
+
+    .report-action-badge.is-disabled {
+      background: #f5f7fb;
+      border-color: #dbe3ef;
+      color: #93a1b5;
+      cursor: not-allowed;
+      pointer-events: none;
+    }
+
+    .report-overview-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 1rem;
+    }
+
+    .report-overview-card {
+      padding: 1rem 1.1rem;
+      border: 1px solid #e5ecf6;
+      border-radius: 1rem;
+      background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+      box-shadow: 0 16px 30px rgba(31, 45, 61, 0.05);
+    }
+
+    .report-overview-label {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.45rem;
+      font-size: 0.78rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #7a8aa3;
+      margin-bottom: 0.45rem;
+    }
+
+    .report-overview-label i {
+      color: #696cff;
+      font-size: 1rem;
+    }
+
+    .report-overview-value {
+      color: #32445d;
+      font-size: 1rem;
+      font-weight: 700;
+      line-height: 1.35;
+    }
+
+    .report-overview-value.is-metric {
+      font-size: 1.5rem;
+      line-height: 1;
+    }
+
+    @media (max-width: 991.98px) {
+      .report-filter-toolbar {
+        align-items: stretch;
+        flex-direction: column;
+      }
+
+      .report-filter-actions,
+      .report-action-badges {
+        width: 100%;
+      }
+
+      .report-action-badges {
+        justify-content: flex-start;
+      }
+    }
+
+    @media (max-width: 575.98px) {
+      .report-filter-chip {
+        width: 100%;
+        justify-content: flex-start;
+      }
+
+      .report-action-badge {
+        width: 100%;
+        justify-content: center;
+      }
+
+      .report-overview-grid {
+        grid-template-columns: 1fr;
+      }
     }
 
     .report-panel {
@@ -729,25 +1347,101 @@ if ($hasFilters && $collegeId > 0) {
                     </select>
                   </div>
 
-                  <div class="col-lg-2 col-md-12">
-                    <div class="report-filter-actions">
-                      <?php if ($hasFilters): ?>
-                        <a
-                          class="btn btn-outline-primary"
-                          href="?prospectus_id=<?= urlencode($prospectus_id) ?>&ay_id=<?= urlencode($ay_id) ?>&semester=<?= urlencode($semester) ?>&print=1"
-                          target="_blank"
-                          rel="noopener"
-                        >
-                          Print View
-                        </a>
-                      <?php else: ?>
-                        <button class="btn btn-outline-secondary" type="button" disabled>Print View</button>
-                      <?php endif; ?>
+                  <div class="col-12">
+                    <div class="report-filter-toolbar">
+                      <div class="report-filter-meta">
+                        <?php if ($hasFilters): ?>
+                          <div class="report-filter-chip">
+                            <i class="bx bx-collection"></i>
+                            <span><?= h($selectedProgramLabel !== '' ? $selectedProgramLabel : 'Selected prospectus') ?></span>
+                          </div>
+                          <div class="report-filter-chip">
+                            <i class="bx bx-calendar"></i>
+                            <span>AY <?= h($ayLabel !== '' ? $ayLabel : '-') ?> · <?= h(ucwords(strtolower(semesterLabel($semester)))) ?></span>
+                          </div>
+                          <div class="report-filter-chip">
+                            <i class="bx bx-buildings"></i>
+                            <span><?= h($campusLabel) ?></span>
+                          </div>
+                        <?php else: ?>
+                          <div class="report-filter-chip">
+                            <i class="bx bx-info-circle"></i>
+                            <span>Choose a prospectus to enable print and Excel export.</span>
+                          </div>
+                        <?php endif; ?>
+                      </div>
+
+                      <div class="report-filter-actions">
+                        <?php if ($hasFilters): ?>
+                          <div class="report-action-badges" aria-label="Report actions">
+                            <a
+                              class="report-action-badge is-print"
+                              href="<?= h($printReportUrl) ?>"
+                              target="_blank"
+                              rel="noopener"
+                            >
+                              <i class="bx bx-printer"></i>
+                              <span>Print View</span>
+                            </a>
+                            <a
+                              class="report-action-badge is-excel"
+                              href="<?= h($excelReportUrl) ?>"
+                            >
+                              <i class="bx bx-download"></i>
+                              <span>Download Excel</span>
+                            </a>
+                          </div>
+                        <?php else: ?>
+                          <div class="report-action-badges" aria-label="Report actions disabled">
+                            <span class="report-action-badge is-disabled">
+                              <i class="bx bx-printer"></i>
+                              <span>Print View</span>
+                            </span>
+                            <span class="report-action-badge is-disabled">
+                              <i class="bx bx-download"></i>
+                              <span>Download Excel</span>
+                            </span>
+                          </div>
+                        <?php endif; ?>
+                      </div>
                     </div>
                   </div>
                 </form>
               </div>
             </div>
+
+            <?php if ($hasFilters): ?>
+              <div class="report-overview-grid no-print mb-4">
+                <div class="report-overview-card">
+                  <div class="report-overview-label">
+                    <i class="bx bx-book-content"></i>
+                    <span>Program</span>
+                  </div>
+                  <div class="report-overview-value"><?= h($selectedProgramLabel !== '' ? $selectedProgramLabel : 'Selected prospectus') ?></div>
+                </div>
+                <div class="report-overview-card">
+                  <div class="report-overview-label">
+                    <i class="bx bx-layer"></i>
+                    <span>Course Codes</span>
+                  </div>
+                  <div class="report-overview-value is-metric"><?= h((string)$totalCourseCount) ?></div>
+                </div>
+                <div class="report-overview-card">
+                  <div class="report-overview-label">
+                    <i class="bx bx-spreadsheet"></i>
+                    <span>Schedule Entries</span>
+                  </div>
+                  <div class="report-overview-value is-metric"><?= h((string)$totalScheduleEntryCount) ?></div>
+                </div>
+                <div class="report-overview-card">
+                  <div class="report-overview-label">
+                    <i class="bx bx-calendar-star"></i>
+                    <span>Reporting Term</span>
+                  </div>
+                  <div class="report-overview-value"><?= h(ucwords(strtolower(semesterLabel($semester)))) ?>, AY <?= h($ayLabel !== '' ? $ayLabel : '-') ?></div>
+                </div>
+              </div>
+            <?php endif; ?>
 
             <div class="report-panel" id="facultyReportPanel">
               <div id="reportLoadingOverlay" class="report-loading-overlay" aria-hidden="true">
@@ -812,18 +1506,13 @@ if ($hasFilters && $collegeId > 0) {
                               </tr>
                               <?php foreach ($data['rows'] as $row): ?>
                                 <?php
-                                $decodedDays = json_decode((string)($row['days_json'] ?? ''), true);
-                                $days = (is_array($decodedDays) && !empty($decodedDays)) ? implode('', $decodedDays) : '-';
-                                $time = (!empty($row['time_start']) && !empty($row['time_end']))
-                                    ? date("h:i A", strtotime((string)$row['time_start'])) . ' - ' . date("h:i A", strtotime((string)$row['time_end']))
-                                    : '-';
-                                $roomName = trim((string)($row['room_name'] ?? ''));
+                                $display = buildScheduleDisplayParts((array)$row);
                                 ?>
                                 <tr class="indent-row">
                                   <td></td>
                                   <td><?= h($row['section_name'] ?? '-') ?></td>
-                                  <td><?= h($days) ?> <?= h($time) ?></td>
-                                  <td><?= h($roomName !== '' ? $roomName : '-') ?></td>
+                                  <td><?= h($display['schedule']) ?></td>
+                                  <td><?= h($display['room']) ?></td>
                                 </tr>
                               <?php endforeach; ?>
                             <?php endforeach; ?>
