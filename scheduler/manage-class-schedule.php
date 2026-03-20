@@ -144,6 +144,11 @@ body.swal2-shown .modal {
     white-space: nowrap;
 }
 
+.schedule-action-col .btn-schedule {
+    min-width: 90px;
+    touch-action: manipulation;
+}
+
 .schedule-stack-item {
     display: flex;
     flex-direction: column;
@@ -1203,6 +1208,24 @@ body.swal2-shown .modal {
 }
 
 @media (max-width: 575.98px) {
+    #scheduleListContainer {
+        padding-bottom: 6rem !important;
+    }
+
+    .schedule-pan-shell {
+        padding-bottom: 0.35rem;
+        -webkit-overflow-scrolling: touch;
+    }
+
+    .schedule-action-col {
+        min-width: 112px;
+    }
+
+    .schedule-action-col .btn-schedule {
+        width: 100%;
+        min-height: 2.4rem;
+    }
+
     #roomBrowserDrawer {
         width: 100vw;
     }
@@ -3476,6 +3499,12 @@ while ($ay = $ayQ->fetch_assoc()) {
             let isDragging = false;
             let suppressClick = false;
 
+            function isInteractiveTarget(target) {
+                return target instanceof Element && Boolean(
+                    target.closest("button, a, input, select, textarea, label, summary, [role='button'], [contenteditable='true'], .btn, .select2-container, .select2-selection")
+                );
+            }
+
             function finishPan(event) {
                 if (activePointerId === null) {
                     return;
@@ -3508,6 +3537,10 @@ while ($ay = $ayQ->fetch_assoc()) {
                     return;
                 }
 
+                if (isInteractiveTarget(event.target)) {
+                    return;
+                }
+
                 if (shell.scrollWidth <= shell.clientWidth + 4) {
                     return;
                 }
@@ -3517,14 +3550,6 @@ while ($ay = $ayQ->fetch_assoc()) {
                 startScrollLeft = shell.scrollLeft;
                 isDragging = false;
                 suppressClick = false;
-
-                if (shell.setPointerCapture) {
-                    try {
-                        shell.setPointerCapture(activePointerId);
-                    } catch (error) {
-                        // Ignore browsers that do not support pointer capture in this context.
-                    }
-                }
             });
 
             shell.addEventListener("pointermove", function (event) {
@@ -3536,6 +3561,14 @@ while ($ay = $ayQ->fetch_assoc()) {
                 if (!isDragging && Math.abs(deltaX) > 6) {
                     isDragging = true;
                     shell.classList.add("is-pan-active");
+
+                    if (shell.setPointerCapture) {
+                        try {
+                            shell.setPointerCapture(activePointerId);
+                        } catch (error) {
+                            // Ignore browsers that do not support pointer capture in this context.
+                        }
+                    }
                 }
 
                 if (!isDragging) {

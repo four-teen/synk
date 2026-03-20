@@ -326,7 +326,7 @@ foreach ($grouped as $yearLevel => $rows) {
         echo "  <td class='text-center'>" . implode('', $roomParts) . "</td>";
         echo "  <td class='text-center'>{$status['badge']}</td>";
         echo "  <td class='text-center schedule-action-col'>";
-        echo "    <button class='btn {$status['button_class']} btn-sm btn-schedule'";
+        echo "    <button type='button' class='btn {$status['button_class']} btn-sm btn-schedule'";
         echo "      data-offering-id='" . (int)$row['offering_id'] . "'";
         echo "      data-sub-code='" . htmlspecialchars((string)$row['sub_code'], ENT_QUOTES) . "'";
         echo "      data-sub-desc='" . htmlspecialchars((string)$row['sub_description'], ENT_QUOTES) . "'";
