@@ -384,6 +384,47 @@ body.swal2-shown .modal {
 .schedule-toolbar-panel.search-panel {
     justify-content: flex-start;
 }
+
+.schedule-toolbar-panel.schedule-set-panel {
+    grid-column: 1 / -1;
+}
+
+.schedule-set-shell {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.85rem;
+}
+
+.schedule-set-select {
+    flex: 1 1 300px;
+    min-width: 240px;
+}
+
+.schedule-set-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.65rem;
+}
+
+.schedule-set-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.4rem;
+    min-height: 2.65rem;
+    border-radius: 12px;
+    font-weight: 600;
+}
+
+.schedule-set-meta {
+    min-height: 1.35rem;
+    color: #5f6f8d;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.schedule-set-meta strong {
+    color: #1f2a44;
 }
 
 .suggestion-board {
@@ -1660,6 +1701,31 @@ while ($ay = $ayQ->fetch_assoc()) {
       </div>
 
       <div class="schedule-toolbar-grid">
+        <div class="schedule-toolbar-panel schedule-set-panel">
+          <label class="schedule-toolbar-label" for="scheduleSetSelect">Saved Schedule Sets</label>
+          <div class="schedule-set-shell">
+            <div class="schedule-set-select">
+              <select id="scheduleSetSelect" class="form-select" disabled>
+                <option value="">Select Academic Year and Semester first</option>
+              </select>
+            </div>
+            <div class="schedule-set-actions">
+              <button class="btn btn-outline-secondary btn-sm" id="btnRefreshScheduleSets" disabled>
+                <i class="bx bx-refresh"></i> Refresh Sets
+              </button>
+              <button class="btn btn-outline-primary btn-sm" id="btnSaveScheduleSet" disabled>
+                <i class="bx bx-save"></i> Save Live as Set
+              </button>
+              <button class="btn btn-primary btn-sm" id="btnLoadScheduleSet" disabled>
+                <i class="bx bx-import"></i> Load Set to Live
+              </button>
+            </div>
+          </div>
+          <div class="schedule-set-meta mt-2" id="scheduleSetDetails">
+            Live schedules remain the active workspace. Save them as a reusable set, then clear or revise live schedules and load any saved set back later.
+          </div>
+        </div>
+
         <div class="schedule-toolbar-panel">
           <label class="schedule-toolbar-label" for="scheduleSortMode">Group View</label>
           <select id="scheduleSortMode" class="form-select schedule-sort-shell">
@@ -2410,6 +2476,8 @@ while ($ay = $ayQ->fetch_assoc()) {
     let termRoomCacheKey = "";
     let termRoomCache = [];
     let scheduleListRequest = null;
+    let scheduleSetListRequest = null;
+    let scheduleSetList = [];
     let scheduleAutoLoadTimer = null;
     let singleSuggestionTimer = null;
     let dualSuggestionTimer = null;
@@ -3994,6 +4062,413 @@ while ($ay = $ayQ->fetch_assoc()) {
         };
     }
 
+    function abortScheduleSetListRequest() {
+        if (scheduleSetListRequest && scheduleSetListRequest.readyState !== 4) {
+            scheduleSetListRequest.abort();
+        }
+    }
+
+    function renderScheduleSetDetailHtml(html) {
+        $("#scheduleSetDetails").html(html);
+    }
+
+    function renderScheduleSetDetailText(message) {
+        renderScheduleSetDetailHtml(escapeHtml(message || ""));
+    }
+
+    function formatScheduleSetTimestamp(value) {
+        const raw = String(value || "").trim();
+        if (raw === "") {
+            return "Unknown update";
+        }
+
+        const normalized = raw.replace(" ", "T");
+        const parsed = new Date(normalized);
+        if (Number.isNaN(parsed.getTime())) {
+            return raw;
+        }
+
+        return parsed.toLocaleString();
+    }
+
+    function getSelectedScheduleSet() {
+        const selectedId = String($("#scheduleSetSelect").val() || "");
+        if (selectedId === "") {
+            return null;
+        }
+
+        return scheduleSetList.find(item => String(item.schedule_set_id) === selectedId) || null;
+    }
+
+    function updateScheduleSetControls() {
+        const filters = getCurrentScheduleFilters();
+        const hasFilters = Boolean(filters.ay_id && filters.semester);
+        const hasSets = scheduleSetList.length > 0;
+        const hasSelection = Boolean(getSelectedScheduleSet());
+
+        $("#scheduleSetSelect").prop("disabled", !hasFilters || !hasSets);
+        $("#btnRefreshScheduleSets, #btnSaveScheduleSet").prop("disabled", !hasFilters);
+        $("#btnLoadScheduleSet").prop("disabled", !hasFilters || !hasSelection);
+    }
+
+    function updateScheduleSetDetails() {
+        const filters = getCurrentScheduleFilters();
+        const hasFilters = Boolean(filters.ay_id && filters.semester);
+        const selectedSet = getSelectedScheduleSet();
+
+        if (!hasFilters) {
+            renderScheduleSetDetailText("Live schedules remain the active workspace. Select Academic Year and Semester first to manage saved sets for the whole college.");
+            updateScheduleSetControls();
+            return;
+        }
+
+        if (!selectedSet) {
+            if (scheduleSetList.length === 0) {
+                renderScheduleSetDetailText("No saved schedule sets were found for this college term yet. Save the current live workspace to keep a reusable version for all programs in the college.");
+            } else {
+                renderScheduleSetDetailText("Select a saved schedule set to review its snapshot details and load it back into the live workspace for the whole college term.");
+            }
+            updateScheduleSetControls();
+            return;
+        }
+
+        let html = `<strong>${escapeHtml(selectedSet.set_name || "Saved Set")}</strong> includes <strong>${escapeHtml(formatCountLabel(selectedSet.row_count, "row"))}</strong> across <strong>${escapeHtml(formatCountLabel(selectedSet.offering_count, "offering"))}</strong>.`;
+        html += ` Updated ${escapeHtml(formatScheduleSetTimestamp(selectedSet.date_updated || selectedSet.date_created))}.`;
+
+        if (String(selectedSet.remarks || "").trim() !== "") {
+            html += ` ${escapeHtml(String(selectedSet.remarks || "").trim())}`;
+        }
+
+        html += " Loading this set will replace the current live schedules for the selected college term across all programs.";
+        renderScheduleSetDetailHtml(html);
+        updateScheduleSetControls();
+    }
+
+    function loadScheduleSets(selectedId = null) {
+        const filters = getCurrentScheduleFilters();
+        const hasFilters = Boolean(filters.ay_id && filters.semester);
+
+        abortScheduleSetListRequest();
+
+        if (!hasFilters) {
+            scheduleSetList = [];
+            $("#scheduleSetSelect")
+                .html('<option value="">Select Academic Year and Semester first</option>')
+                .val("");
+            updateScheduleSetDetails();
+            return;
+        }
+
+        const preferredId = selectedId === null
+            ? String($("#scheduleSetSelect").val() || "")
+            : String(selectedId || "");
+
+        scheduleSetList = [];
+        $("#scheduleSetSelect")
+            .html('<option value="">Loading saved sets...</option>')
+            .prop("disabled", true);
+        renderScheduleSetDetailText("Loading saved schedule sets...");
+        updateScheduleSetControls();
+
+        scheduleSetListRequest = $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_schedule_sets: 1,
+                ay_id: filters.ay_id,
+                semester: filters.semester
+            },
+            success: function (res) {
+                if (!res || res.status !== "ok") {
+                    scheduleSetList = [];
+                    $("#scheduleSetSelect")
+                        .html('<option value="">Unable to load saved sets</option>')
+                        .val("");
+                    renderScheduleSetDetailText((res && res.message) ? res.message : "Failed to load saved schedule sets.");
+                    updateScheduleSetControls();
+                    return;
+                }
+
+                scheduleSetList = Array.isArray(res.sets) ? res.sets : [];
+
+                if (scheduleSetList.length === 0) {
+                    $("#scheduleSetSelect")
+                        .html('<option value="">No saved sets yet</option>')
+                        .val("");
+                    updateScheduleSetDetails();
+                    return;
+                }
+
+                const optionsHtml = ['<option value="">Select a saved set...</option>']
+                    .concat(scheduleSetList.map(item => (
+                        `<option value="${escapeHtml(item.schedule_set_id)}">${escapeHtml(item.set_name || `Set ${item.schedule_set_id}`)}</option>`
+                    )))
+                    .join("");
+
+                $("#scheduleSetSelect").html(optionsHtml);
+
+                if (preferredId !== "" && scheduleSetList.some(item => String(item.schedule_set_id) === preferredId)) {
+                    $("#scheduleSetSelect").val(preferredId);
+                }
+
+                updateScheduleSetDetails();
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                scheduleSetList = [];
+                $("#scheduleSetSelect")
+                    .html('<option value="">Unable to load saved sets</option>')
+                    .val("");
+                renderScheduleSetDetailText("Failed to load saved schedule sets.");
+                updateScheduleSetControls();
+            }
+        });
+    }
+
+    function suggestNextScheduleSetName() {
+        return `Set ${scheduleSetList.length + 1}`;
+    }
+
+    function saveLiveScheduleAsSet(setName, overwriteExisting = false, options = {}) {
+        const filters = getCurrentScheduleFilters();
+        const afterSuccess = typeof options.afterSuccess === "function" ? options.afterSuccess : null;
+        if (!filters.ay_id || !filters.semester) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        Swal.fire({
+            title: overwriteExisting ? "Updating Saved Set..." : "Saving Set...",
+            html: "Please wait while the current live schedules for the selected college term are copied into the saved set.",
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            customClass: { popup: "swal-top" },
+            didOpen: function () {
+                Swal.showLoading();
+            }
+        });
+
+        $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                save_schedule_set: 1,
+                ay_id: filters.ay_id,
+                semester: filters.semester,
+                set_name: setName,
+                overwrite_existing_set: overwriteExisting ? 1 : 0
+            },
+            success: function (res) {
+                Swal.close();
+
+                if (res && res.status === "exists") {
+                    Swal.fire({
+                        icon: "question",
+                        title: "Overwrite Saved Set?",
+                        html: `<b>${escapeHtml(setName)}</b> already exists for this college term. Replace it with the current live schedules across all programs?`,
+                        showCancelButton: true,
+                        confirmButtonText: "Overwrite Set",
+                        cancelButtonText: "Cancel",
+                        allowOutsideClick: false,
+                        customClass: { popup: "swal-top" }
+                    }).then(function (result) {
+                        if (!result.isConfirmed) {
+                            return;
+                        }
+                        saveLiveScheduleAsSet(setName, true, options);
+                    });
+                    return;
+                }
+
+                if (res && res.status === "ok") {
+                    const rowCount = Number(res.row_count || 0);
+                    const offeringCount = Number(res.offering_count || 0);
+
+                    Swal.fire({
+                        icon: "success",
+                        title: overwriteExisting ? "Set Updated" : "Set Saved",
+                        html: `<b>${escapeHtml(res.set_name || setName)}</b> now stores <b>${escapeHtml(String(rowCount))}</b> schedule row(s) across <b>${escapeHtml(String(offeringCount))}</b> offering(s) for the selected college term.<br><br>Use <b>Clear All Schedules</b> when you want a blank live workspace for the next version.`,
+                        allowOutsideClick: false,
+                        customClass: { popup: "swal-top" },
+                        confirmButtonText: afterSuccess ? "Continue" : "OK"
+                    }).then(function () {
+                        loadScheduleSets(String(res.schedule_set_id || ""));
+                        if (afterSuccess) {
+                            afterSuccess(res);
+                        }
+                    });
+                    return;
+                }
+
+                Swal.fire("Error", (res && res.message) ? res.message : "Failed to save the current live schedules as a set.", "error");
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                Swal.close();
+                Swal.fire("Error", xhr.responseText || "Failed to save the current live schedules as a set.", "error");
+            }
+        });
+    }
+
+    function promptSaveScheduleSet(options = {}) {
+        const filters = getCurrentScheduleFilters();
+        const title = String(options.title || "Save Live as Set");
+        const inputLabel = String(options.inputLabel || "Set name");
+        const inputPlaceholder = String(options.inputPlaceholder || "Enter a saved set name");
+        const confirmButtonText = String(options.confirmButtonText || "Save Set");
+        const afterSave = typeof options.afterSave === "function" ? options.afterSave : null;
+        if (!filters.ay_id || !filters.semester) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        Swal.fire({
+            title: title,
+            input: "text",
+            inputValue: suggestNextScheduleSetName(),
+            inputLabel: inputLabel,
+            inputPlaceholder: inputPlaceholder,
+            showCancelButton: true,
+            confirmButtonText: confirmButtonText,
+            cancelButtonText: "Cancel",
+            allowOutsideClick: false,
+            customClass: { popup: "swal-top" },
+            inputValidator: function (value) {
+                const normalized = String(value || "").trim();
+                if (normalized === "") {
+                    return "Provide a name for this saved schedule set.";
+                }
+                return "";
+            }
+        }).then(function (result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            saveLiveScheduleAsSet(String(result.value || "").trim(), false, {
+                afterSuccess: afterSave
+            });
+        });
+    }
+
+    function executeLoadScheduleSetIntoLive(selectedSet) {
+        Swal.fire({
+            title: "Loading Saved Set...",
+            html: "Please wait while the saved set replaces the current live schedules.",
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            customClass: { popup: "swal-top" },
+            didOpen: function () {
+                Swal.showLoading();
+            }
+        });
+
+        $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_schedule_set_into_live: 1,
+                schedule_set_id: selectedSet.schedule_set_id
+            },
+            success: function (res) {
+                Swal.close();
+
+                if (res && res.status === "conflict") {
+                    Swal.fire({
+                        icon: "error",
+                        title: "Schedule Conflict",
+                        html: res.message,
+                        allowOutsideClick: false,
+                        customClass: { popup: "swal-top" }
+                    });
+                    return;
+                }
+
+                if (res && res.status === "ok") {
+                    const affectedCount = Number(res.affected_offering_count || 0);
+                    const loadedCount = Number(res.loaded_offering_count || 0);
+                    const rowCount = Number(res.loaded_row_count || 0);
+
+                    Swal.fire({
+                        icon: "success",
+                        title: "Set Loaded",
+                        html: `<b>${escapeHtml(res.set_name || selectedSet.set_name || "Saved Set")}</b> is now the live schedule workspace.<br><br>Affected offerings: <b>${escapeHtml(String(affectedCount))}</b><br>Offerings loaded from the set: <b>${escapeHtml(String(loadedCount))}</b><br>Schedule rows inserted: <b>${escapeHtml(String(rowCount))}</b>`,
+                        allowOutsideClick: false,
+                        customClass: { popup: "swal-top" }
+                    });
+
+                    $("#scheduleModal").modal("hide");
+                    $("#dualScheduleModal").modal("hide");
+                    $("#blockScheduleModal").modal("hide");
+                    $("#autoDraftModal").modal("hide");
+
+                    resetAutoDraftPreview();
+                    loadScheduleSets(String(res.schedule_set_id || selectedSet.schedule_set_id || ""));
+                    loadScheduleTable();
+                    refreshRoomTimeMatrixIfOpen();
+                    return;
+                }
+
+                Swal.fire("Error", (res && res.message) ? res.message : "Failed to load the saved set into live schedules.", "error");
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                Swal.close();
+                Swal.fire("Error", xhr.responseText || "Failed to load the saved set into live schedules.", "error");
+            }
+        });
+    }
+
+    function loadSelectedScheduleSetIntoLive() {
+        const selectedSet = getSelectedScheduleSet();
+        if (!selectedSet) {
+            Swal.fire("No Saved Set", "Select a saved schedule set first.", "warning");
+            return;
+        }
+
+        Swal.fire({
+            icon: "question",
+            title: "Save Current Live Workspace First?",
+            html: `You are about to load <b>${escapeHtml(selectedSet.set_name || "the selected set")}</b>, which will replace the current live schedules for this college term across all programs.<br><br>Do you want to save the current live workspace as a set first?`,
+            showDenyButton: true,
+            showCancelButton: true,
+            confirmButtonText: "Save First",
+            denyButtonText: "Load Without Saving",
+            cancelButtonText: "Cancel",
+            allowOutsideClick: false,
+            customClass: { popup: "swal-top" }
+        }).then(function (result) {
+            if (result.isConfirmed) {
+                promptSaveScheduleSet({
+                    title: "Save Current Live Workspace",
+                    inputLabel: "Set name for the current live workspace",
+                    inputPlaceholder: "Enter a set name before loading",
+                    confirmButtonText: "Save and Continue",
+                    afterSave: function () {
+                        executeLoadScheduleSetIntoLive(selectedSet);
+                    }
+                });
+                return;
+            }
+
+            if (result.isDenied) {
+                executeLoadScheduleSetIntoLive(selectedSet);
+            }
+        });
+    }
+
     function autoDraftStatusBadge(statusKey, statusLabel) {
         const key = String(statusKey || "").toLowerCase();
         let badgeClass = "bg-secondary";
@@ -4426,8 +4901,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function clearAllSchedulesInScope() {
         const filters = getCurrentScheduleFilters();
-        if (!filters.prospectus_id || !filters.ay_id || !filters.semester) {
-            Swal.fire("Missing Filters", "Select Prospectus, Academic Year, and Semester first.", "warning");
+        if (!filters.ay_id || !filters.semester) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
             return;
         }
 
@@ -4438,7 +4913,8 @@ while ($ay = $ayQ->fetch_assoc()) {
             icon: "warning",
             title: "Clear All Schedules?",
             html: [
-                "This will remove all saved schedules for the current <b>prospectus, academic year, and semester</b> within your college scope.",
+                "This will remove all <b>live schedules</b> for <b>all programs in the selected college academic year and semester</b>.",
+                "Saved schedule sets will remain available to load later.",
                 "Locked offerings and workload-assigned offerings will be skipped."
             ].join("<br><br>"),
             showCancelButton: true,
@@ -4458,7 +4934,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
             Swal.fire({
                 title: "Clearing Schedules...",
-                html: "Please wait while the selected college offering schedules are being reset.",
+                html: "Please wait while all scheduled subjects in the selected college term are being reset.",
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 customClass: { popup: "swal-top" },
@@ -4473,7 +4949,6 @@ while ($ay = $ayQ->fetch_assoc()) {
                 dataType: "json",
                 data: {
                     clear_all_college_schedules: 1,
-                    prospectus_id: filters.prospectus_id,
                     ay_id: filters.ay_id,
                     semester: filters.semester
                 },
@@ -4502,7 +4977,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         })
                         : [];
 
-                    let html = `Checked <b>${escapeHtml(String(scopedCount))}</b> offering(s) in the current scope.`;
+                    let html = `Checked <b>${escapeHtml(String(scopedCount))}</b> offering(s) in the selected college term.`;
                     html += `<br><br>Eligible for clearing: <b>${escapeHtml(String(clearableCount))}</b>`;
                     html += `<br>Offerings with saved schedules removed: <b>${escapeHtml(String(clearedOfferingCount))}</b>`;
                     html += `<br>Schedule rows deleted: <b>${escapeHtml(String(deletedRowCount))}</b>`;
@@ -4572,7 +5047,24 @@ $("#prospectus_id, #ay_id, #semester").on("change", function () {
     clearTermRoomOptions();
   }
   resetAutoDraftPreview();
+  loadScheduleSets();
   scheduleAutoLoad(true);
+});
+
+$("#scheduleSetSelect").on("change", function () {
+  updateScheduleSetDetails();
+});
+
+$("#btnRefreshScheduleSets").on("click", function () {
+  loadScheduleSets(String($("#scheduleSetSelect").val() || ""));
+});
+
+$("#btnSaveScheduleSet").on("click", function () {
+  promptSaveScheduleSet();
+});
+
+$("#btnLoadScheduleSet").on("click", function () {
+  loadSelectedScheduleSetIntoLive();
 });
 
 $("#scheduleSortMode").on("change", function () {
@@ -4713,6 +5205,7 @@ $(document).on("click", ".btn-use-suggestion", function () {
 });
 
 scheduleAutoLoad(true);
+loadScheduleSets();
 
 
 $("#btnShowMatrix").on("click", function () {
