@@ -1,4 +1,5 @@
 <?php
+require_once '../backend/user_avatar_helper.php';
 
 
 /*
@@ -17,6 +18,9 @@
 
 $uName = ucfirst($_SESSION['username'] ?? 'User');
 $uRole = ucfirst($_SESSION['role'] ?? 'Role');
+$uEmail = trim((string)($_SESSION['email'] ?? ''));
+$avatarFallback = synk_default_user_avatar_path();
+$avatarUrl = synk_resolve_user_avatar_url($uEmail, (string)($_SESSION['user_avatar_url'] ?? ''), 80);
 
 /*
 |--------------------------------------------------------------------------
@@ -94,7 +98,7 @@ if (isset($conn)) {
       <li class="nav-item navbar-dropdown dropdown-user dropdown">
         <a class="nav-link dropdown-toggle hide-arrow" href="javascript:void(0);" data-bs-toggle="dropdown">
           <div class="avatar avatar-online">
-            <img src="../assets/img/avatars/1.png" alt class="w-px-40 h-auto rounded-circle" />
+            <img src="<?= htmlspecialchars($avatarUrl) ?>" alt="<?= htmlspecialchars($uName) ?>" class="w-px-40 h-auto rounded-circle" onerror="this.onerror=null;this.src='<?= htmlspecialchars($avatarFallback) ?>';" referrerpolicy="no-referrer" />
           </div>
         </a>
 
@@ -104,7 +108,7 @@ if (isset($conn)) {
               <div class="d-flex">
                 <div class="flex-shrink-0 me-3">
                   <div class="avatar avatar-online">
-                    <img src="../assets/img/avatars/1.png" alt class="w-px-40 h-auto rounded-circle" />
+                    <img src="<?= htmlspecialchars($avatarUrl) ?>" alt="<?= htmlspecialchars($uName) ?>" class="w-px-40 h-auto rounded-circle" onerror="this.onerror=null;this.src='<?= htmlspecialchars($avatarFallback) ?>';" referrerpolicy="no-referrer" />
                   </div>
                 </div>
 

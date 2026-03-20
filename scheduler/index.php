@@ -562,6 +562,23 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         </div>
                       </a>
 
+                      <a href="manage-schedule-activity.php" class="workspace-card-link">
+                        <div class="workspace-card shadow-sm">
+                          <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                              <div class="workspace-icon bg-secondary">
+                                <i class="bx bx-radar"></i>
+                              </div>
+                              <div>
+                                <h6 class="mb-1 fw-bold text-dark">Schedule Activity</h6>
+                                <small class="text-muted">Monitor class windows, faculty location, and load heat</small>
+                              </div>
+                            </div>
+                            <i class="bx bx-chevron-right text-secondary fs-4"></i>
+                          </div>
+                        </div>
+                      </a>
+
                       <div class="border-top pt-3 mt-3">
                         <h6 class="fw-bold mb-3">Current Checks</h6>
 

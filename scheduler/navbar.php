@@ -1,5 +1,6 @@
 <?php
 require_once '../backend/scheduler_access_helper.php';
+require_once '../backend/user_avatar_helper.php';
 
 if ((string)($_SESSION['role'] ?? '') === 'scheduler') {
     synk_scheduler_bootstrap_session_scope($conn);
@@ -18,6 +19,9 @@ $activeCollegeId = (int)($_SESSION['college_id'] ?? 0);
 $activeCampusName = trim((string)($_SESSION['campus_name'] ?? ''));
 $activeCollegeName = trim((string)($_SESSION['college_name'] ?? ''));
 $schedulerScopeToken = (string)$_SESSION['csrf_token'];
+$uEmail = trim((string)($_SESSION['email'] ?? ''));
+$avatarFallback = synk_default_user_avatar_path();
+$avatarUrl = synk_resolve_user_avatar_url($uEmail, (string)($_SESSION['user_avatar_url'] ?? ''), 80);
 ?>
 
 <nav
@@ -81,7 +85,7 @@ $schedulerScopeToken = (string)$_SESSION['csrf_token'];
       <li class="nav-item navbar-dropdown dropdown-user dropdown">
         <a class="nav-link dropdown-toggle hide-arrow" href="javascript:void(0);" data-bs-toggle="dropdown">
           <div class="avatar avatar-online">
-            <img src="../assets/img/avatars/1.png" alt class="w-px-40 h-auto rounded-circle" />
+            <img src="<?= htmlspecialchars($avatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($uName, ENT_QUOTES, 'UTF-8') ?>" class="w-px-40 h-auto rounded-circle" onerror="this.onerror=null;this.src='<?= htmlspecialchars($avatarFallback, ENT_QUOTES, 'UTF-8') ?>';" referrerpolicy="no-referrer" />
           </div>
         </a>
 
@@ -91,7 +95,7 @@ $schedulerScopeToken = (string)$_SESSION['csrf_token'];
               <div class="d-flex">
                 <div class="flex-shrink-0 me-3">
                   <div class="avatar avatar-online">
-                    <img src="../assets/img/avatars/1.png" alt class="w-px-40 h-auto rounded-circle" />
+                    <img src="<?= htmlspecialchars($avatarUrl, ENT_QUOTES, 'UTF-8') ?>" alt="<?= htmlspecialchars($uName, ENT_QUOTES, 'UTF-8') ?>" class="w-px-40 h-auto rounded-circle" onerror="this.onerror=null;this.src='<?= htmlspecialchars($avatarFallback, ENT_QUOTES, 'UTF-8') ?>';" referrerpolicy="no-referrer" />
                   </div>
                 </div>
 

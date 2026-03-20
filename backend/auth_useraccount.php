@@ -115,6 +115,7 @@ function synk_find_useraccount_by_email(mysqli $conn, string $email): ?array
 function synk_complete_user_login(array $row, ?mysqli $conn = null): string
 {
     session_regenerate_id(true);
+    unset($_SESSION['user_avatar_url']);
 
     if ((string)($row['role'] ?? '') === 'scheduler' && $conn instanceof mysqli) {
         $accessRows = synk_resolve_scheduler_access_rows(

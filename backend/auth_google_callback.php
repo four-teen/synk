@@ -59,6 +59,7 @@ $userInfo = $userInfoResponse['json'];
 $googleSub = trim((string)($userInfo['sub'] ?? ''));
 $email = synk_normalize_email((string)($userInfo['email'] ?? ''));
 $displayName = trim((string)($userInfo['name'] ?? ''));
+$pictureUrl = trim((string)($userInfo['picture'] ?? ''));
 $emailVerified = !empty($userInfo['email_verified']);
 $idTokenEmail = synk_normalize_email((string)($idTokenClaims['email'] ?? ''));
 $idTokenSub = trim((string)($idTokenClaims['sub'] ?? ''));
@@ -101,6 +102,10 @@ if ($existingGoogleSub !== '' && !hash_equals($existingGoogleSub, $googleSub)) {
 
 synk_record_google_login($conn, (int)$user['user_id'], $googleSub, $emailVerified, $displayName);
 synk_complete_user_login($user, $conn);
+
+if ($pictureUrl !== '') {
+    $_SESSION['user_avatar_url'] = $pictureUrl;
+}
 
 $redirectPath = synk_role_redirect_path($role);
 if ($redirectPath === null) {

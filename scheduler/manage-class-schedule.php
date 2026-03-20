@@ -126,7 +126,8 @@ body.swal2-shown .modal {
 }
 
 .schedule-offerings-table {
-    min-width: 1220px;
+    min-width: 1120px;
+    table-layout: auto;
 }
 
 .schedule-offerings-table th,
@@ -134,19 +135,80 @@ body.swal2-shown .modal {
     vertical-align: middle;
 }
 
+.schedule-section-col {
+    width: 104px;
+    min-width: 104px;
+}
+
+.schedule-subject-col {
+    width: 112px;
+    min-width: 112px;
+}
+
+.schedule-description-col {
+    min-width: 260px;
+}
+
 .schedule-hours-col {
-    width: 68px;
-    min-width: 68px;
+    width: 1%;
+    min-width: 52px;
+    white-space: nowrap;
+}
+
+.schedule-days-col {
+    width: 98px;
+    min-width: 98px;
+}
+
+.schedule-time-col {
+    width: 146px;
+    min-width: 146px;
+}
+
+.schedule-room-col {
+    width: 138px;
+    min-width: 138px;
+}
+
+.schedule-status-col {
+    width: 1%;
+    min-width: 1px;
+    white-space: nowrap;
 }
 
 .schedule-action-col {
-    min-width: 92px;
+    width: 1%;
+    min-width: 1px;
     white-space: nowrap;
 }
 
 .schedule-action-col .btn-schedule {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
     min-width: 90px;
     touch-action: manipulation;
+}
+
+.schedule-status-col .badge {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    white-space: nowrap;
+}
+
+.schedule-section-name {
+    display: block;
+    font-weight: 600;
+    line-height: 1.15;
+}
+
+.schedule-section-meta {
+    display: block;
+    margin-top: 0.15rem;
+    font-size: 0.72rem;
+    line-height: 1.2;
+    color: #6c757d;
 }
 
 .schedule-stack-item {
@@ -186,7 +248,142 @@ body.swal2-shown .modal {
 }
 
 .schedule-search-shell {
-    max-width: 520px;
+    max-width: none;
+    margin-left: 0;
+}
+
+.schedule-sort-shell {
+    min-width: 0;
+}
+
+.schedule-controls-note {
+    font-size: 0.8rem;
+    color: #6c757d;
+    line-height: 1.55;
+}
+
+.schedule-workspace-card {
+    border: 1px solid #e0e7f5;
+    box-shadow: 0 16px 40px rgba(31, 42, 68, 0.08);
+    overflow: hidden;
+}
+
+.schedule-workspace-shell {
+    padding: 1.45rem 1.5rem 1.35rem;
+    border-bottom: 1px solid #e3eaf8;
+    background:
+        radial-gradient(circle at top right, rgba(105, 108, 255, 0.1), transparent 28%),
+        linear-gradient(180deg, #fbfcff 0%, #f5f8ff 100%);
+}
+
+.schedule-workspace-top {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1.2rem;
+    margin-bottom: 1.15rem;
+}
+
+.schedule-workspace-intro {
+    max-width: 760px;
+}
+
+.schedule-workspace-eyebrow {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.35rem;
+    padding: 0.28rem 0.62rem;
+    border-radius: 999px;
+    background: #edf3ff;
+    color: #5267d8;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.schedule-workspace-title {
+    margin: 0.75rem 0 0.45rem;
+    font-size: 1.35rem;
+    font-weight: 700;
+    color: #23324d;
+}
+
+.schedule-workspace-subtitle {
+    margin: 0;
+    max-width: 760px;
+    color: #5f6f8d;
+    font-size: 0.95rem;
+    line-height: 1.6;
+}
+
+.schedule-workspace-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.65rem;
+}
+
+.schedule-workspace-actions .btn {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.6rem;
+    padding: 0.55rem 0.95rem;
+    border-radius: 12px;
+    font-weight: 600;
+    box-shadow: 0 8px 20px rgba(31, 42, 68, 0.06);
+}
+
+.schedule-workspace-actions .btn i {
+    font-size: 1rem;
+}
+
+.schedule-toolbar-grid {
+    display: grid;
+    grid-template-columns: minmax(260px, 320px) minmax(0, 1fr);
+    gap: 1rem;
+    align-items: stretch;
+}
+
+.schedule-toolbar-panel {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    min-height: 100%;
+    padding: 1rem 1rem 0.95rem;
+    border: 1px solid #dbe5f6;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.88);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.7);
+}
+
+.schedule-toolbar-label {
+    display: block;
+    margin-bottom: 0.65rem;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #627392;
+}
+
+.schedule-toolbar-panel .form-select,
+.schedule-toolbar-panel .form-control {
+    min-height: 2.85rem;
+    border-color: #cfdaf0;
+    border-radius: 12px;
+}
+
+.schedule-toolbar-panel .form-select:focus,
+.schedule-toolbar-panel .form-control:focus {
+    border-color: #7d8bff;
+    box-shadow: 0 0 0 0.18rem rgba(82, 103, 216, 0.12);
+}
+
+.schedule-toolbar-panel.search-panel {
+    justify-content: flex-start;
+}
 }
 
 .suggestion-board {
@@ -1180,6 +1377,61 @@ body.swal2-shown .modal {
 }
 
 @media (max-width: 991.98px) {
+    .schedule-workspace-shell {
+        padding: 1.2rem 1.15rem 1.1rem;
+    }
+
+    .schedule-workspace-top {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .schedule-workspace-actions {
+        justify-content: flex-start;
+    }
+
+    .schedule-toolbar-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .schedule-offerings-table {
+        min-width: 1040px;
+    }
+
+    .schedule-section-col {
+        width: 96px;
+        min-width: 96px;
+    }
+
+    .schedule-subject-col {
+        width: 104px;
+        min-width: 104px;
+    }
+
+    .schedule-description-col {
+        min-width: 220px;
+    }
+
+    .schedule-days-col {
+        width: 90px;
+        min-width: 90px;
+    }
+
+    .schedule-time-col {
+        width: 134px;
+        min-width: 134px;
+    }
+
+    .schedule-room-col {
+        width: 126px;
+        min-width: 126px;
+    }
+
+    .schedule-status-col {
+        width: 1%;
+        min-width: 1px;
+    }
+
     .room-browser-launcher {
         top: auto;
         bottom: 1rem;
@@ -1210,6 +1462,33 @@ body.swal2-shown .modal {
 @media (max-width: 575.98px) {
     #scheduleListContainer {
         padding-bottom: 6rem !important;
+    }
+
+    .schedule-workspace-title {
+        font-size: 1.2rem;
+    }
+
+    .schedule-workspace-actions {
+        display: grid;
+        grid-template-columns: 1fr;
+    }
+
+    .schedule-workspace-actions .btn {
+        width: 100%;
+        justify-content: center;
+    }
+
+    .schedule-toolbar-panel {
+        padding: 0.9rem 0.9rem 0.85rem;
+        border-radius: 14px;
+    }
+
+    .schedule-offerings-table {
+        min-width: 980px;
+    }
+
+    .schedule-description-col {
+        min-width: 200px;
     }
 
     .schedule-pan-shell {
@@ -1356,40 +1635,55 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 
 <!-- LIST -->
-<div class="card">
-    <div class="card-header">
-        <div class="d-flex justify-content-between align-items-center flex-wrap gap-3">
-          <div>
-            <h5 class="m-0">Class Offerings</h5>
-            <small class="text-muted">
-              Lecture-only subjects use one schedule entry. Subjects with laboratory units require separate lecture and laboratory schedules.
-            </small>
-          </div>
+<div class="card schedule-workspace-card">
+    <div class="schedule-workspace-shell">
+      <div class="schedule-workspace-top">
+        <div class="schedule-workspace-intro">
+          <span class="schedule-workspace-eyebrow">Scheduler Workspace</span>
+          <h5 class="schedule-workspace-title">Class Offerings</h5>
+          <p class="schedule-workspace-subtitle">
+            Review filtered offerings, compare sections with the same subject, and jump quickly into drafting, clearing, or checking room-time availability.
+          </p>
+        </div>
 
-          <div class="d-flex flex-wrap gap-2">
-            <button class="btn btn-outline-success btn-sm" id="btnPreviewAutoDraft">
-              <i class="bx bx-magic-wand me-1"></i> Start Draft
-            </button>
-            <button class="btn btn-outline-danger btn-sm" id="btnClearAllSchedules">
-              <i class="bx bx-trash me-1"></i> Clear All Schedules
-            </button>
-            <button class="btn btn-outline-primary btn-sm" id="btnShowMatrix">
-              <i class="bx bx-grid-alt me-1"></i> Room-Time Matrix
-            </button>
+        <div class="schedule-workspace-actions">
+          <button class="btn btn-outline-success btn-sm" id="btnPreviewAutoDraft">
+            <i class="bx bx-magic-wand"></i> Start Draft
+          </button>
+          <button class="btn btn-outline-danger btn-sm" id="btnClearAllSchedules">
+            <i class="bx bx-trash"></i> Clear All Schedules
+          </button>
+          <button class="btn btn-outline-primary btn-sm" id="btnShowMatrix">
+            <i class="bx bx-grid-alt"></i> Room-Time Matrix
+          </button>
+        </div>
+      </div>
+
+      <div class="schedule-toolbar-grid">
+        <div class="schedule-toolbar-panel">
+          <label class="schedule-toolbar-label" for="scheduleSortMode">Group View</label>
+          <select id="scheduleSortMode" class="form-select schedule-sort-shell">
+            <option value="year_level">Year Level</option>
+            <option value="subject">Subject</option>
+          </select>
+          <div class="schedule-controls-note mt-2">
+            Use Subject view to compare multiple sections that share the same course.
           </div>
         </div>
-    </div>
 
-    <div class="card-body border-bottom py-3">
-      <div class="d-flex justify-content-end">
-        <div class="schedule-search-shell w-100">
-          <label class="form-label mb-2" for="scheduleSubjectSearch">Search Subjects</label>
-          <input
-            type="text"
-            id="scheduleSubjectSearch"
-            class="form-control"
-            placeholder="Search by subject code, description, or section within the current filters"
-          >
+        <div class="schedule-toolbar-panel search-panel">
+          <div class="schedule-search-shell w-100">
+            <label class="schedule-toolbar-label" for="scheduleSubjectSearch">Search Subjects</label>
+            <input
+              type="text"
+              id="scheduleSubjectSearch"
+              class="form-control"
+              placeholder="Search by subject code, description, or section within the current filters"
+            >
+            <div class="schedule-controls-note mt-2">
+              Search works inside the current prospectus, academic year, semester, and group view.
+            </div>
+          </div>
         </div>
       </div>
     </div>
@@ -2871,11 +3165,17 @@ while ($ay = $ayQ->fetch_assoc()) {
         renderRoomBrowser();
     }
 
+    function getScheduleSortMode() {
+        const value = String($("#scheduleSortMode").val() || "year_level").trim().toLowerCase();
+        return value === "subject" ? "subject" : "year_level";
+    }
+
     function updateScheduleGroupCounts() {
         $("#scheduleListContainer .schedule-group-card").each(function () {
             const card = $(this);
             const visibleRows = card.find("tbody tr.schedule-offering-row[data-search-match='1']").length;
-            card.find(".schedule-group-count").text(`${visibleRows} class(es)`);
+            const label = String(card.find(".schedule-group-count").data("countLabel") || "class(es)");
+            card.find(".schedule-group-count").text(`${visibleRows} ${label}`);
             card.toggle(visibleRows > 0);
         });
     }
@@ -3391,7 +3691,8 @@ while ($ay = $ayQ->fetch_assoc()) {
                     {
                         prospectus_id: pid,
                         ay_id: ay,
-                        semester: sem
+                        semester: sem,
+                        sort_by: getScheduleSortMode()
                     },
                     function (rows) {
                         $("#scheduleListContainer").html(rows);
@@ -3688,7 +3989,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         return {
             prospectus_id: $("#prospectus_id").val(),
             ay_id: $("#ay_id").val(),
-            semester: $("#semester").val()
+            semester: $("#semester").val(),
+            sort_by: getScheduleSortMode()
         };
     }
 
@@ -4271,6 +4573,10 @@ $("#prospectus_id, #ay_id, #semester").on("change", function () {
   }
   resetAutoDraftPreview();
   scheduleAutoLoad(true);
+});
+
+$("#scheduleSortMode").on("change", function () {
+  scheduleAutoLoad(false);
 });
 
 $("#scheduleSubjectSearch").on("input", function () {

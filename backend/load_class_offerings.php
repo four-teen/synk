@@ -18,6 +18,8 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
 $prospectus_id = $_POST['prospectus_id'] ?? '';
 $ay_id = $_POST['ay_id'] ?? '';
 $semester = $_POST['semester'] ?? '';
+$sortBy = trim((string)($_POST['sort_by'] ?? 'year_level'));
+$sortBy = in_array($sortBy, ['year_level', 'subject'], true) ? $sortBy : 'year_level';
 
 if ($prospectus_id === '' || $ay_id === '' || $semester === '') {
     echo "<div class='text-center text-danger py-4'>Missing filters.</div>";
@@ -39,6 +41,33 @@ function year_label($year) {
     if ($year === '5') return '5th Year';
     if ($year === '6') return '6th Year';
     return 'Year ' . $year;
+}
+
+function schedule_group_count_label(string $sortBy): string
+{
+    return $sortBy === 'subject' ? 'section(s)' : 'class(es)';
+}
+
+function schedule_group_title(string $sortBy, array $row): string
+{
+    if ($sortBy === 'subject') {
+        return strtoupper(trim((string)$row['sub_code'])) . ' - ' . strtoupper(trim((string)$row['sub_description']));
+    }
+
+    return year_label((string)($row['year_level'] ?? ''));
+}
+
+function schedule_section_cell_html(array $row, string $sortBy): string
+{
+    $section = htmlspecialchars((string)($row['section_name'] ?? ''), ENT_QUOTES, 'UTF-8');
+    if ($sortBy !== 'subject') {
+        return "<span class='schedule-section-name'>{$section}</span>";
+    }
+
+    $yearMeta = htmlspecialchars(year_label((string)($row['year_level'] ?? '')), ENT_QUOTES, 'UTF-8');
+    return
+        "<span class='schedule-section-name'>{$section}</span>" .
+        "<span class='schedule-section-meta'>{$yearMeta}</span>";
 }
 
 function block_badge_html($type, $sequence) {
@@ -149,6 +178,24 @@ function offering_schedule_status_badge(array $row): array
 }
 
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$orderByClause = $sortBy === 'subject'
+    ? "
+ORDER BY
+    sm.sub_code ASC,
+    sm.sub_description ASC,
+    sec.year_level ASC,
+    sec.section_name ASC,
+    FIELD(cs.schedule_type, 'LEC', 'LAB'),
+    cs.schedule_id ASC
+"
+    : "
+ORDER BY
+    sec.year_level ASC,
+    sec.section_name ASC,
+    sm.sub_code ASC,
+    FIELD(cs.schedule_type, 'LEC', 'LAB'),
+    cs.schedule_id ASC
+";
 
 $sql = "
 SELECT
@@ -180,12 +227,7 @@ WHERE o.prospectus_id = ?
   AND o.ay_id = ?
   AND o.semester = ?
   AND p.college_id = ?
-ORDER BY
-    sec.year_level ASC,
-    sec.section_name ASC,
-    sm.sub_code ASC,
-    FIELD(cs.schedule_type, 'LEC', 'LAB'),
-    cs.schedule_id ASC
+" . $orderByClause . "
 ";
 
 $stmt = $conn->prepare($sql);
@@ -198,20 +240,21 @@ if ($res->num_rows === 0) {
     exit;
 }
 
-$grouped = [];
+$offeringsById = [];
+$offeringOrder = [];
 while ($row = $res->fetch_assoc()) {
-    $yearLevel = (int)$row['year_level'];
     $offeringId = (int)$row['offering_id'];
 
-    if (!isset($grouped[$yearLevel][$offeringId])) {
+    if (!isset($offeringsById[$offeringId])) {
         $displayHours = normalize_prospectus_contact_hours(
             (float)$row['lec_units'],
             (float)$row['lab_units'],
             isset($row['total_units']) ? (float)$row['total_units'] : null
         );
 
-        $grouped[$yearLevel][$offeringId] = [
+        $offeringsById[$offeringId] = [
             'offering_id' => $offeringId,
+            'year_level' => (int)$row['year_level'],
             'section_name' => (string)$row['section_name'],
             'sub_code' => (string)$row['sub_code'],
             'sub_description' => (string)$row['sub_description'],
@@ -222,6 +265,7 @@ while ($row = $res->fetch_assoc()) {
             'display_lec_units' => (float)$displayHours['lec_units'],
             'entries' => []
         ];
+        $offeringOrder[] = $offeringId;
     }
 
     $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? '')));
@@ -233,7 +277,7 @@ while ($row = $res->fetch_assoc()) {
 
         $days = synk_normalize_schedule_days(json_decode((string)($row['days_json'] ?? ''), true));
 
-        $grouped[$yearLevel][$offeringId]['entries'][] = [
+        $offeringsById[$offeringId]['entries'][] = [
             'schedule_id' => (int)$row['schedule_id'],
             'schedule_type' => synk_normalize_schedule_type($scheduleType),
             'room_id' => (int)($row['room_id'] ?? 0),
@@ -245,29 +289,43 @@ while ($row = $res->fetch_assoc()) {
         ];
     }
 }
-ksort($grouped);
 
-foreach ($grouped as $yearLevel => $rows) {
-    $offerings = array_values($rows);
+$grouped = [];
+foreach ($offeringOrder as $offeringId) {
+    $offering = $offeringsById[$offeringId];
+    $groupKey = $sortBy === 'subject'
+        ? strtoupper((string)$offering['sub_code']) . '|' . strtoupper((string)$offering['sub_description'])
+        : (string)(int)$offering['year_level'];
+
+    if (!isset($grouped[$groupKey])) {
+        $grouped[$groupKey] = [];
+    }
+
+    $grouped[$groupKey][] = $offering;
+}
+
+foreach ($grouped as $groupKey => $offerings) {
+    $groupTitle = schedule_group_title($sortBy, $offerings[0]);
+    $countLabel = schedule_group_count_label($sortBy);
 
     echo "<div class='schedule-group-card mb-3'>";
-    echo "  <div class='schedule-group-header px-3 py-2 d-flex justify-content-between align-items-center'>";
-    echo "    <span>" . htmlspecialchars(year_label($yearLevel)) . "</span>";
-    echo "    <span class='badge bg-label-primary schedule-group-count' data-total-count='" . count($offerings) . "'>" . count($offerings) . " class(es)</span>";
+    echo "  <div class='schedule-group-header px-3 py-2 d-flex justify-content-between align-items-center flex-wrap gap-2'>";
+    echo "    <span>" . htmlspecialchars($groupTitle, ENT_QUOTES, 'UTF-8') . "</span>";
+    echo "    <span class='badge bg-label-primary schedule-group-count' data-total-count='" . count($offerings) . "' data-count-label='" . htmlspecialchars($countLabel, ENT_QUOTES, 'UTF-8') . "'>" . count($offerings) . " " . htmlspecialchars($countLabel, ENT_QUOTES, 'UTF-8') . "</span>";
     echo "  </div>";
     echo "  <div class='table-responsive schedule-pan-shell'>";
     echo "    <table class='table table-bordered table-hover mb-0 schedule-offerings-table'>";
     echo "      <thead>";
     echo "        <tr>";
-    echo "          <th>Section</th>";
-    echo "          <th>Subject</th>";
-    echo "          <th>Description</th>";
-    echo "          <th class='text-center text-nowrap'>LEC Hrs</th>";
-    echo "          <th class='text-center text-nowrap'>LAB Hrs</th>";
-    echo "          <th class='text-center'>Days</th>";
-    echo "          <th class='text-center'>Time</th>";
-    echo "          <th class='text-center'>Room</th>";
-    echo "          <th>Status</th>";
+    echo "          <th class='schedule-section-col'>Section</th>";
+    echo "          <th class='schedule-subject-col'>Subject</th>";
+    echo "          <th class='schedule-description-col'>Description</th>";
+    echo "          <th class='text-center text-nowrap schedule-hours-col'>LEC Hrs</th>";
+    echo "          <th class='text-center text-nowrap schedule-hours-col'>LAB Hrs</th>";
+    echo "          <th class='text-center schedule-days-col'>Days</th>";
+    echo "          <th class='text-center schedule-time-col'>Time</th>";
+    echo "          <th class='text-center schedule-room-col'>Room</th>";
+    echo "          <th class='text-center schedule-status-col'>Status</th>";
     echo "          <th class='text-center schedule-action-col'>Action</th>";
     echo "        </tr>";
     echo "      </thead>";
@@ -312,19 +370,20 @@ foreach ($grouped as $yearLevel => $rows) {
         $searchText = strtolower(trim(
             (string)$row['section_name'] . ' ' .
             (string)$row['sub_code'] . ' ' .
-            (string)$row['sub_description']
+            (string)$row['sub_description'] . ' ' .
+            year_label((string)$row['year_level'])
         ));
 
         echo "<tr class='schedule-offering-row' data-search-text='" . htmlspecialchars($searchText, ENT_QUOTES) . "'>";
-        echo "  <td>" . htmlspecialchars((string)$row['section_name']) . "</td>";
-        echo "  <td class='text-nowrap'>" . htmlspecialchars(strtoupper((string)$row['sub_code'])) . "</td>";
-        echo "  <td>" . htmlspecialchars(strtoupper((string)$row['sub_description'])) . "</td>";
+        echo "  <td class='schedule-section-col'>" . schedule_section_cell_html($row, $sortBy) . "</td>";
+        echo "  <td class='text-nowrap schedule-subject-col'>" . htmlspecialchars(strtoupper((string)$row['sub_code'])) . "</td>";
+        echo "  <td class='schedule-description-col'>" . htmlspecialchars(strtoupper((string)$row['sub_description'])) . "</td>";
         echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lec_units'])) . "</td>";
         echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lab_units'])) . "</td>";
-        echo "  <td class='text-center'>" . implode('', $daysParts) . "</td>";
-        echo "  <td class='text-center'>" . implode('', $timeParts) . "</td>";
-        echo "  <td class='text-center'>" . implode('', $roomParts) . "</td>";
-        echo "  <td class='text-center'>{$status['badge']}</td>";
+        echo "  <td class='text-center schedule-days-col'>" . implode('', $daysParts) . "</td>";
+        echo "  <td class='text-center schedule-time-col'>" . implode('', $timeParts) . "</td>";
+        echo "  <td class='text-center schedule-room-col'>" . implode('', $roomParts) . "</td>";
+        echo "  <td class='text-center schedule-status-col'>{$status['badge']}</td>";
         echo "  <td class='text-center schedule-action-col'>";
         echo "    <button type='button' class='btn {$status['button_class']} btn-sm btn-schedule'";
         echo "      data-offering-id='" . (int)$row['offering_id'] . "'";
