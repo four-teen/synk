@@ -106,6 +106,26 @@ function buildScheduleDisplayParts(array $row): array {
     ];
 }
 
+function buildSectionDisplayLabel(array $row): string {
+    $fullSection = trim((string)($row['full_section'] ?? ''));
+    if ($fullSection !== '') {
+        return $fullSection;
+    }
+
+    $programCode = strtoupper(trim((string)($row['program_code'] ?? '')));
+    $sectionName = trim((string)($row['section_name'] ?? ''));
+
+    if ($programCode !== '' && $sectionName !== '') {
+        if (stripos($sectionName, $programCode . ' ') === 0) {
+            return $sectionName;
+        }
+
+        return $programCode . ' ' . $sectionName;
+    }
+
+    return $sectionName !== '' ? $sectionName : '-';
+}
+
 function excelCellXml($value, $styleId = 'Body', $mergeAcross = 0) {
     $mergeAttr = $mergeAcross > 0 ? ' ss:MergeAcross="' . (int)$mergeAcross . '"' : '';
     return '<Cell ss:StyleID="' . excelXmlEscape($styleId) . '"' . $mergeAttr . '><Data ss:Type="String">' . excelXmlEscape($value) . '</Data></Cell>';
@@ -178,9 +198,10 @@ function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, st
 
             foreach (($data['rows'] ?? []) as $row) {
                 $display = buildScheduleDisplayParts((array)$row);
+                $sectionLabel = buildSectionDisplayLabel((array)$row);
                 $rowsXml[] = '<row r="' . $rowNumber . '">' .
                     xlsxInlineCellXml($rowNumber, 1, '', 0) .
-                    xlsxInlineCellXml($rowNumber, 2, (string)($row['section_name'] ?? '-'), 0) .
+                    xlsxInlineCellXml($rowNumber, 2, $sectionLabel, 0) .
                     xlsxInlineCellXml($rowNumber, 3, $display['schedule'], 0) .
                     xlsxInlineCellXml($rowNumber, 4, $display['room'], 0) .
                 '</row>';
@@ -353,9 +374,10 @@ function buildFacultyWorkloadExcelWorkbook(array $courses, string $programLabel,
 
             foreach (($data['rows'] ?? []) as $row) {
                 $display = buildScheduleDisplayParts((array)$row);
+                $sectionLabel = buildSectionDisplayLabel((array)$row);
                 $rows[] = '<Row>' .
                     excelCellXml('', 'Body') .
-                    excelCellXml((string)($row['section_name'] ?? '-'), 'Body') .
+                    excelCellXml($sectionLabel, 'Body') .
                     excelCellXml($display['schedule'], 'Body') .
                     excelCellXml($display['room'], 'Body') .
                 '</Row>';
@@ -596,7 +618,9 @@ if ($hasFilters && $collegeId > 0) {
         SELECT
             sm.sub_code,
             sm.sub_description,
+            p.program_code,
             sec.section_name,
+            sec.full_section,
             cs.days_json,
             cs.time_start,
             cs.time_end,
@@ -1507,10 +1531,11 @@ if ($exportMode === 'excel' && $hasFilters) {
                               <?php foreach ($data['rows'] as $row): ?>
                                 <?php
                                 $display = buildScheduleDisplayParts((array)$row);
+                                $sectionLabel = buildSectionDisplayLabel((array)$row);
                                 ?>
                                 <tr class="indent-row">
                                   <td></td>
-                                  <td><?= h($row['section_name'] ?? '-') ?></td>
+                                  <td><?= h($sectionLabel) ?></td>
                                   <td><?= h($display['schedule']) ?></td>
                                   <td><?= h($display['room']) ?></td>
                                 </tr>

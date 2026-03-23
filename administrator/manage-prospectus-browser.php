@@ -506,6 +506,16 @@ function buildActionButtons(row) {
                 Transfer
              </button>`
         );
+        buttons.push(
+            `<button type="button"
+                     class="btn btn-sm btn-danger btnDeleteBrowserProspectus"
+                     data-prospectus-id="${Number(row.prospectus_id) || 0}"
+                     data-program-label="${escapeHtml(getSelectedProgramLabel())}"
+                     data-cmo="${escapeHtml(row.cmo_no || "")}"
+                     data-effective-sy="${escapeHtml(row.effective_sy || "")}">
+                Delete
+             </button>`
+        );
     }
 
     return `<div class="d-flex justify-content-center gap-1 flex-wrap">${buttons.join("")}</div>`;
@@ -671,6 +681,65 @@ $(document).on("click", ".btnTransferBrowserProspectus", function () {
         .fail(function () {
             Swal.fire("Error", "Failed to load target programs.", "error");
         });
+});
+
+$(document).on("click", ".btnDeleteBrowserProspectus", function () {
+    const button = $(this);
+    const prospectusId = Number(button.data("prospectusId")) || 0;
+    const cmo = String(button.data("cmo") || "").trim();
+    const effectiveSy = String(button.data("effectiveSy") || "").trim();
+    const programLabel = String(button.data("programLabel") || getSelectedProgramLabel()).trim();
+    const summaryLabel = [cmo, effectiveSy].filter(Boolean).join(" • ");
+
+    if (!prospectusId) {
+        Swal.fire("Error", "Invalid prospectus reference.", "error");
+        return;
+    }
+
+    Swal.fire({
+        icon: "warning",
+        title: "Delete Prospectus?",
+        html: `
+            <div class="text-start">
+                <div><strong>Program:</strong> ${escapeHtml(programLabel || "Selected Program")}</div>
+                <div><strong>CMO:</strong> ${escapeHtml(summaryLabel || "Selected prospectus")}</div>
+                <div class="mt-2 text-danger">This permanently removes the CMO, its year/semester groups, subjects, generated offerings, schedules, and related workload records.</div>
+            </div>
+        `,
+        showCancelButton: true,
+        confirmButtonColor: "#dc3545",
+        confirmButtonText: "Delete CMO",
+        cancelButtonText: "Cancel",
+        focusCancel: true
+    }).then(function (result) {
+        if (!result.isConfirmed) {
+            return;
+        }
+
+        $.post("../backend/query_prospectus_browser.php", {
+            delete_prospectus: 1,
+            prospectus_id: prospectusId
+        }, function (res) {
+            const parts = String(res || "").split("|");
+
+            if (parts[0] !== "OK") {
+                Swal.fire("Error", parts[1] || "Failed to delete prospectus.", "error");
+                return;
+            }
+
+            loadProspectusByProgram($("#filterProgram").val());
+
+            Swal.fire({
+                icon: "success",
+                title: "Prospectus Deleted",
+                text: parts[1] || "Prospectus removed successfully.",
+                timer: 1400,
+                showConfirmButton: false
+            });
+        }).fail(function () {
+            Swal.fire("Error", "Failed to delete prospectus.", "error");
+        });
+    });
 });
 
 $("#btnSaveCmoEdit").on("click", function () {

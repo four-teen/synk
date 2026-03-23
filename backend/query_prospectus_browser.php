@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/schema_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
     http_response_code(403);
@@ -11,7 +12,7 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
 $role = (string)$_SESSION['role'];
 $myCollege = (int)($_SESSION['college_id'] ?? 0);
 
-$writeActions = ['update_prospectus_header', 'transfer_prospectus'];
+$writeActions = ['update_prospectus_header', 'transfer_prospectus', 'delete_prospectus'];
 foreach ($writeActions as $action) {
     if (!isset($_POST[$action])) {
         continue;
@@ -83,6 +84,30 @@ function can_access_browser_prospectus(mysqli $conn, int $prospectusId, string $
     $stmt->close();
 
     return $allowed;
+}
+
+function synk_delete_rows_by_id_list(mysqli $conn, string $tableName, string $columnName, array $ids): int
+{
+    $normalized = [];
+    foreach ($ids as $id) {
+        $value = (int)$id;
+        if ($value > 0) {
+            $normalized[$value] = $value;
+        }
+    }
+
+    if (empty($normalized)) {
+        return 0;
+    }
+
+    $idList = implode(',', array_map('intval', array_values($normalized)));
+    $sql = "DELETE FROM `{$tableName}` WHERE `{$columnName}` IN ({$idList})";
+
+    if (!$conn->query($sql)) {
+        throw new RuntimeException("Failed to delete related rows from {$tableName}.");
+    }
+
+    return max(0, (int)$conn->affected_rows);
 }
 
 if (isset($_POST['load_prospectus_by_program'])) {
@@ -293,6 +318,191 @@ if (isset($_POST['transfer_prospectus'])) {
 
     $transferStmt->close();
     echo "OK|Prospectus transferred successfully.";
+    exit;
+}
+
+if (isset($_POST['delete_prospectus'])) {
+    $prospectusId = (int)($_POST['prospectus_id'] ?? 0);
+
+    if ($prospectusId <= 0) {
+        echo "ERROR|Invalid prospectus reference.";
+        exit;
+    }
+
+    if (!can_access_browser_prospectus($conn, $prospectusId, $role, $myCollege)) {
+        echo "ERROR|Unauthorized prospectus access.";
+        exit;
+    }
+
+    $headerStmt = $conn->prepare("
+        SELECT cmo_no, effective_sy
+        FROM tbl_prospectus_header
+        WHERE prospectus_id = ?
+        LIMIT 1
+    ");
+    $headerStmt->bind_param("i", $prospectusId);
+    $headerStmt->execute();
+    $header = $headerStmt->get_result()->fetch_assoc();
+    $headerStmt->close();
+
+    if (!$header) {
+        echo "ERROR|Prospectus not found.";
+        exit;
+    }
+
+    $conn->begin_transaction();
+
+    try {
+        $offeringIds = [];
+        if (synk_table_exists($conn, 'tbl_prospectus_offering')) {
+            $offeringStmt = $conn->prepare("
+                SELECT offering_id
+                FROM tbl_prospectus_offering
+                WHERE prospectus_id = ?
+            ");
+            if (!$offeringStmt) {
+                throw new RuntimeException('Failed to inspect prospectus offerings.');
+            }
+
+            $offeringStmt->bind_param("i", $prospectusId);
+            $offeringStmt->execute();
+            $offeringRes = $offeringStmt->get_result();
+
+            while ($row = $offeringRes->fetch_assoc()) {
+                $offeringId = (int)($row['offering_id'] ?? 0);
+                if ($offeringId > 0) {
+                    $offeringIds[$offeringId] = $offeringId;
+                }
+            }
+            $offeringStmt->close();
+        }
+
+        $scheduleIds = [];
+        if (!empty($offeringIds) && synk_table_exists($conn, 'tbl_class_schedule')) {
+            $offeringIdList = implode(',', array_map('intval', array_values($offeringIds)));
+            $scheduleRes = $conn->query("
+                SELECT schedule_id
+                FROM tbl_class_schedule
+                WHERE offering_id IN ({$offeringIdList})
+            ");
+            if ($scheduleRes === false) {
+                throw new RuntimeException('Failed to inspect class schedules.');
+            }
+
+            while ($row = $scheduleRes->fetch_assoc()) {
+                $scheduleId = (int)($row['schedule_id'] ?? 0);
+                if ($scheduleId > 0) {
+                    $scheduleIds[$scheduleId] = $scheduleId;
+                }
+            }
+        }
+
+        if (synk_table_exists($conn, 'tbl_class_schedule_set') && synk_table_exists($conn, 'tbl_class_schedule_set_row')) {
+            $scheduleSetIds = [];
+            $setStmt = $conn->prepare("
+                SELECT schedule_set_id
+                FROM tbl_class_schedule_set
+                WHERE prospectus_id = ?
+            ");
+            if (!$setStmt) {
+                throw new RuntimeException('Failed to inspect saved schedule sets.');
+            }
+
+            $setStmt->bind_param("i", $prospectusId);
+            $setStmt->execute();
+            $setRes = $setStmt->get_result();
+
+            while ($row = $setRes->fetch_assoc()) {
+                $scheduleSetId = (int)($row['schedule_set_id'] ?? 0);
+                if ($scheduleSetId > 0) {
+                    $scheduleSetIds[$scheduleSetId] = $scheduleSetId;
+                }
+            }
+            $setStmt->close();
+
+            synk_delete_rows_by_id_list($conn, 'tbl_class_schedule_set_row', 'schedule_set_id', array_values($scheduleSetIds));
+
+            $deleteSetStmt = $conn->prepare("
+                DELETE FROM tbl_class_schedule_set
+                WHERE prospectus_id = ?
+            ");
+            if (!$deleteSetStmt) {
+                throw new RuntimeException('Failed to delete saved schedule sets.');
+            }
+
+            $deleteSetStmt->bind_param("i", $prospectusId);
+            if (!$deleteSetStmt->execute()) {
+                $deleteSetStmt->close();
+                throw new RuntimeException('Failed to delete saved schedule sets.');
+            }
+            $deleteSetStmt->close();
+        }
+
+        if (!empty($scheduleIds) && synk_table_exists($conn, 'tbl_faculty_workload_sched')) {
+            synk_delete_rows_by_id_list($conn, 'tbl_faculty_workload_sched', 'schedule_id', array_values($scheduleIds));
+        }
+
+        if (synk_table_exists($conn, 'tbl_faculty_workload_simulation')) {
+            if (!empty($scheduleIds)) {
+                synk_delete_rows_by_id_list($conn, 'tbl_faculty_workload_simulation', 'schedule_id', array_values($scheduleIds));
+            }
+            if (!empty($offeringIds)) {
+                synk_delete_rows_by_id_list($conn, 'tbl_faculty_workload_simulation', 'offering_id', array_values($offeringIds));
+            }
+        }
+
+        if (!empty($offeringIds) && synk_table_exists($conn, 'tbl_offering_enrollee_counts')) {
+            synk_delete_rows_by_id_list($conn, 'tbl_offering_enrollee_counts', 'offering_id', array_values($offeringIds));
+        }
+
+        if (!empty($offeringIds) && synk_table_exists($conn, 'tbl_class_schedule')) {
+            synk_delete_rows_by_id_list($conn, 'tbl_class_schedule', 'offering_id', array_values($offeringIds));
+        }
+
+        if (synk_table_exists($conn, 'tbl_prospectus_offering')) {
+            $deleteOfferingStmt = $conn->prepare("
+                DELETE FROM tbl_prospectus_offering
+                WHERE prospectus_id = ?
+            ");
+            if (!$deleteOfferingStmt) {
+                throw new RuntimeException('Failed to delete generated prospectus offerings.');
+            }
+
+            $deleteOfferingStmt->bind_param("i", $prospectusId);
+            if (!$deleteOfferingStmt->execute()) {
+                $deleteOfferingStmt->close();
+                throw new RuntimeException('Failed to delete generated prospectus offerings.');
+            }
+            $deleteOfferingStmt->close();
+        }
+
+        $deleteHeaderStmt = $conn->prepare("
+            DELETE FROM tbl_prospectus_header
+            WHERE prospectus_id = ?
+            LIMIT 1
+        ");
+        if (!$deleteHeaderStmt) {
+            throw new RuntimeException('Failed to delete prospectus header.');
+        }
+
+        $deleteHeaderStmt->bind_param("i", $prospectusId);
+        if (!$deleteHeaderStmt->execute()) {
+            $deleteHeaderStmt->close();
+            throw new RuntimeException('Failed to delete prospectus header.');
+        }
+
+        if ($deleteHeaderStmt->affected_rows < 1) {
+            $deleteHeaderStmt->close();
+            throw new RuntimeException('Prospectus was not deleted.');
+        }
+        $deleteHeaderStmt->close();
+
+        $conn->commit();
+        echo "OK|Prospectus removed successfully.|" . trim((string)$header['cmo_no']) . "|" . trim((string)$header['effective_sy']);
+    } catch (Throwable $e) {
+        $conn->rollback();
+        echo "ERROR|" . $e->getMessage();
+    }
     exit;
 }
 
