@@ -4,6 +4,7 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/offering_scope_helper.php';
+require_once '../backend/schedule_block_helper.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'scheduler') {
     header("Location: ../index.php");
@@ -126,6 +127,39 @@ function buildSectionDisplayLabel(array $row): string {
     return $sectionName !== '' ? $sectionName : '-';
 }
 
+function buildSubjectHourUnitDisplay(array $row): array {
+    $lecHours = round(max(0.0, (float)($row['lec_units'] ?? 0)), 2);
+    $labHours = round(
+        synk_lab_contact_hours(
+            $lecHours,
+            max(0.0, (float)($row['lab_units'] ?? 0)),
+            (float)($row['total_units'] ?? 0)
+        ),
+        2
+    );
+
+    return [
+        'lec_hours' => $lecHours,
+        'lab_hours' => $labHours,
+        'total_units' => round(synk_subject_units_total($lecHours, $labHours, 0.0), 2)
+    ];
+}
+
+function formatReportNumber($value): string {
+    $formatted = number_format((float)$value, 2, '.', '');
+    return rtrim(rtrim($formatted, '0'), '.');
+}
+
+function buildSubjectDescriptionLabel(array $row, string $description): string {
+    $description = trim($description);
+    $hoursUnits = buildSubjectHourUnitDisplay($row);
+    $suffix = formatReportNumber($hoursUnits['total_units']) . ' units (' .
+        formatReportNumber($hoursUnits['lec_hours']) . ' lec, ' .
+        formatReportNumber($hoursUnits['lab_hours']) . ' lab)';
+
+    return $description !== '' ? $description . ', ' . $suffix : $suffix;
+}
+
 function excelCellXml($value, $styleId = 'Body', $mergeAcross = 0) {
     $mergeAttr = $mergeAcross > 0 ? ' ss:MergeAcross="' . (int)$mergeAcross . '"' : '';
     return '<Cell ss:StyleID="' . excelXmlEscape($styleId) . '"' . $mergeAttr . '><Data ss:Type="String">' . excelXmlEscape($value) . '</Data></Cell>';
@@ -189,9 +223,11 @@ function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, st
 
     if (!empty($courses)) {
         foreach ($courses as $code => $data) {
+            $firstRow = (array)(($data['rows'][0] ?? []));
+            $descriptionLabel = buildSubjectDescriptionLabel($firstRow, (string)($data['desc'] ?? ''));
             $rowsXml[] = '<row r="' . $rowNumber . '">' .
                 xlsxInlineCellXml($rowNumber, 1, (string)$code, 6) .
-                xlsxInlineCellXml($rowNumber, 2, (string)($data['desc'] ?? ''), 7) .
+                xlsxInlineCellXml($rowNumber, 2, $descriptionLabel, 7) .
             '</row>';
             $mergeRefs[] = 'B' . $rowNumber . ':D' . $rowNumber;
             $rowNumber++;
@@ -367,9 +403,11 @@ function buildFacultyWorkloadExcelWorkbook(array $courses, string $programLabel,
 
     if (!empty($courses)) {
         foreach ($courses as $code => $data) {
+            $firstRow = (array)(($data['rows'][0] ?? []));
+            $descriptionLabel = buildSubjectDescriptionLabel($firstRow, (string)($data['desc'] ?? ''));
             $rows[] = '<Row>' .
                 excelCellXml($code, 'CourseCode') .
-                excelCellXml((string)($data['desc'] ?? ''), 'CourseDesc', 2) .
+                excelCellXml($descriptionLabel, 'CourseDesc', 2) .
             '</Row>';
 
             foreach (($data['rows'] ?? []) as $row) {
@@ -621,6 +659,9 @@ if ($hasFilters && $collegeId > 0) {
             p.program_code,
             sec.section_name,
             sec.full_section,
+            ps.lec_units,
+            ps.lab_units,
+            ps.total_units,
             cs.days_json,
             cs.time_start,
             cs.time_end,
@@ -1149,6 +1190,11 @@ if ($exportMode === 'excel' && $hasFilters) {
       font-weight: 700;
     }
 
+    .course-desc-meta {
+      color: #d97b7b;
+      font-weight: 700;
+    }
+
     .indent-row td {
       border-top: none;
     }
@@ -1524,9 +1570,20 @@ if ($exportMode === 'excel' && $hasFilters) {
                           </thead>
                           <tbody>
                             <?php foreach ($courses as $code => $data): ?>
+                              <?php
+                              $firstRow = (array)(($data['rows'][0] ?? []));
+                              $descriptionLabel = buildSubjectDescriptionLabel($firstRow, (string)($data['desc'] ?? ''));
+                              $summarySuffix = '';
+                              $baseDescription = (string)($data['desc'] ?? '');
+                              if ($baseDescription !== '' && strpos($descriptionLabel, $baseDescription . ', ') === 0) {
+                                  $summarySuffix = substr($descriptionLabel, strlen($baseDescription));
+                              }
+                              ?>
                               <tr>
                                 <td class="course-code"><?= h($code) ?></td>
-                                <td colspan="3" class="course-desc"><?= h($data['desc']) ?></td>
+                                <td colspan="3" class="course-desc">
+                                  <?= h($baseDescription !== '' ? $baseDescription : $descriptionLabel) ?><?php if ($summarySuffix !== ''): ?><span class="course-desc-meta"><?= h($summarySuffix) ?></span><?php endif; ?>
+                                </td>
                               </tr>
                               <?php foreach ($data['rows'] as $row): ?>
                                 <?php
