@@ -168,6 +168,25 @@ $sidebarSections = [
                     ],
                 ],
             ],
+            [
+                'key' => 'monitoring',
+                'icon_bg' => 'bg-label-info',
+                'icon' => 'bx-line-chart',
+                'title' => 'Monitoring',
+                'description' => 'Review campus-level monitoring reports and printable listings',
+                'badge' => 'Reports',
+                'items' => [
+                    [
+                        'key' => 'alphabetical_courses',
+                        'href' => 'report_alphabetical_courses.php',
+                        'icon_bg' => 'bg-label-primary',
+                        'icon' => 'bx-list-ul',
+                        'title' => 'Alphabetical List of Courses',
+                        'description' => 'Print and export campus-scoped course listings',
+                        'pages' => ['report_alphabetical_courses.php'],
+                    ],
+                ],
+            ],
         ],
     ],
 ];
