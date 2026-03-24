@@ -261,11 +261,6 @@ if (isset($_POST['load_faculty'])) {
 // ------------------------------------------------------------
 if (isset($_POST['save_faculty'])) {
     $schema = query_faculty_schema_info($conn);
-    if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
-        echo "schema_update_required";
-        exit;
-    }
-
     $lname = trim(strtoupper($_POST['last_name']));
     $fname = trim(strtoupper($_POST['first_name']));
     $mname = trim(strtoupper($_POST['middle_name']));
@@ -273,53 +268,70 @@ if (isset($_POST['save_faculty'])) {
     $designationId = (int)($_POST['designation_id'] ?? 0);
     $status = $_POST['status'];
 
-    if ($lname == "" || $fname == "" || $designationId <= 0) {
+    if ($lname == "" || $fname == "") {
         echo "missing";
         exit;
     }
 
-    $designationRecord = query_faculty_lookup_designation($conn, $schema, $designationId);
-    if (!is_array($designationRecord) || $designationRecord['designation_name'] === '') {
-        echo "invalid_designation";
-        exit;
+    $designationRecord = null;
+    if ($designationId > 0) {
+        if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
+            echo "schema_update_required";
+            exit;
+        }
+
+        $designationRecord = query_faculty_lookup_designation($conn, $schema, $designationId);
+        if (!is_array($designationRecord) || $designationRecord['designation_name'] === '') {
+            echo "invalid_designation";
+            exit;
+        }
     }
 
     $insertColumns = ['last_name', 'first_name'];
     $insertValues = [$lname, $fname];
     $insertTypes = "ss";
+    $insertPlaceholders = ['?', '?'];
 
     if ($schema['has_middle_name']) {
         $insertColumns[] = 'middle_name';
         $insertValues[] = $mname;
         $insertTypes .= "s";
+        $insertPlaceholders[] = '?';
     }
 
     if ($schema['has_ext_name']) {
         $insertColumns[] = 'ext_name';
         $insertValues[] = $ext;
         $insertTypes .= "s";
+        $insertPlaceholders[] = '?';
     }
 
     if ($schema['has_designation_id']) {
         $insertColumns[] = 'designation_id';
-        $insertValues[] = $designationRecord['designation_id'];
-        $insertTypes .= "i";
-    } else {
+        if (is_array($designationRecord)) {
+            $insertValues[] = $designationRecord['designation_id'];
+            $insertTypes .= "i";
+            $insertPlaceholders[] = '?';
+        } else {
+            $insertPlaceholders[] = 'NULL';
+        }
+    } elseif ($schema['designation_text_column'] !== null) {
         $insertColumns[] = $schema['designation_text_column'];
-        $insertValues[] = $designationRecord['designation_name'];
+        $insertValues[] = is_array($designationRecord) ? $designationRecord['designation_name'] : '';
         $insertTypes .= "s";
+        $insertPlaceholders[] = '?';
     }
 
     if ($schema['has_status']) {
         $insertColumns[] = 'status';
         $insertValues[] = $status;
         $insertTypes .= "s";
+        $insertPlaceholders[] = '?';
     }
 
-    $placeholders = implode(', ', array_fill(0, count($insertColumns), '?'));
     $stmt = $conn->prepare("
         INSERT INTO tbl_faculty (`" . implode('`, `', $insertColumns) . "`)
-        VALUES ({$placeholders})
+        VALUES (" . implode(', ', $insertPlaceholders) . ")
     ");
 
     if (!($stmt instanceof mysqli_stmt)) {
@@ -341,11 +353,6 @@ if (isset($_POST['save_faculty'])) {
 // ------------------------------------------------------------
 if (isset($_POST['update_faculty'])) {
     $schema = query_faculty_schema_info($conn);
-    if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
-        echo "schema_update_required";
-        exit;
-    }
-
     $id    = (int)($_POST['faculty_id'] ?? 0);
     $lname = trim(strtoupper($_POST['last_name']));
     $fname = trim(strtoupper($_POST['first_name']));
@@ -354,15 +361,23 @@ if (isset($_POST['update_faculty'])) {
     $designationId = (int)($_POST['designation_id'] ?? 0);
     $status = $_POST['status'];
 
-    if ($id <= 0 || $lname == "" || $fname == "" || $designationId <= 0) {
+    if ($id <= 0 || $lname == "" || $fname == "") {
         echo "missing";
         exit;
     }
 
-    $designationRecord = query_faculty_lookup_designation($conn, $schema, $designationId);
-    if (!is_array($designationRecord) || $designationRecord['designation_name'] === '') {
-        echo "invalid_designation";
-        exit;
+    $designationRecord = null;
+    if ($designationId > 0) {
+        if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
+            echo "schema_update_required";
+            exit;
+        }
+
+        $designationRecord = query_faculty_lookup_designation($conn, $schema, $designationId);
+        if (!is_array($designationRecord) || $designationRecord['designation_name'] === '') {
+            echo "invalid_designation";
+            exit;
+        }
     }
 
     $updateParts = [
@@ -385,12 +400,16 @@ if (isset($_POST['update_faculty'])) {
     }
 
     if ($schema['has_designation_id']) {
-        $updateParts[] = "designation_id = ?";
-        $updateValues[] = $designationRecord['designation_id'];
-        $updateTypes .= "i";
-    } else {
+        if (is_array($designationRecord)) {
+            $updateParts[] = "designation_id = ?";
+            $updateValues[] = $designationRecord['designation_id'];
+            $updateTypes .= "i";
+        } else {
+            $updateParts[] = "designation_id = NULL";
+        }
+    } elseif ($schema['designation_text_column'] !== null) {
         $updateParts[] = "`{$schema['designation_text_column']}` = ?";
-        $updateValues[] = $designationRecord['designation_name'];
+        $updateValues[] = is_array($designationRecord) ? $designationRecord['designation_name'] : '';
         $updateTypes .= "s";
     }
 

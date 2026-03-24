@@ -77,7 +77,7 @@ if (isset($_POST['load_designation_options'])) {
 
     $res = $conn->query($sql);
 
-    $options = '<option value="">Select Designation</option>';
+    $options = '<option value="">No Designation</option>';
 
     while ($row = $res->fetch_assoc()) {
         $id = (int)$row['designation_id'];

@@ -643,6 +643,23 @@ body.swal2-shown .modal {
     color: #5f6f8d;
 }
 
+.block-schedule-overview {
+    display: grid;
+    grid-template-columns: minmax(0, 1.35fr) minmax(300px, 0.95fr);
+    gap: 0.85rem;
+    align-items: stretch;
+}
+
+.block-schedule-overview .coverage-summary,
+.block-schedule-overview .modal-assist-strip {
+    margin-bottom: 0;
+    height: 100%;
+}
+
+.block-schedule-overview .modal-assist-strip {
+    min-height: 100%;
+}
+
 .auto-draft-summary {
     border: 1px solid #d7e1f2;
     border-radius: 14px;
@@ -844,6 +861,7 @@ body.swal2-shown .modal {
     --matrix-room-col-width: 118px;
     --matrix-day-col-width: 50px;
     --matrix-slot-col-width: 58px;
+    z-index: 1090;
 }
 
 #matrixModal .matrix-table {
@@ -1085,7 +1103,7 @@ body.swal2-shown .modal {
     right: 0.9rem;
     top: 52%;
     transform: translateY(-50%);
-    z-index: 1031;
+    z-index: 1082;
     border: 0;
     border-radius: 22px;
     background: linear-gradient(180deg, #eef3ff 0%, #dfe8ff 100%);
@@ -1132,10 +1150,76 @@ body.swal2-shown .modal {
     font-weight: 800;
 }
 
+.modal-assist-strip {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.85rem;
+    margin-bottom: 1rem;
+    padding: 0.9rem 1rem;
+    border: 1px solid #d9e2f6;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #fbfcff 0%, #f3f7ff 100%);
+}
+
+.modal-assist-copy {
+    min-width: 220px;
+    flex: 1 1 220px;
+}
+
+.modal-assist-copy strong {
+    display: block;
+    margin-bottom: 0.2rem;
+    color: #22304c;
+}
+
+.modal-assist-copy small {
+    color: #687796;
+    line-height: 1.45;
+}
+
+.modal-assist-actions {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.55rem;
+}
+
+.modal-header-copy {
+    display: flex;
+    flex-direction: column;
+    gap: 0.3rem;
+}
+
+.modal-context-inline {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    gap: 0.4rem;
+    margin: 0;
+    font-size: 0.92rem;
+    line-height: 1.35;
+    color: #24324d;
+}
+
+.modal-context-inline .modal-context-separator,
+.modal-context-inline .modal-context-section {
+    color: #6d7890;
+    font-weight: 500;
+}
+
+@media (max-width: 991.98px) {
+    .block-schedule-overview {
+        grid-template-columns: 1fr;
+    }
+}
+
 #roomBrowserDrawer {
     width: min(430px, calc(100vw - 1rem));
     border-left: 1px solid #dbe3f6;
     box-shadow: -24px 0 48px rgba(25, 40, 90, 0.14);
+    z-index: 1085;
 }
 
 #roomBrowserDrawer .offcanvas-header {
@@ -1781,7 +1865,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 </div>
 
-<div class="offcanvas offcanvas-end" tabindex="-1" id="roomBrowserDrawer" aria-labelledby="roomBrowserDrawerLabel">
+<div class="offcanvas offcanvas-end" tabindex="-1" id="roomBrowserDrawer" aria-labelledby="roomBrowserDrawerLabel" data-bs-backdrop="false" data-bs-scroll="true">
   <div class="offcanvas-header">
     <div class="room-browser-title">
       <span class="room-browser-title-icon">
@@ -1806,13 +1890,19 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 
 <!-- MODAL -->
-<div class="modal fade" id="scheduleModal" tabindex="-1">
+<div class="modal fade" id="scheduleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
     <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
     <div class="modal-header">
-    <h5 class="modal-title">Define Class Schedule</h5>
-    <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+    <div class="modal-header-copy">
+      <h5 class="modal-title mb-0">Define Class Schedule</h5>
+      <div class="modal-context-inline d-none" id="sched_context_line">
+        <span id="sched_subject_label"></span>
+        <span class="modal-context-separator">-</span>
+        <span class="modal-context-section" id="sched_section_label"></span>
+      </div>
+    </div>
     </div>
 
     <div class="modal-body">
@@ -1822,9 +1912,16 @@ while ($ay = $ayQ->fetch_assoc()) {
     <div class="row g-4 align-items-start">
       <div class="col-lg-7">
 
-    <div class="mb-3">
-    <strong id="sched_subject_label"></strong><br>
-    <small class="text-muted" id="sched_section_label"></small>
+    <div class="modal-assist-strip">
+      <div class="modal-assist-copy">
+        <strong>Need room and time visibility?</strong>
+        <small>Open the room-time matrix without closing this scheduling dialog.</small>
+      </div>
+      <div class="modal-assist-actions">
+        <button type="button" class="btn btn-outline-primary btn-sm btn-open-modal-matrix">
+          <i class="bx bx-grid-alt me-1"></i> Room-Time Matrix
+        </button>
+      </div>
     </div>
 
     <hr>
@@ -1929,22 +2026,35 @@ while ($ay = $ayQ->fetch_assoc()) {
      LECTURE + LAB SCHEDULING MODAL
 ======================================================= -->
 <!-- LECTURE + LAB SCHEDULING MODAL -->
-<div class="modal fade" id="dualScheduleModal" tabindex="-1">
+<div class="modal fade" id="dualScheduleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-xl modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
-        <h5 class="modal-title">Define Lecture & Laboratory Schedule</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-header-copy">
+          <h5 class="modal-title mb-0">Define Lecture & Laboratory Schedule</h5>
+          <div class="modal-context-inline d-none" id="dual_context_line">
+            <span id="dual_subject_label"></span>
+            <span class="modal-context-separator">-</span>
+            <span class="modal-context-section" id="dual_section_label"></span>
+          </div>
+        </div>
       </div>
 
       <div class="modal-body">
 
         <input type="hidden" id="dual_offering_id">
 
-        <div class="mb-3">
-          <strong id="dual_subject_label"></strong><br>
-          <small class="text-muted" id="dual_section_label"></small>
+        <div class="modal-assist-strip">
+          <div class="modal-assist-copy">
+            <strong>Need room and time visibility?</strong>
+            <small>Open the room-time matrix without closing this scheduling dialog.</small>
+          </div>
+          <div class="modal-assist-actions">
+            <button type="button" class="btn btn-outline-primary btn-sm btn-open-modal-matrix">
+              <i class="bx bx-grid-alt me-1"></i> Room-Time Matrix
+            </button>
+          </div>
         </div>
 
         <hr>
@@ -2115,12 +2225,18 @@ while ($ay = $ayQ->fetch_assoc()) {
 
 
 <!-- DYNAMIC SCHEDULE BLOCK MODAL -->
-<div class="modal fade" id="blockScheduleModal" tabindex="-1">
+<div class="modal fade" id="blockScheduleModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
       <div class="modal-header">
-        <h5 class="modal-title">Define Class Schedule Blocks</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        <div class="modal-header-copy">
+          <h5 class="modal-title mb-0">Define Class Schedule Blocks</h5>
+          <div class="modal-context-inline d-none" id="block_sched_context_line">
+            <span id="block_sched_subject_label"></span>
+            <span class="modal-context-separator">-</span>
+            <span class="modal-context-section" id="block_sched_section_label"></span>
+          </div>
+        </div>
       </div>
 
       <div class="modal-body">
@@ -2129,13 +2245,22 @@ while ($ay = $ayQ->fetch_assoc()) {
         <input type="hidden" id="block_sched_lab_units">
         <input type="hidden" id="block_sched_total_units">
 
-        <div class="mb-3">
-          <strong id="block_sched_subject_label"></strong><br>
-          <small class="text-muted" id="block_sched_section_label"></small>
-        </div>
+        <div class="block-schedule-overview mb-3">
+          <div class="coverage-summary" id="scheduleBlockCoverageSummary">
+            <strong>Schedule coverage will appear here.</strong>
+          </div>
 
-        <div class="coverage-summary mb-3" id="scheduleBlockCoverageSummary">
-          <strong>Schedule coverage will appear here.</strong>
+          <div class="modal-assist-strip">
+            <div class="modal-assist-copy">
+              <strong>Need room and time visibility?</strong>
+              <small>Open the room-time matrix while keeping this block editor open.</small>
+            </div>
+            <div class="modal-assist-actions">
+              <button type="button" class="btn btn-outline-primary btn-sm btn-open-modal-matrix">
+                <i class="bx bx-grid-alt me-1"></i> Room-Time Matrix
+              </button>
+            </div>
+          </div>
         </div>
 
         <div class="schedule-block-toolbar mb-3">
@@ -2165,7 +2290,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
 
 <!-- AUTO DRAFT MODAL -->
-<div class="modal fade" id="autoDraftModal" tabindex="-1">
+<div class="modal fade" id="autoDraftModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
 
@@ -2176,7 +2301,6 @@ while ($ay = $ayQ->fetch_assoc()) {
             Preview conflict-free drafts before applying them to the selected prospectus and term.
           </div>
         </div>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
       </div>
 
       <div class="modal-body">
@@ -2241,7 +2365,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
 
 <!-- ROOM MATRIX MODAL -->
-<div class="modal fade" id="matrixModal" tabindex="-1">
+<div class="modal fade" id="matrixModal" tabindex="-1" data-bs-backdrop="false">
   <div class="modal-dialog modal-fullscreen-lg-down modal-xxl modal-dialog-scrollable">
     <div class="modal-content">
 
@@ -2482,6 +2606,7 @@ while ($ay = $ayQ->fetch_assoc()) {
     let singleSuggestionTimer = null;
     let dualSuggestionTimer = null;
     let roomBrowserDrawerInstance = null;
+    let matrixModalInstance = null;
     const ROOM_BROWSER_TYPE_META = {
         lecture: {
             label: "Lecture Rooms",
@@ -2514,6 +2639,32 @@ while ($ay = $ayQ->fetch_assoc()) {
     function normalizeRoomType(roomType) {
         const value = String(roomType || "").toLowerCase().trim();
         return ["lecture", "laboratory", "lec_lab"].includes(value) ? value : "lecture";
+    }
+
+    function hasSchedulingModalOpen() {
+        return $("#scheduleModal, #dualScheduleModal, #blockScheduleModal, #autoDraftModal").filter(".show").length > 0;
+    }
+
+    function restoreBodyModalStateForScheduling() {
+        if (!hasSchedulingModalOpen()) {
+            return;
+        }
+
+        document.body.classList.add("modal-open");
+        document.body.style.overflow = "hidden";
+    }
+
+    function openRoomBrowserHelper() {
+        loadTermRoomOptions(false).always(function () {
+            renderRoomBrowser();
+            if (roomBrowserDrawerInstance) {
+                roomBrowserDrawerInstance.show();
+            }
+        });
+    }
+
+    function openMatrixHelper() {
+        loadRoomTimeMatrix(true, { preservePosition: false });
     }
 
     function roomMatchesSchedule(room, scheduleType) {
@@ -3159,6 +3310,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     $("#block_sched_offering_id").val(String(offeringId));
                     $("#block_sched_subject_label").text(subjectLabel);
                     $("#block_sched_section_label").text(sectionLabel);
+                    $("#block_sched_context_line").removeClass("d-none");
                     $("#block_sched_lec_units").val(String(lecUnits));
                     $("#block_sched_lab_units").val(String(labUnits));
                     $("#block_sched_total_units").val(String(totalUnits));
@@ -3810,7 +3962,11 @@ while ($ay = $ayQ->fetch_assoc()) {
         }
 
         if (openModal) {
-            $("#matrixModal").modal("show");
+            if (matrixModalInstance) {
+                matrixModalInstance.show();
+            } else {
+                $("#matrixModal").modal("show");
+            }
         }
 
         $("#matrixContainer").html(`
@@ -5040,6 +5196,10 @@ const roomBrowserElement = document.getElementById("roomBrowserDrawer");
 if (roomBrowserElement) {
   roomBrowserDrawerInstance = bootstrap.Offcanvas.getOrCreateInstance(roomBrowserElement);
 }
+const matrixModalElement = document.getElementById("matrixModal");
+if (matrixModalElement) {
+  matrixModalInstance = bootstrap.Modal.getOrCreateInstance(matrixModalElement);
+}
 renderRoomBrowser();
 
 $("#prospectus_id, #ay_id, #semester").on("change", function () {
@@ -5097,12 +5257,11 @@ $("#btnClearAllSchedules").on("click", function () {
 });
 
 $("#btnOpenRoomBrowser").on("click", function () {
-  loadTermRoomOptions(false).always(function () {
-    renderRoomBrowser();
-    if (roomBrowserDrawerInstance) {
-      roomBrowserDrawerInstance.show();
-    }
-  });
+  openRoomBrowserHelper();
+});
+
+$(document).on("click", ".btn-open-modal-matrix", function () {
+  openMatrixHelper();
 });
 
 $("#btnToggleSingleSuggestions").on("click", function () {
@@ -5151,10 +5310,14 @@ $("#btnToggleLabSuggestions").on("click", function () {
 });
 
 $("#scheduleModal").on("hidden.bs.modal", function () {
+  $("#sched_subject_label, #sched_section_label").text("");
+  $("#sched_context_line").addClass("d-none");
   resetSingleSuggestionPanel();
 });
 
 $("#dualScheduleModal").on("hidden.bs.modal", function () {
+  $("#dual_subject_label, #dual_section_label").text("");
+  $("#dual_context_line").addClass("d-none");
   resetDualSuggestionPanels();
 });
 
@@ -5163,6 +5326,10 @@ $("#autoDraftModal").on("hidden.bs.modal", function () {
     autoDraftRequest.abort();
   }
   stopAutoDraftLoader();
+});
+
+$("#matrixModal").on("hidden.bs.modal", function () {
+  restoreBodyModalStateForScheduling();
 });
 
 $(document).on("input change", "#scheduleModal .sched-day, #scheduleModal #sched_time_start, #scheduleModal #sched_time_end, #scheduleModal #sched_room_id", function () {
@@ -5284,6 +5451,7 @@ $(document).on("click", ".btn-schedule", function () {
         $("#sched_offering_id").val(offeringId);
         $("#sched_subject_label").text(subjectLabel);
         $("#sched_section_label").text("Section: " + section);
+        $("#sched_context_line").removeClass("d-none");
         $("#btnClearSchedule")
             .data("offering-id", offeringId)
             .data("subject-label", subjectLabel)
@@ -5330,6 +5498,7 @@ $(document).on("click", ".btn-schedule", function () {
 $("#dual_offering_id").val(offeringId);
 $("#dual_subject_label").text(subjectLabel);
 $("#dual_section_label").text("Section: " + section);
+$("#dual_context_line").removeClass("d-none");
 $("#btnClearDualSchedule")
     .data("offering-id", offeringId)
     .data("subject-label", subjectLabel)
@@ -5738,6 +5907,8 @@ success: function (res) {
 
 $("#blockScheduleModal").on("hidden.bs.modal", function () {
     scheduleBlockState = null;
+    $("#block_sched_subject_label, #block_sched_section_label").text("");
+    $("#block_sched_context_line").addClass("d-none");
     $("#scheduleBlockList").empty();
     $("#scheduleBlockCoverageSummary").html("<strong>Schedule coverage will appear here.</strong>");
 });

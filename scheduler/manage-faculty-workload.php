@@ -109,22 +109,32 @@ function buildScheduleDisplayParts(array $row): array {
 
 function buildSectionDisplayLabel(array $row): string {
     $fullSection = trim((string)($row['full_section'] ?? ''));
-    if ($fullSection !== '') {
-        return $fullSection;
-    }
-
     $programCode = strtoupper(trim((string)($row['program_code'] ?? '')));
     $sectionName = trim((string)($row['section_name'] ?? ''));
+    $major = strtoupper(trim((string)($row['major'] ?? '')));
+    $baseLabel = '';
 
-    if ($programCode !== '' && $sectionName !== '') {
+    if ($fullSection !== '') {
+        $baseLabel = $fullSection;
+    } elseif ($programCode !== '' && $sectionName !== '') {
         if (stripos($sectionName, $programCode . ' ') === 0) {
-            return $sectionName;
+            $baseLabel = $sectionName;
+        } else {
+            $baseLabel = $programCode . ' ' . $sectionName;
         }
-
-        return $programCode . ' ' . $sectionName;
+    } elseif ($sectionName !== '') {
+        $baseLabel = $sectionName;
     }
 
-    return $sectionName !== '' ? $sectionName : '-';
+    if ($baseLabel === '') {
+        return '-';
+    }
+
+    if ($major !== '' && stripos($baseLabel, $major) === false) {
+        return $baseLabel . ' - ' . $major;
+    }
+
+    return $baseLabel;
 }
 
 function buildSubjectHourUnitDisplay(array $row): array {
@@ -657,6 +667,7 @@ if ($hasFilters && $collegeId > 0) {
             sm.sub_code,
             sm.sub_description,
             p.program_code,
+            COALESCE(p.major, '') AS major,
             sec.section_name,
             sec.full_section,
             ps.lec_units,

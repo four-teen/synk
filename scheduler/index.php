@@ -213,6 +213,88 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
         color: #8592a3;
       }
 
+      .heatmap-toolbar {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: flex-end;
+        justify-content: space-between;
+        gap: 0.85rem;
+      }
+
+      .heatmap-filter-control {
+        min-width: 240px;
+        max-width: 100%;
+      }
+
+      .heatmap-filter-label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #8592a3;
+      }
+
+      .heatmap-room-filter {
+        min-width: 240px;
+      }
+
+      .weekly-analysis {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.85rem;
+        margin-top: 1rem;
+        margin-bottom: 0.75rem;
+      }
+
+      .weekly-analysis-card {
+        border: 1px solid #e5e9f2;
+        border-radius: 14px;
+        background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+        padding: 0.9rem 1rem;
+      }
+
+      .weekly-analysis-label {
+        display: block;
+        margin-bottom: 0.35rem;
+        font-size: 0.72rem;
+        font-weight: 700;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: #8592a3;
+      }
+
+      .weekly-analysis-value {
+        margin: 0 0 0.2rem;
+        font-size: 1.05rem;
+        font-weight: 700;
+        color: #233446;
+      }
+
+      .weekly-analysis-note {
+        margin: 0;
+        font-size: 0.8rem;
+        line-height: 1.45;
+        color: #8592a3;
+      }
+
+      .weekly-analysis-empty,
+      .weekly-analysis-loading {
+        border: 1px dashed #d9e2ef;
+        border-radius: 14px;
+        background: #fbfcfe;
+        padding: 0.95rem 1rem;
+        color: #8592a3;
+      }
+
+      .weekly-analysis-loading .loader-inline {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.65rem;
+        font-weight: 600;
+      }
+
       .dashboard-scope-toggle .btn {
         min-width: 7.5rem;
       }
@@ -440,6 +522,17 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         </div>
 
                         <div class="card-body">
+                          <div class="heatmap-toolbar mb-3">
+                            <div class="small text-muted" id="scheduleHeatmapFilterSummary">
+                              Filter by room to inspect one classroom schedule.
+                            </div>
+                            <div class="heatmap-filter-control">
+                              <label class="heatmap-filter-label" for="scheduleHeatmapRoomFilter">Room View</label>
+                              <select class="form-select form-select-sm heatmap-room-filter" id="scheduleHeatmapRoomFilter" aria-label="Select room heatmap view" disabled>
+                                <option value="all">All accessible rooms</option>
+                              </select>
+                            </div>
+                          </div>
                           <div id="scheduleHeatmapChart" class="chart-shell"></div>
                           <p class="chart-insight mb-0" id="scheduleHeatmapInsight">
                             This heat map highlights the busiest 30-minute room intervals for scheduling.
@@ -453,13 +546,21 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         <div class="card-header d-flex justify-content-between align-items-center">
                           <div>
                             <h5 class="m-0" id="weeklyPressureTitle">Weekly Scheduling Pressure</h5>
-                            <small class="text-muted" id="weeklyPressureSubtitle">Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.</small>
+                            <small class="text-muted" id="weeklyPressureSubtitle">Bars show scheduled classes while lines track rooms in use and faculty activity for each weekday.</small>
                           </div>
                           <span class="badge bg-label-info" id="weeklyPressureBadge">Demand Map</span>
                         </div>
 
                         <div class="card-body">
                           <div id="weeklyPressureChart" class="chart-shell chart-shell-compact"></div>
+                          <div id="weeklyPressureAnalysis" class="weekly-analysis">
+                            <div class="weekly-analysis-loading">
+                              <div class="loader-inline">
+                                <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+                                <span>Analyzing weekday load...</span>
+                              </div>
+                            </div>
+                          </div>
                           <p class="chart-insight mb-0" id="weeklyPressureInsight">
                             This graph helps you spot which days are crowded and may need balancing.
                           </p>
@@ -678,9 +779,12 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
         let schedulingProgressChart = null;
         let scheduleHeatmapChart = null;
         let weeklyPressureChart = null;
+        let scheduleHeatmapRequest = null;
         let unscheduledClassesRequest = null;
         let unscheduledClassesState = null;
         let dashboardScope = "college";
+        let scheduleHeatmapRoomSelection = "all";
+        let syncingScheduleHeatmapRoomFilter = false;
         const campusViewEnabled = <?php echo $campusViewEnabled ? 'true' : 'false'; ?>;
         const defaultCollegeName = <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>;
         const defaultCampusName = <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?>;
@@ -689,6 +793,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
         const unscheduledModalTitle = document.getElementById("unscheduledClassesModalSubtitle");
         const unscheduledSummary = document.getElementById("unscheduledClassesSummary");
         const unscheduledListContainer = document.getElementById("unscheduledClassesListContainer");
+        const scheduleHeatmapRoomFilter = document.getElementById("scheduleHeatmapRoomFilter");
+        const scheduleHeatmapFilterSummary = document.getElementById("scheduleHeatmapFilterSummary");
 
         function escapeHtml(value) {
           return String(value == null ? "" : value)
@@ -734,6 +840,140 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
         function activeScopeLabel() {
           return activeScopeType() === "campus" ? defaultCampusName : defaultCollegeName;
+        }
+
+        function scheduleHeatmapAllRoomsLabel() {
+          return activeScopeType() === "campus" ? "All campus rooms" : "All accessible rooms";
+        }
+
+        function syncScheduleHeatmapFilter(payload) {
+          const roomOptions = payload && Array.isArray(payload.room_options) ? payload.room_options : [];
+          const selectedRoomId = Number(payload && payload.selected_room_id) || 0;
+          const selectedRoomLabel = payload && payload.selected_room_label ? payload.selected_room_label : "the selected room";
+          const scheduleHeatmapSubtitle = document.getElementById("scheduleHeatmapSubtitle");
+          const aggregateSubtitle = activeScopeType() === "campus"
+            ? "Each cell shows the percentage of active campus rooms occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM across all colleges in the current campus."
+            : "Each cell shows the percentage of active rooms accessible to your college that are occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM.";
+
+          if (scheduleHeatmapRoomFilter) {
+            const optionMarkup = roomOptions.map(function (room) {
+              const roomId = Number(room && room.room_id) || 0;
+              const roomLabel = room && room.label ? room.label : "Room " + roomId;
+              return '<option value="' + roomId + '">' + escapeHtml(roomLabel) + "</option>";
+            }).join("");
+            const nextValue = roomOptions.some(function (room) {
+              return String(Number(room && room.room_id) || 0) === String(selectedRoomId);
+            }) ? String(selectedRoomId) : "all";
+
+            syncingScheduleHeatmapRoomFilter = true;
+            scheduleHeatmapRoomFilter.innerHTML =
+              '<option value="all">' + escapeHtml(scheduleHeatmapAllRoomsLabel()) + "</option>" + optionMarkup;
+            scheduleHeatmapRoomFilter.value = nextValue;
+            scheduleHeatmapRoomFilter.disabled = roomOptions.length === 0;
+            syncingScheduleHeatmapRoomFilter = false;
+            scheduleHeatmapRoomSelection = nextValue;
+          }
+
+          if (scheduleHeatmapFilterSummary) {
+            if (roomOptions.length === 0) {
+              scheduleHeatmapFilterSummary.textContent = "No active rooms are available for this heatmap.";
+            } else if (selectedRoomId > 0) {
+              scheduleHeatmapFilterSummary.textContent = "Viewing classroom heatmap for " + selectedRoomLabel + ".";
+            } else {
+              scheduleHeatmapFilterSummary.textContent = "Filter by room to inspect one classroom schedule.";
+            }
+          }
+
+          if (scheduleHeatmapSubtitle) {
+            scheduleHeatmapSubtitle.textContent = selectedRoomId > 0
+              ? "Each cell shows whether " + selectedRoomLabel + " is occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM."
+              : aggregateSubtitle;
+          }
+        }
+
+        function setScheduleHeatmapFilterLoadingState() {
+          if (scheduleHeatmapRoomFilter) {
+            scheduleHeatmapRoomFilter.disabled = true;
+          }
+
+          if (scheduleHeatmapFilterSummary) {
+            scheduleHeatmapFilterSummary.textContent = "Loading room options for the heatmap.";
+          }
+        }
+
+        function setWeeklyPressureAnalysisHtml(markup) {
+          const analysisContainer = document.getElementById("weeklyPressureAnalysis");
+
+          if (analysisContainer) {
+            analysisContainer.innerHTML = markup;
+          }
+        }
+
+        function setWeeklyPressureAnalysisLoadingState() {
+          setWeeklyPressureAnalysisHtml(
+            '<div class="weekly-analysis-loading">' + buildInlineLoader("Analyzing weekday load...") + "</div>"
+          );
+        }
+
+        function scheduleHeatmapInsightLoadingText() {
+          if (scheduleHeatmapRoomSelection !== "all") {
+            return "Loading the classroom heat map for the selected room.";
+          }
+
+          return dashboardScope === "campus"
+            ? "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM have the highest room occupancy across the current campus."
+            : "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM are busiest across rooms accessible to your college.";
+        }
+
+        function buildScheduleHeatmapRequestData() {
+          return {
+            scope: dashboardScope,
+            room_id: scheduleHeatmapRoomSelection === "all" ? "" : scheduleHeatmapRoomSelection
+          };
+        }
+
+        function loadScheduleHeatmap() {
+          if (scheduleHeatmapRequest && scheduleHeatmapRequest.readyState !== 4) {
+            scheduleHeatmapRequest.abort();
+          }
+
+          if (scheduleHeatmapChart) {
+            scheduleHeatmapChart.destroy();
+            scheduleHeatmapChart = null;
+          }
+
+          setScheduleHeatmapFilterLoadingState();
+          setChartLoading("scheduleHeatmapChart", "Loading room occupancy heat map...");
+          setInsight("scheduleHeatmapInsight", scheduleHeatmapInsightLoadingText());
+
+          scheduleHeatmapRequest = $.ajax({
+            url: "../backend/dashboard_scheduler_charts.php",
+            type: "POST",
+            dataType: "json",
+            data: buildScheduleHeatmapRequestData(),
+            success: function (data) {
+              scheduleHeatmapRequest = null;
+              renderScheduleHeatmap((data || {}).schedule_heatmap || {});
+            },
+            error: function (xhr, statusText) {
+              if (statusText === "abort") {
+                return;
+              }
+
+              scheduleHeatmapRequest = null;
+              console.error("Scheduler heatmap error:", xhr.responseText);
+
+              if (scheduleHeatmapRoomFilter) {
+                scheduleHeatmapRoomFilter.disabled = scheduleHeatmapRoomFilter.options.length <= 1;
+              }
+              if (scheduleHeatmapFilterSummary) {
+                scheduleHeatmapFilterSummary.textContent = "Unable to refresh room options for the heatmap.";
+              }
+
+              setChartFallback("scheduleHeatmapChart", "Unable to load room occupancy heat map.");
+              setInsight("scheduleHeatmapInsight", "Room occupancy data could not be loaded.");
+            }
+          });
         }
 
         function setUnscheduledPrintButtonsDisabled(disabled) {
@@ -1152,8 +1392,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
           if (weeklyPressureSubtitle) {
             weeklyPressureSubtitle.textContent = scopeType === "campus"
-              ? "Higher lines mean a busier campus day. It combines scheduled classes, rooms in use, and faculty active across all colleges in the current campus."
-              : "Higher lines mean a busier day. It shows how many classes are scheduled, how many rooms are used, and how many faculty are active each weekday.";
+              ? "Bars show scheduled class volume while lines trace rooms in use and faculty activity across all colleges in the current campus."
+              : "Bars show scheduled classes while lines track rooms in use and faculty activity for each weekday.";
           }
 
           if (weeklyPressureBadge) {
@@ -1378,6 +1618,11 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           const peakPercent = Number(payload.peak_percent) || 0;
           const peakOccupiedRooms = Number(payload.peak_occupied_rooms) || 0;
           const peakLabel = payload.peak_label || "No occupied room slots";
+          const occupiedSlotCount = Number(payload.occupied_slot_count) || 0;
+          const busiestDayLabel = payload.busiest_day_label || "";
+          const busiestDaySlots = Number(payload.busiest_day_slots) || 0;
+          const selectedRoomLabel = payload.selected_room_label || "Selected room";
+          const isSingleRoomView = payload.view_mode === "room";
           const scopeType = dashboardScope === "campus" && campusViewEnabled ? "campus" : "college";
           const poolLabel = scopeType === "campus" ? "campus room pool" : "accessible room pool";
           const chartContainer = document.querySelector("#scheduleHeatmapChart");
@@ -1385,6 +1630,8 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           if (!chartContainer) {
             return;
           }
+
+          syncScheduleHeatmapFilter(payload);
 
           if (!series.length) {
             setChartFallback("scheduleHeatmapChart", "No room occupancy heat map is available.");
@@ -1417,13 +1664,18 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                 shadeIntensity: 0.6,
                 enableShades: false,
                 colorScale: {
-                  ranges: [
-                    { from: 0, to: 0, name: "Idle", color: "#edf1f7" },
-                    { from: 0.1, to: 25, name: "Light", color: "#8fc2ff" },
-                    { from: 25.1, to: 50, name: "Moderate", color: "#4b97f2" },
-                    { from: 50.1, to: 75, name: "Busy", color: "#1f6fd1" },
-                    { from: 75.1, to: 100, name: "Peak", color: "#114aa3" }
-                  ]
+                  ranges: isSingleRoomView
+                    ? [
+                        { from: 0, to: 0, name: "Available", color: "#edf1f7" },
+                        { from: 0.1, to: 100, name: "Occupied", color: "#1f6fd1" }
+                      ]
+                    : [
+                        { from: 0, to: 0, name: "Idle", color: "#edf1f7" },
+                        { from: 0.1, to: 25, name: "Light", color: "#8fc2ff" },
+                        { from: 25.1, to: 50, name: "Moderate", color: "#4b97f2" },
+                        { from: 50.1, to: 75, name: "Busy", color: "#1f6fd1" },
+                        { from: 75.1, to: 100, name: "Peak", color: "#114aa3" }
+                      ]
                 }
               }
             },
@@ -1456,7 +1708,9 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             tooltip: {
               y: {
                 formatter: function (value) {
-                  return Number(value).toFixed(1) + "% occupied";
+                  return isSingleRoomView
+                    ? (Number(value) > 0 ? "Occupied" : "Available")
+                    : Number(value).toFixed(1) + "% occupied";
                 }
               }
             }
@@ -1468,6 +1722,29 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             setInsight(
               "scheduleHeatmapInsight",
               "No active rooms are available in the current " + poolLabel + ", so occupancy cannot be measured yet."
+            );
+            return;
+          }
+
+          if (isSingleRoomView) {
+            if (occupiedSlotCount <= 0) {
+              setInsight(
+                "scheduleHeatmapInsight",
+                selectedRoomLabel + " has no scheduled occupancy between 7:00 AM and 6:00 PM on weekdays for the current term."
+              );
+              return;
+            }
+
+            setInsight(
+              "scheduleHeatmapInsight",
+              selectedRoomLabel +
+                " is occupied during " +
+                occupiedSlotCount +
+                " weekday 30-minute block" +
+                (occupiedSlotCount === 1 ? "" : "s") +
+                (busiestDaySlots > 0
+                  ? ". " + busiestDayLabel + " is the busiest day with " + busiestDaySlots + " occupied block" + (busiestDaySlots === 1 ? "" : "s") + "."
+                  : ".")
             );
             return;
           }
@@ -1499,6 +1776,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
         function renderWeeklyPressureChart(data) {
           if (!Array.isArray(data) || data.length === 0) {
             setChartFallback("weeklyPressureChart", "No weekday scheduling pressure data available.");
+            setWeeklyPressureAnalysisHtml('<div class="weekly-analysis-empty">No weekday load analysis is available yet.</div>');
             setInsight("weeklyPressureInsight", "No scheduled classes were found for the current term, so weekday pressure cannot be measured yet.");
             return;
           }
@@ -1508,12 +1786,18 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           const rooms = [];
           const faculty = [];
           let busiestDay = null;
+          let highestRoomDay = null;
+          let highestFacultyDay = null;
+          let tightestRoomDay = null;
+          let quietestActiveDay = null;
+          const noActivityDays = [];
 
           data.forEach(function (row) {
             const dayLabel = row.day || "--";
             const meetingCount = Number(row.meetings) || 0;
             const roomCount = Number(row.rooms) || 0;
             const facultyCount = Number(row.faculty) || 0;
+            const hasActivity = meetingCount > 0 || roomCount > 0 || facultyCount > 0;
 
             days.push(dayLabel);
             meetings.push(meetingCount);
@@ -1526,6 +1810,47 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                 meetings: meetingCount,
                 rooms: roomCount
               };
+            }
+
+            if (!highestRoomDay || roomCount > highestRoomDay.rooms || (roomCount === highestRoomDay.rooms && meetingCount > highestRoomDay.meetings)) {
+              highestRoomDay = {
+                day: dayLabel,
+                meetings: meetingCount,
+                rooms: roomCount
+              };
+            }
+
+            if (!highestFacultyDay || facultyCount > highestFacultyDay.faculty || (facultyCount === highestFacultyDay.faculty && meetingCount > highestFacultyDay.meetings)) {
+              highestFacultyDay = {
+                day: dayLabel,
+                meetings: meetingCount,
+                faculty: facultyCount
+              };
+            }
+
+            if (roomCount > 0 && meetingCount > 0) {
+              const classesPerRoom = meetingCount / roomCount;
+              if (!tightestRoomDay || classesPerRoom > tightestRoomDay.classesPerRoom || (classesPerRoom === tightestRoomDay.classesPerRoom && meetingCount > tightestRoomDay.meetings)) {
+                tightestRoomDay = {
+                  day: dayLabel,
+                  meetings: meetingCount,
+                  rooms: roomCount,
+                  classesPerRoom: classesPerRoom
+                };
+              }
+            }
+
+            if (hasActivity) {
+              if (!quietestActiveDay || meetingCount < quietestActiveDay.meetings || (meetingCount === quietestActiveDay.meetings && roomCount < quietestActiveDay.rooms)) {
+                quietestActiveDay = {
+                  day: dayLabel,
+                  meetings: meetingCount,
+                  rooms: roomCount,
+                  faculty: facultyCount
+                };
+              }
+            } else {
+              noActivityDays.push(dayLabel);
             }
           });
 
@@ -1541,6 +1866,11 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
           chartContainer.innerHTML = "";
 
+          const maxClasses = Math.max.apply(null, meetings.concat([0]));
+          const maxResourceLoad = Math.max.apply(null, rooms.concat(faculty, [0]));
+          const classAxisMax = Math.max(5, Math.ceil(maxClasses * 1.15));
+          const resourceAxisMax = Math.max(5, Math.ceil(maxResourceLoad * 1.2));
+
           weeklyPressureChart = new ApexCharts(chartContainer, {
             chart: {
               type: "line",
@@ -1551,30 +1881,28 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             series: [
               {
                 name: "Scheduled Classes",
+                type: "column",
                 data: meetings
               },
               {
                 name: "Rooms In Use",
+                type: "line",
                 data: rooms
               },
               {
                 name: "Faculty Active",
+                type: "line",
                 data: faculty
               }
             ],
             colors: ["#03c3ec", "#696cff", "#71dd37"],
             stroke: {
-              curve: "smooth",
-              width: [4, 3, 3]
+              curve: "straight",
+              width: [0, 3, 3]
             },
             fill: {
-              type: "gradient",
-              gradient: {
-                shadeIntensity: 1,
-                opacityFrom: 0.18,
-                opacityTo: 0.02,
-                stops: [0, 90, 100]
-              }
+              type: ["solid", "solid", "solid"],
+              opacity: [0.9, 1, 1]
             },
             markers: {
               size: 4,
@@ -1584,7 +1912,27 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               }
             },
             dataLabels: {
-              enabled: false
+              enabled: true,
+              enabledOnSeries: [0],
+              offsetY: -6,
+              style: {
+                fontSize: "10px",
+                fontWeight: 600,
+                colors: ["#233446"]
+              },
+              background: {
+                enabled: false
+              },
+              formatter: function (value) {
+                const count = Number(value) || 0;
+                return count > 0 ? String(count) : "";
+              }
+            },
+            plotOptions: {
+              bar: {
+                columnWidth: "48%",
+                borderRadius: 6
+              }
             },
             legend: {
               position: "top",
@@ -1604,16 +1952,66 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                 }
               }
             },
-            yaxis: {
-              min: 0,
-              forceNiceScale: true,
-              title: {
-                text: "Daily Load",
-                style: {
-                  color: "#697a8d"
+            yaxis: [
+              {
+                min: 0,
+                max: classAxisMax,
+                tickAmount: 5,
+                forceNiceScale: true,
+                title: {
+                  text: "Scheduled Classes",
+                  style: {
+                    color: "#03c3ec"
+                  }
+                },
+                labels: {
+                  style: {
+                    colors: "#697a8d"
+                  }
+                }
+              },
+              {
+                seriesName: "Rooms In Use",
+                opposite: true,
+                min: 0,
+                max: resourceAxisMax,
+                tickAmount: 5,
+                forceNiceScale: true,
+                title: {
+                  text: "Rooms / Faculty",
+                  style: {
+                    color: "#696cff"
+                  }
+                },
+                labels: {
+                  style: {
+                    colors: "#697a8d"
+                  }
+                }
+              },
+              {
+                seriesName: "Faculty Active",
+                opposite: true,
+                min: 0,
+                max: resourceAxisMax,
+                show: false
+              }
+            ],
+            responsive: [
+              {
+                breakpoint: 768,
+                options: {
+                  chart: {
+                    height: 360
+                  },
+                  plotOptions: {
+                    bar: {
+                      columnWidth: "58%"
+                    }
+                  }
                 }
               }
-            },
+            ],
             tooltip: {
               shared: true,
               intersect: false,
@@ -1629,23 +2027,117 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
           weeklyPressureChart.render();
 
           if (!busiestDay || busiestDay.meetings === 0) {
+            setWeeklyPressureAnalysisHtml('<div class="weekly-analysis-empty">Weekday activity exists in the chart, but no scheduled class pressure was detected.</div>');
             setInsight("weeklyPressureInsight", "No scheduled classes are mapped to weekdays yet.");
             return;
           }
 
-          setInsight(
-            "weeklyPressureInsight",
-            "Higher lines mean a busier day. " +
-              busiestDay.day +
-              " is currently the busiest with " +
+          const analysisCards = [];
+
+          analysisCards.push({
+            label: "Peak Load",
+            value: busiestDay.day,
+            note:
               busiestDay.meetings +
               " scheduled class" +
-              (busiestDay.meetings === 1 ? "" : "s") +
+              (busiestDay.meetings === 1 ? "" : "es") +
               " using " +
               busiestDay.rooms +
               " room" +
               (busiestDay.rooms === 1 ? "" : "s") +
               "."
+          });
+
+          if (tightestRoomDay) {
+            analysisCards.push({
+              label: "Room Pressure",
+              value: tightestRoomDay.classesPerRoom.toFixed(1) + " classes/room",
+              note:
+                tightestRoomDay.day +
+                " carries the highest class-to-room pressure with " +
+                tightestRoomDay.meetings +
+                " classes across " +
+                tightestRoomDay.rooms +
+                " rooms."
+            });
+          } else if (highestRoomDay && highestRoomDay.rooms > 0) {
+            analysisCards.push({
+              label: "Room Usage",
+              value: highestRoomDay.day,
+              note:
+                highestRoomDay.rooms +
+                " room" +
+                (highestRoomDay.rooms === 1 ? "" : "s") +
+                (highestRoomDay.rooms === 1 ? " is" : " are") +
+                " active on this day."
+            });
+          }
+
+          if (highestFacultyDay && highestFacultyDay.faculty > 0) {
+            analysisCards.push({
+              label: "Faculty Peak",
+              value: highestFacultyDay.day,
+              note:
+                highestFacultyDay.faculty +
+                " faculty member" +
+                (highestFacultyDay.faculty === 1 ? " is" : "s are") +
+                " active on the strongest faculty day."
+            });
+          } else {
+            analysisCards.push({
+              label: "Faculty Mapping",
+              value: "Not mapped",
+              note: "No faculty activity is currently linked to this weekly pressure view."
+            });
+          }
+
+          if (noActivityDays.length > 0) {
+            analysisCards.push({
+              label: "Open Days",
+              value: noActivityDays.join(", "),
+              note: "These days have no classes, room usage, or faculty activity recorded."
+            });
+          } else if (quietestActiveDay) {
+            analysisCards.push({
+              label: "Lightest Day",
+              value: quietestActiveDay.day,
+              note:
+                quietestActiveDay.meetings +
+                " scheduled class" +
+                (quietestActiveDay.meetings === 1 ? "" : "es") +
+                " across " +
+                quietestActiveDay.rooms +
+                " room" +
+                (quietestActiveDay.rooms === 1 ? "" : "s") +
+                "."
+            });
+          }
+
+          setWeeklyPressureAnalysisHtml(
+            analysisCards.map(function (card) {
+              return (
+                '<div class="weekly-analysis-card">' +
+                  '<span class="weekly-analysis-label">' + escapeHtml(card.label) + "</span>" +
+                  '<p class="weekly-analysis-value">' + escapeHtml(card.value) + "</p>" +
+                  '<p class="weekly-analysis-note">' + escapeHtml(card.note) + "</p>" +
+                "</div>"
+              );
+            }).join("")
+          );
+
+          setInsight(
+            "weeklyPressureInsight",
+            "The bars show total class volume while the lines show how much room and faculty support that load needs. " +
+              busiestDay.day +
+              " carries the highest class load with " +
+              busiestDay.meetings +
+              " scheduled class" +
+              (busiestDay.meetings === 1 ? "" : "es") +
+              (noActivityDays.length > 0
+                ? ", while " + noActivityDays.join(", ") + " show no recorded weekday activity."
+                : quietestActiveDay && quietestActiveDay.day !== busiestDay.day
+                  ? ", while " + quietestActiveDay.day + " is the lightest active day."
+                  : ".")
           );
         }
         function updateDashboardCounts(data) {
@@ -1714,7 +2206,6 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
           setCountsLoadingState();
           setChartLoading("programSchedulingChart", "Loading program scheduling progress...");
-          setChartLoading("scheduleHeatmapChart", "Loading room occupancy heat map...");
           setChartLoading("weeklyPressureChart", "Loading weekday scheduling pressure...");
           setInsight(
             "programProgressInsight",
@@ -1723,17 +2214,14 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               : "Loading the comparison of total classes, scheduled classes, and unscheduled classes per program."
           );
           setInsight(
-            "scheduleHeatmapInsight",
-            dashboardScope === "campus"
-              ? "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM have the highest room occupancy across the current campus."
-              : "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM are busiest across rooms accessible to your college."
-          );
-          setInsight(
             "weeklyPressureInsight",
             dashboardScope === "campus"
               ? "Loading which weekdays are busiest across all colleges in the current campus."
               : "Loading which weekdays are busiest based on classes, rooms, and faculty activity."
           );
+          setWeeklyPressureAnalysisLoadingState();
+
+          loadScheduleHeatmap();
 
           $.ajax({
             url: "../backend/dashboard_scheduler_charts.php",
@@ -1743,16 +2231,14 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
             success: function (data) {
               applyDashboardScopeMeta(data || {});
               renderProgramSchedulingChart(data.program_progress || []);
-              renderScheduleHeatmap(data.schedule_heatmap || {});
               renderWeeklyPressureChart(data.weekly_pressure || []);
             },
             error: function (xhr) {
               console.error("Scheduler charts error:", xhr.responseText);
               setChartFallback("programSchedulingChart", "Unable to load program scheduling progress.");
-              setChartFallback("scheduleHeatmapChart", "Unable to load room occupancy heat map.");
               setChartFallback("weeklyPressureChart", "Unable to load weekday scheduling pressure.");
               setInsight("programProgressInsight", "Program comparison data could not be loaded.");
-              setInsight("scheduleHeatmapInsight", "Room occupancy data could not be loaded.");
+              setWeeklyPressureAnalysisHtml('<div class="weekly-analysis-empty">Weekday load analysis could not be loaded.</div>');
               setInsight("weeklyPressureInsight", "Weekday load data could not be loaded.");
             }
           });
@@ -1770,6 +2256,18 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
               document.getElementById("schedulerStatusMessage").textContent =
                 "Unable to load dashboard counts.";
             }
+          });
+        }
+
+        if (scheduleHeatmapRoomFilter) {
+          scheduleHeatmapRoomFilter.addEventListener("change", function (event) {
+            if (syncingScheduleHeatmapRoomFilter) {
+              return;
+            }
+
+            event.preventDefault();
+            scheduleHeatmapRoomSelection = scheduleHeatmapRoomFilter.value || "all";
+            loadScheduleHeatmap();
           });
         }
 

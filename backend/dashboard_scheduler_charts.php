@@ -15,7 +15,14 @@ function empty_dashboard_heatmap_payload(): array
         'peak_label' => 'No occupied room slots',
         'peak_occupied_rooms' => 0,
         'peak_percent' => 0.0,
-        'total_rooms' => 0
+        'total_rooms' => 0,
+        'room_options' => [],
+        'selected_room_id' => 0,
+        'selected_room_label' => '',
+        'view_mode' => 'pool',
+        'occupied_slot_count' => 0,
+        'busiest_day_label' => '',
+        'busiest_day_slots' => 0
     ];
 }
 
@@ -128,6 +135,31 @@ function dashboard_slot_label(int $startMinutes, int $endMinutes): string
     return $startLabel . '-' . $endLabel;
 }
 
+function dashboard_room_label(array $row, string $scope, int $collegeId): string
+{
+    $roomId = (int)($row['room_id'] ?? 0);
+    $roomCode = trim((string)($row['room_code'] ?? ''));
+    $roomName = trim((string)($row['room_name'] ?? ''));
+    $ownerCode = trim((string)($row['owner_code'] ?? ''));
+    $ownerCollegeId = (int)($row['owner_college_id'] ?? 0);
+
+    if ($roomCode !== '' && $roomName !== '' && strcasecmp($roomCode, $roomName) !== 0) {
+        $label = $roomCode . ' - ' . $roomName;
+    } elseif ($roomCode !== '') {
+        $label = $roomCode;
+    } elseif ($roomName !== '') {
+        $label = $roomName;
+    } else {
+        $label = 'Room ' . ($roomId > 0 ? $roomId : '');
+    }
+
+    if ($ownerCode !== '' && ($scope === 'campus' || ($collegeId > 0 && $ownerCollegeId > 0 && $ownerCollegeId !== $collegeId))) {
+        $label .= ' (' . $ownerCode . ')';
+    }
+
+    return trim($label);
+}
+
 function dashboard_overlap_hours(int $startMinutes, int $endMinutes, int $windowStartMinutes, int $windowEndMinutes): float
 {
     $effectiveStart = max($startMinutes, $windowStartMinutes);
@@ -150,6 +182,7 @@ synk_scheduler_bootstrap_session_scope($conn);
 $collegeId = (int)($_SESSION['college_id'] ?? 0);
 $campusId = (int)($_SESSION['campus_id'] ?? 0);
 $scope = strtolower(trim((string)($_POST['scope'] ?? 'college')));
+$requestedRoomId = (int)($_POST['room_id'] ?? 0);
 if ($scope !== 'campus' || $campusId <= 0) {
     $scope = 'college';
 }
@@ -361,16 +394,26 @@ foreach ($heatmapDays as $dayKey) {
 }
 
 $roomPool = [];
+$roomOptions = [];
+$selectedRoomLabel = '';
 
 if ($scope === 'campus') {
     $roomPoolSql = "
-        SELECT DISTINCT r.room_id
+        SELECT DISTINCT
+            r.room_id,
+            r.room_code,
+            r.room_name,
+            r.college_id AS owner_college_id,
+            owner.college_code AS owner_code
         FROM tbl_rooms r
         INNER JOIN tbl_college c
             ON c.college_id = r.college_id
+        LEFT JOIN tbl_college owner
+            ON owner.college_id = r.college_id
         WHERE c.campus_id = ?
           AND c.status = 'active'
           AND r.status = 'active'
+        ORDER BY r.room_name ASC, r.room_code ASC, r.room_id ASC
     ";
 
     $roomPoolStmt = $conn->prepare($roomPoolSql);
@@ -379,14 +422,22 @@ if ($scope === 'campus') {
     }
 } elseif (synk_table_exists($conn, 'tbl_room_college_access')) {
     $roomPoolSql = "
-        SELECT DISTINCT r.room_id
+        SELECT DISTINCT
+            r.room_id,
+            r.room_code,
+            r.room_name,
+            r.college_id AS owner_college_id,
+            owner.college_code AS owner_code
         FROM tbl_room_college_access acc
         INNER JOIN tbl_rooms r
             ON r.room_id = acc.room_id
+        LEFT JOIN tbl_college owner
+            ON owner.college_id = r.college_id
         WHERE acc.college_id = ?
           AND acc.ay_id = ?
           AND acc.semester = ?
           AND r.status = 'active'
+        ORDER BY r.room_name ASC, r.room_code ASC, r.room_id ASC
     ";
 
     $roomPoolStmt = $conn->prepare($roomPoolSql);
@@ -395,10 +446,18 @@ if ($scope === 'campus') {
     }
 } else {
     $roomPoolSql = "
-        SELECT DISTINCT r.room_id
+        SELECT DISTINCT
+            r.room_id,
+            r.room_code,
+            r.room_name,
+            r.college_id AS owner_college_id,
+            owner.college_code AS owner_code
         FROM tbl_rooms r
+        LEFT JOIN tbl_college owner
+            ON owner.college_id = r.college_id
         WHERE r.college_id = ?
           AND r.status = 'active'
+        ORDER BY r.room_name ASC, r.room_code ASC, r.room_id ASC
     ";
 
     $roomPoolStmt = $conn->prepare($roomPoolSql);
@@ -415,6 +474,15 @@ if (isset($roomPoolStmt) && $roomPoolStmt instanceof mysqli_stmt) {
         $roomId = (int)($roomRow['room_id'] ?? 0);
         if ($roomId > 0) {
             $roomPool[$roomId] = true;
+            $roomLabel = dashboard_room_label($roomRow, $scope, $collegeId);
+            $roomOptions[] = [
+                'room_id' => $roomId,
+                'label' => $roomLabel
+            ];
+
+            if ($roomId === $requestedRoomId) {
+                $selectedRoomLabel = $roomLabel;
+            }
         }
     }
 
@@ -422,10 +490,21 @@ if (isset($roomPoolStmt) && $roomPoolStmt instanceof mysqli_stmt) {
 }
 unset($roomPoolStmt);
 
-$scheduleHeatmap['total_rooms'] = count($roomPool);
+usort($roomOptions, static function (array $left, array $right): int {
+    return strcasecmp((string)($left['label'] ?? ''), (string)($right['label'] ?? ''));
+});
 
-if (!empty($roomPool)) {
-    $roomIdList = implode(',', array_map('intval', array_keys($roomPool)));
+$selectedRoomId = isset($roomPool[$requestedRoomId]) ? $requestedRoomId : 0;
+$heatmapRoomIds = $selectedRoomId > 0 ? [$selectedRoomId => true] : $roomPool;
+
+$scheduleHeatmap['room_options'] = $roomOptions;
+$scheduleHeatmap['selected_room_id'] = $selectedRoomId;
+$scheduleHeatmap['selected_room_label'] = $selectedRoomId > 0 ? $selectedRoomLabel : '';
+$scheduleHeatmap['view_mode'] = $selectedRoomId > 0 ? 'room' : 'pool';
+$scheduleHeatmap['total_rooms'] = count($heatmapRoomIds);
+
+if (!empty($heatmapRoomIds)) {
+    $roomIdList = implode(',', array_map('intval', array_keys($heatmapRoomIds)));
     $heatmapSql = "
         SELECT
             cs.room_id,
@@ -448,7 +527,7 @@ if (!empty($roomPool)) {
 
         while ($heatmapRow = $heatmapRes->fetch_assoc()) {
             $roomId = (int)($heatmapRow['room_id'] ?? 0);
-            if (!isset($roomPool[$roomId])) {
+            if (!isset($heatmapRoomIds[$roomId])) {
                 continue;
             }
 
@@ -484,6 +563,7 @@ if (!empty($roomPool)) {
 
     foreach ($heatmapDays as $dayKey) {
         $seriesData = [];
+        $dayOccupiedSlots = 0;
 
         foreach ($heatmapSlotLabels as $slotLabel) {
             $occupiedRooms = count($heatmapMatrix[$dayKey][$slotLabel]);
@@ -496,11 +576,21 @@ if (!empty($roomPool)) {
                 'y' => $occupancyPercent
             ];
 
+            if ($occupiedRooms > 0) {
+                $scheduleHeatmap['occupied_slot_count']++;
+                $dayOccupiedSlots++;
+            }
+
             if ($occupancyPercent > $scheduleHeatmap['peak_percent']) {
                 $scheduleHeatmap['peak_percent'] = $occupancyPercent;
                 $scheduleHeatmap['peak_occupied_rooms'] = $occupiedRooms;
                 $scheduleHeatmap['peak_label'] = dashboard_day_label($dayKey) . ' - ' . $slotLabel;
             }
+        }
+
+        if ($dayOccupiedSlots > $scheduleHeatmap['busiest_day_slots']) {
+            $scheduleHeatmap['busiest_day_slots'] = $dayOccupiedSlots;
+            $scheduleHeatmap['busiest_day_label'] = dashboard_day_label($dayKey);
         }
 
         $scheduleHeatmap['series'][] = [

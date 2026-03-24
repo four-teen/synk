@@ -65,70 +65,111 @@ if ((int)$currentTerm['semester'] === 1) {
     }
 
     .ru-room-label {
-        font-weight: 600;
+        font-size: 1.2rem;
+        font-weight: 700;
+        color: #2c415c;
     }
 
     .ru-term-label {
-        font-size: 0.85rem;
-        color: #6c757d;
+        font-size: 0.9rem;
+        color: #6d7f95;
     }
 
-    .ru-time-header {
-        width: 70px;
-        min-width: 70px;
-        max-width: 70px;
-        font-size: 0.72rem;
-        white-space: nowrap;
-        padding: 4px 2px;
+    .ru-sheet {
+        border: 1px solid #d9e2ec;
+        border-radius: 12px;
+        overflow: hidden;
+        background: #fff;
+    }
+
+    .ru-sheet-table {
+        width: 100%;
+        margin-bottom: 0;
+        table-layout: fixed;
+    }
+
+    .ru-sheet-table thead th {
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
         text-align: center;
-    }
-
-    .ru-block {
-        border-radius: 6px;
-        font-size: 0.72rem;
-        font-weight: 600;
-        padding: 4px;
-        text-align: center;
-    }
-
-    .ru-block.ru-clickable {
-        cursor: pointer;
-        transition: transform 0.15s ease, box-shadow 0.15s ease;
-    }
-
-    .ru-block.ru-clickable:hover,
-    .ru-block.ru-clickable:focus {
-        transform: translateY(-1px);
-        box-shadow: 0 8px 18px rgba(31, 41, 55, 0.12);
-        outline: none;
-    }
-
-    .ru-hover,
-    .ru-hover-highlight {
-        outline: 3px solid #ffbf00 !important;
-        z-index: 10;
-        position: relative;
-        border-radius: 4px;
-    }
-
-    .ru-overview-table th:first-child,
-    .ru-overview-table td:first-child {
-        white-space: normal;
-        width: auto;
-        min-width: 140px;
-        max-width: 220px;
-        word-break: break-word;
-        line-height: 1.2;
+        color: #4d627a;
+        background: #f9fbfd;
+        border-color: #cfd8e3;
         vertical-align: middle;
     }
 
-    .ru-room-report-table th:first-child,
-    .ru-room-report-table td:first-child {
+    .ru-sheet-table tbody td {
+        border-color: #d9e2ec;
+        color: #576c85;
+        vertical-align: top;
+        background: #fff;
+    }
+
+    .ru-sheet-table th:nth-child(1),
+    .ru-sheet-table td:nth-child(1) {
+        width: 26%;
+    }
+
+    .ru-sheet-table th:nth-child(2),
+    .ru-sheet-table td:nth-child(2) {
+        width: 14%;
+        text-align: center;
+    }
+
+    .ru-sheet-table th:nth-child(3),
+    .ru-sheet-table td:nth-child(3) {
+        width: 34%;
+    }
+
+    .ru-sheet-table th:nth-child(4),
+    .ru-sheet-table td:nth-child(4) {
+        width: 26%;
+    }
+
+    .ru-time-cell {
         white-space: nowrap;
-        width: 90px;
-        min-width: 90px;
-        max-width: 90px;
-        text-align: left;
+        font-weight: 600;
+        color: #334a63;
+    }
+
+    .ru-day-cell {
+        white-space: nowrap;
+        font-weight: 700;
+        color: #304560;
+    }
+
+    .ru-sheet-group td {
+        background: #f6f9fc;
+        color: #2f455f;
+        font-size: 0.78rem;
+        font-weight: 700;
+        text-transform: uppercase;
+        letter-spacing: 0.1em;
+    }
+
+    .ru-subject-code {
+        font-weight: 700;
+        color: #334a63;
+    }
+
+    .ru-subject-section {
+        margin-top: 0.2rem;
+        color: #6c8199;
+    }
+
+    .ru-faculty-name {
+        font-weight: 700;
+        color: #2d4159;
+        text-transform: uppercase;
+    }
+
+    .ru-empty-state {
+        padding: 2.5rem 1rem;
+        text-align: center;
+        color: #73859b;
+        font-weight: 500;
     }
 
     .ru-loader {
@@ -145,212 +186,77 @@ if ((int)$currentTerm['semester'] === 1) {
         text-align: center;
     }
 
-    .ru-pan {
-        cursor: grab;
-    }
-
-    .ru-pan:active {
-        cursor: grabbing;
-    }
-
-    .ru-overview-table th:nth-child(2),
-    .ru-overview-table td:nth-child(2) {
-        width: 55px;
-        min-width: 55px;
-        max-width: 55px;
-        text-align: center;
-        font-weight: 600;
+    .ru-print-trigger {
         white-space: nowrap;
     }
 
-    .ru-fullscreen {
-        position: fixed !important;
-        inset: 12px;
-        z-index: 9999;
-        background: #ffffff;
-        display: flex;
-        flex-direction: column;
-        border-radius: 12px;
-        box-shadow: 0 10px 40px rgba(0, 0, 0, 0.25);
-        overflow: hidden !important;
-    }
+    @media print {
+        @page {
+            margin: 0.45in;
+        }
 
-    body.ru-lock {
-        overflow: hidden;
-    }
+        body {
+            background: #fff !important;
+        }
 
-    .ru-fullscreen .card-header {
-        flex-shrink: 0;
-    }
+        .layout-menu,
+        .layout-navbar,
+        footer,
+        .ru-no-print,
+        #ruLoader {
+            display: none !important;
+        }
 
-    .ru-fullscreen #allRoomsWrapper {
-        flex: 1;
-        overflow-y: auto !important;
-        overflow-x: auto !important;
-        height: 100% !important;
-        max-height: calc(100vh - 120px) !important;
-        overscroll-behavior: contain;
-        padding: 18px;
-        background: #f8f9fa;
-    }
+        .layout-wrapper,
+        .layout-container,
+        .layout-page,
+        .content-wrapper,
+        .container-xxl {
+            margin: 0 !important;
+            padding: 0 !important;
+            background: #fff !important;
+        }
 
-    .ru-fullscreen .ps {
-        overflow: auto !important;
-    }
+        #roomTimetableCard {
+            display: block !important;
+            border: 0 !important;
+            box-shadow: none !important;
+            margin: 0 !important;
+        }
 
-    #allRoomsCard:not(.ru-fullscreen) #allRoomsWrapper {
-        max-height: 1000px;
-        overflow-x: auto;
-        overflow-y: auto;
-        padding: 8px;
-        background: #f8f9fa;
-        border-top: 1px solid #e5e7eb;
-    }
+        #roomTimetableCard .card-header {
+            border: 0 !important;
+            padding: 0 0 12px !important;
+        }
 
-    .ru-room-report-table {
-        table-layout: fixed;
-        width: 100%;
-    }
+        #roomTimetableCard .card-body {
+            padding: 0 !important;
+        }
 
-    .ru-room-report-table th,
-    .ru-room-report-table td {
-        vertical-align: middle;
-    }
+        .ru-room-label,
+        .ru-term-label {
+            color: #000 !important;
+        }
 
-    .ru-room-report-table th:nth-child(1),
-    .ru-room-report-table td:nth-child(1) {
-        width: 220px;
-        min-width: 220px;
-        white-space: nowrap;
-    }
+        .ru-sheet {
+            border: 0 !important;
+            border-radius: 0 !important;
+            box-shadow: none !important;
+        }
 
-    .ru-room-report-table td:nth-child(1) {
-        font-size: 0.85rem;
-    }
+        .ru-sheet-table thead th,
+        .ru-sheet-table tbody td {
+            color: #000 !important;
+            border-color: #000 !important;
+        }
 
-    .ru-empty-note {
-        background: #fbfcfe;
-    }
+        .ru-sheet-group td {
+            background: #fff !important;
+        }
 
-    .ru-workload-modal .modal-dialog {
-        max-width: 1080px;
-    }
-
-    .ru-workload-modal .modal-body {
-        padding-top: 1rem;
-    }
-
-    .ru-workload-sheet {
-        border: 1px solid #dbe5f1;
-        border-radius: 12px;
-        overflow: hidden;
-        background: #fff;
-    }
-
-    .ru-workload-table {
-        margin-bottom: 0;
-        font-size: 0.84rem;
-    }
-
-    .ru-workload-table thead th {
-        font-size: 0.72rem;
-        font-weight: 700;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        color: #5f728b;
-        border-bottom: 1px solid #dbe4ef;
-        border-top: 1px solid #dbe4ef;
-        box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(204, 216, 229, 0.9);
-        white-space: nowrap;
-    }
-
-    .ru-workload-table tbody td {
-        color: #5c6f88;
-        border-color: #e7edf5;
-        vertical-align: middle;
-    }
-
-    .ru-workload-table tfoot th,
-    .ru-workload-table tfoot td {
-        color: #5f728b;
-        border-top: 2px solid #d7e1ec;
-        background: #f9fbfd;
-        vertical-align: middle;
-    }
-
-    .ru-workload-code {
-        font-weight: 700;
-        color: #5b6f86;
-        white-space: nowrap;
-    }
-
-    .ru-workload-desc {
-        color: #5f728b;
-    }
-
-    .ru-workload-days,
-    .ru-workload-room {
-        white-space: nowrap;
-    }
-
-    .ru-workload-time {
-        white-space: normal;
-        line-height: 1.08;
-        min-width: 88px;
-    }
-
-    .ru-time-line {
-        display: block;
-        white-space: nowrap;
-    }
-
-    .ru-merged-metric {
-        vertical-align: middle !important;
-        background: #fbfcfe;
-        font-weight: 600;
-    }
-
-    .ru-workload-summary-row th,
-    .ru-workload-summary-row td {
-        background: #f9fbfd;
-        border-top: 1px solid #d7e1ec;
-        border-bottom: 1px solid #d7e1ec;
-    }
-
-    .ru-workload-summary-label {
-        color: #52657d;
-        font-weight: 700;
-        white-space: nowrap;
-    }
-
-    .ru-workload-summary-value {
-        color: #4f6279;
-        font-weight: 600;
-    }
-
-    .ru-summary-separator th,
-    .ru-summary-separator td {
-        border-top: 2px solid #b9c8d9 !important;
-    }
-
-    .ru-workload-total-row th,
-    .ru-workload-total-row td {
-        border-top: 2px solid #b7c6d8 !important;
-        background: #f6f9fc;
-    }
-
-    .ru-workload-state {
-        min-height: 180px;
-        display: flex;
-        align-items: center;
-        justify-content: center;
-        text-align: center;
-        color: #6c7a8f;
-        font-weight: 500;
-    }
-
-    .ru-workload-empty-row td {
-        color: #7d8ea5;
+        .ru-print-trigger {
+            display: none !important;
+        }
     }
 </style>
 
@@ -373,19 +279,10 @@ if ((int)$currentTerm['semester'] === 1) {
         <small class="text-muted">(<?= htmlspecialchars($college_name) ?>)</small>
     </h4>
 
-    <div class="card mb-3">
-        <div class="card-body py-2">
-            <div class="btn-group" role="group">
-                <button class="btn btn-outline-primary active" id="btnModeSingle">Single Room View</button>
-                <button class="btn btn-outline-primary" id="btnModeAll">Overview (All Rooms)</button>
-            </div>
-        </div>
-    </div>
-
-    <div class="card mb-4">
+    <div class="card mb-4 ru-no-print">
         <div class="card-header">
             <h5 class="m-0">Filter Room Schedule</h5>
-            <small class="text-muted">Select academic year, semester, and room to view its timetable.</small>
+            <small class="text-muted">Select academic year, semester, and room to view and print its utilization sheet.</small>
         </div>
         <div class="card-body">
             <div class="row g-3 align-items-end">
@@ -424,48 +321,17 @@ if ((int)$currentTerm['semester'] === 1) {
     </div>
 
     <div class="card" id="roomTimetableCard" style="display:none;">
-        <div class="card-header d-flex justify-content-between align-items-center">
+        <div class="card-header d-flex justify-content-between align-items-start gap-3">
             <div>
-                <div class="ru-room-label" id="ruRoomLabel">Room:</div>
+                <div class="ru-room-label" id="ruRoomLabel">Room number/name:</div>
                 <div class="ru-term-label" id="ruTermLabel"></div>
             </div>
-        </div>
-        <div class="card-body p-0">
-            <div id="roomTimetableWrapper" class="table-responsive"></div>
-        </div>
-    </div>
-
-    <div class="card" id="allRoomsCard" style="display:none;">
-        <div class="card-header d-flex justify-content-between align-items-center">
-            <div>
-                <h5 class="m-0">Room Utilization - Overview (All Rooms)</h5>
-                <small class="text-muted">Displays all rooms horizontally per time slot. Click a colored class block to view the assigned faculty workload.</small>
-            </div>
-
-            <button class="btn btn-sm btn-outline-secondary" id="btnFullscreenRU">
-                <i class="bx bx-expand"></i>
+            <button type="button" class="btn btn-outline-primary ru-print-trigger" id="btnPrintRoomUtilization" disabled>
+                <i class="bx bx-printer me-1"></i>Print Utilization
             </button>
         </div>
-
-        <div class="card-body p-0">
-            <div id="allRoomsWrapper"></div>
-        </div>
-    </div>
-
-    <div class="modal fade ru-workload-modal" id="facultyWorkloadModal" tabindex="-1" aria-hidden="true">
-        <div class="modal-dialog modal-dialog-scrollable modal-xl">
-            <div class="modal-content">
-                <div class="modal-header">
-                    <div>
-                        <h5 class="modal-title" id="facultyWorkloadModalTitle">Faculty Workload</h5>
-                        <div class="small text-muted" id="facultyWorkloadModalMeta"></div>
-                    </div>
-                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
-                </div>
-                <div class="modal-body">
-                    <div id="facultyWorkloadModalBody" class="ru-workload-state">Select a schedule block to view faculty workload.</div>
-                </div>
-            </div>
+        <div class="card-body">
+            <div id="roomTimetableWrapper"></div>
         </div>
     </div>
 
@@ -488,79 +354,37 @@ if ((int)$currentTerm['semester'] === 1) {
     <script src="../assets/vendor/libs/popper/popper.js"></script>
     <script src="../assets/vendor/js/bootstrap.js"></script>
     <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
-    <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
     <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="../assets/vendor/js/menu.js"></script>
-    <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
     <script src="../assets/js/main.js"></script>
-    <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
 $(document).ready(function () {
+    const DAY_START_MINUTES = 7 * 60;
+    const DAY_END_MINUTES = 18 * 60;
+    const GROUP_ORDER = ["MWF", "TTH", "S", "OTHER"];
+    const DAY_SORT = {
+        M: 1,
+        MW: 2,
+        MWF: 3,
+        WF: 4,
+        W: 5,
+        F: 6,
+        T: 1,
+        TTh: 2,
+        Th: 3,
+        S: 1
+    };
+
     let loaderCount = 0;
     let roomOptionsRequest = null;
     let roomScheduleRequest = null;
-    let overviewRequest = null;
-    let facultyWorkloadRequest = null;
-    const subjectColorMap = {};
-    const facultyWorkloadModalEl = document.getElementById("facultyWorkloadModal");
-    const facultyWorkloadModal = facultyWorkloadModalEl ? new bootstrap.Modal(facultyWorkloadModalEl) : null;
 
-    $("#btnFullscreenRU").on("click", function () {
-        const card = $("#allRoomsCard");
-        const body = $("body");
-        const icon = $(this).find("i");
-
-        card.toggleClass("ru-fullscreen");
-        body.toggleClass("ru-lock");
-
-        if (card.hasClass("ru-fullscreen")) {
-            card.find(".ps").each(function () {
-                this.style.overflow = "auto";
-            });
-            icon.removeClass("bx-expand").addClass("bx-collapse");
-        } else {
-            icon.removeClass("bx-collapse").addClass("bx-expand");
-        }
-    });
-
-    (function enablePanScroll() {
-        const container = document.getElementById("allRoomsWrapper");
-        if (!container) {
-            return;
-        }
-
-        let isDown = false;
-        let startX = 0;
-        let scrollLeft = 0;
-
-        container.classList.add("ru-pan");
-
-        container.addEventListener("mousedown", function (event) {
-            isDown = true;
-            startX = event.pageX - container.offsetLeft;
-            scrollLeft = container.scrollLeft;
+    if ($.fn.select2) {
+        $(".select2-single").select2({
+            width: "100%"
         });
-
-        container.addEventListener("mouseleave", function () {
-            isDown = false;
-        });
-
-        container.addEventListener("mouseup", function () {
-            isDown = false;
-        });
-
-        container.addEventListener("mousemove", function (event) {
-            if (!isDown) {
-                return;
-            }
-
-            event.preventDefault();
-            const x = event.pageX - container.offsetLeft;
-            const walk = (x - startX) * 1.2;
-            container.scrollLeft = scrollLeft - walk;
-        });
-    })();
+    }
 
     function escapeHtml(value) {
         return $("<div>").text(value == null ? "" : String(value)).html();
@@ -585,313 +409,61 @@ $(document).ready(function () {
         }
     }
 
-    function showSingleRoomMessage(message) {
+    function setPrintState(enabled) {
+        $("#btnPrintRoomUtilization").prop("disabled", !enabled);
+    }
+
+    function formatSemesterLabel(semester) {
+        if (!semester) {
+            return "";
+        }
+
+        return semester === "Midyear" ? "Midyear" : semester + " Semester";
+    }
+
+    function updateHeader(roomText, ay, semester) {
+        const title = roomText ? "Room number/name: " + roomText : "Room number/name:";
+        const meta = [];
+
+        if (ay) {
+            meta.push("A.Y. " + ay);
+        }
+
+        if (semester) {
+            meta.push(formatSemesterLabel(semester));
+        }
+
+        $("#ruRoomLabel").text(title);
+        $("#ruTermLabel").text(meta.join(" | "));
+    }
+
+    function showRoomMessage(message) {
+        const roomId = $("#ru_room_id").val();
+        const roomText = roomId ? $("#ru_room_id option:selected").text() : "";
+        $("#roomTimetableCard").show();
+        updateHeader(roomText, $("#ru_ay").val(), $("#ru_semester").val());
+        setPrintState(false);
         $("#roomTimetableWrapper").html(
-            `<div class="p-3 text-muted text-center">${escapeHtml(message)}</div>`
+            `<div class="ru-empty-state">${escapeHtml(message)}</div>`
         );
     }
 
-    function showOverviewMessage(message) {
-        $("#allRoomsWrapper").html(
-            `<div class="p-3 text-muted text-center">${escapeHtml(message)}</div>`
-        );
+    function timeToMinutes(time) {
+        const parts = String(time || "").split(":").map(Number);
+        return ((parts[0] || 0) * 60) + (parts[1] || 0);
     }
 
-    function toNumber(value) {
-        const parsed = Number(value);
-        return Number.isFinite(parsed) ? parsed : 0;
+    function minutesToAMPM(minutes) {
+        const normalized = Math.max(0, Number(minutes) || 0);
+        let hour = Math.floor(normalized / 60);
+        const minute = normalized % 60;
+        const period = hour >= 12 ? "PM" : "AM";
+        hour = hour % 12 || 12;
+        return `${hour}:${String(minute).padStart(2, "0")} ${period}`;
     }
 
-    function formatNumber(value) {
-        const number = toNumber(value);
-        if (Math.abs(number % 1) < 0.0001) {
-            return String(Math.round(number));
-        }
-
-        return number.toFixed(2).replace(/\.?0+$/, "");
-    }
-
-    function getWorkloadGroupKey(row) {
-        const groupId = Number(row && row.group_id) || 0;
-        if (groupId > 0) {
-            return `g:${groupId}`;
-        }
-
-        const offeringId = Number(row && row.offering_id) || 0;
-        if (offeringId > 0) {
-            return `o:${offeringId}`;
-        }
-
-        return `w:${Number(row && row.workload_id) || 0}`;
-    }
-
-    function formatStudentCount(value) {
-        const number = Math.round(toNumber(value));
-        return number > 0 ? String(number) : "";
-    }
-
-    function formatCompactTime(value) {
-        const raw = String(value == null ? "" : value).trim();
-        if (raw === "") {
-            return "";
-        }
-
-        const parts = raw.split("-");
-        if (parts.length !== 2) {
-            return escapeHtml(raw);
-        }
-
-        return `
-            <span class="ru-time-line">${escapeHtml(parts[0].trim())}</span>
-            <span class="ru-time-line">${escapeHtml(parts[1].trim())}</span>
-        `;
-    }
-
-    function formatDesignationDisplay(meta) {
-        const name = String(meta && (meta.designation_name || meta.designation_label) || "").trim();
-        const label = String(meta && (meta.designation_label || name) || "").trim();
-        const collegeName = String(meta && meta.designation_college_name || "").trim();
-
-        if (!label) {
-            return "";
-        }
-
-        if (name.toUpperCase() === "DEAN" && collegeName !== "") {
-            return `${label}, ${collegeName.toUpperCase()}`;
-        }
-
-        return label;
-    }
-
-    function isPartneredWorkloadPair(currentRow, nextRow) {
-        if (!currentRow || !nextRow) {
-            return false;
-        }
-
-        const currentGroupId = Number(currentRow.group_id) || 0;
-        const nextGroupId = Number(nextRow.group_id) || 0;
-
-        if (currentGroupId <= 0 || currentGroupId !== nextGroupId) {
-            return false;
-        }
-
-        return String(currentRow.sub_code || "") === String(nextRow.sub_code || "") &&
-               String(currentRow.course || currentRow.section || "") === String(nextRow.course || nextRow.section || "") &&
-               String(currentRow.type || "").toUpperCase() !== String(nextRow.type || "").toUpperCase();
-    }
-
-    function buildWorkloadDescription(row, isPaired) {
-        const description = escapeHtml(row && (row.desc || row.subject_description) || "");
-        if (!isPaired) {
-            return description;
-        }
-
-        const typeSuffix = String(row && row.type || "LEC").toUpperCase() === "LAB" ? "lab" : "lec";
-        return `${description} (${escapeHtml(typeSuffix)})`;
-    }
-
-    function setFacultyWorkloadModalState(message, isError) {
-        const stateClass = isError ? "text-danger" : "";
-        $("#facultyWorkloadModalBody").html(
-            `<div class="ru-workload-state ${stateClass}">${escapeHtml(message)}</div>`
-        );
-    }
-
-    function renderFacultyWorkloadModal(response, fallbackFacultyName, ay, semester) {
-        const rows = Array.isArray(response && response.rows) ? response.rows : [];
-        const meta = response && typeof response.meta === "object" && response.meta !== null ? response.meta : {};
-        const facultyName = String(meta.faculty_name || fallbackFacultyName || "Faculty").trim() || "Faculty";
-        const countedGroups = new Set();
-        const preparations = new Set();
-        let totalUnits = 0;
-        let totalLec = 0;
-        let totalLab = 0;
-        let totalLoad = 0;
-        let rowsHtml = "";
-
-        $("#facultyWorkloadModalTitle").text(facultyName + " Workload");
-        $("#facultyWorkloadModalMeta").text("AY " + ay + " | " + semester);
-
-        if (!rows.length) {
-            setFacultyWorkloadModalState("No workload rows found for this faculty in the selected term.", false);
-            return;
-        }
-
-        for (let i = 0; i < rows.length; i++) {
-            const row = rows[i];
-            const nextRow = rows[i + 1] || null;
-            const groupKey = getWorkloadGroupKey(row);
-            const isPairStart = isPartneredWorkloadPair(row, nextRow);
-
-            if (!countedGroups.has(groupKey)) {
-                countedGroups.add(groupKey);
-                totalUnits += toNumber(row.units);
-                totalLec += toNumber(row.lec);
-                totalLab += toNumber(row.lab);
-                totalLoad += toNumber(row.faculty_load);
-            }
-
-            const subjectCode = String(row.sub_code || "").trim();
-            if (subjectCode !== "") {
-                preparations.add(subjectCode);
-            }
-
-            if (isPairStart) {
-                const mergedStudents = Math.max(
-                    toNumber(row.student_count),
-                    toNumber(nextRow.student_count)
-                );
-
-                rowsHtml += `
-                    <tr>
-                        <td class="ru-workload-code">${escapeHtml(row.sub_code)}</td>
-                        <td class="ru-workload-desc">${buildWorkloadDescription(row, true)}</td>
-                        <td>${escapeHtml(row.course || row.section || "")}</td>
-                        <td class="ru-workload-days">${escapeHtml(row.days || "")}</td>
-                        <td class="ru-workload-time">${formatCompactTime(row.time)}</td>
-                        <td class="ru-workload-room">${escapeHtml(row.room || "")}</td>
-                        <td class="text-center ru-merged-metric" rowspan="2">${escapeHtml(formatNumber(row.units))}</td>
-                        <td class="text-center ru-merged-metric" rowspan="2">${escapeHtml(formatNumber(row.lab))}</td>
-                        <td class="text-center ru-merged-metric" rowspan="2">${escapeHtml(formatNumber(row.lec))}</td>
-                        <td class="text-center ru-merged-metric" rowspan="2">${escapeHtml(formatNumber(row.faculty_load))}</td>
-                        <td class="text-center ru-merged-metric" rowspan="2">${escapeHtml(formatStudentCount(mergedStudents))}</td>
-                    </tr>
-                    <tr>
-                        <td class="ru-workload-code">${escapeHtml(nextRow.sub_code)}</td>
-                        <td class="ru-workload-desc">${buildWorkloadDescription(nextRow, true)}</td>
-                        <td>${escapeHtml(nextRow.course || nextRow.section || "")}</td>
-                        <td class="ru-workload-days">${escapeHtml(nextRow.days || "")}</td>
-                        <td class="ru-workload-time">${formatCompactTime(nextRow.time)}</td>
-                        <td class="ru-workload-room">${escapeHtml(nextRow.room || "")}</td>
-                    </tr>
-                `;
-                i += 1;
-                continue;
-            }
-
-            rowsHtml += `
-                <tr>
-                    <td class="ru-workload-code">${escapeHtml(row.sub_code)}</td>
-                    <td class="ru-workload-desc">${buildWorkloadDescription(row, false)}</td>
-                    <td>${escapeHtml(row.course || row.section || "")}</td>
-                    <td class="ru-workload-days">${escapeHtml(row.days || "")}</td>
-                    <td class="ru-workload-time">${formatCompactTime(row.time)}</td>
-                    <td class="ru-workload-room">${escapeHtml(row.room || "")}</td>
-                    <td class="text-center">${escapeHtml(formatNumber(row.units))}</td>
-                    <td class="text-center">${escapeHtml(formatNumber(row.lab))}</td>
-                    <td class="text-center">${escapeHtml(formatNumber(row.lec))}</td>
-                    <td class="text-center fw-semibold">${escapeHtml(formatNumber(row.faculty_load))}</td>
-                    <td class="text-center">${escapeHtml(formatStudentCount(row.student_count))}</td>
-                </tr>
-            `;
-        }
-
-        const totalPreparations = Math.max(Number(meta.total_preparations) || 0, preparations.size);
-        const designationUnits = toNumber(meta.designation_units);
-        const grandTotalLoad = totalLoad + designationUnits;
-        const designationText = formatDesignationDisplay(meta);
-
-        $("#facultyWorkloadModalBody").html(`
-            <div class="ru-workload-sheet">
-                <div class="table-responsive">
-                    <table class="table table-hover table-sm ru-workload-table">
-                        <thead class="table-light">
-                            <tr>
-                                <th rowspan="2">Course No.</th>
-                                <th rowspan="2">Course Description</th>
-                                <th rowspan="2">Course</th>
-                                <th rowspan="2">Day</th>
-                                <th rowspan="2">Time</th>
-                                <th rowspan="2">Room</th>
-                                <th rowspan="2" class="text-center">Unit</th>
-                                <th colspan="2" class="text-center">No. of Hours</th>
-                                <th rowspan="2" class="text-center">Load</th>
-                                <th rowspan="2" class="text-center"># of<br>Students</th>
-                            </tr>
-                            <tr>
-                                <th class="text-center">Lab</th>
-                                <th class="text-center">Lec</th>
-                            </tr>
-                        </thead>
-                        <tbody>
-                            ${rowsHtml || `
-                                <tr class="ru-workload-empty-row">
-                                    <td colspan="11" class="text-center text-muted">No workload assigned yet.</td>
-                                </tr>
-                            `}
-                        </tbody>
-                        <tfoot class="table-light">
-                            <tr class="ru-workload-summary-row">
-                                <th colspan="2" class="text-start ru-workload-summary-label">Designation:</th>
-                                <td colspan="4" class="ru-workload-summary-value">${escapeHtml(designationText)}</td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td class="text-center fw-semibold">${designationUnits > 0 ? escapeHtml(formatNumber(designationUnits)) : ""}</td>
-                                <td></td>
-                            </tr>
-                            <tr class="ru-workload-summary-row ru-summary-separator">
-                                <th colspan="2" class="text-start ru-workload-summary-label">No. of Prep:</th>
-                                <td colspan="4" class="ru-workload-summary-value">${escapeHtml(formatNumber(totalPreparations))}</td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                                <td></td>
-                            </tr>
-                            <tr class="ru-workload-summary-row ru-workload-total-row">
-                                <th colspan="6" class="text-end fw-semibold">Total Load</th>
-                                <th class="text-center">${escapeHtml(formatNumber(totalUnits))}</th>
-                                <th class="text-center">${escapeHtml(formatNumber(totalLab))}</th>
-                                <th class="text-center">${escapeHtml(formatNumber(totalLec))}</th>
-                                <th class="text-center fw-semibold">${escapeHtml(formatNumber(grandTotalLoad))}</th>
-                                <th class="text-center"></th>
-                            </tr>
-                        </tfoot>
-                    </table>
-                </div>
-            </div>
-        `);
-    }
-
-    function loadFacultyWorkloadModal(facultyId, facultyName) {
-        const ay = $("#ru_ay").val();
-        const semester = $("#ru_semester").val();
-
-        if (!facultyId || !ay || !semester || !facultyWorkloadModal) {
-            return;
-        }
-
-        if (facultyWorkloadRequest) {
-            facultyWorkloadRequest.abort();
-        }
-
-        $("#facultyWorkloadModalTitle").text((facultyName || "Faculty") + " Workload");
-        $("#facultyWorkloadModalMeta").text("AY " + ay + " | " + semester);
-        setFacultyWorkloadModalState("Loading faculty workload...", false);
-        facultyWorkloadModal.show();
-
-        facultyWorkloadRequest = $.ajax({
-            url: "../backend/query_room_utilization.php",
-            type: "POST",
-            dataType: "json",
-            data: {
-                load_faculty_workload: 1,
-                faculty_id: facultyId,
-                ay: ay,
-                semester: semester
-            }
-        }).done(function (response) {
-            renderFacultyWorkloadModal(response, facultyName, ay, semester);
-        }).fail(function (_, textStatus) {
-            if (textStatus === "abort") {
-                return;
-            }
-
-            setFacultyWorkloadModalState("Unable to load this faculty's workload right now.", true);
-        }).always(function () {
-            facultyWorkloadRequest = null;
-        });
+    function formatTimeRange(startMinutes, endMinutes) {
+        return `${minutesToAMPM(startMinutes)} - ${minutesToAMPM(endMinutes)}`;
     }
 
     function normalizeDayKey(daysArr) {
@@ -913,50 +485,137 @@ $(document).ready(function () {
         }).join("");
     }
 
-    function timeToMinutes(time) {
-        const parts = String(time || "").split(":").map(Number);
-        return ((parts[0] || 0) * 60) + (parts[1] || 0);
+    function tokenizeDayKey(dayKey) {
+        return String(dayKey || "").match(/Th|M|T|W|F|S/g) || [];
     }
 
-    function minutesToAMPM(minutes) {
-        let hour = Math.floor(minutes / 60);
-        const minute = minutes % 60;
-        const period = hour >= 12 ? "PM" : "AM";
-        hour = hour % 12 || 12;
-        return `${hour}:${String(minute).padStart(2, "0")} ${period}`;
-    }
+    function getGroupKey(dayKey) {
+        const tokens = tokenizeDayKey(dayKey);
 
-    function generateTimeSlots() {
-        const slots = [];
-        let start = 7 * 60 + 30;
-        const end = 17 * 60;
-
-        while (start < end) {
-            slots.push({
-                start: start,
-                end: start + 30
-            });
-            start += 30;
+        if (!tokens.length) {
+            return "OTHER";
         }
 
-        return slots;
+        if (tokens.every(function (token) { return ["M", "W", "F"].indexOf(token) !== -1; })) {
+            return "MWF";
+        }
+
+        if (tokens.every(function (token) { return ["T", "Th"].indexOf(token) !== -1; })) {
+            return "TTH";
+        }
+
+        if (tokens.every(function (token) { return token === "S"; })) {
+            return "S";
+        }
+
+        return "OTHER";
     }
 
-    function getColorForSubject(code) {
-        const key = String(code || "").trim().toUpperCase() || "UNASSIGNED";
+    function buildTimeSegments(rows) {
+        const segments = [];
+        let cursor = DAY_START_MINUTES;
 
-        if (!subjectColorMap[key]) {
-            let hash = 0;
-            for (let i = 0; i < key.length; i++) {
-                hash = ((hash << 5) - hash) + key.charCodeAt(i);
-                hash |= 0;
+        if (!rows.length) {
+            segments.push({
+                isBlank: true,
+                start: DAY_START_MINUTES,
+                end: DAY_END_MINUTES
+            });
+            return segments;
+        }
+
+        rows.forEach(function (row) {
+            let start = timeToMinutes(String(row.time_start || "").substring(0, 5));
+            let end = timeToMinutes(String(row.time_end || "").substring(0, 5));
+
+            start = Math.max(DAY_START_MINUTES, start);
+            end = Math.min(DAY_END_MINUTES, end);
+
+            if (end <= start) {
+                return;
             }
 
-            const hue = Math.abs(hash) % 360;
-            subjectColorMap[key] = `hsl(${hue}, 72%, 85%)`;
+            if (start > cursor) {
+                segments.push({
+                    isBlank: true,
+                    start: cursor,
+                    end: start
+                });
+            }
+
+            segments.push({
+                isBlank: false,
+                start: start,
+                end: end,
+                row: row
+            });
+
+            cursor = Math.max(cursor, end);
+        });
+
+        if (cursor < DAY_END_MINUTES) {
+            segments.push({
+                isBlank: true,
+                start: cursor,
+                end: DAY_END_MINUTES
+            });
         }
 
-        return subjectColorMap[key];
+        return segments;
+    }
+
+    function buildSubjectCell(row) {
+        const subjectCode = String(row.subject_code || "").trim();
+        const sectionName = String(row.section_name || "").trim();
+        const parts = [];
+
+        if (subjectCode !== "") {
+            parts.push(`<div class="ru-subject-code">${escapeHtml(subjectCode)}</div>`);
+        }
+
+        if (sectionName !== "") {
+            parts.push(`<div class="ru-subject-section">${escapeHtml(sectionName)}</div>`);
+        }
+
+        return parts.join("");
+    }
+
+    function buildGroupedRows(data) {
+        const groups = {
+            MWF: [],
+            TTH: [],
+            S: [],
+            OTHER: []
+        };
+
+        (Array.isArray(data) ? data : []).forEach(function (item) {
+            const dayKey = normalizeDayKey(item.days_raw);
+            const groupKey = getGroupKey(dayKey);
+            const startMinutes = timeToMinutes(String(item.time_start || "").substring(0, 5));
+
+            groups[groupKey].push($.extend({}, item, {
+                _day_key: dayKey,
+                _start_minutes: startMinutes
+            }));
+        });
+
+        Object.keys(groups).forEach(function (groupKey) {
+            groups[groupKey].sort(function (a, b) {
+                if (a._start_minutes !== b._start_minutes) {
+                    return a._start_minutes - b._start_minutes;
+                }
+
+                const dayA = DAY_SORT[a._day_key] || 99;
+                const dayB = DAY_SORT[b._day_key] || 99;
+                if (dayA !== dayB) {
+                    return dayA - dayB;
+                }
+
+                return String(a.subject_code || "").localeCompare(String(b.subject_code || ""));
+            });
+        });
+
+        return groups;
     }
 
     function setRoomOptions(rooms, selectedRoomId) {
@@ -979,6 +638,10 @@ $(document).ready(function () {
         });
 
         $("#ru_room_id").val(hasSelectedRoom ? targetRoomId : "");
+
+        if ($.fn.select2) {
+            $("#ru_room_id").trigger("change.select2");
+        }
     }
 
     function loadRoomOptions() {
@@ -1023,14 +686,90 @@ $(document).ready(function () {
         return roomOptionsRequest;
     }
 
+    function renderRoomReport(data) {
+        const ay = $("#ru_ay").val();
+        const semester = $("#ru_semester").val();
+        const roomId = $("#ru_room_id").val();
+        const roomText = roomId ? $("#ru_room_id option:selected").text() : "";
+        const groups = buildGroupedRows(data);
+        const visibleGroups = GROUP_ORDER.filter(function (groupKey) {
+            return groupKey !== "OTHER" || groups.OTHER.length;
+        });
+
+        $("#roomTimetableCard").show();
+        updateHeader(roomText, ay, semester);
+        setPrintState(Boolean(roomId));
+
+        let html = `
+            <div class="ru-sheet">
+                <div class="table-responsive">
+                    <table class="table table-bordered ru-sheet-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                <th>Day</th>
+                                <th>Subject</th>
+                                <th>Faculty</th>
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+
+        visibleGroups.forEach(function (groupKey) {
+            const rows = groups[groupKey] || [];
+            const segments = buildTimeSegments(rows);
+            const label = groupKey === "OTHER" ? "OTHER" : groupKey;
+
+            html += `
+                <tr class="ru-sheet-group">
+                    <td colspan="4">${escapeHtml(label)}</td>
+                </tr>
+            `;
+
+            segments.forEach(function (segment) {
+                if (segment.isBlank) {
+                    html += `
+                        <tr>
+                            <td class="ru-time-cell">${escapeHtml(formatTimeRange(segment.start, segment.end))}</td>
+                            <td></td>
+                            <td></td>
+                            <td></td>
+                        </tr>
+                    `;
+                    return;
+                }
+
+                const facultyName = String(segment.row.faculty_name || "TBA").trim() || "TBA";
+
+                html += `
+                    <tr>
+                        <td class="ru-time-cell">${escapeHtml(formatTimeRange(segment.start, segment.end))}</td>
+                        <td class="ru-day-cell">${escapeHtml(segment.row._day_key)}</td>
+                        <td>${buildSubjectCell(segment.row)}</td>
+                        <td class="ru-faculty-name">${escapeHtml(facultyName)}</td>
+                    </tr>
+                `;
+            });
+        });
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        $("#roomTimetableWrapper").html(html);
+    }
+
     function loadRoomSchedule() {
         const ay = $("#ru_ay").val();
         const semester = $("#ru_semester").val();
         const roomId = $("#ru_room_id").val();
 
-        if (!ay || !roomId) {
-            showSingleRoomMessage("Select A.Y. and Room");
-            return;
+        if (!ay || !semester || !roomId) {
+            showRoomMessage("Select academic year, semester, and room to view the utilization sheet.");
+            return createResolvedPromise();
         }
 
         if (roomScheduleRequest) {
@@ -1050,378 +789,33 @@ $(document).ready(function () {
                 room_id: roomId
             }
         }).done(function (data) {
-            if (!Array.isArray(data) || !data.length) {
-                showSingleRoomMessage("No schedule found");
-                return;
-            }
-
-            renderRoomReport(data);
+            renderRoomReport(Array.isArray(data) ? data : []);
         }).fail(function (_, textStatus) {
             if (textStatus === "abort") {
                 return;
             }
 
-            showSingleRoomMessage("Unable to load the selected room schedule right now.");
+            showRoomMessage("Unable to load the selected room schedule right now.");
         }).always(function () {
             roomScheduleRequest = null;
             hideLoader();
         });
-    }
 
-    function loadAllRoomsOverview() {
-        const ay = $("#ru_ay").val();
-        const semester = $("#ru_semester").val();
-
-        if (!ay) {
-            showOverviewMessage("Select A.Y. to view the room overview.");
-            return;
-        }
-
-        if (overviewRequest) {
-            overviewRequest.abort();
-        }
-
-        showLoader("Loading room overview...");
-
-        overviewRequest = $.ajax({
-            url: "../backend/query_room_utilization.php",
-            type: "POST",
-            dataType: "json",
-            data: {
-                load_all_rooms: 1,
-                ay: ay,
-                semester: semester
-            }
-        }).done(function (data) {
-            renderAllRoomsTable(data);
-        }).fail(function (_, textStatus) {
-            if (textStatus === "abort") {
-                return;
-            }
-
-            showOverviewMessage("Unable to load the room overview right now.");
-        }).always(function () {
-            overviewRequest = null;
-            hideLoader();
-        });
-    }
-
-    function renderRoomReport(data) {
-        const lunchStart = 12 * 60;
-        const lunchEnd = 13 * 60;
-        const ay = $("#ru_ay").val();
-        const semLabel = $("#ru_semester").val();
-        const roomText = $("#ru_room_id option:selected").text();
-        const groups = {};
-
-        $("#ruRoomLabel").text("Room: " + roomText);
-        $("#ruTermLabel").text("A.Y. " + ay + " - " + semLabel);
-
-        data.forEach(function (item) {
-            const normalized = normalizeDayKey(item.days_raw);
-            const upper = normalized.toUpperCase();
-            const bucketKey = (upper.includes("T") || upper.includes("TH")) ? "TTh" : normalized;
-
-            item._rowPrefix = normalized;
-
-            if (!groups[bucketKey]) {
-                groups[bucketKey] = [];
-            }
-
-            groups[bucketKey].push(item);
-        });
-
-        Object.keys(groups).forEach(function (key) {
-            groups[key].sort(function (a, b) {
-                return a.time_start.localeCompare(b.time_start);
-            });
-
-            const hasLunchClass = groups[key].some(function (item) {
-                const start = timeToMinutes(String(item.time_start).substring(0, 5));
-                const end = timeToMinutes(String(item.time_end).substring(0, 5));
-                return !(end <= lunchStart || start >= lunchEnd);
-            });
-
-            if (!hasLunchClass) {
-                groups[key].push({
-                    _isLunch: true,
-                    _rowPrefix: key,
-                    time_start: "12:00",
-                    time_end: "13:00",
-                    subject_code: "",
-                    section_name: "",
-                    room_capacity: ""
-                });
-
-                groups[key].sort(function (a, b) {
-                    return a.time_start.localeCompare(b.time_start);
-                });
-            }
-        });
-
-        function formatTimeStr(value) {
-            return minutesToAMPM(timeToMinutes(String(value).substring(0, 5)));
-        }
-
-        const dayOrder = ["MW", "TTh", "F", "S"];
-        const dayKeys = Object.keys(groups).sort(function (a, b) {
-            const indexA = dayOrder.indexOf(a);
-            const indexB = dayOrder.indexOf(b);
-            return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
-        });
-
-        let html = `
-            <div class="table-responsive">
-                <table class="table table-bordered table-sm mb-0 ru-room-report-table">
-                    <thead class="table-light">
-                        <tr>
-                            <th style="width:170px">TIME</th>
-                            <th style="width:120px">COURSE</th>
-                            <th style="width:160px">SECTION</th>
-                            <th style="width:140px" class="text-center">ROOM<br>CAPACITY</th>
-                            <th>REMARKS</th>
-                        </tr>
-                    </thead>
-                    <tbody>
-        `;
-
-        if (!dayKeys.length) {
-            html += `
-                <tr>
-                    <td colspan="5" class="text-center text-muted p-3">No schedule found</td>
-                </tr>
-            `;
-        } else {
-            dayKeys.forEach(function (dayKey) {
-                html += `
-                    <tr class="table-secondary">
-                        <td colspan="5" class="fw-bold">${escapeHtml(dayKey)}</td>
-                    </tr>
-                `;
-
-                groups[dayKey].forEach(function (item) {
-                    const timeRange = `${formatTimeStr(item.time_start)} - ${formatTimeStr(item.time_end)}`;
-
-                    if (item._isLunch) {
-                        html += `
-                            <tr style="background:#fff3cd;">
-                                <td class="fw-semibold">${escapeHtml(item._rowPrefix)} ${escapeHtml(timeRange)}</td>
-                                <td colspan="3" class="text-center fst-italic text-muted">Lunch Break</td>
-                                <td></td>
-                            </tr>
-                        `;
-                        return;
-                    }
-
-                    html += `
-                        <tr>
-                            <td>${escapeHtml(item._rowPrefix)} ${escapeHtml(timeRange)}</td>
-                            <td class="fw-semibold">${escapeHtml(item.subject_code)}</td>
-                            <td>${escapeHtml(item.section_name)}</td>
-                            <td class="text-center">${escapeHtml(item.room_capacity)}</td>
-                            <td></td>
-                        </tr>
-                    `;
-                });
-            });
-        }
-
-        html += `
-                    </tbody>
-                </table>
-            </div>
-        `;
-
-        $("#roomTimetableWrapper").html(html);
-    }
-
-    function renderAllRoomsTable(roomsData) {
-        const rooms = Array.isArray(roomsData) ? roomsData : [];
-        const slots = generateTimeSlots();
-        const dayOrder = ["MW", "T", "Th", "TTh", "F", "S"];
-
-        if (!rooms.length) {
-            showOverviewMessage("No rooms found for the selected term.");
-            return;
-        }
-
-        let html = `
-            <table class="table table-bordered table-sm mb-0 ru-overview-table">
-                <thead class="table-light">
-                    <tr>
-                        <th>ROOM</th>
-                        <th class="text-center">DAY</th>
-                        ${slots.map(function (slot) {
-                            return `
-                                <th class="ru-time-header text-center">
-                                    <div>${minutesToAMPM(slot.start)}</div>
-                                    <div>-</div>
-                                    <div>${minutesToAMPM(slot.end)}</div>
-                                </th>
-                            `;
-                        }).join("")}
-                    </tr>
-                </thead>
-                <tbody>
-        `;
-
-        rooms.forEach(function (room) {
-            const groups = room && room.groups ? room.groups : {};
-            const dayKeys = Object.keys(groups).sort(function (a, b) {
-                const indexA = dayOrder.indexOf(a);
-                const indexB = dayOrder.indexOf(b);
-
-                if (indexA === -1 && indexB === -1) {
-                    return a.localeCompare(b);
-                }
-
-                return (indexA === -1 ? 99 : indexA) - (indexB === -1 ? 99 : indexB);
-            });
-            const roomCode = room.room_code || room.room_label || "";
-            const roomLabel = room.room_label || roomCode;
-
-            if (!dayKeys.length) {
-                html += `
-                    <tr class="ru-empty-row">
-                        <td class="fw-semibold align-middle" title="${escapeHtml(roomLabel)}">${escapeHtml(roomCode)}</td>
-                        <td class="text-center text-muted">-</td>
-                        <td colspan="${slots.length}" class="text-center text-muted ru-empty-note">No scheduled classes</td>
-                    </tr>
-                `;
-                return;
-            }
-
-            let firstRow = true;
-
-            dayKeys.forEach(function (dayKey) {
-                const items = (groups[dayKey] || []).slice().sort(function (a, b) {
-                    return a.time_start.localeCompare(b.time_start);
-                });
-                const slotMap = new Array(slots.length).fill(null);
-
-                items.forEach(function (item) {
-                    const start = timeToMinutes(String(item.time_start).substring(0, 5));
-                    const end = timeToMinutes(String(item.time_end).substring(0, 5));
-                    const span = Math.ceil((end - start) / 30);
-                    const startIdx = slots.findIndex(function (slot) {
-                        return slot.start === start;
-                    });
-
-                    if (startIdx === -1) {
-                        return;
-                    }
-
-                    for (let i = startIdx; i < startIdx + span; i++) {
-                        if (i < slotMap.length) {
-                            slotMap[i] = item;
-                        }
-                    }
-                });
-
-                html += "<tr>";
-
-                if (firstRow) {
-                    html += `
-                        <td rowspan="${dayKeys.length}" class="fw-semibold align-middle" title="${escapeHtml(roomLabel)}">
-                            ${escapeHtml(roomCode)}
-                        </td>
-                    `;
-                    firstRow = false;
-                }
-
-                html += `<td class="text-center fw-semibold">${escapeHtml(dayKey)}</td>`;
-
-                for (let i = 0; i < slots.length;) {
-                    const item = slotMap[i];
-
-                    if (!item) {
-                        html += "<td></td>";
-                        i += 1;
-                        continue;
-                    }
-
-                    const start = timeToMinutes(String(item.time_start).substring(0, 5));
-                    const end = timeToMinutes(String(item.time_end).substring(0, 5));
-                    const span = Math.ceil((end - start) / 30);
-                    const background = getColorForSubject(item.subject_code);
-                    const facultyId = Number(item.faculty_id) || 0;
-                    const isClickable = facultyId > 0;
-                    const blockClass = isClickable ? "ru-block ru-clickable js-faculty-workload" : "ru-block";
-                    const blockAttrs = isClickable
-                        ? `data-faculty-id="${escapeHtml(facultyId)}"
-                           data-faculty-name="${escapeHtml(item.faculty_name || "")}"
-                           title="View ${escapeHtml(item.faculty_name || "assigned faculty")} workload"
-                           role="button"
-                           tabindex="0"`
-                        : `title="${escapeHtml(item.faculty_name || "No assigned faculty")}"`;
-
-                    html += `
-                        <td colspan="${span}" class="${blockClass}" style="background:${background}" ${blockAttrs}>
-                            <div class="small fw-semibold">
-                                ${escapeHtml(item.subject_code)} <span class="fw-normal">(${escapeHtml(item.section_name)})</span>
-                            </div>
-                            <div class="small text-muted">${escapeHtml(item.faculty_name)}</div>
-                        </td>
-                    `;
-
-                    i += span;
-                }
-
-                html += "</tr>";
-            });
-        });
-
-        html += `
-                </tbody>
-            </table>
-        `;
-
-        $("#allRoomsWrapper").html(html);
+        return roomScheduleRequest;
     }
 
     function reloadCurrentView() {
         const ay = $("#ru_ay").val();
-        const room = $("#ru_room_id").val();
+        const semester = $("#ru_semester").val();
+        const roomId = $("#ru_room_id").val();
 
-        if ($("#btnModeSingle").hasClass("active")) {
-            $("#allRoomsCard").hide();
-            $("#roomTimetableCard").show();
-
-            if (!ay || !room) {
-                showSingleRoomMessage("Select A.Y. and Room");
-                return;
-            }
-
-            loadRoomSchedule();
+        if (!ay || !semester || !roomId) {
+            showRoomMessage("Select academic year, semester, and room to view the utilization sheet.");
             return;
         }
 
-        if ($("#btnModeAll").hasClass("active")) {
-            $("#roomTimetableCard").hide();
-            $("#allRoomsCard").show();
-
-            if (!ay) {
-                showOverviewMessage("Select A.Y. to view the room overview.");
-                return;
-            }
-
-            loadAllRoomsOverview();
-        }
+        loadRoomSchedule();
     }
-
-    $("#btnModeAll").on("click", function () {
-        $(this).addClass("active");
-        $("#btnModeSingle").removeClass("active");
-        $("#ru_room_id").prop("disabled", true);
-        reloadCurrentView();
-    });
-
-    $("#btnModeSingle").on("click", function () {
-        $(this).addClass("active");
-        $("#btnModeAll").removeClass("active");
-        $("#ru_room_id").prop("disabled", false);
-        reloadCurrentView();
-    });
 
     $("#ru_ay, #ru_semester").on("change", function () {
         loadRoomOptions().always(function () {
@@ -1433,23 +827,15 @@ $(document).ready(function () {
         reloadCurrentView();
     });
 
-    $(document).on("click", ".js-faculty-workload", function () {
-        const facultyId = Number($(this).data("facultyId")) || 0;
-        const facultyName = String($(this).data("facultyName") || "").trim();
-        loadFacultyWorkloadModal(facultyId, facultyName);
-    });
-
-    $(document).on("keydown", ".js-faculty-workload", function (event) {
-        if (event.key !== "Enter" && event.key !== " ") {
+    $("#btnPrintRoomUtilization").on("click", function () {
+        if ($(this).prop("disabled")) {
             return;
         }
 
-        event.preventDefault();
-        $(this).trigger("click");
+        window.print();
     });
 
-    showSingleRoomMessage("Select A.Y. and Room");
-    showOverviewMessage("Select A.Y. to view the room overview.");
+    showRoomMessage("Select academic year, semester, and room to view the utilization sheet.");
 
     setTimeout(function () {
         loadRoomOptions().always(function () {

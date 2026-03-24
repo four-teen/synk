@@ -341,9 +341,9 @@
             </div>
 
             <div class="col-md-4">
-              <label class="form-label">Designation <span class="text-danger">*</span></label>
-              <select name="designation_id" id="add_designation_id" class="form-select" required>
-                <option value="">Select Designation</option>
+              <label class="form-label">Designation</label>
+              <select name="designation_id" id="add_designation_id" class="form-select">
+                <option value="">No Designation</option>
               </select>
             </div>
 
@@ -407,9 +407,9 @@
             </div>
 
             <div class="col-md-4">
-              <label class="form-label">Designation <span class="text-danger">*</span></label>
-              <select name="designation_id" id="edit_designation_id" class="form-select" required>
-                <option value="">Select Designation</option>
+              <label class="form-label">Designation</label>
+              <select name="designation_id" id="edit_designation_id" class="form-select">
+                <option value="">No Designation</option>
               </select>
             </div>
 
@@ -795,7 +795,7 @@ function loadDesignationOptions($selectElement, selectedId) {
       if (typeof optionsHtml === "string" && optionsHtml.indexOf("<option") !== -1) {
         $selectElement.html(optionsHtml);
       } else {
-        $selectElement.html('<option value="">Select Designation</option>');
+        $selectElement.html('<option value="">No Designation</option>');
       }
 
       if (selectedId !== "") {
@@ -805,7 +805,7 @@ function loadDesignationOptions($selectElement, selectedId) {
       }
     },
     error: function() {
-      $selectElement.html('<option value="">Select Designation</option>');
+      $selectElement.html('<option value="">No Designation</option>');
       $selectElement.val("");
     }
   });
@@ -885,7 +885,7 @@ $("#btnSaveFaculty").click(function (e) {
       }
 
       if (res === "invalid_designation") {
-        Swal.fire("Invalid Designation", "Please choose a valid active designation.", "warning");
+        Swal.fire("Invalid Designation", "Please choose a valid active designation or leave it blank.", "warning");
         return;
       }
 
@@ -966,7 +966,7 @@ $("#btnUpdateFaculty").click(function (e) {
       }
 
       if (res === "invalid_designation") {
-        Swal.fire("Invalid Designation", "Please choose a valid active designation.", "warning");
+        Swal.fire("Invalid Designation", "Please choose a valid active designation or leave it blank.", "warning");
         return;
       }
 
