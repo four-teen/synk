@@ -111,6 +111,15 @@ $sidebarSections = [
                         'description' => 'Manage faculty records and profiles',
                         'pages' => ['manage-faculty.php'],
                     ],
+                    [
+                        'key' => 'student_management',
+                        'href' => 'students/index.php',
+                        'icon_bg' => 'bg-label-success',
+                        'icon' => 'bx-group',
+                        'title' => 'Student Management',
+                        'description' => 'Open the separate student upload and directory module',
+                        'pages' => [],
+                    ],
                 ],
             ],
             [

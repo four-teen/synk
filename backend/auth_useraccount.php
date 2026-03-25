@@ -61,6 +61,10 @@ function synk_role_redirect_path(string $role): ?string
         return 'scheduler/';
     }
 
+    if ($role === 'student') {
+        return 'student/';
+    }
+
     return null;
 }
 
@@ -112,10 +116,29 @@ function synk_find_useraccount_by_email(mysqli $conn, string $email): ?array
     return $row ?: null;
 }
 
+function synk_reset_authenticated_session_context(): void
+{
+    unset(
+        $_SESSION['user_id'],
+        $_SESSION['username'],
+        $_SESSION['email'],
+        $_SESSION['role'],
+        $_SESSION['college_id'],
+        $_SESSION['college_name'],
+        $_SESSION['campus_id'],
+        $_SESSION['campus_name'],
+        $_SESSION['scheduler_college_access'],
+        $_SESSION['default_college_id'],
+        $_SESSION['user_avatar_url'],
+        $_SESSION['student_google_sub'],
+        $_SESSION['student_login_at']
+    );
+}
+
 function synk_complete_user_login(array $row, ?mysqli $conn = null): string
 {
     session_regenerate_id(true);
-    unset($_SESSION['user_avatar_url']);
+    synk_reset_authenticated_session_context();
 
     if ((string)($row['role'] ?? '') === 'scheduler' && $conn instanceof mysqli) {
         $accessRows = synk_resolve_scheduler_access_rows(
@@ -134,6 +157,28 @@ function synk_complete_user_login(array $row, ?mysqli $conn = null): string
     }
 
     return (string)$row['role'];
+}
+
+function synk_complete_student_login(string $email, string $displayName, string $googleSub): string
+{
+    session_regenerate_id(true);
+    synk_reset_authenticated_session_context();
+
+    $normalizedEmail = synk_normalize_email($email);
+    $safeGoogleSub = trim($googleSub);
+    $fallbackName = preg_replace('/@.*$/', '', $normalizedEmail);
+    $safeDisplayName = trim($displayName) !== '' ? trim($displayName) : (string)$fallbackName;
+
+    $_SESSION['user_id'] = $safeGoogleSub !== '' ? 'student:' . $safeGoogleSub : 'student:' . md5($normalizedEmail);
+    $_SESSION['username'] = $safeDisplayName !== '' ? $safeDisplayName : 'Student';
+    $_SESSION['email'] = $normalizedEmail;
+    $_SESSION['role'] = 'student';
+    $_SESSION['college_id'] = null;
+    $_SESSION['college_name'] = null;
+    $_SESSION['student_google_sub'] = $safeGoogleSub;
+    $_SESSION['student_login_at'] = date('c');
+
+    return 'student';
 }
 
 function synk_logout_session(): void

@@ -433,6 +433,15 @@ if (isset($_POST['login'])) {
         text-align: center;
       }
 
+      .login-student-link {
+        max-width: 304px;
+        margin: 0 auto 0.9rem;
+      }
+
+      .login-student-link .btn {
+        border-radius: 10px;
+      }
+
       .login-footnote {
         max-width: 288px;
         margin: 0 auto;
@@ -645,9 +654,15 @@ if (isset($_POST['login'])) {
                   are managed from one scheduling workspace.
                 </div>
 
+                <div class="login-student-link d-grid">
+                  <a href="student/login.php" class="btn btn-outline-secondary">
+                    Open Student Portal
+                  </a>
+                </div>
+
                 <div class="login-footnote">
                   Login will be validated against the Synk access account registry for approved
-                  administrator and scheduler accounts.
+                  administrator and scheduler accounts. Students have a separate Google-only portal.
                 </div>
 
                 <div class="login-project-note">SAM + eSKALA project 2026</div>

@@ -293,8 +293,9 @@ function synk_google_fetch_userinfo(string $accessToken): array
     return $response;
 }
 
-function synk_auth_status_redirect(string $status): never
+function synk_auth_status_redirect(string $status, string $targetPath = '../index.php'): never
 {
-    header('Location: ../index.php?auth_status=' . urlencode($status));
+    $separator = strpos($targetPath, '?') === false ? '?' : '&';
+    header('Location: ' . $targetPath . $separator . 'auth_status=' . urlencode($status));
     exit;
 }
