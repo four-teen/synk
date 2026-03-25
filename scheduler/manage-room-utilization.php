@@ -149,14 +149,10 @@ if ((int)$currentTerm['semester'] === 1) {
         letter-spacing: 0.1em;
     }
 
-    .ru-subject-code {
-        font-weight: 700;
+    .ru-subject-entry {
         color: #334a63;
-    }
-
-    .ru-subject-section {
-        margin-top: 0.2rem;
-        color: #6c8199;
+        font-weight: 400;
+        white-space: nowrap;
     }
 
     .ru-faculty-name {
@@ -566,18 +562,27 @@ $(document).ready(function () {
 
     function buildSubjectCell(row) {
         const subjectCode = String(row.subject_code || "").trim();
+        const programMajor = String(row.program_major || "").trim();
         const sectionName = String(row.section_name || "").trim();
-        const parts = [];
+        const tailParts = [];
 
-        if (subjectCode !== "") {
-            parts.push(`<div class="ru-subject-code">${escapeHtml(subjectCode)}</div>`);
+        if (programMajor !== "") {
+            tailParts.push(escapeHtml(programMajor));
         }
 
         if (sectionName !== "") {
-            parts.push(`<div class="ru-subject-section">${escapeHtml(sectionName)}</div>`);
+            tailParts.push(escapeHtml(sectionName));
         }
 
-        return parts.join("");
+        if (subjectCode !== "" && tailParts.length) {
+            return `<div class="ru-subject-entry">${escapeHtml(subjectCode)} - ${tailParts.join(" ")}</div>`;
+        }
+
+        if (subjectCode !== "") {
+            return `<div class="ru-subject-entry">${escapeHtml(subjectCode)}</div>`;
+        }
+
+        return tailParts.length ? `<div class="ru-subject-entry">${tailParts.join(" ")}</div>` : "";
     }
 
     function buildGroupedRows(data) {

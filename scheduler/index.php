@@ -663,6 +663,40 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         </div>
                       </a>
 
+                      <a href="manage-class-program.php" class="workspace-card-link">
+                        <div class="workspace-card shadow-sm">
+                          <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                              <div class="workspace-icon bg-primary">
+                                <i class="bx bx-table"></i>
+                              </div>
+                              <div>
+                                <h6 class="mb-1 fw-bold text-dark">Class Program</h6>
+                                <small class="text-muted">Review and print a section weekly class grid</small>
+                              </div>
+                            </div>
+                            <i class="bx bx-chevron-right text-primary fs-4"></i>
+                          </div>
+                        </div>
+                      </a>
+
+                      <a href="manage-iso-class-program.php" class="workspace-card-link">
+                        <div class="workspace-card shadow-sm">
+                          <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                              <div class="workspace-icon bg-secondary">
+                                <i class="bx bx-file"></i>
+                              </div>
+                              <div>
+                                <h6 class="mb-1 fw-bold text-dark">ISO-Class Program</h6>
+                                <small class="text-muted">Review and print the ISO program-based class matrix</small>
+                              </div>
+                            </div>
+                            <i class="bx bx-chevron-right text-secondary fs-4"></i>
+                          </div>
+                        </div>
+                      </a>
+
                       <a href="manage-schedule-activity.php" class="workspace-card-link">
                         <div class="workspace-card shadow-sm">
                           <div class="d-flex justify-content-between align-items-center gap-3">

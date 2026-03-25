@@ -256,6 +256,7 @@ if (isset($_POST['load_room_schedule'])) {
             cs.time_end,
             cs.days_json,
             sm.sub_code AS subject_code,
+            COALESCE(p.major, '') AS program_major,
             sec.full_section AS section_name,
             f.faculty_id,
             COALESCE(
@@ -271,6 +272,8 @@ if (isset($_POST['load_room_schedule'])) {
         {$liveOfferingJoins}
         INNER JOIN tbl_subject_masterlist sm
             ON sm.sub_id = ps.sub_id
+        LEFT JOIN tbl_program p
+            ON p.program_id = po.program_id
         INNER JOIN tbl_academic_years ay
             ON ay.ay_id = po.ay_id
         LEFT JOIN tbl_faculty_workload_sched fws
@@ -330,6 +333,7 @@ if (isset($_POST['load_all_rooms'])) {
             cs.time_end,
             cs.days_json,
             sm.sub_code AS subject_code,
+            COALESCE(p.major, '') AS program_major,
             sec.full_section AS section_name,
             f.faculty_id,
             COALESCE(
@@ -344,6 +348,8 @@ if (isset($_POST['load_all_rooms'])) {
         {$liveOfferingJoins}
         INNER JOIN tbl_subject_masterlist sm
             ON sm.sub_id = ps.sub_id
+        LEFT JOIN tbl_program p
+            ON p.program_id = po.program_id
         INNER JOIN tbl_academic_years ay
             ON ay.ay_id = po.ay_id
         LEFT JOIN tbl_faculty_workload_sched fws
@@ -383,6 +389,7 @@ if (isset($_POST['load_all_rooms'])) {
             "time_end"     => $row['time_end'],
             "days_json"    => $row['days_json'],
             "subject_code" => $row['subject_code'],
+            "program_major" => $row['program_major'],
             "section_name" => $row['section_name'],
             "faculty_id"   => (int)($row['faculty_id'] ?? 0),
             "faculty_name" => $row['faculty_name']
