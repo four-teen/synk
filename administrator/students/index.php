@@ -247,6 +247,7 @@ $chartInsight = $hasLatestBatch
 
                             <div class="d-flex flex-wrap gap-2">
                               <a href="upload.php" class="btn btn-sm btn-primary">Upload Student Data</a>
+                              <a href="exam-permits.php" class="btn btn-sm btn-outline-warning">Upload Class Roster CSV</a>
                               <a href="directory.php" class="btn btn-sm btn-outline-primary">Open Student Directory</a>
                             </div>
                           </div>

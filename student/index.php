@@ -5,50 +5,85 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/student_portal_helper.php';
 
-synk_student_require_login();
+synk_student_require_login($conn);
 
+$studentEmail = synk_normalize_email((string)($_SESSION['email'] ?? ''));
+$studentDirectoryRecord = synk_student_fetch_directory_record_by_email($conn, $studentEmail);
+$studentProgramOptions = synk_student_fetch_profile_program_options($conn);
+$studentPortalProfile = synk_student_fetch_portal_profile($conn, $studentEmail);
+$profileSetupError = '';
+$profileSetupStatus = trim((string)($_GET['profile_setup'] ?? ''));
+
+if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['complete_student_profile'])) {
+    try {
+        $studentPortalProfile = synk_student_save_first_portal_profile_setup(
+            $conn,
+            $studentEmail,
+            (int)($_POST['program_id'] ?? 0),
+            (string)($_POST['student_number'] ?? '')
+        );
+
+        header('Location: index.php?profile_setup=completed');
+        exit;
+    } catch (Throwable $e) {
+        $profileSetupError = $e->getMessage();
+    }
+}
+
+$profileIsComplete = synk_student_portal_profile_is_complete($studentPortalProfile);
 $currentTerm = synk_fetch_current_academic_term($conn);
-$campuses = synk_student_fetch_campuses($conn);
+$studentName = trim($studentDirectoryRecord ? synk_student_directory_display_name($studentDirectoryRecord) : (string)($_SESSION['username'] ?? 'Student'));
+$studentNumberValue = $profileIsComplete
+    ? trim((string)($studentPortalProfile['student_number'] ?? ''))
+    : trim((string)($_POST['student_number'] ?? (string)($studentDirectoryRecord['student_number'] ?? '')));
+$suggestedProgramId = synk_student_resolve_suggested_program_id($studentProgramOptions, $studentDirectoryRecord);
+$selectedProgramSetupId = $profileIsComplete
+    ? (int)($studentPortalProfile['program_id'] ?? 0)
+    : max(0, (int)($_POST['program_id'] ?? $suggestedProgramId));
+$studentSetupCampusOptions = [];
+foreach ($studentProgramOptions as $programOption) {
+    $campusId = (int)($programOption['campus_id'] ?? 0);
+    if ($campusId <= 0 || isset($studentSetupCampusOptions[$campusId])) {
+        continue;
+    }
 
-$selectedCampusId = synk_student_select_valid_id($campuses, (int)($_GET['campus_id'] ?? 0), 'campus_id');
-$colleges = synk_student_fetch_colleges($conn, $selectedCampusId);
-$selectedCollegeId = synk_student_select_valid_id($colleges, (int)($_GET['college_id'] ?? 0), 'college_id');
+    $studentSetupCampusOptions[$campusId] = [
+        'campus_id' => $campusId,
+        'campus_code' => (string)($programOption['campus_code'] ?? ''),
+        'campus_name' => (string)($programOption['campus_name'] ?? ''),
+    ];
+}
 
-$summary = synk_student_fetch_dashboard_summary(
-    $conn,
-    (int)($currentTerm['ay_id'] ?? 0),
-    (int)($currentTerm['semester'] ?? 0),
-    $selectedCampusId,
-    $selectedCollegeId
-);
-
-$programCards = synk_student_fetch_dashboard_program_cards(
-    $conn,
-    (int)($currentTerm['ay_id'] ?? 0),
-    (int)($currentTerm['semester'] ?? 0),
-    $selectedCampusId,
-    $selectedCollegeId,
-    9
-);
-
-$activeCampusName = 'All Campuses';
-foreach ($campuses as $campusRow) {
-    if ((int)($campusRow['campus_id'] ?? 0) === $selectedCampusId) {
-        $activeCampusName = (string)($campusRow['campus_name'] ?? $activeCampusName);
+$selectedSetupCampusId = 0;
+foreach ($studentProgramOptions as $programOption) {
+    if ((int)($programOption['program_id'] ?? 0) === $selectedProgramSetupId) {
+        $selectedSetupCampusId = (int)($programOption['campus_id'] ?? 0);
         break;
     }
 }
 
-$activeCollegeName = 'All Colleges';
-foreach ($colleges as $collegeRow) {
-    if ((int)($collegeRow['college_id'] ?? 0) === $selectedCollegeId) {
-        $activeCollegeName = (string)($collegeRow['college_name'] ?? $activeCollegeName);
-        break;
+$requestedSetupCampusId = (int)($_POST['setup_campus_id'] ?? 0);
+if ($requestedSetupCampusId > 0 && isset($studentSetupCampusOptions[$requestedSetupCampusId])) {
+    $selectedSetupCampusId = $requestedSetupCampusId;
+} elseif ($selectedSetupCampusId <= 0 && $studentDirectoryRecord) {
+    $directoryCampusName = strtolower(trim((string)($studentDirectoryRecord['campus_name'] ?? '')));
+    foreach ($studentSetupCampusOptions as $campusOption) {
+        if (strtolower(trim((string)($campusOption['campus_name'] ?? ''))) === $directoryCampusName) {
+            $selectedSetupCampusId = (int)($campusOption['campus_id'] ?? 0);
+            break;
+        }
     }
 }
 
-$termReady = (int)($currentTerm['ay_id'] ?? 0) > 0 && (int)($currentTerm['semester'] ?? 0) > 0;
-$studentName = trim((string)($_SESSION['username'] ?? 'Student'));
+$activeCampusName = trim((string)($studentPortalProfile['campus_name'] ?? $studentDirectoryRecord['campus_name'] ?? ''));
+if ($activeCampusName === '') {
+    $activeCampusName = 'All Campuses';
+}
+
+$activeCollegeName = trim((string)($studentPortalProfile['college_name'] ?? $studentDirectoryRecord['college_name'] ?? ''));
+if ($activeCollegeName === '') {
+    $activeCollegeName = 'All Colleges';
+}
 ?>
 <!DOCTYPE html>
 <html
@@ -88,6 +123,21 @@ $studentName = trim((string)($_SESSION['username'] ?? 'Student'));
         box-shadow: 0 18px 38px rgba(67, 89, 113, 0.08);
       }
 
+      .student-setup-lead {
+        color: #5d7289;
+        line-height: 1.65;
+      }
+
+      .student-setup-lock-note {
+        border: 1px solid #ffd8a8;
+        border-radius: 14px;
+        background: #fff5e7;
+        color: #8a5714;
+        padding: 0.95rem 1rem;
+        font-size: 0.9rem;
+        line-height: 1.55;
+      }
+
       .student-hero-kicker {
         display: inline-flex;
         align-items: center;
@@ -102,89 +152,26 @@ $studentName = trim((string)($_SESSION['username'] ?? 'Student'));
         text-transform: uppercase;
       }
 
-      .student-filter-card,
-      .student-kpi-card,
-      .student-directory-card,
-      .student-quick-card {
+      .student-setup-modal .modal-dialog {
+        max-width: 980px;
+      }
+
+      .student-setup-modal .modal-content {
         border: 1px solid #dce5f1;
-        border-radius: 18px;
-        box-shadow: 0 12px 28px rgba(67, 89, 113, 0.06);
+        border-radius: 24px;
+        box-shadow: 0 22px 44px rgba(67, 89, 113, 0.18);
       }
 
-      .student-kpi-card {
-        height: 100%;
+      .student-setup-modal .modal-header {
+        border-bottom: 0;
+        padding-bottom: 0;
       }
 
-      .student-kpi-icon {
-        width: 46px;
-        height: 46px;
-        border-radius: 14px;
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        font-size: 1.2rem;
+      .student-setup-modal .modal-body {
+        padding-top: 0.5rem;
       }
 
-      .student-kpi-value {
-        font-size: 1.8rem;
-        font-weight: 800;
-        color: #233446;
-      }
-
-      .student-quick-card {
-        display: block;
-        height: 100%;
-        text-decoration: none !important;
-        color: inherit;
-        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
-      }
-
-      .student-quick-card:hover {
-        transform: translateY(-2px);
-        border-color: #d7b693;
-        box-shadow: 0 16px 32px rgba(67, 89, 113, 0.1);
-      }
-
-      .student-directory-card {
-        height: 100%;
-        background: #fff;
-      }
-
-      .student-directory-meta {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.45rem;
-        margin-top: 0.85rem;
-      }
-
-      .student-directory-pill {
-        display: inline-flex;
-        align-items: center;
-        padding: 0.35rem 0.7rem;
-        border-radius: 999px;
-        background: #f3f6fb;
-        color: #54657e;
-        font-size: 0.76rem;
-        font-weight: 700;
-      }
-
-      .student-directory-actions {
-        display: flex;
-        flex-wrap: wrap;
-        gap: 0.6rem;
-        margin-top: 1rem;
-      }
-
-      .student-empty-state {
-        border: 1px dashed #d7e0ec;
-        border-radius: 18px;
-        background: #fbfcff;
-        padding: 2rem 1.2rem;
-        text-align: center;
-        color: #72839a;
-      }
-
-      .student-scope-note {
+      .student-setup-hint {
         color: #667b92;
         font-size: 0.9rem;
       }
@@ -232,204 +219,106 @@ $studentName = trim((string)($_SESSION['username'] ?? 'Student'));
                 </div>
               </div>
 
-              <div class="card student-filter-card mb-4">
-                <div class="card-header">
-                  <h5 class="mb-0">Scope Filter</h5>
-                  <small class="student-scope-note">Narrow the student dashboard by campus and college.</small>
-                </div>
-                <div class="card-body">
-                  <form method="get" class="row g-3 align-items-end">
-                    <div class="col-md-5">
-                      <label for="campus_id" class="form-label fw-semibold">Campus</label>
-                      <select id="campus_id" name="campus_id" class="form-select">
-                        <option value="0">All Campuses</option>
-                        <?php foreach ($campuses as $campusRow): ?>
-                          <option value="<?php echo (int)($campusRow['campus_id'] ?? 0); ?>"<?php echo (int)($campusRow['campus_id'] ?? 0) === $selectedCampusId ? ' selected' : ''; ?>>
-                            <?php echo synk_student_h(trim((string)($campusRow['campus_name'] ?? 'Campus')) . ' (' . trim((string)($campusRow['campus_code'] ?? '')) . ')'); ?>
-                          </option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="col-md-5">
-                      <label for="college_id" class="form-label fw-semibold">College</label>
-                      <select id="college_id" name="college_id" class="form-select">
-                        <option value="0">All Colleges</option>
-                        <?php foreach ($colleges as $collegeRow): ?>
-                          <option value="<?php echo (int)($collegeRow['college_id'] ?? 0); ?>"<?php echo (int)($collegeRow['college_id'] ?? 0) === $selectedCollegeId ? ' selected' : ''; ?>>
-                            <?php echo synk_student_h(trim((string)($collegeRow['college_name'] ?? 'College')) . ' (' . trim((string)($collegeRow['college_code'] ?? '')) . ')'); ?>
-                          </option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="col-md-2 d-grid gap-2">
-                      <button type="submit" class="btn btn-primary">Apply</button>
-                      <a href="index.php" class="btn btn-outline-secondary">Reset</a>
-                    </div>
-                  </form>
-                </div>
-              </div>
-
-              <?php if (!$termReady): ?>
-                <div class="alert alert-warning mb-4" role="alert">
-                  The current academic term is not configured yet, so section and schedule counts may
-                  remain empty until the administrator sets the active term.
-                </div>
-              <?php endif; ?>
-
-              <div class="row g-4 mb-4">
-                <div class="col-md-6 col-xl-3">
-                  <div class="card student-kpi-card">
-                    <div class="card-body">
-                      <div class="student-kpi-icon bg-label-primary mb-3">
-                        <i class="bx bx-book-content"></i>
-                      </div>
-                      <div class="student-kpi-value"><?php echo number_format((int)$summary['program_count']); ?></div>
-                      <div class="fw-semibold">Programs</div>
-                      <small class="text-muted">Programs available in this scope</small>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                  <div class="card student-kpi-card">
-                    <div class="card-body">
-                      <div class="student-kpi-icon bg-label-success mb-3">
-                        <i class="bx bx-copy-alt"></i>
-                      </div>
-                      <div class="student-kpi-value"><?php echo number_format((int)$summary['prospectus_count']); ?></div>
-                      <div class="fw-semibold">Prospectus Versions</div>
-                      <small class="text-muted">Curriculum versions ready for browsing</small>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                  <div class="card student-kpi-card">
-                    <div class="card-body">
-                      <div class="student-kpi-icon bg-label-info mb-3">
-                        <i class="bx bx-grid-alt"></i>
-                      </div>
-                      <div class="student-kpi-value"><?php echo number_format((int)$summary['section_count']); ?></div>
-                      <div class="fw-semibold">Sections This Term</div>
-                      <small class="text-muted">Sections with generated offerings</small>
-                    </div>
-                  </div>
-                </div>
-                <div class="col-md-6 col-xl-3">
-                  <div class="card student-kpi-card">
-                    <div class="card-body">
-                      <div class="student-kpi-icon bg-label-warning mb-3">
-                        <i class="bx bx-time-five"></i>
-                      </div>
-                      <div class="student-kpi-value"><?php echo number_format((int)$summary['schedule_count']); ?></div>
-                      <div class="fw-semibold">Scheduled Meetings</div>
-                      <small class="text-muted">Class schedule blocks encoded for the term</small>
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div class="row g-4 mb-4">
-                <?php
-                $prospectusScopeQuery = http_build_query([
-                    'campus_id' => $selectedCampusId,
-                    'college_id' => $selectedCollegeId,
-                ]);
-                $classProgramScopeQuery = $prospectusScopeQuery;
-                ?>
-                <div class="col-md-6">
-                  <a href="prospectus.php<?php echo $prospectusScopeQuery !== '' ? '?' . $prospectusScopeQuery : ''; ?>" class="card student-quick-card">
-                    <div class="card-body">
-                      <div class="d-flex align-items-start justify-content-between gap-3">
-                        <div>
-                          <span class="badge bg-label-success mb-2">Read Only</span>
-                          <h5 class="mb-2">Open Prospectus Viewer</h5>
-                          <p class="mb-0 text-muted">
-                            Review the curriculum structure, subject sequence, and unit distribution
-                            for each program.
-                          </p>
-                        </div>
-                        <div class="student-kpi-icon bg-label-success">
-                          <i class="bx bx-book-open"></i>
-                        </div>
-                      </div>
-                    </div>
-                  </a>
-                </div>
-                <div class="col-md-6">
-                  <a href="class-program.php<?php echo $classProgramScopeQuery !== '' ? '?' . $classProgramScopeQuery : ''; ?>" class="card student-quick-card">
-                    <div class="card-body">
-                      <div class="d-flex align-items-start justify-content-between gap-3">
-                        <div>
-                          <span class="badge bg-label-info mb-2">Current Term</span>
-                          <h5 class="mb-2">Browse Class Programs</h5>
-                          <p class="mb-0 text-muted">
-                            Inspect section-level schedules with room, faculty, and day-time blocks in
-                            one printable grid.
-                          </p>
-                        </div>
-                        <div class="student-kpi-icon bg-label-info">
-                          <i class="bx bx-table"></i>
-                        </div>
-                      </div>
-                    </div>
-                  </a>
-                </div>
-              </div>
-
-              <div class="d-flex align-items-center justify-content-between gap-3 mb-3">
-                <div>
-                  <h5 class="mb-1">Program Directory Snapshot</h5>
-                  <small class="text-muted">Programs with available prospectus records or current term sections.</small>
-                </div>
-              </div>
-
-              <?php if (empty($programCards)): ?>
-                <div class="student-empty-state">
-                  No student-ready program data was found for the selected dashboard scope.
-                </div>
-              <?php else: ?>
-                <div class="row g-4">
-                  <?php foreach ($programCards as $programRow): ?>
-                    <?php
-                    $prospectusLink = 'prospectus.php?' . http_build_query([
-                        'campus_id' => (int)($programRow['campus_id'] ?? 0),
-                        'college_id' => (int)($programRow['college_id'] ?? 0),
-                        'program_id' => (int)($programRow['program_id'] ?? 0),
-                    ]);
-                    $classProgramLink = 'class-program.php?' . http_build_query([
-                        'campus_id' => (int)($programRow['campus_id'] ?? 0),
-                        'college_id' => (int)($programRow['college_id'] ?? 0),
-                        'program_id' => (int)($programRow['program_id'] ?? 0),
-                    ]);
-                    ?>
-                    <div class="col-lg-4 col-md-6">
-                      <div class="card student-directory-card">
-                        <div class="card-body">
-                          <span class="badge bg-label-primary mb-2"><?php echo synk_student_h($programRow['college_code'] ?? 'College'); ?></span>
-                          <h5 class="mb-2"><?php echo synk_student_h(synk_student_format_program_label($programRow)); ?></h5>
-                          <p class="text-muted mb-0">
-                            <?php echo synk_student_h((string)($programRow['college_name'] ?? '')); ?>
-                            <?php if (trim((string)($programRow['campus_name'] ?? '')) !== ''): ?>
-                              | <?php echo synk_student_h((string)($programRow['campus_name'] ?? '')); ?>
-                            <?php endif; ?>
-                          </p>
-
-                          <div class="student-directory-meta">
-                            <span class="student-directory-pill"><?php echo number_format((int)($programRow['prospectus_count'] ?? 0)); ?> prospectus</span>
-                            <span class="student-directory-pill"><?php echo number_format((int)($programRow['section_count'] ?? 0)); ?> sections</span>
-                            <span class="student-directory-pill"><?php echo number_format((int)($programRow['schedule_count'] ?? 0)); ?> meetings</span>
-                          </div>
-
-                          <div class="student-directory-actions">
-                            <a href="<?php echo synk_student_h($prospectusLink); ?>" class="btn btn-sm btn-outline-success">View Prospectus</a>
-                            <a href="<?php echo synk_student_h($classProgramLink); ?>" class="btn btn-sm btn-outline-primary">View Class Program</a>
-                          </div>
-                        </div>
-                      </div>
-                    </div>
-                  <?php endforeach; ?>
-                </div>
-              <?php endif; ?>
             </div>
+
+            <?php if (!$profileIsComplete): ?>
+              <div
+                class="modal fade student-setup-modal"
+                id="studentSetupModal"
+                tabindex="-1"
+                aria-labelledby="studentSetupModalLabel"
+                aria-hidden="true"
+                data-bs-backdrop="static"
+                data-bs-keyboard="false"
+              >
+                <div class="modal-dialog modal-dialog-centered">
+                  <div class="modal-content">
+                    <div class="modal-header px-4 pt-4">
+                      <div>
+                        <h4 class="modal-title mb-1" id="studentSetupModalLabel">First-Time Student Setup</h4>
+                        <p class="text-muted mb-0">This is required only once before the rest of the dashboard becomes available.</p>
+                      </div>
+                    </div>
+                    <div class="modal-body px-4 pb-4">
+                      <?php if ($profileSetupError !== ''): ?>
+                        <div class="alert alert-danger mb-3" role="alert">
+                          <?php echo synk_student_h($profileSetupError); ?>
+                        </div>
+                      <?php endif; ?>
+
+                      <?php if ($profileSetupStatus === 'required'): ?>
+                        <div class="alert alert-warning mb-3" role="alert">
+                          Complete your enrolled program and ID number first before opening the rest of the student portal.
+                        </div>
+                      <?php endif; ?>
+
+                      <p class="student-setup-lead mb-3">
+                        Enter your enrolled program and ID number now. Once submitted, these details cannot be changed from the student portal because they will be used as the basis of future student information.
+                      </p>
+
+                      <div class="student-setup-lock-note mb-4">
+                        This setup is mandatory. Review the program and ID number carefully before saving because the portal will lock them after the first successful submission.
+                      </div>
+
+                      <form method="post" class="row g-3">
+                        <input type="hidden" name="complete_student_profile" value="1" />
+
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold" for="student_profile_campus_id">Campus</label>
+                          <select class="form-select" id="student_profile_campus_id" name="setup_campus_id" required>
+                            <option value="0">Select campus first</option>
+                            <?php foreach ($studentSetupCampusOptions as $campusOption): ?>
+                              <option value="<?php echo (int)($campusOption['campus_id'] ?? 0); ?>"<?php echo (int)($campusOption['campus_id'] ?? 0) === $selectedSetupCampusId ? ' selected' : ''; ?>>
+                                <?php echo synk_student_h((string)($campusOption['campus_name'] ?? 'Campus')); ?>
+                              </option>
+                            <?php endforeach; ?>
+                          </select>
+                        </div>
+
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold" for="student_profile_program_id">Enrolled Program</label>
+                          <select class="form-select" id="student_profile_program_id" name="program_id" required<?php echo $selectedSetupCampusId > 0 ? '' : ' disabled'; ?>>
+                            <option value="0"><?php echo $selectedSetupCampusId > 0 ? 'Select enrolled program' : 'Select campus first'; ?></option>
+                          </select>
+                          <div class="form-text student-setup-hint" id="student_profile_program_help">Program options will show as program code and major only.</div>
+                        </div>
+
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold" for="student_profile_student_number">ID Number</label>
+                          <input
+                            type="text"
+                            class="form-control"
+                            id="student_profile_student_number"
+                            name="student_number"
+                            value="<?php echo synk_student_h($studentNumberValue); ?>"
+                            inputmode="numeric"
+                            pattern="\d{4,10}"
+                            maxlength="10"
+                            placeholder="Enter your ID number"
+                            required
+                          />
+                        </div>
+
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Institutional Email</label>
+                          <input type="text" class="form-control" value="<?php echo synk_student_h($studentEmail); ?>" readonly />
+                        </div>
+
+                        <div class="col-md-6">
+                          <label class="form-label fw-semibold">Directory Name</label>
+                          <input type="text" class="form-control" value="<?php echo synk_student_h($studentName); ?>" readonly />
+                        </div>
+
+                        <div class="col-12 d-flex flex-wrap gap-2">
+                          <button type="submit" class="btn btn-primary">I Confirm</button>
+                          <a href="../logout.php" class="btn btn-outline-secondary">Log Out</a>
+                        </div>
+                      </form>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            <?php endif; ?>
 
             <?php include '../footer.php'; ?>
           </div>
@@ -443,5 +332,102 @@ $studentName = trim((string)($_SESSION['username'] ?? 'Student'));
     <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
     <script src="../assets/vendor/js/menu.js"></script>
     <script src="../assets/js/main.js"></script>
+    <?php if (!$profileIsComplete): ?>
+      <script>
+        window.addEventListener('load', function () {
+          var setupPrograms = <?php
+          $setupProgramsPayload = array_map(static function (array $programOption): array {
+              return [
+                  'program_id' => (int)($programOption['program_id'] ?? 0),
+                  'campus_id' => (int)($programOption['campus_id'] ?? 0),
+                  'label' => synk_student_format_setup_program_label($programOption),
+              ];
+          }, $studentProgramOptions);
+          echo json_encode($setupProgramsPayload, JSON_HEX_TAG | JSON_HEX_APOS | JSON_HEX_QUOT | JSON_HEX_AMP);
+          ?>;
+          var modalElement = document.getElementById('studentSetupModal');
+          var campusSelect = document.getElementById('student_profile_campus_id');
+          var programSelect = document.getElementById('student_profile_program_id');
+          var programHelp = document.getElementById('student_profile_program_help');
+          var selectedProgramId = <?php echo (int)$selectedProgramSetupId; ?>;
+
+          if (!modalElement) {
+            return;
+          }
+
+          function renderProgramOptions() {
+            if (!campusSelect || !programSelect) {
+              return;
+            }
+
+            var campusId = parseInt(campusSelect.value || '0', 10);
+            var filteredPrograms = setupPrograms.filter(function (program) {
+              return campusId > 0 && program.campus_id === campusId;
+            });
+
+            programSelect.innerHTML = '';
+
+            var placeholder = document.createElement('option');
+            placeholder.value = '0';
+
+            if (campusId <= 0) {
+              placeholder.textContent = 'Select campus first';
+              programSelect.appendChild(placeholder);
+              programSelect.disabled = true;
+              if (programHelp) {
+                programHelp.textContent = 'Select a campus first to load matching programs.';
+              }
+              return;
+            }
+
+            placeholder.textContent = filteredPrograms.length > 0 ? 'Select enrolled program' : 'No programs available for this campus';
+            programSelect.appendChild(placeholder);
+            programSelect.disabled = filteredPrograms.length === 0;
+
+            filteredPrograms.forEach(function (program) {
+              var option = document.createElement('option');
+              option.value = String(program.program_id);
+              option.textContent = program.label;
+              if (program.program_id === selectedProgramId) {
+                option.selected = true;
+              }
+              programSelect.appendChild(option);
+            });
+
+            if (!filteredPrograms.some(function (program) { return program.program_id === selectedProgramId; })) {
+              selectedProgramId = 0;
+              programSelect.value = '0';
+            }
+
+            if (programHelp) {
+              programHelp.textContent = filteredPrograms.length > 0
+                ? 'Only programs under the selected campus are shown.'
+                : 'No active programs are available under the selected campus.';
+            }
+          }
+
+          if (campusSelect) {
+            campusSelect.addEventListener('change', function () {
+              selectedProgramId = 0;
+              renderProgramOptions();
+            });
+          }
+
+          if (programSelect) {
+            programSelect.addEventListener('change', function () {
+              selectedProgramId = parseInt(programSelect.value || '0', 10);
+            });
+          }
+
+          renderProgramOptions();
+
+          var studentSetupModal = new bootstrap.Modal(modalElement, {
+            backdrop: 'static',
+            keyboard: false
+          });
+          studentSetupModal.show();
+        });
+      </script>
+    <?php endif; ?>
   </body>
 </html>

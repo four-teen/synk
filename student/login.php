@@ -280,7 +280,7 @@ if (isset($_SESSION['user_id'], $_SESSION['role'])) {
 
           <div class="student-info-note">
             <strong>Access rule:</strong> sign in with your verified <code>@sksu.edu.ph</code>
-            account. No separate scheduler or administrator verification is required here.
+            account, and the same email must already be encoded in the student directory.
           </div>
 
           <?php if ($googleLoginEnabled && !$googleReady): ?>
@@ -394,6 +394,11 @@ if (isset($_SESSION['user_id'], $_SESSION['role'])) {
             icon: "warning",
             title: "Email Not Allowed",
             text: "Only verified @sksu.edu.ph email addresses can sign in to the student portal."
+          },
+          student_directory_access_denied: {
+            icon: "warning",
+            title: "Student Record Not Found",
+            text: "Your SKSU email passed Google sign-in, but it is not registered yet in the student directory."
           }
         };
 

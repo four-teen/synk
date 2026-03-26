@@ -116,6 +116,56 @@ function synk_find_useraccount_by_email(mysqli $conn, string $email): ?array
     return $row ?: null;
 }
 
+function synk_student_directory_table_exists(mysqli $conn): bool
+{
+    static $cache = null;
+
+    if (is_bool($cache)) {
+        return $cache;
+    }
+
+    $result = $conn->query("SHOW TABLES LIKE 'tbl_student_management'");
+    if (!$result instanceof mysqli_result) {
+        $cache = false;
+        return $cache;
+    }
+
+    $cache = $result->num_rows > 0;
+    $result->close();
+
+    return $cache;
+}
+
+function synk_student_directory_email_exists(mysqli $conn, string $email): bool
+{
+    $normalizedEmail = synk_normalize_email($email);
+    if ($normalizedEmail === '' || !synk_student_directory_table_exists($conn)) {
+        return false;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT student_id
+        FROM tbl_student_management
+        WHERE email_address = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param('s', $normalizedEmail);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $exists = $result instanceof mysqli_result && $result->num_rows > 0;
+    if ($result instanceof mysqli_result) {
+        $result->close();
+    }
+    $stmt->close();
+
+    return $exists;
+}
+
 function synk_reset_authenticated_session_context(): void
 {
     unset(

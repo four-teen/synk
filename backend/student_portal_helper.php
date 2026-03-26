@@ -4,8 +4,9 @@ require_once __DIR__ . '/auth_useraccount.php';
 require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/schema_helper.php';
 
-function synk_student_require_login(): void
+function synk_student_require_login(?mysqli $conn = null): void
 {
     if (!isset($_SESSION['user_id'], $_SESSION['role'])) {
         header('Location: login.php');
@@ -14,12 +15,483 @@ function synk_student_require_login(): void
 
     $role = (string)($_SESSION['role'] ?? '');
     if ($role === 'student') {
+        $studentEmail = synk_normalize_email((string)($_SESSION['email'] ?? ''));
+        if ($studentEmail === '') {
+            synk_logout_session();
+            header('Location: login.php?auth_status=student_directory_access_denied');
+            exit;
+        }
+
+        if ($conn instanceof mysqli && !synk_student_directory_email_exists($conn, $studentEmail)) {
+            synk_logout_session();
+            header('Location: login.php?auth_status=student_directory_access_denied');
+            exit;
+        }
+
+        if ($conn instanceof mysqli) {
+            $profile = synk_student_fetch_portal_profile($conn, $studentEmail);
+            $currentPage = basename($_SERVER['PHP_SELF'] ?? '');
+            if (!synk_student_portal_profile_is_complete($profile) && $currentPage !== 'index.php') {
+                header('Location: index.php?profile_setup=required');
+                exit;
+            }
+        }
+
         return;
     }
 
     $redirectPath = synk_role_redirect_path($role);
     header('Location: ../' . ($redirectPath ?? 'index.php'));
     exit;
+}
+
+function synk_student_portal_profile_table_name(): string
+{
+    return 'tbl_student_portal_profile';
+}
+
+function synk_student_portal_profile_ensure_schema(mysqli $conn): void
+{
+    $tableName = synk_student_portal_profile_table_name();
+    $sql = "
+        CREATE TABLE IF NOT EXISTS `{$tableName}` (
+            `profile_id` INT UNSIGNED NOT NULL AUTO_INCREMENT,
+            `email_address` VARCHAR(255) NOT NULL DEFAULT '',
+            `student_number` VARCHAR(32) NOT NULL DEFAULT '',
+            `program_id` INT UNSIGNED NOT NULL DEFAULT 0,
+            `locked_at` DATETIME NULL DEFAULT NULL,
+            `created_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            `updated_at` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (`profile_id`),
+            UNIQUE KEY `uniq_student_portal_profile_email` (`email_address`),
+            KEY `idx_student_portal_profile_program` (`program_id`)
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ";
+
+    if (!$conn->query($sql)) {
+        throw new RuntimeException('Unable to prepare the student profile setup table.');
+    }
+
+    $indexStatements = [
+        'uniq_student_portal_profile_email' => "ALTER TABLE `{$tableName}` ADD UNIQUE INDEX `uniq_student_portal_profile_email` (`email_address`)",
+        'idx_student_portal_profile_program' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_portal_profile_program` (`program_id`)",
+    ];
+
+    foreach ($indexStatements as $indexName => $indexSql) {
+        if (!synk_table_has_index($conn, $tableName, $indexName)) {
+            if (!$conn->query($indexSql)) {
+                throw new RuntimeException('Unable to optimize the student portal profile indexes.');
+            }
+        }
+    }
+}
+
+function synk_student_portal_program_source_name(string $programName, string $major = ''): string
+{
+    $parts = [trim($programName)];
+    $major = trim($major);
+    if ($major !== '') {
+        $parts[] = $major;
+    }
+
+    return trim(implode(' ', array_filter($parts)));
+}
+
+function synk_student_fetch_directory_record_by_email(mysqli $conn, string $email): ?array
+{
+    $normalizedEmail = synk_normalize_email($email);
+    if ($normalizedEmail === '' || !synk_student_directory_email_exists($conn, $normalizedEmail)) {
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            student_id,
+            academic_year_label,
+            semester_label,
+            college_name,
+            campus_name,
+            source_program_name,
+            year_level,
+            student_number,
+            last_name,
+            first_name,
+            middle_name,
+            suffix_name,
+            email_address,
+            program_id,
+            source_file_name,
+            created_at,
+            updated_at
+        FROM tbl_student_management
+        WHERE email_address = ?
+        ORDER BY updated_at DESC, created_at DESC, student_id DESC
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('s', $normalizedEmail);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    if ($result instanceof mysqli_result) {
+        $result->close();
+    }
+    $stmt->close();
+
+    return is_array($row) ? $row : null;
+}
+
+function synk_student_directory_display_name(array $row): string
+{
+    $lastName = trim((string)($row['last_name'] ?? ''));
+    $firstName = trim((string)($row['first_name'] ?? ''));
+    $middleName = trim((string)($row['middle_name'] ?? ''));
+    $suffixName = trim((string)($row['suffix_name'] ?? ''));
+
+    $name = trim(implode(', ', array_filter([$lastName, $firstName], static function ($value) {
+        return trim((string)$value) !== '';
+    })));
+
+    if ($middleName !== '') {
+        $name .= ($name !== '' ? ' ' : '') . $middleName;
+    }
+
+    if ($suffixName !== '') {
+        $name .= ($name !== '' ? ' ' : '') . $suffixName;
+    }
+
+    return trim($name);
+}
+
+function synk_student_fetch_profile_program_options(mysqli $conn): array
+{
+    $rows = [];
+    $result = $conn->query("
+        SELECT
+            p.program_id,
+            p.program_code,
+            p.program_name,
+            COALESCE(p.major, '') AS major,
+            c.college_id,
+            c.college_code,
+            c.college_name,
+            ca.campus_id,
+            ca.campus_code,
+            ca.campus_name
+        FROM tbl_program p
+        INNER JOIN tbl_college c
+            ON c.college_id = p.college_id
+        INNER JOIN tbl_campus ca
+            ON ca.campus_id = c.campus_id
+        WHERE p.status = 'active'
+          AND c.status = 'active'
+        ORDER BY ca.campus_name ASC, c.college_name ASC, p.program_name ASC, p.major ASC, p.program_code ASC
+    ");
+
+    if (!($result instanceof mysqli_result)) {
+        return $rows;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $row['source_program_name'] = synk_student_portal_program_source_name(
+            (string)($row['program_name'] ?? ''),
+            (string)($row['major'] ?? '')
+        );
+        $rows[] = $row;
+    }
+
+    $result->close();
+    return $rows;
+}
+
+function synk_student_find_profile_program_by_id(mysqli $conn, int $programId): ?array
+{
+    if ($programId <= 0) {
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            p.program_id,
+            p.program_code,
+            p.program_name,
+            COALESCE(p.major, '') AS major,
+            c.college_id,
+            c.college_code,
+            c.college_name,
+            ca.campus_id,
+            ca.campus_code,
+            ca.campus_name
+        FROM tbl_program p
+        INNER JOIN tbl_college c
+            ON c.college_id = p.college_id
+        INNER JOIN tbl_campus ca
+            ON ca.campus_id = c.campus_id
+        WHERE p.program_id = ?
+          AND p.status = 'active'
+          AND c.status = 'active'
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $programId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    if ($result instanceof mysqli_result) {
+        $result->close();
+    }
+    $stmt->close();
+
+    if (!is_array($row)) {
+        return null;
+    }
+
+    $row['source_program_name'] = synk_student_portal_program_source_name(
+        (string)($row['program_name'] ?? ''),
+        (string)($row['major'] ?? '')
+    );
+
+    return $row;
+}
+
+function synk_student_resolve_suggested_program_id(array $programOptions, ?array $directoryRecord): int
+{
+    if (!$directoryRecord) {
+        return 0;
+    }
+
+    $directoryProgramId = (int)($directoryRecord['program_id'] ?? 0);
+    if ($directoryProgramId > 0) {
+        foreach ($programOptions as $programOption) {
+            if ((int)($programOption['program_id'] ?? 0) === $directoryProgramId) {
+                return $directoryProgramId;
+            }
+        }
+    }
+
+    $sourceProgramName = strtolower(trim((string)($directoryRecord['source_program_name'] ?? '')));
+    if ($sourceProgramName === '') {
+        return 0;
+    }
+
+    $collegeName = strtolower(trim((string)($directoryRecord['college_name'] ?? '')));
+    $campusName = strtolower(trim((string)($directoryRecord['campus_name'] ?? '')));
+    $fallbackProgramId = 0;
+
+    foreach ($programOptions as $programOption) {
+        $optionSourceName = strtolower(trim((string)($programOption['source_program_name'] ?? '')));
+        if ($optionSourceName !== $sourceProgramName) {
+            continue;
+        }
+
+        if ($fallbackProgramId === 0) {
+            $fallbackProgramId = (int)($programOption['program_id'] ?? 0);
+        }
+
+        $sameCollege = $collegeName === '' || strtolower(trim((string)($programOption['college_name'] ?? ''))) === $collegeName;
+        $sameCampus = $campusName === '' || strtolower(trim((string)($programOption['campus_name'] ?? ''))) === $campusName;
+        if ($sameCollege && $sameCampus) {
+            return (int)($programOption['program_id'] ?? 0);
+        }
+    }
+
+    return $fallbackProgramId;
+}
+
+function synk_student_fetch_portal_profile(mysqli $conn, string $email): ?array
+{
+    synk_student_portal_profile_ensure_schema($conn);
+
+    $normalizedEmail = synk_normalize_email($email);
+    if ($normalizedEmail === '') {
+        return null;
+    }
+
+    $tableName = synk_student_portal_profile_table_name();
+    $stmt = $conn->prepare("
+        SELECT
+            sp.profile_id,
+            sp.email_address,
+            sp.student_number,
+            sp.program_id,
+            sp.locked_at,
+            sp.created_at,
+            sp.updated_at,
+            p.program_code,
+            p.program_name,
+            COALESCE(p.major, '') AS major,
+            c.college_id,
+            c.college_code,
+            c.college_name,
+            ca.campus_id,
+            ca.campus_code,
+            ca.campus_name
+        FROM `{$tableName}` sp
+        LEFT JOIN tbl_program p
+            ON p.program_id = sp.program_id
+        LEFT JOIN tbl_college c
+            ON c.college_id = p.college_id
+        LEFT JOIN tbl_campus ca
+            ON ca.campus_id = c.campus_id
+        WHERE sp.email_address = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('s', $normalizedEmail);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    if ($result instanceof mysqli_result) {
+        $result->close();
+    }
+    $stmt->close();
+
+    return is_array($row) ? $row : null;
+}
+
+function synk_student_portal_profile_is_complete(?array $profile): bool
+{
+    return is_array($profile)
+        && trim((string)($profile['student_number'] ?? '')) !== ''
+        && (int)($profile['program_id'] ?? 0) > 0
+        && trim((string)($profile['locked_at'] ?? '')) !== '';
+}
+
+function synk_student_sync_locked_profile_to_directory(mysqli $conn, string $email, string $studentNumber, array $program): void
+{
+    if (!synk_student_directory_table_exists($conn)) {
+        return;
+    }
+
+    $normalizedEmail = synk_normalize_email($email);
+    $normalizedStudentNumber = trim($studentNumber);
+    if ($normalizedEmail === '' || !preg_match('/^\d{4,10}$/', $normalizedStudentNumber)) {
+        return;
+    }
+
+    $studentNumberInt = (int)$normalizedStudentNumber;
+    $programId = (int)($program['program_id'] ?? 0);
+    $sourceProgramName = (string)($program['source_program_name'] ?? '');
+    $collegeName = (string)($program['college_name'] ?? '');
+    $campusName = (string)($program['campus_name'] ?? '');
+
+    $stmt = $conn->prepare("
+        UPDATE tbl_student_management
+        SET
+            student_number = ?,
+            program_id = ?,
+            source_program_name = ?,
+            college_name = ?,
+            campus_name = ?
+        WHERE email_address = ?
+    ");
+
+    if (!$stmt) {
+        return;
+    }
+
+    $stmt->bind_param(
+        'iissss',
+        $studentNumberInt,
+        $programId,
+        $sourceProgramName,
+        $collegeName,
+        $campusName,
+        $normalizedEmail
+    );
+    $stmt->execute();
+    $stmt->close();
+}
+
+function synk_student_save_first_portal_profile_setup(
+    mysqli $conn,
+    string $email,
+    int $programId,
+    string $studentNumber
+): array {
+    synk_student_portal_profile_ensure_schema($conn);
+
+    $normalizedEmail = synk_normalize_email($email);
+    if ($normalizedEmail === '' || !synk_student_directory_email_exists($conn, $normalizedEmail)) {
+        throw new RuntimeException('Your student email is not registered in the student directory.');
+    }
+
+    $normalizedStudentNumber = trim($studentNumber);
+    if (!preg_match('/^\d{4,10}$/', $normalizedStudentNumber)) {
+        throw new RuntimeException('Provide a valid ID number using digits only.');
+    }
+
+    $program = synk_student_find_profile_program_by_id($conn, $programId);
+    if (!$program) {
+        throw new RuntimeException('Select a valid enrolled program.');
+    }
+
+    $existingProfile = synk_student_fetch_portal_profile($conn, $normalizedEmail);
+    if (synk_student_portal_profile_is_complete($existingProfile)) {
+        throw new RuntimeException('Your enrolled program and ID number are already locked.');
+    }
+
+    $tableName = synk_student_portal_profile_table_name();
+
+    if ($existingProfile && (int)($existingProfile['profile_id'] ?? 0) > 0) {
+        $profileId = (int)$existingProfile['profile_id'];
+        $stmt = $conn->prepare("
+            UPDATE `{$tableName}`
+            SET
+                student_number = ?,
+                program_id = ?,
+                locked_at = COALESCE(locked_at, NOW())
+            WHERE profile_id = ?
+              AND locked_at IS NULL
+            LIMIT 1
+        ");
+
+        if (!$stmt) {
+            throw new RuntimeException('Unable to lock the student profile setup.');
+        }
+
+        $stmt->bind_param('sii', $normalizedStudentNumber, $programId, $profileId);
+        $stmt->execute();
+        $stmt->close();
+    } else {
+        $stmt = $conn->prepare("
+            INSERT INTO `{$tableName}` (
+                email_address,
+                student_number,
+                program_id,
+                locked_at
+            ) VALUES (?, ?, ?, NOW())
+        ");
+
+        if (!$stmt) {
+            throw new RuntimeException('Unable to save the student profile setup.');
+        }
+
+        $stmt->bind_param('ssi', $normalizedEmail, $normalizedStudentNumber, $programId);
+        $stmt->execute();
+        $stmt->close();
+    }
+
+    synk_student_sync_locked_profile_to_directory($conn, $normalizedEmail, $normalizedStudentNumber, $program);
+
+    $profile = synk_student_fetch_portal_profile($conn, $normalizedEmail);
+    if (!synk_student_portal_profile_is_complete($profile)) {
+        throw new RuntimeException('The student profile setup could not be finalized.');
+    }
+
+    return $profile;
 }
 
 function synk_student_h($value): string
@@ -67,6 +539,22 @@ function synk_student_format_program_label(array $row, bool $includeCollege = fa
     }
 
     return $label !== '' ? $label : 'Program';
+}
+
+function synk_student_format_setup_program_label(array $row): string
+{
+    $programCode = strtoupper(trim((string)($row['program_code'] ?? '')));
+    $major = synk_student_title_case((string)($row['major'] ?? $row['program_major'] ?? ''));
+    $labelParts = array_values(array_filter([$programCode, $major], static function ($value) {
+        return trim((string)$value) !== '';
+    }));
+
+    if (!empty($labelParts)) {
+        return implode(' - ', $labelParts);
+    }
+
+    $programName = synk_student_title_case((string)($row['program_name'] ?? ''));
+    return $programName !== '' ? $programName : 'Program';
 }
 
 function synk_student_select_valid_id(array $rows, int $selectedId, string $keyName): int

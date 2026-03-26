@@ -155,6 +155,24 @@ function synk_student_management_ensure_schema(mysqli $conn): void
             }
         }
     }
+
+    $indexStatements = [
+        'idx_student_term' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_term` (`academic_year_label`, `semester_label`)",
+        'idx_student_program_year' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_program_year` (`source_program_name`, `year_level`)",
+        'idx_student_email' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_email` (`email_address`)",
+        'idx_student_program_id' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_program_id` (`program_id`)",
+        'idx_student_batch_scope' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_batch_scope` (`academic_year_label`, `semester_label`, `college_name`, `campus_name`)",
+        'idx_student_batch_program_year' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_batch_program_year` (`academic_year_label`, `semester_label`, `college_name`(80), `campus_name`(80), `source_program_name`(120), `year_level`)",
+        'idx_student_name_lookup' => "ALTER TABLE `{$tableName}` ADD INDEX `idx_student_name_lookup` (`last_name`, `first_name`, `middle_name`, `suffix_name`)",
+    ];
+
+    foreach ($indexStatements as $indexName => $sql) {
+        if (!synk_table_has_index($conn, $tableName, $indexName)) {
+            if (!$conn->query($sql)) {
+                throw new RuntimeException('Unable to optimize the student management table indexes.');
+            }
+        }
+    }
 }
 
 function synk_student_management_zip_read(ZipArchive $zip, string $entryName): string
@@ -976,7 +994,7 @@ function synk_student_management_fetch_active_campuses(mysqli $conn): array
         ORDER BY campus_name ASC
     ");
 
-    if (!$result instanceof mysqli_result) {
+    if (!($result instanceof mysqli_result)) {
         return $rows;
     }
 
@@ -989,4 +1007,429 @@ function synk_student_management_fetch_active_campuses(mysqli $conn): array
     }
 
     return $rows;
+}
+
+function synk_student_management_distinct_batches(mysqli $conn): array
+{
+    synk_student_management_ensure_schema($conn);
+    $tableName = synk_student_management_table_name();
+
+    $sql = "
+        SELECT DISTINCT academic_year_label, semester_label, college_name, campus_name
+        FROM `{$tableName}`
+        ORDER BY academic_year_label DESC, semester_label DESC, campus_name ASC, college_name ASC
+    ";
+
+    $result = $conn->query($sql);
+    $rows = [];
+    if (!($result instanceof mysqli_result)) {
+        return $rows;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $rows[] = [
+            'academic_year_label' => (string)($row['academic_year_label'] ?? ''),
+            'semester_label' => (string)($row['semester_label'] ?? ''),
+            'college_name' => (string)($row['college_name'] ?? ''),
+            'campus_name' => (string)($row['campus_name'] ?? ''),
+        ];
+    }
+
+    return $rows;
+}
+
+function synk_student_management_program_source_name(string $programName, string $major = ''): string
+{
+    $parts = [synk_student_management_normalize_space($programName)];
+    $normalizedMajor = synk_student_management_normalize_space($major);
+    if ($normalizedMajor !== '') {
+        $parts[] = $normalizedMajor;
+    }
+
+    return synk_student_management_normalize_space(implode(' ', array_filter($parts)));
+}
+
+function synk_student_management_fetch_program_catalog(mysqli $conn): array
+{
+    $rows = [];
+    $sql = "
+        SELECT
+            p.program_id,
+            p.program_code,
+            p.program_name,
+            COALESCE(p.major, '') AS major,
+            COALESCE(c.college_name, '') AS college_name,
+            COALESCE(cam.campus_name, '') AS campus_name
+        FROM tbl_program p
+        LEFT JOIN tbl_college c
+            ON c.college_id = p.college_id
+        LEFT JOIN tbl_campus cam
+            ON cam.campus_id = c.campus_id
+        WHERE p.status = 'active'
+        ORDER BY cam.campus_name ASC, c.college_name ASC, p.program_name ASC, p.major ASC, p.program_code ASC
+    ";
+
+    $result = $conn->query($sql);
+    if (!($result instanceof mysqli_result)) {
+        return $rows;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $programName = (string)($row['program_name'] ?? '');
+        $major = (string)($row['major'] ?? '');
+        $rows[] = [
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'program_code' => (string)($row['program_code'] ?? ''),
+            'program_name' => $programName,
+            'major' => $major,
+            'college_name' => (string)($row['college_name'] ?? ''),
+            'campus_name' => (string)($row['campus_name'] ?? ''),
+            'source_program_name' => synk_student_management_program_source_name($programName, $major),
+        ];
+    }
+
+    return $rows;
+}
+
+function synk_student_management_fetch_program_by_id(mysqli $conn, int $programId): ?array
+{
+    if ($programId <= 0) {
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            p.program_id,
+            p.program_code,
+            p.program_name,
+            COALESCE(p.major, '') AS major,
+            COALESCE(c.college_name, '') AS college_name,
+            COALESCE(cam.campus_name, '') AS campus_name
+        FROM tbl_program p
+        LEFT JOIN tbl_college c
+            ON c.college_id = p.college_id
+        LEFT JOIN tbl_campus cam
+            ON cam.campus_id = c.campus_id
+        WHERE p.program_id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $programId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    if (!is_array($row)) {
+        return null;
+    }
+
+    $programName = (string)($row['program_name'] ?? '');
+    $major = (string)($row['major'] ?? '');
+
+    return [
+        'program_id' => (int)($row['program_id'] ?? 0),
+        'program_code' => (string)($row['program_code'] ?? ''),
+        'program_name' => $programName,
+        'major' => $major,
+        'college_name' => (string)($row['college_name'] ?? ''),
+        'campus_name' => (string)($row['campus_name'] ?? ''),
+        'source_program_name' => synk_student_management_program_source_name($programName, $major),
+    ];
+}
+
+function synk_student_management_fetch_record_by_id(mysqli $conn, int $studentId): ?array
+{
+    synk_student_management_ensure_schema($conn);
+    if ($studentId <= 0) {
+        return null;
+    }
+
+    $tableName = synk_student_management_table_name();
+    $stmt = $conn->prepare("
+        SELECT
+            student_id,
+            academic_year_label,
+            semester_label,
+            college_name,
+            campus_name,
+            source_program_name,
+            year_level,
+            student_number,
+            last_name,
+            first_name,
+            middle_name,
+            suffix_name,
+            email_address,
+            program_id,
+            source_sheet_name,
+            source_file_name,
+            source_row_number
+        FROM `{$tableName}`
+        WHERE student_id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $studentId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return is_array($row) ? $row : null;
+}
+
+function synk_student_management_prepare_email_address(string $emailAddress, string $firstName, string $lastName): string
+{
+    $normalized = strtolower(trim($emailAddress));
+    if ($normalized === '') {
+        $normalized = synk_student_management_build_email($firstName, $lastName);
+    }
+
+    if ($normalized === '') {
+        throw new RuntimeException('Email address could not be generated. Provide a valid first and last name.');
+    }
+
+    if (filter_var($normalized, FILTER_VALIDATE_EMAIL) === false) {
+        throw new RuntimeException('Provide a valid email address.');
+    }
+
+    if (!preg_match('/@sksu\.edu\.ph$/i', $normalized)) {
+        throw new RuntimeException('Student email addresses must end with @sksu.edu.ph.');
+    }
+
+    return $normalized;
+}
+
+function synk_student_management_normalize_record_payload(array $payload): array
+{
+    $academicYearLabel = synk_student_management_normalize_space((string)($payload['academic_year_label'] ?? ''));
+    $semesterLabel = synk_student_management_normalize_space((string)($payload['semester_label'] ?? ''));
+    $collegeName = synk_student_management_normalize_space((string)($payload['college_name'] ?? ''));
+    $campusName = synk_student_management_normalize_space((string)($payload['campus_name'] ?? ''));
+    $sourceProgramName = synk_student_management_normalize_space((string)($payload['source_program_name'] ?? ''));
+    $yearLevel = (int)($payload['year_level'] ?? 0);
+    $studentNumber = (int)($payload['student_number'] ?? 0);
+    $lastName = synk_student_management_normalize_space((string)($payload['last_name'] ?? ''));
+    $firstName = synk_student_management_normalize_space((string)($payload['first_name'] ?? ''));
+    $middleName = synk_student_management_normalize_space((string)($payload['middle_name'] ?? ''));
+    $suffixName = synk_student_management_normalize_space((string)($payload['suffix_name'] ?? ''));
+    $programId = max(0, (int)($payload['program_id'] ?? 0));
+
+    if (
+        $academicYearLabel === '' ||
+        $semesterLabel === '' ||
+        $collegeName === '' ||
+        $campusName === '' ||
+        $sourceProgramName === ''
+    ) {
+        throw new RuntimeException('Select a valid student batch and program before saving.');
+    }
+
+    if ($yearLevel <= 0) {
+        throw new RuntimeException('Select a valid year level.');
+    }
+
+    if ($studentNumber <= 0) {
+        throw new RuntimeException('Provide a valid student number.');
+    }
+
+    if ($lastName === '' || $firstName === '') {
+        throw new RuntimeException('Last name and first name are required.');
+    }
+
+    return [
+        'academic_year_label' => $academicYearLabel,
+        'semester_label' => $semesterLabel,
+        'college_name' => $collegeName,
+        'campus_name' => $campusName,
+        'source_program_name' => $sourceProgramName,
+        'year_level' => $yearLevel,
+        'student_number' => $studentNumber,
+        'last_name' => $lastName,
+        'first_name' => $firstName,
+        'middle_name' => $middleName,
+        'suffix_name' => $suffixName,
+        'email_address' => synk_student_management_prepare_email_address(
+            (string)($payload['email_address'] ?? ''),
+            $firstName,
+            $lastName
+        ),
+        'program_id' => $programId,
+    ];
+}
+
+function synk_student_management_prepare_record_payload(mysqli $conn, array $payload): array
+{
+    $programId = max(0, (int)($payload['program_id'] ?? 0));
+    if ($programId > 0) {
+        $program = synk_student_management_fetch_program_by_id($conn, $programId);
+        if (!$program) {
+            throw new RuntimeException('Select a valid program from the program table.');
+        }
+
+        $payload['program_id'] = $programId;
+        $payload['source_program_name'] = (string)$program['source_program_name'];
+    }
+
+    return synk_student_management_normalize_record_payload($payload);
+}
+
+function synk_student_management_create_record(mysqli $conn, array $payload, int $userId = 0): int
+{
+    synk_student_management_ensure_schema($conn);
+    $tableName = synk_student_management_table_name();
+    $record = synk_student_management_prepare_record_payload($conn, $payload);
+
+    $sheetName = 'MANUAL';
+    $fileName = 'Manual Entry';
+    $uploadedBy = $userId > 0 ? $userId : 0;
+    $sourceRowNumber = 0;
+
+    $stmt = $conn->prepare("
+        INSERT INTO `{$tableName}` (
+            academic_year_label,
+            semester_label,
+            source_sheet_name,
+            source_file_name,
+            college_name,
+            campus_name,
+            source_program_name,
+            year_level,
+            student_number,
+            last_name,
+            first_name,
+            middle_name,
+            suffix_name,
+            email_address,
+            program_id,
+            uploaded_by,
+            source_row_number
+        ) VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+    ");
+
+    if (!$stmt) {
+        throw new RuntimeException('Unable to prepare the student create query.');
+    }
+
+    $stmt->bind_param(
+        'sssssssiisssssiii',
+        $record['academic_year_label'],
+        $record['semester_label'],
+        $sheetName,
+        $fileName,
+        $record['college_name'],
+        $record['campus_name'],
+        $record['source_program_name'],
+        $record['year_level'],
+        $record['student_number'],
+        $record['last_name'],
+        $record['first_name'],
+        $record['middle_name'],
+        $record['suffix_name'],
+        $record['email_address'],
+        $record['program_id'],
+        $uploadedBy,
+        $sourceRowNumber
+    );
+
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new RuntimeException('Unable to add the student record.');
+    }
+
+    $insertId = (int)$stmt->insert_id;
+    $stmt->close();
+
+    return $insertId;
+}
+
+function synk_student_management_update_record(mysqli $conn, int $studentId, array $payload): void
+{
+    synk_student_management_ensure_schema($conn);
+    if ($studentId <= 0) {
+        throw new RuntimeException('Select a valid student record.');
+    }
+
+    $tableName = synk_student_management_table_name();
+    $record = synk_student_management_prepare_record_payload($conn, $payload);
+
+    $stmt = $conn->prepare("
+        UPDATE `{$tableName}`
+        SET
+            academic_year_label = ?,
+            semester_label = ?,
+            college_name = ?,
+            campus_name = ?,
+            source_program_name = ?,
+            year_level = ?,
+            student_number = ?,
+            last_name = ?,
+            first_name = ?,
+            middle_name = ?,
+            suffix_name = ?,
+            email_address = ?,
+            program_id = ?
+        WHERE student_id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        throw new RuntimeException('Unable to prepare the student update query.');
+    }
+
+    $stmt->bind_param(
+        'sssssiisssssii',
+        $record['academic_year_label'],
+        $record['semester_label'],
+        $record['college_name'],
+        $record['campus_name'],
+        $record['source_program_name'],
+        $record['year_level'],
+        $record['student_number'],
+        $record['last_name'],
+        $record['first_name'],
+        $record['middle_name'],
+        $record['suffix_name'],
+        $record['email_address'],
+        $record['program_id'],
+        $studentId
+    );
+
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new RuntimeException('Unable to update the student record.');
+    }
+
+    $stmt->close();
+}
+
+function synk_student_management_delete_record(mysqli $conn, int $studentId): void
+{
+    synk_student_management_ensure_schema($conn);
+    if ($studentId <= 0) {
+        throw new RuntimeException('Select a valid student record.');
+    }
+
+    $tableName = synk_student_management_table_name();
+    $stmt = $conn->prepare("DELETE FROM `{$tableName}` WHERE student_id = ? LIMIT 1");
+    if (!$stmt) {
+        throw new RuntimeException('Unable to prepare the student delete query.');
+    }
+
+    $stmt->bind_param('i', $studentId);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new RuntimeException('Unable to delete the student record.');
+    }
+
+    $stmt->close();
 }

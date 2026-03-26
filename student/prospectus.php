@@ -5,32 +5,16 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/student_portal_helper.php';
 
-synk_student_require_login();
+synk_student_require_login($conn);
 
-$campuses = synk_student_fetch_campuses($conn);
-$selectedCampusId = synk_student_select_valid_id($campuses, (int)($_GET['campus_id'] ?? 0), 'campus_id');
-
-$colleges = synk_student_fetch_colleges($conn, $selectedCampusId);
-$selectedCollegeId = synk_student_select_valid_id($colleges, (int)($_GET['college_id'] ?? 0), 'college_id');
-
-$programs = synk_student_fetch_programs_for_prospectus($conn, $selectedCampusId, $selectedCollegeId);
-$selectedProgramId = synk_student_select_valid_id($programs, (int)($_GET['program_id'] ?? 0), 'program_id');
+$studentEmail = synk_normalize_email((string)($_SESSION['email'] ?? ''));
+$studentPortalProfile = synk_student_fetch_portal_profile($conn, $studentEmail);
+$selectedProgramId = (int)($studentPortalProfile['program_id'] ?? 0);
 
 $prospectusVersions = synk_student_fetch_prospectus_versions($conn, $selectedProgramId);
-$requestedProspectusId = (int)($_GET['prospectus_id'] ?? 0);
-$selectedProspectusId = synk_student_select_valid_id($prospectusVersions, $requestedProspectusId, 'prospectus_id');
-
-if ($selectedProgramId > 0 && $selectedProspectusId <= 0 && !empty($prospectusVersions)) {
-    $selectedProspectusId = (int)($prospectusVersions[0]['prospectus_id'] ?? 0);
-}
-
-$selectedProgram = null;
-foreach ($programs as $programRow) {
-    if ((int)($programRow['program_id'] ?? 0) === $selectedProgramId) {
-        $selectedProgram = $programRow;
-        break;
-    }
-}
+$selectedProspectusId = !empty($prospectusVersions)
+    ? (int)($prospectusVersions[0]['prospectus_id'] ?? 0)
+    : 0;
 
 $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_sheet($conn, $selectedProspectusId) : null;
 ?>
@@ -64,7 +48,6 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
     <script src="../assets/js/config.js"></script>
 
     <style>
-      .student-filter-card,
       .student-sheet-card {
         border: 1px solid #dde5f0;
         border-radius: 22px;
@@ -82,23 +65,8 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
         margin-bottom: 1.75rem;
       }
 
-      .student-sheet-kicker {
-        display: inline-flex;
-        align-items: center;
-        justify-content: center;
-        gap: 0.35rem;
-        padding: 0.35rem 0.85rem;
-        border-radius: 999px;
-        background: #eef5ea;
-        color: #537043;
-        font-size: 0.72rem;
-        text-transform: uppercase;
-        letter-spacing: 0.08em;
-        font-weight: 700;
-      }
-
       .student-sheet-title {
-        margin-top: 1rem;
+        margin-top: 0;
         margin-bottom: 0.35rem;
         font-size: 1.65rem;
         font-weight: 800;
@@ -201,32 +169,46 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
         font-weight: 700;
       }
 
-      .student-table-wrap {
-        overflow-x: auto;
+      .student-subject-list {
+        display: grid;
+        gap: 0.9rem;
+        padding: 1rem;
       }
 
-      .student-table {
-        width: 100%;
-        margin-bottom: 0;
+      .student-subject-item {
+        border: 1px solid #dfe7f1;
+        border-radius: 14px;
+        background: #fbfdff;
+        padding: 0.95rem 1rem;
       }
 
-      .student-table thead th {
-        background: #f7f9fc;
-        white-space: nowrap;
-        font-size: 0.74rem;
+      .student-subject-code {
+        margin: 0;
+        font-size: 0.96rem;
+        font-weight: 800;
+        color: #243246;
+        letter-spacing: 0.03em;
         text-transform: uppercase;
-        letter-spacing: 0.05em;
       }
 
-      .student-table td {
-        vertical-align: top;
+      .student-subject-description {
+        margin-top: 0.35rem;
+        font-size: 0.95rem;
+        line-height: 1.6;
+        color: #35465a;
+      }
+
+      .student-subject-summary,
+      .student-subject-prerequisite {
+        margin-top: 0.55rem;
         font-size: 0.88rem;
+        font-weight: 600;
+        color: #516277;
+        line-height: 1.5;
       }
 
-      .student-table .units-col {
-        width: 72px;
-        text-align: center;
-        font-weight: 700;
+      .student-subject-prerequisite {
+        margin-top: 0.2rem;
       }
 
       .student-empty-state {
@@ -245,8 +227,7 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
 
         .layout-menu,
         .layout-navbar,
-        .content-footer,
-        .student-no-print {
+        .content-footer {
           display: none !important;
         }
 
@@ -275,6 +256,30 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
           grid-column: auto;
         }
       }
+
+      @media (max-width: 575.98px) {
+        .student-sheet-card .card-body {
+          padding: 1rem !important;
+        }
+
+        .student-sheet-title {
+          font-size: 1.3rem;
+        }
+
+        .student-sheet-meta {
+          gap: 0.55rem;
+        }
+
+        .student-year-banner,
+        .student-semester-head {
+          flex-direction: column;
+          align-items: flex-start;
+        }
+
+        .student-subject-list {
+          padding: 0.85rem;
+        }
+      }
     </style>
   </head>
 
@@ -293,84 +298,17 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
                 Prospectus Viewer
               </h4>
 
-              <div class="card student-filter-card mb-4 student-no-print">
-                <div class="card-header">
-                  <h5 class="mb-0">Load a Program Prospectus</h5>
-                  <small class="text-muted">Select the campus scope, program, and curriculum version to review.</small>
-                </div>
-                <div class="card-body">
-                  <form method="get" class="row g-3 align-items-end">
-                    <div class="col-md-3">
-                      <label for="campus_id" class="form-label fw-semibold">Campus</label>
-                      <select id="campus_id" name="campus_id" class="form-select">
-                        <option value="0">All Campuses</option>
-                        <?php foreach ($campuses as $campusRow): ?>
-                          <option value="<?php echo (int)($campusRow['campus_id'] ?? 0); ?>"<?php echo (int)($campusRow['campus_id'] ?? 0) === $selectedCampusId ? ' selected' : ''; ?>>
-                            <?php echo synk_student_h(trim((string)($campusRow['campus_name'] ?? 'Campus')) . ' (' . trim((string)($campusRow['campus_code'] ?? '')) . ')'); ?>
-                          </option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="col-md-3">
-                      <label for="college_id" class="form-label fw-semibold">College</label>
-                      <select id="college_id" name="college_id" class="form-select">
-                        <option value="0">All Colleges</option>
-                        <?php foreach ($colleges as $collegeRow): ?>
-                          <option value="<?php echo (int)($collegeRow['college_id'] ?? 0); ?>"<?php echo (int)($collegeRow['college_id'] ?? 0) === $selectedCollegeId ? ' selected' : ''; ?>>
-                            <?php echo synk_student_h(trim((string)($collegeRow['college_name'] ?? 'College')) . ' (' . trim((string)($collegeRow['college_code'] ?? '')) . ')'); ?>
-                          </option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="col-md-3">
-                      <label for="program_id" class="form-label fw-semibold">Program</label>
-                      <select id="program_id" name="program_id" class="form-select">
-                        <option value="0">Select Program</option>
-                        <?php foreach ($programs as $programRow): ?>
-                          <option value="<?php echo (int)($programRow['program_id'] ?? 0); ?>"<?php echo (int)($programRow['program_id'] ?? 0) === $selectedProgramId ? ' selected' : ''; ?>>
-                            <?php echo synk_student_h(synk_student_format_program_label($programRow, true)); ?>
-                          </option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="col-md-3">
-                      <label for="prospectus_id" class="form-label fw-semibold">Version</label>
-                      <select id="prospectus_id" name="prospectus_id" class="form-select">
-                        <option value="0">Latest Available</option>
-                        <?php foreach ($prospectusVersions as $versionRow): ?>
-                          <?php
-                          $versionLabel = trim((string)($versionRow['effective_sy'] ?? '')) !== ''
-                              ? 'SY ' . trim((string)($versionRow['effective_sy'] ?? '')) . ' - ' . trim((string)($versionRow['cmo_no'] ?? ''))
-                              : trim((string)($versionRow['cmo_no'] ?? ''));
-                          ?>
-                          <option value="<?php echo (int)($versionRow['prospectus_id'] ?? 0); ?>"<?php echo (int)($versionRow['prospectus_id'] ?? 0) === $selectedProspectusId ? ' selected' : ''; ?>>
-                            <?php echo synk_student_h($versionLabel); ?>
-                          </option>
-                        <?php endforeach; ?>
-                      </select>
-                    </div>
-                    <div class="col-12 d-flex flex-wrap gap-2">
-                      <button type="submit" class="btn btn-primary">Load Prospectus</button>
-                      <a href="prospectus.php" class="btn btn-outline-secondary">Reset</a>
-                      <?php if ($prospectusSheet): ?>
-                        <button type="button" class="btn btn-outline-primary" onclick="window.print()">Print</button>
-                      <?php endif; ?>
-                    </div>
-                  </form>
-                </div>
-              </div>
-
               <?php if ($selectedProgramId <= 0): ?>
                 <div class="student-empty-state">
-                  Select a program to open its prospectus and curriculum subject breakdown.
+                  No enrolled program is locked on your student profile yet.
                 </div>
               <?php elseif (empty($prospectusVersions)): ?>
                 <div class="student-empty-state">
-                  No saved prospectus version was found for the selected program.
+                  No saved prospectus version was found for your locked program.
                 </div>
               <?php elseif (!$prospectusSheet): ?>
                 <div class="student-empty-state">
-                  The selected prospectus could not be loaded right now.
+                  The selected prospectus for your locked program could not be loaded right now.
                 </div>
               <?php else: ?>
                 <?php
@@ -381,10 +319,6 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
                 <div class="card student-sheet-card">
                   <div class="card-body p-4">
                     <div class="student-sheet-head">
-                      <span class="student-sheet-kicker">
-                        <i class="bx bx-book"></i>
-                        Student Read-Only View
-                      </span>
                       <h1 class="student-sheet-title"><?php echo synk_student_h(synk_student_format_program_label($header)); ?></h1>
                       <p class="student-sheet-subtitle">
                         <?php echo synk_student_h((string)($header['college_name'] ?? '')); ?>
@@ -393,9 +327,8 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
                         <?php endif; ?>
                       </p>
                       <div class="student-sheet-meta">
-                        <span class="student-sheet-meta-pill">CMO <?php echo synk_student_h((string)($header['cmo_no'] ?? 'N/A')); ?></span>
+                        <span class="student-sheet-meta-pill"><?php echo synk_student_h((string)($header['cmo_no'] ?? 'N/A')); ?></span>
                         <span class="student-sheet-meta-pill">Effectivity SY <?php echo synk_student_h((string)($header['effective_sy'] ?? 'N/A')); ?></span>
-                        <span class="student-sheet-meta-pill"><?php echo number_format(count($prospectusVersions)); ?> saved version(s)</span>
                       </div>
                     </div>
 
@@ -434,37 +367,43 @@ $prospectusSheet = $selectedProspectusId > 0 ? synk_student_fetch_prospectus_she
                                 </span>
                               </div>
 
-                              <div class="student-table-wrap">
-                                <table class="table table-bordered student-table">
-                                  <thead>
-                                    <tr>
-                                      <th style="min-width: 98px;">Code</th>
-                                      <th style="min-width: 220px;">Description</th>
-                                      <th class="units-col">Lec</th>
-                                      <th class="units-col">Lab</th>
-                                      <th class="units-col">Total</th>
-                                      <th style="min-width: 180px;">Prerequisite</th>
-                                    </tr>
-                                  </thead>
-                                  <tbody>
-                                    <?php if (empty($semesterSubjects)): ?>
-                                      <tr>
-                                        <td colspan="6" class="text-center text-muted py-4">No subjects encoded for this semester.</td>
-                                      </tr>
-                                    <?php else: ?>
-                                      <?php foreach ($semesterSubjects as $subjectRow): ?>
-                                        <tr>
-                                          <td class="fw-semibold"><?php echo synk_student_h((string)($subjectRow['sub_code'] ?? '')); ?></td>
-                                          <td><?php echo synk_student_h((string)($subjectRow['sub_description'] ?? '')); ?></td>
-                                          <td class="units-col"><?php echo synk_student_h(rtrim(rtrim(number_format((float)($subjectRow['lec_units'] ?? 0), 2, '.', ''), '0'), '.')); ?></td>
-                                          <td class="units-col"><?php echo synk_student_h(rtrim(rtrim(number_format((float)($subjectRow['lab_units'] ?? 0), 2, '.', ''), '0'), '.')); ?></td>
-                                          <td class="units-col"><?php echo synk_student_h(rtrim(rtrim(number_format((float)($subjectRow['total_units'] ?? 0), 2, '.', ''), '0'), '.')); ?></td>
-                                          <td><?php echo synk_student_h((string)($subjectRow['prerequisites'] ?? 'None')); ?></td>
-                                        </tr>
-                                      <?php endforeach; ?>
-                                    <?php endif; ?>
-                                  </tbody>
-                                </table>
+                              <div class="student-subject-list">
+                                <?php if (empty($semesterSubjects)): ?>
+                                  <div class="student-empty-state">
+                                    No subjects encoded for this semester.
+                                  </div>
+                                <?php else: ?>
+                                  <?php foreach ($semesterSubjects as $subjectRow): ?>
+                                    <?php
+                                    $subjectCode = trim((string)($subjectRow['sub_code'] ?? ''));
+                                    $subjectDescription = trim((string)($subjectRow['sub_description'] ?? ''));
+                                    $subjectPrerequisite = trim((string)($subjectRow['prerequisites'] ?? ''));
+                                    if ($subjectPrerequisite === '') {
+                                        $subjectPrerequisite = 'None';
+                                    }
+                                    $lecUnits = rtrim(rtrim(number_format((float)($subjectRow['lec_units'] ?? 0), 2, '.', ''), '0'), '.');
+                                    $labUnits = rtrim(rtrim(number_format((float)($subjectRow['lab_units'] ?? 0), 2, '.', ''), '0'), '.');
+                                    $totalUnits = rtrim(rtrim(number_format((float)($subjectRow['total_units'] ?? 0), 2, '.', ''), '0'), '.');
+                                    $lecUnitsText = $lecUnits !== '' ? $lecUnits : '0';
+                                    $labUnitsText = $labUnits !== '' ? $labUnits : '0';
+                                    $totalUnitsText = $totalUnits !== '' ? $totalUnits : '0';
+                                    ?>
+                                    <article class="student-subject-item">
+                                      <h3 class="student-subject-code"><?php echo synk_student_h($subjectCode !== '' ? $subjectCode : 'No Code'); ?></h3>
+                                      <div class="student-subject-description">
+                                        <?php echo synk_student_h($subjectDescription !== '' ? $subjectDescription : 'No description available.'); ?>
+                                      </div>
+                                      <div class="student-subject-summary">
+                                        LECTURE: <?php echo synk_student_h($lecUnitsText); ?> hour<?php echo (float)$lecUnitsText === 1.0 ? '' : 's'; ?>
+                                        | LABORATORY: <?php echo synk_student_h($labUnitsText); ?> hour<?php echo (float)$labUnitsText === 1.0 ? '' : 's'; ?>
+                                        | UNITS: <?php echo synk_student_h($totalUnitsText); ?>
+                                      </div>
+                                      <div class="student-subject-prerequisite">
+                                        PREREQUISITE: <?php echo synk_student_h(strtoupper($subjectPrerequisite)); ?>
+                                      </div>
+                                    </article>
+                                  <?php endforeach; ?>
+                                <?php endif; ?>
                               </div>
                             </div>
                           <?php endforeach; ?>

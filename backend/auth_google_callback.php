@@ -91,6 +91,10 @@ if (!synk_is_allowed_email_domain($email, (string)$settings['allowed_domain'])) 
 }
 
 if ($isStudentPortal) {
+    if (!synk_student_directory_email_exists($conn, $email)) {
+        synk_auth_status_redirect('student_directory_access_denied', $redirectTarget);
+    }
+
     synk_complete_student_login($email, $displayName, $googleSub);
 
     if ($pictureUrl !== '') {

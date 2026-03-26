@@ -26,6 +26,14 @@ $studentSidebarSections = [
                 'pages' => ['upload.php'],
             ],
             [
+                'href' => 'exam-permits.php',
+                'icon_bg' => 'bg-label-warning',
+                'icon' => 'bx-spreadsheet',
+                'title' => 'Class Roster CSV',
+                'description' => 'Upload subject-section CSV files into a dedicated student table',
+                'pages' => ['exam-permits.php'],
+            ],
+            [
                 'href' => 'directory.php',
                 'icon_bg' => 'bg-label-success',
                 'icon' => 'bx-group',

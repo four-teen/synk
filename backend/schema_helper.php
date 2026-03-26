@@ -50,6 +50,19 @@ function synk_table_has_column(mysqli $conn, string $tableName, string $columnNa
     return isset($columns[strtolower($columnName)]);
 }
 
+function synk_table_has_index(mysqli $conn, string $tableName, string $indexName): bool
+{
+    if (!synk_table_exists($conn, $tableName)) {
+        return false;
+    }
+
+    $safeTableName = $conn->real_escape_string($tableName);
+    $safeIndexName = $conn->real_escape_string($indexName);
+    $result = $conn->query("SHOW INDEX FROM `{$safeTableName}` WHERE Key_name = '{$safeIndexName}'");
+
+    return ($result instanceof mysqli_result) && $result->num_rows > 0;
+}
+
 function synk_bind_dynamic_params(mysqli_stmt $stmt, string $types, array &$params): bool
 {
     if ($types === '' || count($params) === 0) {

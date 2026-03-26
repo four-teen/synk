@@ -5,7 +5,7 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/student_portal_helper.php';
 
-synk_student_require_login();
+synk_student_require_login($conn);
 
 $currentTerm = synk_fetch_current_academic_term($conn);
 $termReady = (int)($currentTerm['ay_id'] ?? 0) > 0 && (int)($currentTerm['semester'] ?? 0) > 0;
