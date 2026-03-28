@@ -3,6 +3,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
     echo "<tr><td colspan='7' class='text-center text-danger'>Unauthorized access.</td></tr>";
@@ -31,7 +32,7 @@ if (!$prospectus_id || !$ay_id || !$semester) {
 }
 
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
-$scheduledOfferingJoin = synk_scheduled_offering_join_sql('sched', 'o');
+$scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
 
 $sql = "
 SELECT

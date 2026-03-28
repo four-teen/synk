@@ -5,6 +5,7 @@ require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/offering_enrollee_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 header('Content-Type: application/json');
 
@@ -155,7 +156,14 @@ while ($row = $res->fetch_assoc()) {
 
 $stmt->close();
 
-$studentCountMap = synk_fetch_offering_enrollee_count_map($conn, array_keys($offeringIds));
+$mergeContext = synk_schedule_merge_load_display_context($conn, array_keys($offeringIds));
+$studentLookupIds = array_keys($offeringIds);
+foreach ($mergeContext as $info) {
+    foreach ((array)($info['group_offering_ids'] ?? []) as $groupOfferingId) {
+        $studentLookupIds[] = (int)$groupOfferingId;
+    }
+}
+$studentCountMap = synk_fetch_offering_enrollee_count_map($conn, $studentLookupIds);
 
 $contextTotals = [];
 if (!empty($offeringIds)) {
@@ -254,6 +262,21 @@ foreach ($rawRows as $rawRow) {
     if ($fullSection === '') {
         $fullSection = trim((string)($rawRow['section'] ?? ''));
     }
+    $mergeInfo = $mergeContext[(int)($rawRow['offering_id'] ?? 0)] ?? null;
+    $courseLabel = $fullSection;
+    $studentCount = synk_offering_enrollee_count_for_map($studentCountMap, (int)$rawRow['offering_id']);
+
+    if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
+        $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+        if ($groupLabel !== '') {
+            $courseLabel = $groupLabel;
+        }
+
+        $studentCount = 0;
+        foreach ((array)($mergeInfo['group_offering_ids'] ?? []) as $groupOfferingId) {
+            $studentCount += synk_offering_enrollee_count_for_map($studentCountMap, (int)$groupOfferingId);
+        }
+    }
 
     $rows[] = [
         'workload_id' => (int)$rawRow['workload_id'],
@@ -262,7 +285,7 @@ foreach ($rawRows as $rawRow) {
         'group_id' => (int)($rawRow['group_id'] ?? 0),
         'sub_code' => (string)$rawRow['sub_code'],
         'desc' => (string)$rawRow['desc'],
-        'course' => $fullSection,
+        'course' => $courseLabel,
         'section' => (string)$rawRow['section'],
         'type' => (string)$rawRow['type'],
         'days' => implode(", ", $rawRow['days_arr'] ?? []),
@@ -277,7 +300,7 @@ foreach ($rawRows as $rawRow) {
         'lab' => round((float)($metrics['lab'] ?? 0), 2),
         'lab_hours' => round((float)($metrics['lab_hours'] ?? 0), 2),
         'faculty_load' => round((float)($metrics['faculty_load'] ?? 0), 2),
-        'student_count' => synk_offering_enrollee_count_for_map($studentCountMap, (int)$rawRow['offering_id'])
+        'student_count' => $studentCount
     ];
 }
 

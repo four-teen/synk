@@ -17,6 +17,23 @@ function student_management_csv_upload_error_message(int $errorCode): string
     return $map[$errorCode] ?? 'Unable to upload the selected CSV file.';
 }
 
+function student_management_csv_import_error_details(Throwable $error): string
+{
+    $message = trim($error->getMessage());
+    $csvHints = [
+        'Only CSV files that match the class roster export are supported on this page.',
+        'The CSV file does not contain the expected class roster layout.',
+        'The CSV file does not match the expected class roster student list header.',
+        'No student rows were found in the uploaded CSV file.',
+    ];
+
+    if (in_array($message, $csvHints, true)) {
+        return 'The CSV must match the current class roster layout with Subject/Section, Instructor(s), Building/Room, and Student\'s Name columns.';
+    }
+
+    return 'The import was rolled back before completion. Check the student data that matches this roster and try again.';
+}
+
 if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_exam_permits_csv'])) {
     if ($studentManagementPageError === '') {
         try {
@@ -58,7 +75,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_exam_permits_c
                     (string)$summary['subject_section_raw']
                 ),
                 sprintf(
-                    'Matched existing students: %s. Updated student IDs: %s. Added missing students: %s. Subject ID: %s. Program ID: %s. Faculty ID: %s. Replaced previous section rows: %s.',
+                    'Matched existing students: %s. Refreshed existing student records: %s. Added missing students: %s. Subject ID: %s. Program ID: %s. Faculty ID: %s. Replaced previous section rows: %s.',
                     number_format((int)$summary['matched_students']),
                     number_format((int)$summary['updated_students']),
                     number_format((int)$summary['inserted_students']),
@@ -72,7 +89,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && isset($_POST['upload_exam_permits_c
             student_management_push_flash(
                 'danger',
                 $e->getMessage(),
-                'The CSV must match the current class roster layout with Subject/Section, Instructor(s), Building/Room, and Student\'s Name columns.'
+                student_management_csv_import_error_details($e)
             );
         }
     } else {
@@ -256,7 +273,7 @@ $hasLatestImport = trim((string)($latestImport['import_batch_key'] ?? '')) !== '
                             <li>`Subject/Section` is split into `subject_code`, `program_id`, and a separate `section_name`.</li>
                             <li>`Instructor(s)` is matched against `tbl_faculty` by given name.</li>
                             <li>`Building/Room` is stored as plain text, while `Class Schedule` is stored raw and in separate slots.</li>
-                            <li>If a student name already exists in `tbl_student_management`, only the student number is updated there.</li>
+                            <li>If a student name already exists in `tbl_student_management`, the student record is refreshed there using the CSV data.</li>
                             <li>If the student does not exist yet, the student is inserted into `tbl_student_management` and linked to the new roster table.</li>
                           </ul>
                         </div>

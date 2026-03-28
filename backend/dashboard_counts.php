@@ -4,6 +4,7 @@ ob_start();
 include 'db.php';
 require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 require_once __DIR__ . '/scheduler_access_helper.php';
 
 header('Content-Type: application/json');
@@ -50,6 +51,7 @@ if ($collegeId <= 0 || $currentAyId <= 0 || $currentSemester <= 0) {
 $filterValue = $scope === 'campus' ? $campusId : $collegeId;
 $filterSql = $scope === 'campus' ? 'c.campus_id = ?' : 'p.college_id = ?';
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
 
 $sql = "
     SELECT
@@ -95,15 +97,15 @@ $sql = "
         (SELECT COUNT(*)
          FROM tbl_prospectus_offering o
          {$liveOfferingJoins}
+         {$scheduledOfferingJoin}
          INNER JOIN tbl_program p ON p.program_id = o.program_id
          INNER JOIN tbl_college c ON c.college_id = p.college_id
-         LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
          WHERE {$filterSql}
            AND c.status = 'active'
            AND p.status = 'active'
            AND o.ay_id = ?
            AND o.semester = ?
-           AND cs.schedule_id IS NULL) AS unscheduled_classes
+           AND sched.offering_id IS NULL) AS unscheduled_classes
 ";
 
 $stmt = $conn->prepare($sql);

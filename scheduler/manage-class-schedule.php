@@ -190,11 +190,34 @@ body.swal2-shown .modal {
     touch-action: manipulation;
 }
 
+.schedule-action-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+    align-items: stretch;
+}
+
+.schedule-action-stack .btn {
+    min-width: 110px;
+}
+
 .schedule-status-col .badge {
     display: inline-flex;
     align-items: center;
     justify-content: center;
     white-space: nowrap;
+}
+
+.schedule-status-stack {
+    display: flex;
+    flex-direction: column;
+    gap: 0.35rem;
+    align-items: center;
+}
+
+.schedule-status-item {
+    display: flex;
+    justify-content: center;
 }
 
 .schedule-section-name {
@@ -209,6 +232,14 @@ body.swal2-shown .modal {
     font-size: 0.72rem;
     line-height: 1.2;
     color: #6c757d;
+}
+
+.schedule-section-merge {
+    display: block;
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    color: #0d6efd;
 }
 
 .schedule-stack-item {
@@ -250,6 +281,102 @@ body.swal2-shown .modal {
 .schedule-search-shell {
     max-width: none;
     margin-left: 0;
+}
+
+.schedule-merge-owner-shell {
+    border: 1px solid #cfd8f1;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #f7f9ff 0%, #eef3ff 100%);
+    padding: 1rem 1.1rem;
+}
+
+.schedule-merge-owner-eyebrow {
+    display: block;
+    font-size: 0.72rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+    color: #5b6b93;
+}
+
+.schedule-merge-owner-title {
+    margin-top: 0.3rem;
+    font-size: 1rem;
+    font-weight: 700;
+    color: #233255;
+}
+
+.schedule-merge-owner-meta {
+    margin-top: 0.25rem;
+    font-size: 0.86rem;
+    color: #5f6b7a;
+}
+
+.schedule-merge-hint {
+    margin-top: 0.7rem;
+    font-size: 0.82rem;
+    color: #5f6b7a;
+}
+
+.schedule-merge-candidate-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.75rem;
+    max-height: 420px;
+    overflow-y: auto;
+}
+
+.schedule-merge-candidate {
+    border: 1px solid #d7deea;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0.9rem 1rem;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+}
+
+.schedule-merge-candidate:hover {
+    border-color: #aebee8;
+    box-shadow: 0 10px 20px rgba(39, 55, 112, 0.06);
+}
+
+.schedule-merge-candidate.is-disabled {
+    background: #f8f9fb;
+    border-style: dashed;
+    opacity: 0.82;
+}
+
+.schedule-merge-candidate-title {
+    font-weight: 700;
+    color: #27324f;
+}
+
+.schedule-merge-candidate-meta {
+    margin-top: 0.2rem;
+    font-size: 0.8rem;
+    color: #6a778c;
+}
+
+.schedule-merge-candidate-reason {
+    margin-top: 0.45rem;
+    font-size: 0.8rem;
+    color: #b04a32;
+}
+
+.schedule-merge-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 1rem;
+    flex-wrap: wrap;
+}
+
+.schedule-merge-empty {
+    border: 1px dashed #cfd8e3;
+    border-radius: 12px;
+    padding: 1rem;
+    text-align: center;
+    color: #6c757d;
+    background: #fbfcfe;
 }
 
 .schedule-sort-shell {
@@ -2289,6 +2416,52 @@ while ($ay = $ayQ->fetch_assoc()) {
 </div>
 
 
+<div class="modal fade" id="scheduleMergeModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div class="modal-header-copy">
+          <h5 class="modal-title mb-0">Manage Schedule Merge</h5>
+          <div class="schedule-hint mt-1">
+            The schedule owner keeps the live room, day, and time blocks. Selected offerings inherit that same schedule and free their own schedule entries.
+          </div>
+        </div>
+      </div>
+
+      <div class="modal-body">
+        <input type="hidden" id="scheduleMergeOwnerOfferingId">
+
+        <div class="schedule-merge-owner-shell mb-3">
+          <span class="schedule-merge-owner-eyebrow">Schedule Owner</span>
+          <div class="schedule-merge-owner-title" id="scheduleMergeOwnerTitle">Loading merge details...</div>
+          <div class="schedule-merge-owner-meta" id="scheduleMergeOwnerMeta"></div>
+          <div class="schedule-merge-hint" id="scheduleMergeOwnerHint"></div>
+        </div>
+
+        <div class="alert alert-warning d-none" id="scheduleMergeBlockingNotice"></div>
+
+        <div class="schedule-merge-toolbar mb-3">
+          <div class="schedule-hint mb-0">
+            Select the offerings that should inherit the owner schedule in this college term.
+          </div>
+          <span class="badge bg-label-info text-info" id="scheduleMergeSelectedCount">0 selected</span>
+        </div>
+
+        <div class="schedule-merge-candidate-list" id="scheduleMergeCandidateList">
+          <div class="schedule-merge-empty">Loading merge candidates...</div>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-outline-secondary" id="btnClearMergeSelection">Clear Selection</button>
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+        <button type="button" class="btn btn-primary" id="btnSaveScheduleMerge">Save Merge Group</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+
 <!-- AUTO DRAFT MODAL -->
 <div class="modal fade" id="autoDraftModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
@@ -2600,6 +2773,8 @@ while ($ay = $ayQ->fetch_assoc()) {
     let termRoomCacheKey = "";
     let termRoomCache = [];
     let scheduleListRequest = null;
+    let scheduleMergeRequest = null;
+    let scheduleMergeState = null;
     let scheduleSetListRequest = null;
     let scheduleSetList = [];
     let scheduleAutoLoadTimer = null;
@@ -2642,7 +2817,7 @@ while ($ay = $ayQ->fetch_assoc()) {
     }
 
     function hasSchedulingModalOpen() {
-        return $("#scheduleModal, #dualScheduleModal, #blockScheduleModal, #autoDraftModal").filter(".show").length > 0;
+        return $("#scheduleModal, #dualScheduleModal, #blockScheduleModal, #scheduleMergeModal, #autoDraftModal").filter(".show").length > 0;
     }
 
     function restoreBodyModalStateForScheduling() {
@@ -3261,7 +3436,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         const lecUnits = Number(button.data("lecUnits")) || 0;
         const totalUnits = Number(button.data("totalUnits")) || 0;
         const subjectLabel = `${button.data("subCode")} — ${button.data("subDesc")}`;
-        const sectionLabel = `Section: ${button.data("section")}`;
+        const sectionLabel = String(button.data("sectionLabel") || `Section: ${button.data("section")}`);
 
         if (!offeringId) {
             Swal.fire("Error", "Missing offering reference.", "error");
@@ -3328,6 +3503,325 @@ while ($ay = $ayQ->fetch_assoc()) {
             });
         }).fail(function (message) {
             Swal.fire("Room Setup Issue", message || "No room is available for selected AY and Semester.", "warning");
+        });
+    }
+
+    function abortScheduleMergeRequest() {
+        if (scheduleMergeRequest && scheduleMergeRequest.readyState !== 4) {
+            scheduleMergeRequest.abort();
+        }
+
+        scheduleMergeRequest = null;
+    }
+
+    function resetScheduleMergeModalState() {
+        scheduleMergeState = null;
+        $("#scheduleMergeOwnerOfferingId").val("");
+        $("#scheduleMergeOwnerTitle").text("Loading merge details...");
+        $("#scheduleMergeOwnerMeta").text("");
+        $("#scheduleMergeOwnerHint").text("");
+        $("#scheduleMergeBlockingNotice").addClass("d-none").html("");
+        $("#scheduleMergeCandidateList").html('<div class="schedule-merge-empty">Loading merge candidates...</div>');
+        $("#scheduleMergeSelectedCount").text("0 selected");
+        $("#btnClearMergeSelection").prop("disabled", true);
+        $("#btnSaveScheduleMerge").prop("disabled", true);
+    }
+
+    function scheduleMergeCandidateStatusBadge(label) {
+        const value = String(label || "").trim();
+        const normalized = value.toLowerCase();
+        let className = "bg-label-secondary text-secondary";
+
+        if (normalized.includes("merged here")) {
+            className = "bg-label-info text-info";
+        } else if (normalized.includes("merge owner")) {
+            className = "bg-label-primary text-primary";
+        } else if (normalized.includes("merged elsewhere")) {
+            className = "bg-label-warning text-warning";
+        } else if (normalized.includes("scheduled") && !normalized.includes("not scheduled")) {
+            className = "bg-label-success text-success";
+        }
+
+        return `<span class="badge ${className}">${escapeHtml(value || "Status")}</span>`;
+    }
+
+    function getSelectedScheduleMergeMemberIds() {
+        const ids = [];
+
+        $("#scheduleMergeCandidateList .schedule-merge-checkbox:checked").each(function () {
+            const value = parseInt($(this).val(), 10) || 0;
+            if (value > 0) {
+                ids.push(value);
+            }
+        });
+
+        return ids;
+    }
+
+    function updateScheduleMergeSelectionSummary() {
+        const selectedCount = getSelectedScheduleMergeMemberIds().length;
+        $("#scheduleMergeSelectedCount").text(`${selectedCount} selected`);
+        $("#btnClearMergeSelection").prop("disabled", selectedCount === 0);
+    }
+
+    function buildScheduleMergeBlockingMessages(state) {
+        const messages = [];
+        const ownerLabel = String(state?.owner?.full_section || state?.owner?.section_name || "the selected owner").trim();
+
+        if (!state?.owner_has_schedule) {
+            messages.push(`${escapeHtml(ownerLabel)} needs a saved schedule first before other offerings can inherit it.`);
+        }
+
+        if (state?.owner_has_workload) {
+            const names = Array.isArray(state.owner_workload_names) ? state.owner_workload_names.filter(Boolean) : [];
+            const facultyLine = names.length > 0
+                ? ` It is already assigned in Faculty Workload to <b>${names.map(name => escapeHtml(name)).join("</b>, <b>")}</b>.`
+                : "";
+            messages.push(`This merge group cannot be changed while the owner schedule is used in Faculty Workload.${facultyLine}`);
+        }
+
+        if (state?.group_has_locked_members) {
+            messages.push("This merge group currently includes a locked offering. Unlock the group first before changing its members.");
+        }
+
+        return messages;
+    }
+
+    function renderScheduleMergeCandidates(state) {
+        const list = $("#scheduleMergeCandidateList");
+        const candidates = Array.isArray(state?.candidates) ? state.candidates : [];
+
+        if (candidates.length === 0) {
+            list.html('<div class="schedule-merge-empty">No compatible same-subject offerings were found in this college term.</div>');
+            updateScheduleMergeSelectionSummary();
+            return;
+        }
+
+        const html = candidates.map(candidate => {
+            const offeringId = Number(candidate?.offering_id || 0);
+            const checked = Boolean(candidate?.is_selected);
+            const disabled = !Boolean(candidate?.can_select);
+            const sectionLabel = String(candidate?.full_section || candidate?.section_name || `Offering ${offeringId}`).trim();
+            const scheduleBadge = candidate?.has_schedule
+                ? '<span class="badge bg-label-success text-success">Has Schedule</span>'
+                : '<span class="badge bg-label-secondary text-secondary">No Schedule</span>';
+            const reasonHtml = candidate?.reason
+                ? `<div class="schedule-merge-candidate-reason">${escapeHtml(candidate.reason)}</div>`
+                : "";
+
+            return `
+                <label class="schedule-merge-candidate ${disabled ? "is-disabled" : ""}">
+                    <div class="d-flex align-items-start gap-3">
+                        <input
+                            type="checkbox"
+                            class="form-check-input mt-1 schedule-merge-checkbox"
+                            value="${escapeHtml(String(offeringId))}"
+                            ${checked ? "checked" : ""}
+                            ${disabled ? "disabled" : ""}
+                        >
+                        <div class="flex-grow-1">
+                            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
+                                <div>
+                                    <div class="schedule-merge-candidate-title">${escapeHtml(sectionLabel)}</div>
+                                    <div class="schedule-merge-candidate-meta d-flex flex-wrap gap-2 align-items-center">
+                                        ${scheduleMergeCandidateStatusBadge(candidate?.status_label || "")}
+                                        ${scheduleBadge}
+                                    </div>
+                                </div>
+                            </div>
+                            ${reasonHtml}
+                        </div>
+                    </div>
+                </label>
+            `;
+        }).join("");
+
+        list.html(html);
+        updateScheduleMergeSelectionSummary();
+    }
+
+    function openScheduleMergeModal(button) {
+        const offeringId = parseInt(button.data("offeringId"), 10) || 0;
+
+        if (!offeringId) {
+            Swal.fire("Error", "Missing offering reference.", "error");
+            return;
+        }
+
+        abortScheduleMergeRequest();
+        resetScheduleMergeModalState();
+        $("#scheduleMergeModal").modal("show");
+
+        scheduleMergeRequest = $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_schedule_merge_candidates: 1,
+                offering_id: offeringId
+            },
+            success: function (res) {
+                if (!res || res.status !== "ok") {
+                    $("#scheduleMergeCandidateList").html('<div class="schedule-merge-empty">Unable to load merge candidates.</div>');
+                    Swal.fire({
+                        icon: "error",
+                        title: "Error",
+                        html: (res && res.message) ? res.message : "Failed to load merge candidates.",
+                        customClass: { popup: "swal-top" }
+                    });
+                    return;
+                }
+
+                scheduleMergeState = res;
+                $("#scheduleMergeOwnerOfferingId").val(String(res.owner_offering_id || ""));
+
+                const owner = res.owner || {};
+                const ownerTitle = String(owner.group_course_label || owner.full_section || owner.section_name || "Schedule owner").trim();
+                const subjectParts = [owner.sub_code, owner.sub_description].filter(Boolean).map(value => String(value).trim());
+                const subjectLine = subjectParts.join(" - ");
+                const ownerLine = String(owner.full_section || owner.section_name || "").trim();
+                const metaParts = [];
+
+                if (subjectLine) {
+                    metaParts.push(subjectLine);
+                }
+                if (ownerLine && ownerLine !== ownerTitle) {
+                    metaParts.push(`Owner row: ${ownerLine}`);
+                }
+
+                $("#scheduleMergeOwnerTitle").text(ownerTitle || "Schedule owner");
+                $("#scheduleMergeOwnerMeta").text(metaParts.join(" | "));
+                $("#scheduleMergeOwnerHint").text(
+                    Number(owner.group_size || 1) > 1
+                        ? `Current merged label: ${ownerTitle}`
+                        : "No additional offerings are merged yet."
+                );
+
+                const blockingMessages = buildScheduleMergeBlockingMessages(res);
+                if (blockingMessages.length > 0) {
+                    $("#scheduleMergeBlockingNotice")
+                        .removeClass("d-none")
+                        .html(blockingMessages.map(message => `<div>${message}</div>`).join(""));
+                } else {
+                    $("#scheduleMergeBlockingNotice").addClass("d-none").html("");
+                }
+
+                renderScheduleMergeCandidates(res);
+                $("#btnSaveScheduleMerge").prop("disabled", blockingMessages.length > 0);
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                $("#scheduleMergeCandidateList").html('<div class="schedule-merge-empty">Unable to load merge candidates.</div>');
+                Swal.fire({
+                    icon: "error",
+                    title: "Error",
+                    html: xhr.responseText || "Failed to load merge candidates.",
+                    customClass: { popup: "swal-top" }
+                });
+            },
+            complete: function () {
+                scheduleMergeRequest = null;
+            }
+        });
+    }
+
+    function saveScheduleMergeGroup() {
+        if (!scheduleMergeState) {
+            Swal.fire("Error", "No merge group is loaded.", "error");
+            return;
+        }
+
+        const ownerOfferingId = Number(scheduleMergeState.owner_offering_id || $("#scheduleMergeOwnerOfferingId").val() || 0);
+        if (!ownerOfferingId) {
+            Swal.fire("Error", "Missing schedule owner reference.", "error");
+            return;
+        }
+
+        const blockingMessages = buildScheduleMergeBlockingMessages(scheduleMergeState);
+        if (blockingMessages.length > 0) {
+            Swal.fire({
+                icon: "warning",
+                title: "Merge Locked",
+                html: blockingMessages.join("<br><br>"),
+                customClass: { popup: "swal-top" }
+            });
+            return;
+        }
+
+        const selectedMemberIds = getSelectedScheduleMergeMemberIds();
+        const owner = scheduleMergeState.owner || {};
+        const ownerLabel = String(owner.group_course_label || owner.full_section || owner.section_name || "this schedule owner").trim();
+        const confirmTitle = selectedMemberIds.length > 0 ? "Save Merge Group?" : "Clear Merge Group?";
+        const confirmHtml = selectedMemberIds.length > 0
+            ? `The schedule of <b>${escapeHtml(ownerLabel)}</b> will stay as the live schedule.<br><br><b>${escapeHtml(String(selectedMemberIds.length))}</b> selected offering(s) will inherit it, and their own schedule entries will be cleared.`
+            : `This will remove every merged member from <b>${escapeHtml(ownerLabel)}</b> and make them schedulable again.`;
+
+        Swal.fire({
+            icon: "question",
+            title: confirmTitle,
+            html: confirmHtml,
+            showCancelButton: true,
+            confirmButtonText: selectedMemberIds.length > 0 ? "Save Merge" : "Clear Merge",
+            cancelButtonText: "Cancel",
+            allowOutsideClick: false,
+            customClass: { popup: "swal-top" }
+        }).then(function (result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            $("#btnSaveScheduleMerge, #btnClearMergeSelection").prop("disabled", true);
+
+            $.ajax({
+                url: "../backend/query_class_schedule.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    save_schedule_merge: 1,
+                    owner_offering_id: ownerOfferingId,
+                    member_offering_ids_json: JSON.stringify(selectedMemberIds)
+                },
+                success: function (res) {
+                    if (res && res.status === "ok") {
+                        Swal.fire({
+                            icon: "success",
+                            title: selectedMemberIds.length > 0 ? "Merge Saved" : "Merge Cleared",
+                            html: escapeHtml(res.message || "Merge group updated."),
+                            timer: 1400,
+                            showConfirmButton: false,
+                            customClass: { popup: "swal-top" }
+                        });
+
+                        $("#scheduleMergeModal").modal("hide");
+                        setTimeout(function () {
+                            loadScheduleTable();
+                        }, 300);
+                        return;
+                    }
+
+                    $("#btnSaveScheduleMerge").prop("disabled", false);
+                    updateScheduleMergeSelectionSummary();
+                    Swal.fire({
+                        icon: "error",
+                        title: "Error",
+                        html: (res && res.message) ? res.message : "Failed to save the merge group.",
+                        customClass: { popup: "swal-top" }
+                    });
+                },
+                error: function (xhr) {
+                    $("#btnSaveScheduleMerge").prop("disabled", false);
+                    updateScheduleMergeSelectionSummary();
+                    Swal.fire({
+                        icon: "error",
+                        title: "Error",
+                        html: xhr.responseText || "Failed to save the merge group.",
+                        customClass: { popup: "swal-top" }
+                    });
+                }
+            });
         });
     }
 
@@ -6113,6 +6607,30 @@ $(document).off("click", "#btnSaveScheduleBlocks").on("click", "#btnSaveSchedule
         }
     });
 });
+
+$("#scheduleMergeModal").on("hidden.bs.modal", function () {
+    abortScheduleMergeRequest();
+    resetScheduleMergeModalState();
+});
+
+$(document).off("click", ".btn-merge-schedule").on("click", ".btn-merge-schedule", function () {
+    openScheduleMergeModal($(this));
+});
+
+$(document).on("change", ".schedule-merge-checkbox", function () {
+    updateScheduleMergeSelectionSummary();
+});
+
+$("#btnClearMergeSelection").on("click", function () {
+    $("#scheduleMergeCandidateList .schedule-merge-checkbox:not(:disabled)").prop("checked", false);
+    updateScheduleMergeSelectionSummary();
+});
+
+$("#btnSaveScheduleMerge").on("click", function () {
+    saveScheduleMergeGroup();
+});
+
+resetScheduleMergeModalState();
 
 });
 

@@ -3,6 +3,7 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
     echo "<div class='text-danger text-center'>Unauthorized access.</div>";
@@ -208,24 +209,49 @@ $schedRes = $schedStmt->get_result();
 
 $daysOrder = ['M', 'T', 'W', 'Th', 'F', 'S'];
 $schedulesByRoomDay = [];
+$rawScheduleRows = [];
+$scheduleOfferingIds = [];
 
 while ($row = $schedRes->fetch_assoc()) {
+    $rawScheduleRows[] = $row;
+    $offeringId = (int)($row['offering_id'] ?? 0);
+    if ($offeringId > 0) {
+        $scheduleOfferingIds[] = $offeringId;
+    }
+}
+$schedStmt->close();
+
+$mergeContext = synk_schedule_merge_load_display_context($conn, $scheduleOfferingIds);
+
+foreach ($rawScheduleRows as $row) {
     $decodedDays = json_decode((string)$row['days_json'], true);
     if (!is_array($decodedDays) || empty($decodedDays)) {
         continue;
     }
 
+    $offeringId = (int)($row['offering_id'] ?? 0);
+    $mergeInfo = $mergeContext[$offeringId] ?? null;
+    $sectionLabel = (string)($row['section_name'] ?? '');
+    if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
+        $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+        if ($groupLabel !== '') {
+            $sectionLabel = $groupLabel;
+        }
+    }
+
     $item = [
-        'offering_id' => (int)$row['offering_id'],
+        'offering_id' => $offeringId,
         'schedule_id' => (int)$row['schedule_id'],
         'schedule_type' => strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))),
         'time_start' => (string)$row['time_start'],
         'time_end' => (string)$row['time_end'],
         'sub_code' => (string)$row['sub_code'],
-        'section_name' => (string)$row['section_name'],
+        'section_name' => $sectionLabel,
         'college_code' => (string)($row['college_code'] ?? ''),
         'subject_class' => subject_color_class($row['sub_code'] ?? ''),
-        'can_remove' => $role === 'scheduler' && (int)($row['offering_college_id'] ?? 0) === $college_id
+        'can_remove' => $role === 'scheduler'
+            && (int)($row['offering_college_id'] ?? 0) === $college_id
+            && !(is_array($mergeInfo) && !empty($mergeInfo['has_merged_members']))
     ];
 
     foreach ($decodedDays as $dayToken) {
@@ -237,7 +263,6 @@ while ($row = $schedRes->fetch_assoc()) {
         $schedulesByRoomDay[(int)$row['room_id']][$dayKey][] = $item;
     }
 }
-$schedStmt->close();
 
 $policySourceLabel = trim((string)($schedulePolicy['source_label'] ?? 'Scheduling policy'));
 $policyWindowLabel = trim((string)($schedulePolicy['window_label'] ?? ''));
@@ -362,7 +387,7 @@ foreach ($rooms as $roomId => $roomLabel) {
                         data-section-name='" . h($item['section_name']) . "'
                         data-type-label='" . h($typeLabel) . "'
                         data-college-code='" . h($item['college_code']) . "'
-                        title='" . h($item['can_remove'] ? "Click to remove this offering schedule" : "View-only entry from another college scope") . "'
+                        title='" . h($item['can_remove'] ? "Click to remove this offering schedule" : "View-only entry") . "'
                         role='button'
                         tabindex='0'
                         aria-label='" . h($entryTitle . ' ' . $typeLabel) . "'>

@@ -4,6 +4,7 @@ require_once __DIR__ . '/auth_useraccount.php';
 require_once __DIR__ . '/academic_term_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 
 function synk_student_require_login(?mysqli $conn = null): void
@@ -662,13 +663,14 @@ function synk_student_fetch_dashboard_summary(mysqli $conn, int $ayId, int $seme
         'section_count' => 0,
         'schedule_count' => 0,
     ];
+    $scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
 
     $sql = "
         SELECT
             COUNT(DISTINCT p.program_id) AS program_count,
             COUNT(DISTINCT h.prospectus_id) AS prospectus_count,
             COUNT(DISTINCT CASE WHEN sec.section_id IS NOT NULL THEN o.section_id END) AS section_count,
-            COUNT(DISTINCT cs.schedule_id) AS schedule_count
+            COUNT(DISTINCT sched.offering_id) AS schedule_count
         FROM tbl_program p
         INNER JOIN tbl_college c
             ON c.college_id = p.college_id
@@ -683,8 +685,7 @@ function synk_student_fetch_dashboard_summary(mysqli $conn, int $ayId, int $seme
         LEFT JOIN tbl_sections sec
             ON sec.section_id = o.section_id
            AND sec.status = 'active'
-        LEFT JOIN tbl_class_schedule cs
-            ON cs.offering_id = o.offering_id
+        {$scheduledOfferingJoin}
         WHERE p.status = 'active'
           AND c.status = 'active'
     ";
@@ -735,6 +736,7 @@ function synk_student_fetch_dashboard_program_cards(
     int $collegeId = 0,
     int $limit = 8
 ): array {
+    $scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
     $sql = "
         SELECT
             p.program_id,
@@ -749,7 +751,7 @@ function synk_student_fetch_dashboard_program_cards(
             ca.campus_name,
             COUNT(DISTINCT h.prospectus_id) AS prospectus_count,
             COUNT(DISTINCT CASE WHEN sec.section_id IS NOT NULL THEN o.section_id END) AS section_count,
-            COUNT(DISTINCT cs.schedule_id) AS schedule_count
+            COUNT(DISTINCT sched.offering_id) AS schedule_count
         FROM tbl_program p
         INNER JOIN tbl_college c
             ON c.college_id = p.college_id
@@ -764,8 +766,7 @@ function synk_student_fetch_dashboard_program_cards(
         LEFT JOIN tbl_sections sec
             ON sec.section_id = o.section_id
            AND sec.status = 'active'
-        LEFT JOIN tbl_class_schedule cs
-            ON cs.offering_id = o.offering_id
+        {$scheduledOfferingJoin}
         WHERE p.status = 'active'
           AND c.status = 'active'
     ";
@@ -1321,6 +1322,50 @@ function synk_student_fetch_section_schedule(mysqli $conn, int $sectionId, int $
         return $payload;
     }
 
+    $offeringIds = [];
+    $offeringStmt = $conn->prepare("
+        SELECT offering_id
+        FROM tbl_prospectus_offering
+        WHERE section_id = ?
+          AND ay_id = ?
+          AND semester = ?
+        ORDER BY offering_id ASC
+    ");
+    if (!$offeringStmt) {
+        return $payload;
+    }
+
+    $offeringStmt->bind_param('iii', $sectionId, $ayId, $semester);
+    $offeringStmt->execute();
+    $offeringResult = $offeringStmt->get_result();
+
+    while ($offeringResult && ($offeringRow = $offeringResult->fetch_assoc())) {
+        $offeringId = (int)($offeringRow['offering_id'] ?? 0);
+        if ($offeringId > 0) {
+            $offeringIds[] = $offeringId;
+        }
+    }
+
+    $offeringStmt->close();
+
+    $effectiveOfferingIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (!empty($effectiveOfferingIds)) {
+        $mergeContext = synk_schedule_merge_load_display_context($conn, $effectiveOfferingIds);
+        $effectiveOfferingIds = [];
+
+        foreach ($offeringIds as $offeringId) {
+            $mergeInfo = $mergeContext[$offeringId] ?? null;
+            $effectiveOfferingIds[] = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
+        }
+
+        $effectiveOfferingIds = synk_schedule_merge_normalize_offering_ids($effectiveOfferingIds);
+    }
+
+    if (empty($effectiveOfferingIds)) {
+        $payload['meta'] = $context;
+        return $payload;
+    }
+
     $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
     $scheduleSql = "
         SELECT
@@ -1363,7 +1408,7 @@ function synk_student_fetch_section_schedule(mysqli $conn, int $sectionId, int $
             ON fws.schedule_id = cs.schedule_id
         LEFT JOIN tbl_faculty f
             ON f.faculty_id = fws.faculty_id
-        WHERE po.section_id = ?
+        WHERE cs.offering_id IN (" . implode(',', array_map('intval', $effectiveOfferingIds)) . ")
           AND po.ay_id = ?
           AND po.semester = ?
         GROUP BY
@@ -1388,7 +1433,7 @@ function synk_student_fetch_section_schedule(mysqli $conn, int $sectionId, int $
         return $payload;
     }
 
-    $scheduleStmt->bind_param('iii', $sectionId, $ayId, $semester);
+    $scheduleStmt->bind_param('ii', $ayId, $semester);
     $scheduleStmt->execute();
     $scheduleResult = $scheduleStmt->get_result();
 

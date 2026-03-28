@@ -4,6 +4,7 @@ include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 header('Content-Type: application/json');
 
@@ -316,7 +317,30 @@ function load_target_offerings(mysqli $conn, int $prospectusId, int $ayId, int $
     }
 
     $stmt->close();
-    return $rows;
+
+    $mergeContext = synk_schedule_merge_load_display_context($conn, array_map(static function (array $row): int {
+        return (int)$row['offering_id'];
+    }, $rows));
+
+    $filtered = [];
+    foreach ($rows as $row) {
+        $offeringId = (int)$row['offering_id'];
+        $mergeInfo = $mergeContext[$offeringId] ?? null;
+        if (is_array($mergeInfo) && !empty($mergeInfo['is_merged_member'])) {
+            continue;
+        }
+
+        if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
+            $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+            if ($groupLabel !== '') {
+                $row['section_name'] = $groupLabel;
+            }
+        }
+
+        $filtered[] = $row;
+    }
+
+    return $filtered;
 }
 
 function load_existing_schedule_rows_by_offering(mysqli $conn, array $offeringIds): array

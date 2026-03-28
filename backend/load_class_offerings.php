@@ -3,6 +3,7 @@ session_start();
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
     echo "<div class='text-center text-danger py-4'>Unauthorized access.</div>";
@@ -59,15 +60,29 @@ function schedule_group_title(string $sortBy, array $row): string
 
 function schedule_section_cell_html(array $row, string $sortBy): string
 {
-    $section = htmlspecialchars((string)($row['section_name'] ?? ''), ENT_QUOTES, 'UTF-8');
-    if ($sortBy !== 'subject') {
-        return "<span class='schedule-section-name'>{$section}</span>";
+    $sectionLabel = trim((string)($row['section_name'] ?? ''));
+    if ($sectionLabel === '') {
+        $sectionLabel = trim((string)($row['full_section'] ?? ''));
     }
 
-    $yearMeta = htmlspecialchars(year_label((string)($row['year_level'] ?? '')), ENT_QUOTES, 'UTF-8');
-    return
-        "<span class='schedule-section-name'>{$section}</span>" .
-        "<span class='schedule-section-meta'>{$yearMeta}</span>";
+    $html = "<span class='schedule-section-name'>" . htmlspecialchars($sectionLabel, ENT_QUOTES, 'UTF-8') . "</span>";
+
+    if ($sortBy === 'subject') {
+        $yearMeta = htmlspecialchars(year_label((string)($row['year_level'] ?? '')), ENT_QUOTES, 'UTF-8');
+        $html .= "<span class='schedule-section-meta'>{$yearMeta}</span>";
+    }
+
+    $merge = is_array($row['merge'] ?? null) ? $row['merge'] : [];
+    $groupSize = (int)($merge['group_size'] ?? 1);
+    $groupLabel = trim((string)($merge['group_course_label'] ?? ''));
+    if ($groupSize > 1 && $groupLabel !== '') {
+        $prefix = !empty($merge['is_merged_member']) ? 'Inherited group: ' : 'Merged group: ';
+        $html .= "<span class='schedule-section-merge'>" .
+            htmlspecialchars($prefix . $groupLabel, ENT_QUOTES, 'UTF-8') .
+            "</span>";
+    }
+
+    return $html;
 }
 
 function block_badge_html($type, $sequence) {
@@ -113,10 +128,10 @@ function schedule_stack_item_html($badgeHtml, $value, $valueClass = '') {
         "</div>";
 }
 
-function schedule_room_stack_item_html($badgeHtml, $value, $roomId, $scheduleType, $offeringId) {
+function schedule_room_stack_item_html($badgeHtml, $value, $roomId, $scheduleType, $effectiveOfferingId) {
     $safeRoomId = (int)$roomId;
-    $safeType = htmlspecialchars((string)$scheduleType, ENT_QUOTES);
-    $safeOfferingId = (int)$offeringId;
+    $safeType = htmlspecialchars((string)$scheduleType, ENT_QUOTES, 'UTF-8');
+    $safeOfferingId = (int)$effectiveOfferingId;
 
     return
         "<div class='schedule-stack-item schedule-room-entry' data-room-id='{$safeRoomId}' data-schedule-type='{$safeType}' data-offering-id='{$safeOfferingId}'>" .
@@ -156,6 +171,7 @@ function offering_schedule_status_badge(array $row): array
 
     if (!$hasAny) {
         return [
+            'status_key' => 'not_scheduled',
             'badge' => "<span class='badge bg-secondary'>Not Scheduled</span>",
             'button_label' => 'Schedule',
             'button_class' => 'btn-primary'
@@ -164,6 +180,7 @@ function offering_schedule_status_badge(array $row): array
 
     if ($isComplete) {
         return [
+            'status_key' => 'complete',
             'badge' => "<span class='badge bg-success'>Scheduled</span>",
             'button_label' => 'Edit',
             'button_class' => 'btn-warning'
@@ -171,10 +188,171 @@ function offering_schedule_status_badge(array $row): array
     }
 
     return [
+        'status_key' => 'partial',
         'badge' => "<span class='badge bg-warning text-dark'>Incomplete</span>",
         'button_label' => 'Edit',
         'button_class' => 'btn-warning'
     ];
+}
+
+function render_offering_status_cell_html(array $row, array $status): string
+{
+    $merge = is_array($row['merge'] ?? null) ? $row['merge'] : [];
+    $badges = [];
+
+    if (!empty($merge['is_merged_member'])) {
+        $badges[] = "<span class='badge bg-label-info text-info'>Merged</span>";
+
+        if (($status['status_key'] ?? '') === 'complete') {
+            $badges[] = "<span class='badge bg-success'>Inherited</span>";
+        } elseif (($status['status_key'] ?? '') === 'partial') {
+            $badges[] = "<span class='badge bg-warning text-dark'>Inherited Incomplete</span>";
+        } else {
+            $badges[] = "<span class='badge bg-secondary'>Awaiting Owner</span>";
+        }
+    } elseif (!empty($merge['has_merged_members'])) {
+        $badges[] = $status['badge'];
+        $badges[] = "<span class='badge bg-label-info text-info'>Merged x" . (int)($merge['group_size'] ?? 1) . "</span>";
+    } else {
+        $badges[] = $status['badge'];
+    }
+
+    $html = [];
+    foreach ($badges as $badge) {
+        $html[] = "<div class='schedule-status-item'>{$badge}</div>";
+    }
+
+    return "<div class='schedule-status-stack'>" . implode('', $html) . "</div>";
+}
+
+function render_schedule_action_cell_html(array $row, array $status): string
+{
+    $merge = is_array($row['merge'] ?? null) ? $row['merge'] : [];
+    $isMergedMember = !empty($merge['is_merged_member']);
+    $groupSize = (int)($merge['group_size'] ?? 1);
+    $groupLabel = trim((string)($merge['group_course_label'] ?? ''));
+    $mergeButtonLabel = $groupSize > 1 ? 'Manage Merge' : 'Merge';
+
+    $scheduleButtonClass = $isMergedMember ? 'btn-outline-secondary' : (string)$status['button_class'];
+    $scheduleButtonLabel = $isMergedMember ? 'Inherited' : (string)$status['button_label'];
+    $scheduleButtonDisabled = $isMergedMember ? ' disabled' : '';
+
+    $sectionName = (string)($row['section_name'] ?? '');
+    $sectionLabel = (string)($row['schedule_modal_section_label'] ?? ('Section: ' . $sectionName));
+
+    $html = [];
+    $html[] =
+        "<button type='button' class='btn {$scheduleButtonClass} btn-sm btn-schedule'" .
+        " data-offering-id='" . (int)$row['offering_id'] . "'" .
+        " data-sub-code='" . htmlspecialchars((string)$row['sub_code'], ENT_QUOTES, 'UTF-8') . "'" .
+        " data-sub-desc='" . htmlspecialchars((string)$row['sub_description'], ENT_QUOTES, 'UTF-8') . "'" .
+        " data-section='" . htmlspecialchars($sectionName, ENT_QUOTES, 'UTF-8') . "'" .
+        " data-section-label='" . htmlspecialchars($sectionLabel, ENT_QUOTES, 'UTF-8') . "'" .
+        " data-lab-units='" . (float)$row['lab_units'] . "'" .
+        " data-lec-units='" . (float)$row['lec_units'] . "'" .
+        " data-total-units='" . (float)$row['total_units'] . "'" .
+        $scheduleButtonDisabled . ">" .
+        htmlspecialchars($scheduleButtonLabel, ENT_QUOTES, 'UTF-8') .
+        "</button>";
+
+    $html[] =
+        "<button type='button' class='btn btn-outline-info btn-sm btn-merge-schedule'" .
+        " data-offering-id='" . (int)$row['offering_id'] . "'" .
+        " data-owner-offering-id='" . (int)($merge['owner_offering_id'] ?? $row['offering_id']) . "'" .
+        " data-sub-code='" . htmlspecialchars((string)$row['sub_code'], ENT_QUOTES, 'UTF-8') . "'" .
+        " data-sub-desc='" . htmlspecialchars((string)$row['sub_description'], ENT_QUOTES, 'UTF-8') . "'" .
+        " data-section='" . htmlspecialchars($sectionName, ENT_QUOTES, 'UTF-8') . "'" .
+        " data-group-label='" . htmlspecialchars($groupLabel, ENT_QUOTES, 'UTF-8') . "'>" .
+        htmlspecialchars($mergeButtonLabel, ENT_QUOTES, 'UTF-8') .
+        "</button>";
+
+    return "<div class='schedule-action-stack'>" . implode('', $html) . "</div>";
+}
+
+function default_merge_context_for_offering(int $offeringId, array $row): array
+{
+    return [
+        'offering_id' => $offeringId,
+        'owner_offering_id' => $offeringId,
+        'is_merged_member' => false,
+        'has_merged_members' => false,
+        'member_offering_ids' => [],
+        'group_offering_ids' => [$offeringId],
+        'group_size' => 1,
+        'group_course_label' => (string)($row['full_section'] ?? ''),
+        'full_section' => (string)($row['full_section'] ?? ''),
+        'section_name' => (string)($row['section_name'] ?? ''),
+        'program_code' => (string)($row['program_code'] ?? '')
+    ];
+}
+
+function load_schedule_rows_by_offering(mysqli $conn, array $offeringIds): array
+{
+    $rowsByOffering = [];
+    $safeIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($safeIds)) {
+        return $rowsByOffering;
+    }
+
+    $sql = "
+        SELECT
+            cs.offering_id,
+            cs.schedule_id,
+            cs.schedule_type,
+            cs.room_id,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            r.room_name,
+            r.room_code
+        FROM tbl_class_schedule cs
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        WHERE cs.offering_id IN (" . implode(',', array_map('intval', $safeIds)) . ")
+          AND cs.schedule_type IN ('LEC', 'LAB')
+        ORDER BY cs.offering_id ASC, FIELD(cs.schedule_type, 'LEC', 'LAB'), cs.schedule_id ASC
+    ";
+
+    $res = $conn->query($sql);
+    if (!($res instanceof mysqli_result)) {
+        return $rowsByOffering;
+    }
+
+    while ($row = $res->fetch_assoc()) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        if (!isset($rowsByOffering[$offeringId])) {
+            $rowsByOffering[$offeringId] = [];
+        }
+
+        $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? '')));
+        if (!in_array($scheduleType, ['LEC', 'LAB'], true)) {
+            continue;
+        }
+
+        $roomLabel = trim((string)($row['room_code'] ?? ''));
+        if ($roomLabel === '') {
+            $roomLabel = trim((string)($row['room_name'] ?? ''));
+        }
+
+        $days = synk_normalize_schedule_days(json_decode((string)($row['days_json'] ?? ''), true));
+
+        $rowsByOffering[$offeringId][] = [
+            'schedule_id' => (int)$row['schedule_id'],
+            'schedule_type' => synk_normalize_schedule_type($scheduleType),
+            'room_id' => (int)($row['room_id'] ?? 0),
+            'days_json' => json_encode($days),
+            'days' => $days,
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? ''),
+            'room_label' => $roomLabel
+        ];
+    }
+
+    return $rowsByOffering;
 }
 
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
@@ -185,44 +363,33 @@ ORDER BY
     sm.sub_description ASC,
     sec.year_level ASC,
     sec.section_name ASC,
-    FIELD(cs.schedule_type, 'LEC', 'LAB'),
-    cs.schedule_id ASC
+    o.offering_id ASC
 "
     : "
 ORDER BY
     sec.year_level ASC,
     sec.section_name ASC,
     sm.sub_code ASC,
-    FIELD(cs.schedule_type, 'LEC', 'LAB'),
-    cs.schedule_id ASC
+    o.offering_id ASC
 ";
 
 $sql = "
 SELECT
     o.offering_id,
+    o.status AS offering_status,
     sec.section_name,
+    sec.full_section,
     sec.year_level,
+    p.program_code,
     sm.sub_code,
     sm.sub_description,
     ps.lab_units,
     ps.lec_units,
-    ps.total_units,
-    cs.schedule_id,
-    cs.schedule_type,
-    cs.room_id,
-    cs.days_json,
-    cs.time_start,
-    cs.time_end,
-    r.room_name,
-    r.room_code
+    ps.total_units
 FROM tbl_prospectus_offering o
 {$liveOfferingJoins}
 INNER JOIN tbl_program p ON p.program_id = o.program_id
 INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-LEFT JOIN tbl_class_schedule cs
-    ON cs.offering_id = o.offering_id
-   AND cs.schedule_type IN ('LEC', 'LAB')
-LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
 WHERE o.prospectus_id = ?
   AND o.ay_id = ?
   AND o.semester = ?
@@ -244,50 +411,69 @@ $offeringsById = [];
 $offeringOrder = [];
 while ($row = $res->fetch_assoc()) {
     $offeringId = (int)$row['offering_id'];
+    $displayHours = normalize_prospectus_contact_hours(
+        (float)$row['lec_units'],
+        (float)$row['lab_units'],
+        isset($row['total_units']) ? (float)$row['total_units'] : null
+    );
 
-    if (!isset($offeringsById[$offeringId])) {
-        $displayHours = normalize_prospectus_contact_hours(
-            (float)$row['lec_units'],
-            (float)$row['lab_units'],
-            isset($row['total_units']) ? (float)$row['total_units'] : null
-        );
+    $offeringsById[$offeringId] = [
+        'offering_id' => $offeringId,
+        'offering_status' => strtolower(trim((string)($row['offering_status'] ?? 'pending'))),
+        'year_level' => (int)$row['year_level'],
+        'section_name' => (string)($row['section_name'] ?? ''),
+        'full_section' => (string)($row['full_section'] ?? ''),
+        'program_code' => (string)($row['program_code'] ?? ''),
+        'sub_code' => (string)($row['sub_code'] ?? ''),
+        'sub_description' => (string)($row['sub_description'] ?? ''),
+        'lab_units' => (float)$row['lab_units'],
+        'lec_units' => (float)$row['lec_units'],
+        'total_units' => (float)$row['total_units'],
+        'display_lab_units' => (float)$displayHours['lab_units'],
+        'display_lec_units' => (float)$displayHours['lec_units'],
+        'entries' => []
+    ];
+    $offeringOrder[] = $offeringId;
+}
+$stmt->close();
 
-        $offeringsById[$offeringId] = [
-            'offering_id' => $offeringId,
-            'year_level' => (int)$row['year_level'],
-            'section_name' => (string)$row['section_name'],
-            'sub_code' => (string)$row['sub_code'],
-            'sub_description' => (string)$row['sub_description'],
-            'lab_units' => (float)$row['lab_units'],
-            'lec_units' => (float)$row['lec_units'],
-            'total_units' => (float)$row['total_units'],
-            'display_lab_units' => (float)$displayHours['lab_units'],
-            'display_lec_units' => (float)$displayHours['lec_units'],
-            'entries' => []
-        ];
-        $offeringOrder[] = $offeringId;
-    }
+$mergeContext = synk_schedule_merge_load_display_context($conn, $offeringOrder);
+$ownerIds = [];
 
-    $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? '')));
-    if (!empty($row['schedule_id']) && in_array($scheduleType, ['LEC', 'LAB'], true)) {
-        $roomLabel = trim((string)($row['room_code'] ?? ''));
-        if ($roomLabel === '') {
-            $roomLabel = trim((string)($row['room_name'] ?? ''));
-        }
+foreach ($offeringOrder as $offeringId) {
+    $mergeInfo = $mergeContext[$offeringId] ?? default_merge_context_for_offering($offeringId, $offeringsById[$offeringId]);
+    $ownerIds[] = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
+}
 
-        $days = synk_normalize_schedule_days(json_decode((string)($row['days_json'] ?? ''), true));
+$ownerIds = synk_schedule_merge_normalize_offering_ids($ownerIds);
+$scheduleRowsByOffering = load_schedule_rows_by_offering($conn, $ownerIds);
+$ownerSectionRows = synk_schedule_merge_load_section_rows_by_offering($conn, $ownerIds);
 
-        $offeringsById[$offeringId]['entries'][] = [
-            'schedule_id' => (int)$row['schedule_id'],
-            'schedule_type' => synk_normalize_schedule_type($scheduleType),
-            'room_id' => (int)($row['room_id'] ?? 0),
-            'days_json' => json_encode($days),
-            'days' => $days,
-            'time_start' => (string)($row['time_start'] ?? ''),
-            'time_end' => (string)($row['time_end'] ?? ''),
-            'room_label' => $roomLabel
-        ];
-    }
+foreach ($offeringOrder as $offeringId) {
+    $row = $offeringsById[$offeringId];
+    $mergeInfo = $mergeContext[$offeringId] ?? default_merge_context_for_offering($offeringId, $row);
+    $ownerOfferingId = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
+    $ownerSection = $ownerSectionRows[$ownerOfferingId] ?? [
+        'full_section' => (string)($row['full_section'] ?? ''),
+        'section_name' => (string)($row['section_name'] ?? '')
+    ];
+    $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+
+    $row['entries'] = $scheduleRowsByOffering[$ownerOfferingId] ?? [];
+    $row['schedule_owner_offering_id'] = $ownerOfferingId;
+    $row['schedule_modal_section_label'] = ((int)($mergeInfo['group_size'] ?? 1) > 1 && $groupLabel !== '')
+        ? ('Merged Group: ' . $groupLabel)
+        : ('Section: ' . (string)($row['section_name'] ?? ''));
+    $row['merge'] = [
+        'owner_offering_id' => $ownerOfferingId,
+        'owner_full_section' => (string)($ownerSection['full_section'] ?? ''),
+        'is_merged_member' => !empty($mergeInfo['is_merged_member']),
+        'has_merged_members' => !empty($mergeInfo['has_merged_members']),
+        'group_size' => (int)($mergeInfo['group_size'] ?? 1),
+        'group_course_label' => $groupLabel
+    ];
+
+    $offeringsById[$offeringId] = $row;
 }
 
 $grouped = [];
@@ -304,7 +490,7 @@ foreach ($offeringOrder as $offeringId) {
     $grouped[$groupKey][] = $offering;
 }
 
-foreach ($grouped as $groupKey => $offerings) {
+foreach ($grouped as $offerings) {
     $groupTitle = schedule_group_title($sortBy, $offerings[0]);
     $countLabel = schedule_group_count_label($sortBy);
 
@@ -357,7 +543,7 @@ foreach ($grouped as $groupKey => $offerings) {
                 $roomText,
                 (int)$entry['room_id'],
                 $type,
-                (int)$row['offering_id']
+                (int)$row['schedule_owner_offering_id']
             );
         }
 
@@ -367,35 +553,28 @@ foreach ($grouped as $groupKey => $offerings) {
             $roomParts[] = schedule_stack_empty_html();
         }
 
+        $merge = is_array($row['merge'] ?? null) ? $row['merge'] : [];
         $searchText = strtolower(trim(
             (string)$row['section_name'] . ' ' .
+            (string)$row['full_section'] . ' ' .
             (string)$row['sub_code'] . ' ' .
             (string)$row['sub_description'] . ' ' .
+            (string)($merge['group_course_label'] ?? '') . ' ' .
+            (string)($merge['owner_full_section'] ?? '') . ' ' .
             year_label((string)$row['year_level'])
         ));
 
-        echo "<tr class='schedule-offering-row' data-search-text='" . htmlspecialchars($searchText, ENT_QUOTES) . "'>";
+        echo "<tr class='schedule-offering-row' data-search-text='" . htmlspecialchars($searchText, ENT_QUOTES, 'UTF-8') . "'>";
         echo "  <td class='schedule-section-col'>" . schedule_section_cell_html($row, $sortBy) . "</td>";
-        echo "  <td class='text-nowrap schedule-subject-col'>" . htmlspecialchars(strtoupper((string)$row['sub_code'])) . "</td>";
-        echo "  <td class='schedule-description-col'>" . htmlspecialchars(strtoupper((string)$row['sub_description'])) . "</td>";
-        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lec_units'])) . "</td>";
-        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lab_units'])) . "</td>";
+        echo "  <td class='text-nowrap schedule-subject-col'>" . htmlspecialchars(strtoupper((string)$row['sub_code']), ENT_QUOTES, 'UTF-8') . "</td>";
+        echo "  <td class='schedule-description-col'>" . htmlspecialchars(strtoupper((string)$row['sub_description']), ENT_QUOTES, 'UTF-8') . "</td>";
+        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lec_units']), ENT_QUOTES, 'UTF-8') . "</td>";
+        echo "  <td class='text-center fw-semibold schedule-hours-col'>" . htmlspecialchars(contact_hours_value($row['display_lab_units']), ENT_QUOTES, 'UTF-8') . "</td>";
         echo "  <td class='text-center schedule-days-col'>" . implode('', $daysParts) . "</td>";
         echo "  <td class='text-center schedule-time-col'>" . implode('', $timeParts) . "</td>";
         echo "  <td class='text-center schedule-room-col'>" . implode('', $roomParts) . "</td>";
-        echo "  <td class='text-center schedule-status-col'>{$status['badge']}</td>";
-        echo "  <td class='text-center schedule-action-col'>";
-        echo "    <button type='button' class='btn {$status['button_class']} btn-sm btn-schedule'";
-        echo "      data-offering-id='" . (int)$row['offering_id'] . "'";
-        echo "      data-sub-code='" . htmlspecialchars((string)$row['sub_code'], ENT_QUOTES) . "'";
-        echo "      data-sub-desc='" . htmlspecialchars((string)$row['sub_description'], ENT_QUOTES) . "'";
-        echo "      data-section='" . htmlspecialchars((string)$row['section_name'], ENT_QUOTES) . "'";
-        echo "      data-lab-units='" . (float)$row['lab_units'] . "'";
-        echo "      data-lec-units='" . (float)$row['lec_units'] . "'";
-        echo "      data-total-units='" . (float)$row['total_units'] . "'>";
-        echo "      {$status['button_label']}";
-        echo "    </button>";
-        echo "  </td>";
+        echo "  <td class='text-center schedule-status-col'>" . render_offering_status_cell_html($row, $status) . "</td>";
+        echo "  <td class='text-center schedule-action-col'>" . render_schedule_action_cell_html($row, $status) . "</td>";
         echo "</tr>";
     }
 

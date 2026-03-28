@@ -4,6 +4,7 @@ include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 header('Content-Type: application/json');
 
@@ -112,6 +113,7 @@ $selectParts = [
     'sm.sub_code',
     'sm.sub_description',
     'sec.section_name',
+    'sec.full_section',
     'cs.days_json',
     'cs.time_start',
     'cs.time_end',
@@ -187,6 +189,7 @@ while ($row = $res->fetch_assoc()) {
         'subject_code' => (string)($row['sub_code'] ?? ''),
         'subject_description' => (string)($row['sub_description'] ?? ''),
         'section_name' => (string)($row['section_name'] ?? ''),
+        'full_section' => (string)($row['full_section'] ?? ''),
         'days_arr' => $days_arr,
         'time_start' => (string)($row['time_start'] ?? ''),
         'time_end' => (string)($row['time_end'] ?? ''),
@@ -198,6 +201,8 @@ while ($row = $res->fetch_assoc()) {
 
     $offeringIds[(int)($row['offering_id'] ?? 0)] = true;
 }
+
+$mergeContext = synk_schedule_merge_load_display_context($conn, array_keys($offeringIds));
 
 $data = [];
 $contextTotals = [];
@@ -263,6 +268,16 @@ foreach ($rawRows as $row) {
         (float)($row['total_units'] ?? 0),
         $contextTotals[$contextKey] ?? []
     );
+    $mergeInfo = $mergeContext[(int)($row['offering_id'] ?? 0)] ?? null;
+    $sectionDisplay = (string)($row['section_name'] ?? '');
+    $mergedCourseLabel = '';
+
+    if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
+        $mergedCourseLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+        if ($mergedCourseLabel !== '') {
+            $sectionDisplay = $mergedCourseLabel;
+        }
+    }
 
     $data[] = [
         'schedule_id' => (int)($row['schedule_id'] ?? 0),
@@ -271,7 +286,8 @@ foreach ($rawRows as $row) {
         'schedule_type' => (string)($row['schedule_type'] ?? 'LEC'),
         'subject_code' => (string)($row['subject_code'] ?? ''),
         'subject_description' => (string)($row['subject_description'] ?? ''),
-        'section_name' => (string)($row['section_name'] ?? ''),
+        'section_name' => $sectionDisplay,
+        'merged_course_label' => $mergedCourseLabel,
         'days' => implode(", ", $row['days_arr'] ?? []),
         'time' => date("g:iA", strtotime((string)($row['time_start'] ?? ''))) . "-" .
                   date("g:iA", strtotime((string)($row['time_end'] ?? ''))),

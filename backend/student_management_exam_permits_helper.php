@@ -74,7 +74,7 @@ function synk_student_management_ensure_exam_permits_schema(mysqli $conn): void
     ";
 
     if (!$conn->query($sql)) {
-        throw new RuntimeException('Unable to prepare the exam permit upload table.');
+        throw new RuntimeException('Unable to prepare the class roster upload table.');
     }
 
     $indexStatements = [
@@ -90,7 +90,7 @@ function synk_student_management_ensure_exam_permits_schema(mysqli $conn): void
     foreach ($indexStatements as $indexName => $indexSql) {
         if (!synk_table_has_index($conn, $tableName, $indexName)) {
             if (!$conn->query($indexSql)) {
-                throw new RuntimeException('Unable to optimize the exam permit upload table indexes.');
+                throw new RuntimeException('Unable to optimize the class roster upload table indexes.');
             }
         }
     }
@@ -101,10 +101,40 @@ function synk_student_management_strip_utf8_bom(string $value): string
     return preg_replace('/^\xEF\xBB\xBF/', '', $value) ?? $value;
 }
 
+function synk_student_management_normalize_csv_encoding(string $value): string
+{
+    if ($value === '') {
+        return '';
+    }
+
+    if (preg_match('//u', $value) === 1) {
+        return $value;
+    }
+
+    if (function_exists('iconv')) {
+        $converted = @iconv('Windows-1252', 'UTF-8//IGNORE', $value);
+        if (is_string($converted) && $converted !== '') {
+            return $converted;
+        }
+
+        $converted = @iconv('ISO-8859-1', 'UTF-8//IGNORE', $value);
+        if (is_string($converted) && $converted !== '') {
+            return $converted;
+        }
+    }
+
+    if (function_exists('mb_convert_encoding')) {
+        return mb_convert_encoding($value, 'UTF-8', 'Windows-1252');
+    }
+
+    return $value;
+}
+
 function synk_student_management_csv_cell(array $row, int $index): string
 {
     $value = (string)($row[$index] ?? '');
     $value = synk_student_management_strip_utf8_bom($value);
+    $value = synk_student_management_normalize_csv_encoding($value);
     return synk_student_management_normalize_space($value);
 }
 
@@ -293,7 +323,7 @@ function synk_student_management_parse_exam_permits_csv(string $csvPath): array
     }
 
     if (count($rows) < 8) {
-        throw new RuntimeException('The CSV file does not contain the expected exam permit layout.');
+        throw new RuntimeException('The CSV file does not contain the expected class roster layout.');
     }
 
     $campusHeader = synk_student_management_csv_cell($rows[0], 0);
@@ -331,7 +361,7 @@ function synk_student_management_parse_exam_permits_csv(string $csvPath): array
     $headerNo = strtoupper(synk_student_management_csv_cell($rows[6], 0));
     $headerName = strtoupper(synk_student_management_csv_cell($rows[6], 1));
     if ($headerNo !== 'NO.' || strpos($headerName, "STUDENT'S NAME") === false) {
-        throw new RuntimeException('The CSV file does not match the expected exam permit student list header.');
+        throw new RuntimeException('The CSV file does not match the expected class roster student list header.');
     }
 
     for ($index = 7; $index < count($rows); $index++) {
@@ -531,12 +561,23 @@ function synk_student_management_fetch_student_name_catalog(mysqli $conn): array
     $result = $conn->query("
         SELECT
             student_id,
+            academic_year_label,
+            semester_label,
+            source_sheet_name,
+            source_file_name,
+            college_name,
+            campus_name,
+            source_program_name,
+            year_level,
             student_number,
             last_name,
             first_name,
             middle_name,
             suffix_name,
-            email_address
+            email_address,
+            program_id,
+            uploaded_by,
+            source_row_number
         FROM `{$tableName}`
         ORDER BY student_id DESC
     ");
@@ -559,12 +600,23 @@ function synk_student_management_fetch_student_name_catalog(mysqli $conn): array
 
         $catalog[$key] = [
             'student_id' => (int)($row['student_id'] ?? 0),
+            'academic_year_label' => (string)($row['academic_year_label'] ?? ''),
+            'semester_label' => (string)($row['semester_label'] ?? ''),
+            'source_sheet_name' => (string)($row['source_sheet_name'] ?? ''),
+            'source_file_name' => (string)($row['source_file_name'] ?? ''),
+            'college_name' => (string)($row['college_name'] ?? ''),
+            'campus_name' => (string)($row['campus_name'] ?? ''),
+            'source_program_name' => (string)($row['source_program_name'] ?? ''),
+            'year_level' => (int)($row['year_level'] ?? 0),
             'student_number' => (int)($row['student_number'] ?? 0),
             'email_address' => (string)($row['email_address'] ?? ''),
             'last_name' => (string)($row['last_name'] ?? ''),
             'first_name' => (string)($row['first_name'] ?? ''),
             'middle_name' => (string)($row['middle_name'] ?? ''),
             'suffix_name' => (string)($row['suffix_name'] ?? ''),
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'uploaded_by' => (int)($row['uploaded_by'] ?? 0),
+            'source_row_number' => (int)($row['source_row_number'] ?? 0),
         ];
     }
 
@@ -572,41 +624,12 @@ function synk_student_management_fetch_student_name_catalog(mysqli $conn): array
     return $catalog;
 }
 
-function synk_student_management_update_student_number_only(mysqli $conn, int $studentId, int $studentNumber): void
-{
-    if ($studentId <= 0 || $studentNumber <= 0) {
-        return;
-    }
-
-    $tableName = synk_student_management_table_name();
-    $stmt = $conn->prepare("
-        UPDATE `{$tableName}`
-        SET student_number = ?
-        WHERE student_id = ?
-        LIMIT 1
-    ");
-
-    if (!$stmt) {
-        throw new RuntimeException('Unable to update the matched student number.');
-    }
-
-    $stmt->bind_param('ii', $studentNumber, $studentId);
-    if (!$stmt->execute()) {
-        $stmt->close();
-        throw new RuntimeException('Unable to save the matched student ID number.');
-    }
-
-    $stmt->close();
-}
-
-function synk_student_management_insert_csv_student_record(
-    mysqli $conn,
+function synk_student_management_build_csv_student_record(
     array $studentRow,
     array $program,
     array $context,
     int $uploadedBy = 0
-): int {
-    $tableName = synk_student_management_table_name();
+): array {
     $studentNumber = max(0, (int)($studentRow['student_number'] ?? 0));
     $emailAddress = synk_student_management_build_email(
         (string)($studentRow['first_name'] ?? ''),
@@ -623,6 +646,215 @@ function synk_student_management_insert_csv_student_record(
     $semesterLabel = trim((string)($context['semester_label'] ?? ''));
     $sourceRowNumber = max(0, (int)($studentRow['source_row_number'] ?? 0));
     $uploadedByValue = $uploadedBy > 0 ? $uploadedBy : 0;
+
+    return [
+        'academic_year_label' => $academicYearLabel,
+        'semester_label' => $semesterLabel,
+        'source_sheet_name' => $sourceSheetName,
+        'source_file_name' => $sourceFileName,
+        'college_name' => $collegeName,
+        'campus_name' => $campusName,
+        'source_program_name' => $sourceProgramName,
+        'year_level' => $yearLevel,
+        'student_number' => $studentNumber,
+        'last_name' => (string)($studentRow['last_name'] ?? ''),
+        'first_name' => (string)($studentRow['first_name'] ?? ''),
+        'middle_name' => (string)($studentRow['middle_name'] ?? ''),
+        'suffix_name' => (string)($studentRow['suffix_name'] ?? ''),
+        'email_address' => $emailAddress,
+        'program_id' => $programId,
+        'uploaded_by' => $uploadedByValue,
+        'source_row_number' => $sourceRowNumber,
+    ];
+}
+
+function synk_student_management_merge_csv_student_record(array $existingRecord, array $incomingRecord): array
+{
+    $pickString = static function (string $incomingValue, string $existingValue): string {
+        return $incomingValue !== '' ? $incomingValue : $existingValue;
+    };
+    $pickInt = static function (int $incomingValue, int $existingValue): int {
+        return $incomingValue > 0 ? $incomingValue : $existingValue;
+    };
+
+    return [
+        'academic_year_label' => $pickString(
+            (string)($incomingRecord['academic_year_label'] ?? ''),
+            (string)($existingRecord['academic_year_label'] ?? '')
+        ),
+        'semester_label' => $pickString(
+            (string)($incomingRecord['semester_label'] ?? ''),
+            (string)($existingRecord['semester_label'] ?? '')
+        ),
+        'source_sheet_name' => $pickString(
+            (string)($incomingRecord['source_sheet_name'] ?? ''),
+            (string)($existingRecord['source_sheet_name'] ?? '')
+        ),
+        'source_file_name' => $pickString(
+            (string)($incomingRecord['source_file_name'] ?? ''),
+            (string)($existingRecord['source_file_name'] ?? '')
+        ),
+        'college_name' => $pickString(
+            (string)($incomingRecord['college_name'] ?? ''),
+            (string)($existingRecord['college_name'] ?? '')
+        ),
+        'campus_name' => $pickString(
+            (string)($incomingRecord['campus_name'] ?? ''),
+            (string)($existingRecord['campus_name'] ?? '')
+        ),
+        'source_program_name' => $pickString(
+            (string)($incomingRecord['source_program_name'] ?? ''),
+            (string)($existingRecord['source_program_name'] ?? '')
+        ),
+        'year_level' => $pickInt(
+            (int)($incomingRecord['year_level'] ?? 0),
+            (int)($existingRecord['year_level'] ?? 0)
+        ),
+        'student_number' => $pickInt(
+            (int)($incomingRecord['student_number'] ?? 0),
+            (int)($existingRecord['student_number'] ?? 0)
+        ),
+        'last_name' => $pickString(
+            (string)($incomingRecord['last_name'] ?? ''),
+            (string)($existingRecord['last_name'] ?? '')
+        ),
+        'first_name' => $pickString(
+            (string)($incomingRecord['first_name'] ?? ''),
+            (string)($existingRecord['first_name'] ?? '')
+        ),
+        'middle_name' => $pickString(
+            (string)($incomingRecord['middle_name'] ?? ''),
+            (string)($existingRecord['middle_name'] ?? '')
+        ),
+        'suffix_name' => $pickString(
+            (string)($incomingRecord['suffix_name'] ?? ''),
+            (string)($existingRecord['suffix_name'] ?? '')
+        ),
+        'email_address' => $pickString(
+            (string)($incomingRecord['email_address'] ?? ''),
+            (string)($existingRecord['email_address'] ?? '')
+        ),
+        'program_id' => $pickInt(
+            (int)($incomingRecord['program_id'] ?? 0),
+            (int)($existingRecord['program_id'] ?? 0)
+        ),
+        'uploaded_by' => $pickInt(
+            (int)($incomingRecord['uploaded_by'] ?? 0),
+            (int)($existingRecord['uploaded_by'] ?? 0)
+        ),
+        'source_row_number' => $pickInt(
+            (int)($incomingRecord['source_row_number'] ?? 0),
+            (int)($existingRecord['source_row_number'] ?? 0)
+        ),
+    ];
+}
+
+function synk_student_management_csv_student_record_has_changes(array $existingRecord, array $targetRecord): bool
+{
+    $stringFields = [
+        'academic_year_label',
+        'semester_label',
+        'source_sheet_name',
+        'source_file_name',
+        'college_name',
+        'campus_name',
+        'source_program_name',
+        'last_name',
+        'first_name',
+        'middle_name',
+        'suffix_name',
+        'email_address',
+    ];
+    foreach ($stringFields as $field) {
+        if ((string)($existingRecord[$field] ?? '') !== (string)($targetRecord[$field] ?? '')) {
+            return true;
+        }
+    }
+
+    $intFields = [
+        'year_level',
+        'student_number',
+        'program_id',
+        'uploaded_by',
+        'source_row_number',
+    ];
+    foreach ($intFields as $field) {
+        if ((int)($existingRecord[$field] ?? 0) !== (int)($targetRecord[$field] ?? 0)) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function synk_student_management_update_csv_student_record(mysqli $conn, int $studentId, array $record): void
+{
+    if ($studentId <= 0) {
+        return;
+    }
+
+    $tableName = synk_student_management_table_name();
+    $stmt = $conn->prepare("
+        UPDATE `{$tableName}`
+        SET
+            academic_year_label = ?,
+            semester_label = ?,
+            source_sheet_name = ?,
+            source_file_name = ?,
+            college_name = ?,
+            campus_name = ?,
+            source_program_name = ?,
+            year_level = ?,
+            student_number = ?,
+            last_name = ?,
+            first_name = ?,
+            middle_name = ?,
+            suffix_name = ?,
+            email_address = ?,
+            program_id = ?,
+            uploaded_by = ?,
+            source_row_number = ?
+        WHERE student_id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        throw new RuntimeException('Unable to prepare the matched student update query.');
+    }
+
+    $stmt->bind_param(
+        'sssssssiisssssiiii',
+        $record['academic_year_label'],
+        $record['semester_label'],
+        $record['source_sheet_name'],
+        $record['source_file_name'],
+        $record['college_name'],
+        $record['campus_name'],
+        $record['source_program_name'],
+        $record['year_level'],
+        $record['student_number'],
+        $record['last_name'],
+        $record['first_name'],
+        $record['middle_name'],
+        $record['suffix_name'],
+        $record['email_address'],
+        $record['program_id'],
+        $record['uploaded_by'],
+        $record['source_row_number'],
+        $studentId
+    );
+
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new RuntimeException('Unable to refresh the matched student record.');
+    }
+
+    $stmt->close();
+}
+
+function synk_student_management_insert_csv_student_record(mysqli $conn, array $record): int
+{
+    $tableName = synk_student_management_table_name();
 
     $stmt = $conn->prepare("
         INSERT INTO `{$tableName}` (
@@ -652,23 +884,23 @@ function synk_student_management_insert_csv_student_record(
 
     $stmt->bind_param(
         'sssssssiisssssiii',
-        $academicYearLabel,
-        $semesterLabel,
-        $sourceSheetName,
-        $sourceFileName,
-        $collegeName,
-        $campusName,
-        $sourceProgramName,
-        $yearLevel,
-        $studentNumber,
-        $studentRow['last_name'],
-        $studentRow['first_name'],
-        $studentRow['middle_name'],
-        $studentRow['suffix_name'],
-        $emailAddress,
-        $programId,
-        $uploadedByValue,
-        $sourceRowNumber
+        $record['academic_year_label'],
+        $record['semester_label'],
+        $record['source_sheet_name'],
+        $record['source_file_name'],
+        $record['college_name'],
+        $record['campus_name'],
+        $record['source_program_name'],
+        $record['year_level'],
+        $record['student_number'],
+        $record['last_name'],
+        $record['first_name'],
+        $record['middle_name'],
+        $record['suffix_name'],
+        $record['email_address'],
+        $record['program_id'],
+        $record['uploaded_by'],
+        $record['source_row_number']
     );
 
     if (!$stmt->execute()) {
@@ -782,7 +1014,7 @@ function synk_student_management_import_exam_permits_csv(
 
     if (!$insertStmt) {
         $deleteStmt->close();
-        throw new RuntimeException('Unable to prepare the exam permit insert query.');
+        throw new RuntimeException('Unable to prepare the class roster insert query.');
     }
 
     try {
@@ -799,37 +1031,37 @@ function synk_student_management_import_exam_permits_csv(
             $matchedStudent = $studentKey !== '' ? ($studentCatalog[$studentKey] ?? null) : null;
             $studentId = 0;
             $studentNumber = max(0, (int)($studentRow['student_number'] ?? 0));
+            $csvStudentRecord = synk_student_management_build_csv_student_record(
+                $studentRow,
+                $program,
+                $parsed,
+                $uploadedBy
+            );
 
             if (is_array($matchedStudent) && (int)($matchedStudent['student_id'] ?? 0) > 0) {
                 $studentId = (int)$matchedStudent['student_id'];
                 $matchedStudents++;
 
-                if ($studentNumber > 0 && (int)($matchedStudent['student_number'] ?? 0) !== $studentNumber) {
-                    synk_student_management_update_student_number_only($conn, $studentId, $studentNumber);
-                    $updatedStudents++;
-                    $studentCatalog[$studentKey]['student_number'] = $studentNumber;
-                }
-            } else {
-                $studentId = synk_student_management_insert_csv_student_record(
-                    $conn,
-                    $studentRow,
-                    $program,
-                    $parsed,
-                    $uploadedBy
+                $mergedStudentRecord = synk_student_management_merge_csv_student_record(
+                    $matchedStudent,
+                    $csvStudentRecord
                 );
+                if (synk_student_management_csv_student_record_has_changes($matchedStudent, $mergedStudentRecord)) {
+                    synk_student_management_update_csv_student_record($conn, $studentId, $mergedStudentRecord);
+                    $updatedStudents++;
+                }
+                $studentCatalog[$studentKey] = array_merge(
+                    $matchedStudent,
+                    $mergedStudentRecord,
+                    ['student_id' => $studentId]
+                );
+            } else {
+                $studentId = synk_student_management_insert_csv_student_record($conn, $csvStudentRecord);
                 $insertedStudents++;
-                $studentCatalog[$studentKey] = [
-                    'student_id' => $studentId,
-                    'student_number' => $studentNumber,
-                    'email_address' => synk_student_management_build_email(
-                        (string)($studentRow['first_name'] ?? ''),
-                        (string)($studentRow['last_name'] ?? '')
-                    ),
-                    'last_name' => (string)($studentRow['last_name'] ?? ''),
-                    'first_name' => (string)($studentRow['first_name'] ?? ''),
-                    'middle_name' => (string)($studentRow['middle_name'] ?? ''),
-                    'suffix_name' => (string)($studentRow['suffix_name'] ?? ''),
-                ];
+                $studentCatalog[$studentKey] = array_merge(
+                    $csvStudentRecord,
+                    ['student_id' => $studentId]
+                );
             }
 
             $uploadedByValue = $uploadedBy > 0 ? $uploadedBy : 0;
@@ -879,7 +1111,7 @@ function synk_student_management_import_exam_permits_csv(
             );
 
             if (!$insertStmt->execute()) {
-                throw new RuntimeException('Unable to insert one of the exam permit student rows.');
+                throw new RuntimeException('Unable to insert one of the class roster student rows.');
             }
         }
 

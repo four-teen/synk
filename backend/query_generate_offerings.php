@@ -15,6 +15,7 @@ session_start();
 header('Content-Type: application/json');
 include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 function offering_pair_key(int $psId, int $sectionId): string
 {
@@ -65,7 +66,7 @@ function inspect_existing_offerings(mysqli $conn, int $prospectusId, int $ayId, 
         'duplicate_pairs' => 0
     ];
 
-    $scheduledOfferingJoin = synk_scheduled_offering_join_sql('sched', 'o');
+    $scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
     $stmt = $conn->prepare("
         SELECT
             o.offering_id,
@@ -380,7 +381,7 @@ try {
     $subjectsByYear = $context['subjectsByYear'];
     $sectionsByYear = $context['sectionsByYear'];
     $targetMap = build_target_map($subjectsByYear, $sectionsByYear, $programId, $prospectusId, $ayId, $semester);
-    $scheduledOfferingJoin = synk_scheduled_offering_join_sql('sched', 'o');
+    $scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
 
     $existingStmt = $conn->prepare("
         SELECT

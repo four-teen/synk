@@ -5,6 +5,7 @@ include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/offering_scope_helper.php';
 require_once '../backend/schedule_block_helper.php';
+require_once '../backend/schedule_merge_helper.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'scheduler') {
     header("Location: ../index.php");
@@ -168,6 +169,57 @@ function buildSubjectDescriptionLabel(array $row, string $description): string {
         formatReportNumber($hoursUnits['lab_hours']) . ' lab)';
 
     return $description !== '' ? $description . ', ' . $suffix : $suffix;
+}
+
+function loadReportScheduleRowsByOffering(mysqli $conn, array $offeringIds): array {
+    $rowsByOffering = [];
+    $safeIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($safeIds)) {
+        return $rowsByOffering;
+    }
+
+    $sql = "
+        SELECT
+            cs.offering_id,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            COALESCE(
+                NULLIF(TRIM(r.room_name), ''),
+                NULLIF(TRIM(r.room_code), ''),
+                ''
+            ) AS room_name
+        FROM tbl_class_schedule cs
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        WHERE cs.offering_id IN (" . implode(',', array_map('intval', $safeIds)) . ")
+        ORDER BY cs.offering_id ASC, cs.time_start ASC, cs.schedule_id ASC
+    ";
+
+    $result = $conn->query($sql);
+    if (!($result instanceof mysqli_result)) {
+        return $rowsByOffering;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        if (!isset($rowsByOffering[$offeringId])) {
+            $rowsByOffering[$offeringId] = [];
+        }
+
+        $rowsByOffering[$offeringId][] = [
+            'days_json' => (string)($row['days_json'] ?? '[]'),
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? ''),
+            'room_name' => (string)($row['room_name'] ?? '')
+        ];
+    }
+
+    return $rowsByOffering;
 }
 
 function excelCellXml($value, $styleId = 'Body', $mergeAcross = 0) {
@@ -673,16 +725,11 @@ if ($hasFilters && $collegeId > 0) {
             ps.lec_units,
             ps.lab_units,
             ps.total_units,
-            cs.days_json,
-            cs.time_start,
-            cs.time_end,
-            r.room_name
+            o.offering_id
         FROM tbl_prospectus_offering o
         {$liveOfferingJoins}
         INNER JOIN tbl_program p ON p.program_id = o.program_id
         INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-        LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
-        LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
         WHERE o.prospectus_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
@@ -698,24 +745,69 @@ if ($hasFilters && $collegeId > 0) {
         $stmt->bind_param("iiii", $prospectusInt, $ayInt, $semesterInt, $collegeId);
         $stmt->execute();
         $res = $stmt->get_result();
+        $baseRows = [];
 
         while ($res && ($row = $res->fetch_assoc())) {
-            $code = (string)($row['sub_code'] ?? '');
-            if ($code === '') {
-                continue;
-            }
-
-            if (!isset($courses[$code])) {
-                $courses[$code] = [
-                    'desc' => (string)($row['sub_description'] ?? ''),
-                    'rows' => []
-                ];
-            }
-
-            $courses[$code]['rows'][] = $row;
+            $baseRows[] = $row;
         }
 
         $stmt->close();
+
+        if (!empty($baseRows)) {
+            $offeringIds = array_map(static function (array $row): int {
+                return (int)($row['offering_id'] ?? 0);
+            }, $baseRows);
+            $mergeContext = synk_schedule_merge_load_display_context($conn, $offeringIds);
+            $effectiveOwnerIds = [];
+
+            foreach ($offeringIds as $offeringId) {
+                $mergeInfo = $mergeContext[$offeringId] ?? null;
+                $effectiveOwnerIds[] = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
+            }
+
+            $effectiveOwnerIds = synk_schedule_merge_normalize_offering_ids($effectiveOwnerIds);
+            $scheduleRowsByOwner = loadReportScheduleRowsByOffering($conn, $effectiveOwnerIds);
+
+            foreach ($baseRows as $row) {
+                $offeringId = (int)($row['offering_id'] ?? 0);
+                $mergeInfo = $mergeContext[$offeringId] ?? null;
+                $ownerOfferingId = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
+                $groupSize = (int)($mergeInfo['group_size'] ?? 1);
+                $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+                $code = (string)($row['sub_code'] ?? '');
+
+                if ($code === '') {
+                    continue;
+                }
+
+                if ($groupSize > 1 && $groupLabel !== '') {
+                    $row['full_section'] = $groupLabel;
+                    $row['major'] = '';
+                }
+
+                if (!isset($courses[$code])) {
+                    $courses[$code] = [
+                        'desc' => (string)($row['sub_description'] ?? ''),
+                        'rows' => []
+                    ];
+                }
+
+                $scheduleRows = $scheduleRowsByOwner[$ownerOfferingId] ?? [];
+                if (empty($scheduleRows)) {
+                    $courses[$code]['rows'][] = array_merge($row, [
+                        'days_json' => '[]',
+                        'time_start' => '',
+                        'time_end' => '',
+                        'room_name' => ''
+                    ]);
+                    continue;
+                }
+
+                foreach ($scheduleRows as $scheduleRow) {
+                    $courses[$code]['rows'][] = array_merge($row, $scheduleRow);
+                }
+            }
+        }
     }
 }
 

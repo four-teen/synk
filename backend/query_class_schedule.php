@@ -5,6 +5,7 @@ include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
 
 header('Content-Type: application/json');
 
@@ -137,7 +138,13 @@ function mark_offering_scheduled($conn, $offering_id) {
 ===================================================== */
 function load_context_any($conn, $offering_id, $college_id) {
     $sql = "
-        SELECT o.section_id, o.ay_id, o.semester, sec.section_name
+        SELECT
+            o.section_id,
+            o.ay_id,
+            o.semester,
+            o.status AS offering_status,
+            sec.section_name,
+            sec.full_section
         FROM tbl_prospectus_offering o
         LEFT JOIN tbl_sections sec ON sec.section_id = o.section_id
         JOIN tbl_program p ON p.program_id = o.program_id
@@ -155,10 +162,16 @@ function load_context_live($conn, $offering_id, $college_id) {
     $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
+            o.offering_id,
+            o.program_id,
             o.section_id,
             o.ay_id,
             o.semester,
+            o.status AS offering_status,
             sec.section_name,
+            sec.full_section,
+            ps.sub_id,
+            o.ps_id,
             sm.sub_code,
             sm.sub_description,
             ps.lec_units,
@@ -1133,6 +1146,111 @@ function load_schedule_row_counts_for_offerings($conn, array $offering_ids) {
     return $counts;
 }
 
+function load_merge_context_rows_for_offerings($conn, array $offeringIds, $college_id) {
+    $normalizedIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($normalizedIds)) {
+        return [];
+    }
+
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $idList = implode(',', array_map('intval', $normalizedIds));
+    $sql = "
+        SELECT
+            o.offering_id,
+            o.program_id,
+            o.ps_id,
+            o.section_id,
+            o.ay_id,
+            o.semester,
+            o.status AS offering_status,
+            ps.sub_id,
+            sm.sub_code,
+            sm.sub_description,
+            sec.section_name,
+            sec.full_section,
+            COALESCE(NULLIF(TRIM(p.program_code), ''), '') AS program_code,
+            ps.lec_units,
+            ps.lab_units,
+            ps.total_units
+        FROM tbl_prospectus_offering o
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        WHERE o.offering_id IN ({$idList})
+          AND p.college_id = ?
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("i", $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        $rows[$offeringId] = [
+            'offering_id' => $offeringId,
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'ps_id' => (int)($row['ps_id'] ?? 0),
+            'section_id' => (int)($row['section_id'] ?? 0),
+            'ay_id' => (int)($row['ay_id'] ?? 0),
+            'semester' => (int)($row['semester'] ?? 0),
+            'offering_status' => strtolower(trim((string)($row['offering_status'] ?? 'pending'))),
+            'sub_id' => (int)($row['sub_id'] ?? 0),
+            'sub_code' => (string)($row['sub_code'] ?? ''),
+            'sub_description' => (string)($row['sub_description'] ?? ''),
+            'section_name' => (string)($row['section_name'] ?? ''),
+            'full_section' => (string)($row['full_section'] ?? ''),
+            'program_code' => (string)($row['program_code'] ?? ''),
+            'lec_units' => (float)($row['lec_units'] ?? 0),
+            'lab_units' => (float)($row['lab_units'] ?? 0),
+            'total_units' => (float)($row['total_units'] ?? 0)
+        ];
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function merge_required_minutes_signature(array $ctx): string {
+    $required = synk_required_minutes_by_type(
+        (float)($ctx['lec_units'] ?? 0),
+        (float)($ctx['lab_units'] ?? 0),
+        (float)($ctx['total_units'] ?? 0)
+    );
+
+    return (int)($required['LEC'] ?? 0) . '|' . (int)($required['LAB'] ?? 0);
+}
+
+function ensure_offering_not_merged_member($conn, $offering_id, $college_id) {
+    $memberToOwner = synk_schedule_merge_load_member_to_owner_map($conn, [(int)$offering_id]);
+    $ownerId = (int)($memberToOwner[(int)$offering_id] ?? 0);
+    if ($ownerId <= 0) {
+        return;
+    }
+
+    $ownerCtx = load_context_any($conn, $ownerId, $college_id);
+    $ownerLabel = trim((string)($ownerCtx['full_section'] ?? ''));
+    if ($ownerLabel === '') {
+        $ownerLabel = trim((string)($ownerCtx['section_name'] ?? 'this schedule owner'));
+    }
+
+    respond(
+        "error",
+        "This offering inherits schedule from <b>" . htmlspecialchars($ownerLabel, ENT_QUOTES, 'UTF-8') . "</b>. Unmerge it first before editing or clearing its schedule."
+    );
+}
+
 function load_other_faculty_workload_rows($conn, $faculty_id, $ay_id, $semester, $offering_id) {
     $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
     $sql = "
@@ -1422,6 +1540,8 @@ if (isset($_POST['load_schedule_blocks'])) {
         respond("error", "Missing offering reference.");
     }
 
+    ensure_offering_not_merged_member($conn, $offering_id, $college_id);
+
     $ctx = load_context_live($conn, $offering_id, $college_id);
     if (!$ctx) {
         respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
@@ -1482,6 +1602,8 @@ if (isset($_POST['save_schedule_blocks'])) {
     if ($offering_id <= 0 || !is_array($blocksRaw)) {
         respond("error", "Invalid schedule payload.");
     }
+
+    ensure_offering_not_merged_member($conn, $offering_id, $college_id);
 
     $ctx = load_context_live($conn, $offering_id, $college_id);
     if (!$ctx) {
@@ -1699,6 +1821,8 @@ if (isset($_POST['load_dual_schedule'])) {
         respond("error", "Missing offering reference.");
     }
 
+    ensure_offering_not_merged_member($conn, $offering_id, $college_id);
+
     $ctx = load_context_live($conn, $offering_id, $college_id);
     if (!$ctx) {
         respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
@@ -1757,43 +1881,79 @@ if (isset($_POST['clear_all_college_schedules'])) {
 
     $workloadMap = load_workload_faculty_map_for_offerings($conn, $offeringIds, $ay_id, $semester);
     $scheduleCounts = load_schedule_row_counts_for_offerings($conn, $offeringIds);
-
-    $clearableIds = [];
-    $skipped = [];
+    $mergeContext = synk_schedule_merge_load_display_context($conn, $offeringIds);
+    $offeringsById = [];
+    $groups = [];
 
     foreach ($offerings as $offering) {
         $offeringId = (int)$offering['offering_id'];
-        if ($offering['offering_status'] === 'locked') {
-            $skipped[] = [
-                "offering_id" => $offeringId,
-                "sub_code" => (string)$offering['sub_code'],
-                "section_name" => (string)$offering['section_name'],
-                "reason" => "This offering is locked and cannot be cleared in bulk."
-            ];
-            continue;
+        $offeringsById[$offeringId] = $offering;
+        $ownerId = (int)($mergeContext[$offeringId]['owner_offering_id'] ?? $offeringId);
+        if (!isset($groups[$ownerId])) {
+            $groups[$ownerId] = [];
         }
-
-        $facultyNames = $workloadMap[$offeringId] ?? [];
-        if (!empty($facultyNames)) {
-            $skipped[] = [
-                "offering_id" => $offeringId,
-                "sub_code" => (string)$offering['sub_code'],
-                "section_name" => (string)$offering['section_name'],
-                "reason" => "Assigned in Faculty Workload to " . implode(', ', $facultyNames) . "."
-            ];
-            continue;
-        }
-
-        $clearableIds[] = $offeringId;
+        $groups[$ownerId][] = $offeringId;
     }
+
+    $clearableIds = [];
+    $skipped = [];
 
     $deletedRows = 0;
     $resetOfferings = 0;
     $clearedOfferingCount = 0;
 
-    foreach ($clearableIds as $offeringId) {
-        if (($scheduleCounts[$offeringId] ?? 0) > 0) {
-            $clearedOfferingCount++;
+    foreach ($groups as $ownerId => $groupOfferingIds) {
+        $groupOfferingIds = synk_schedule_merge_normalize_offering_ids($groupOfferingIds);
+        $skipReason = "";
+
+        foreach ($groupOfferingIds as $offeringId) {
+            $offering = $offeringsById[$offeringId] ?? null;
+            if (!$offering) {
+                continue;
+            }
+
+            if (($offering['offering_status'] ?? '') === 'locked') {
+                $skipReason = "This offering belongs to a merged group that includes a locked offering.";
+                break;
+            }
+        }
+
+        if ($skipReason === "") {
+            $groupFacultyNames = [];
+            foreach ($groupOfferingIds as $offeringId) {
+                foreach (($workloadMap[$offeringId] ?? []) as $facultyName) {
+                    $groupFacultyNames[$facultyName] = $facultyName;
+                }
+            }
+
+            if (!empty($groupFacultyNames)) {
+                $skipReason = "Assigned in Faculty Workload to " . implode(', ', array_values($groupFacultyNames)) . ".";
+            }
+        }
+
+        if ($skipReason !== "") {
+            foreach ($groupOfferingIds as $offeringId) {
+                $offering = $offeringsById[$offeringId] ?? null;
+                if (!$offering) {
+                    continue;
+                }
+
+                $skipped[] = [
+                    "offering_id" => $offeringId,
+                    "sub_code" => (string)$offering['sub_code'],
+                    "section_name" => (string)$offering['section_name'],
+                    "reason" => $skipReason
+                ];
+            }
+            continue;
+        }
+
+        foreach ($groupOfferingIds as $offeringId) {
+            $clearableIds[] = $offeringId;
+            $mergeInfo = $mergeContext[$offeringId] ?? null;
+            if (($scheduleCounts[$offeringId] ?? 0) > 0 || (int)($mergeInfo['group_size'] ?? 1) > 1) {
+                $clearedOfferingCount++;
+            }
         }
     }
 
@@ -1810,6 +1970,14 @@ if (isset($_POST['clear_all_college_schedules'])) {
                 throw new RuntimeException("Failed to clear college-term schedule rows.");
             }
             $deletedRows = max(0, (int)$conn->affected_rows);
+
+            if (synk_schedule_merge_table_exists($conn) && !$conn->query("
+                DELETE FROM `" . synk_schedule_merge_table_name() . "`
+                WHERE owner_offering_id IN ({$idList})
+                   OR member_offering_id IN ({$idList})
+            ")) {
+                throw new RuntimeException("Failed to clear college-term merge rows.");
+            }
 
             if (!$conn->query("
                 UPDATE tbl_prospectus_offering
@@ -1856,6 +2024,29 @@ if (isset($_POST['clear_schedule'])) {
     $ctx = load_context_any($conn, $offering_id, $college_id);
     if (!$ctx) {
         respond("error", "Offering not found.");
+    }
+
+    $memberToOwner = synk_schedule_merge_load_member_to_owner_map($conn, [$offering_id]);
+    if (isset($memberToOwner[$offering_id])) {
+        $ownerCtx = load_context_any($conn, (int)$memberToOwner[$offering_id], $college_id);
+        $ownerLabel = trim((string)($ownerCtx['full_section'] ?? ''));
+        if ($ownerLabel === '') {
+            $ownerLabel = trim((string)($ownerCtx['section_name'] ?? 'this schedule owner'));
+        }
+
+        respond(
+            "error",
+            "This offering inherits schedule from <b>" . htmlspecialchars($ownerLabel, ENT_QUOTES, 'UTF-8') . "</b>. Unmerge it first before clearing."
+        );
+    }
+
+    $ownerToMembers = synk_schedule_merge_load_owner_to_members_map($conn, [$offering_id]);
+    $memberIds = $ownerToMembers[$offering_id] ?? [];
+    if (!empty($memberIds)) {
+        respond(
+            "error",
+            "This offering is the schedule owner of one or more merged offerings. Manage the merge group first before clearing the owner schedule."
+        );
     }
 
     $assignedFaculties = load_workload_faculties_for_offering(
@@ -1919,6 +2110,386 @@ if (isset($_POST['clear_schedule'])) {
 }
 
 /* =====================================================
+   LOAD MERGE CANDIDATES FOR A SCHEDULE OWNER
+===================================================== */
+if (isset($_POST['load_schedule_merge_candidates'])) {
+    $requestedOfferingId = (int)($_POST['offering_id'] ?? 0);
+    if ($requestedOfferingId <= 0) {
+        respond("error", "Missing offering reference.");
+    }
+
+    $memberToOwner = synk_schedule_merge_load_member_to_owner_map($conn, [$requestedOfferingId]);
+    $ownerOfferingId = synk_schedule_merge_resolve_owner_id($requestedOfferingId, $memberToOwner);
+
+    $ownerRows = load_merge_context_rows_for_offerings($conn, [$ownerOfferingId], $college_id);
+    $owner = $ownerRows[$ownerOfferingId] ?? null;
+    if (!$owner) {
+        respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
+    }
+
+    $ownerMemberMap = synk_schedule_merge_load_owner_to_members_map($conn, [$ownerOfferingId]);
+    $currentMemberIds = $ownerMemberMap[$ownerOfferingId] ?? [];
+
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            o.offering_id
+        FROM tbl_prospectus_offering o
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        WHERE o.ay_id = ?
+          AND o.semester = ?
+          AND p.college_id = ?
+          AND ps.sub_id = ?
+        ORDER BY p.program_code ASC, sec.full_section ASC, o.offering_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        respond("error", "Unable to load merge candidates.");
+    }
+
+    $subjectId = (int)($owner['sub_id'] ?? 0);
+    $stmt->bind_param("iiii", $owner['ay_id'], $owner['semester'], $college_id, $subjectId);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $candidateIds = [];
+    while ($row = $res->fetch_assoc()) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId > 0) {
+            $candidateIds[] = $offeringId;
+        }
+    }
+    $stmt->close();
+
+    $candidateRows = load_merge_context_rows_for_offerings($conn, $candidateIds, $college_id);
+    $mergeContext = synk_schedule_merge_load_display_context($conn, $candidateIds);
+    $scheduleCounts = load_schedule_row_counts_for_offerings($conn, $candidateIds);
+    $workloadMap = load_workload_faculty_map_for_offerings($conn, $candidateIds, (int)$owner['ay_id'], (int)$owner['semester']);
+    $ownerMaps = synk_schedule_merge_load_owner_to_members_map($conn, $candidateIds);
+    $ownerSignature = merge_required_minutes_signature($owner);
+    $ownerHasSchedule = ((int)($scheduleCounts[$ownerOfferingId] ?? 0)) > 0;
+    $ownerWorkloadNames = $workloadMap[$ownerOfferingId] ?? [];
+    $ownerHasWorkload = !empty($ownerWorkloadNames);
+    $groupHasLockedMembers = false;
+
+    foreach ($currentMemberIds as $memberId) {
+        $memberRow = $candidateRows[$memberId] ?? null;
+        if ($memberRow && ($memberRow['offering_status'] ?? '') === 'locked') {
+            $groupHasLockedMembers = true;
+            break;
+        }
+    }
+
+    $candidates = [];
+    foreach ($candidateIds as $candidateId) {
+        if ($candidateId === $ownerOfferingId) {
+            continue;
+        }
+
+        $candidate = $candidateRows[$candidateId] ?? null;
+        if (!$candidate) {
+            continue;
+        }
+
+        $candidateMergeInfo = $mergeContext[$candidateId] ?? null;
+        $candidateOwnerId = (int)($candidateMergeInfo['owner_offering_id'] ?? $candidateId);
+        $isCurrentMember = in_array($candidateId, $currentMemberIds, true);
+        $isMergedElsewhere = $candidateOwnerId > 0 && $candidateOwnerId !== $candidateId && $candidateOwnerId !== $ownerOfferingId;
+        $ownsAnotherGroup = !empty($ownerMaps[$candidateId]);
+        $hasWorkload = !empty($workloadMap[$candidateId]);
+        $requiredSignature = merge_required_minutes_signature($candidate);
+        $canSelect = true;
+        $reason = "";
+
+        if ($candidate['offering_status'] === 'locked' && !$isCurrentMember) {
+            $canSelect = false;
+            $reason = "Locked offerings cannot be merged.";
+        } elseif ($requiredSignature !== $ownerSignature) {
+            $canSelect = false;
+            $reason = "Required lecture/laboratory hours do not match the owner schedule.";
+        } elseif ($isMergedElsewhere) {
+            $canSelect = false;
+            $otherOwner = $candidateRows[$candidateOwnerId] ?? load_context_any($conn, $candidateOwnerId, $college_id);
+            $otherOwnerLabel = trim((string)($otherOwner['full_section'] ?? ''));
+            if ($otherOwnerLabel === '') {
+                $otherOwnerLabel = trim((string)($otherOwner['section_name'] ?? 'another owner'));
+            }
+            $reason = "Already merged under {$otherOwnerLabel}.";
+        } elseif ($ownsAnotherGroup && !$isCurrentMember) {
+            $canSelect = false;
+            $reason = "This offering already owns another merge group.";
+        } elseif ($hasWorkload && !$isCurrentMember) {
+            $canSelect = false;
+            $reason = "Assigned in Faculty Workload and cannot be merged into another owner.";
+        }
+
+        $statusLabel = ((int)($scheduleCounts[$candidateId] ?? 0) > 0) ? "Scheduled" : "Not Scheduled";
+        if ($isCurrentMember) {
+            $statusLabel = "Merged Here";
+        } elseif ($isMergedElsewhere) {
+            $statusLabel = "Merged Elsewhere";
+        } elseif ($ownsAnotherGroup) {
+            $statusLabel = "Merge Owner";
+        }
+
+        $candidates[] = [
+            'offering_id' => $candidateId,
+            'section_name' => (string)$candidate['section_name'],
+            'full_section' => (string)$candidate['full_section'],
+            'program_code' => (string)$candidate['program_code'],
+            'status_label' => $statusLabel,
+            'has_schedule' => ((int)($scheduleCounts[$candidateId] ?? 0) > 0),
+            'is_selected' => $isCurrentMember,
+            'can_select' => $canSelect,
+            'reason' => $reason
+        ];
+    }
+
+    $ownerDisplayContext = synk_schedule_merge_load_display_context($conn, array_merge([$ownerOfferingId], $currentMemberIds));
+    $ownerDisplay = $ownerDisplayContext[$ownerOfferingId] ?? [
+        'group_course_label' => (string)($owner['full_section'] ?? ''),
+        'group_size' => 1
+    ];
+
+    respond("ok", "Merge candidates loaded.", [
+        'requested_offering_id' => $requestedOfferingId,
+        'owner_offering_id' => $ownerOfferingId,
+        'owner_has_schedule' => $ownerHasSchedule,
+        'owner_has_workload' => $ownerHasWorkload,
+        'owner_workload_names' => array_values($ownerWorkloadNames),
+        'group_has_locked_members' => $groupHasLockedMembers,
+        'owner' => [
+            'offering_id' => $ownerOfferingId,
+            'sub_code' => (string)$owner['sub_code'],
+            'sub_description' => (string)$owner['sub_description'],
+            'section_name' => (string)$owner['section_name'],
+            'full_section' => (string)$owner['full_section'],
+            'group_course_label' => (string)($ownerDisplay['group_course_label'] ?? ($owner['full_section'] ?? '')),
+            'group_size' => (int)($ownerDisplay['group_size'] ?? 1)
+        ],
+        'selected_member_ids' => $currentMemberIds,
+        'candidates' => $candidates
+    ]);
+}
+
+/* =====================================================
+   SAVE / UPDATE MERGE MEMBERS FOR A SCHEDULE OWNER
+===================================================== */
+if (isset($_POST['save_schedule_merge'])) {
+    $ownerOfferingId = (int)($_POST['owner_offering_id'] ?? 0);
+    $memberIdsRaw = $_POST['member_offering_ids_json'] ?? '[]';
+    $memberIds = json_decode((string)$memberIdsRaw, true);
+
+    if ($ownerOfferingId <= 0 || !is_array($memberIds)) {
+        respond("error", "Invalid merge payload.");
+    }
+
+    $ownerRows = load_merge_context_rows_for_offerings($conn, [$ownerOfferingId], $college_id);
+    $owner = $ownerRows[$ownerOfferingId] ?? null;
+    if (!$owner) {
+        respond("error", "Schedule owner is out of sync. Re-run Generate Offerings first.");
+    }
+
+    if ($owner['offering_status'] === 'locked') {
+        respond("error", "Locked offerings cannot manage merge groups.");
+    }
+
+    ensure_offering_not_merged_member($conn, $ownerOfferingId, $college_id);
+
+    $ownerScheduleCounts = load_schedule_row_counts_for_offerings($conn, [$ownerOfferingId]);
+    if ((int)($ownerScheduleCounts[$ownerOfferingId] ?? 0) <= 0) {
+        respond("error", "Define the owner schedule first before merging other offerings into it.");
+    }
+
+    $ownerWorkloadMap = load_workload_faculty_map_for_offerings(
+        $conn,
+        [$ownerOfferingId],
+        (int)$owner['ay_id'],
+        (int)$owner['semester']
+    );
+    if (!empty($ownerWorkloadMap[$ownerOfferingId])) {
+        respond(
+            "error",
+            "This schedule owner is already assigned in Faculty Workload to <b>" .
+            implode('</b>, <b>', array_map(static function ($name) {
+                return htmlspecialchars((string)$name, ENT_QUOTES, 'UTF-8');
+            }, $ownerWorkloadMap[$ownerOfferingId])) .
+            "</b>. Remove the workload assignment first before changing the merge group."
+        );
+    }
+
+    $requestedMemberIds = [];
+    foreach ($memberIds as $memberId) {
+        $value = (int)$memberId;
+        if ($value > 0 && $value !== $ownerOfferingId) {
+            $requestedMemberIds[$value] = $value;
+        }
+    }
+    $requestedMemberIds = array_values($requestedMemberIds);
+
+    $existingOwnerMap = synk_schedule_merge_load_owner_to_members_map($conn, [$ownerOfferingId]);
+    $existingMemberIds = $existingOwnerMap[$ownerOfferingId] ?? [];
+    $toAdd = array_values(array_diff($requestedMemberIds, $existingMemberIds));
+    $toRemove = array_values(array_diff($existingMemberIds, $requestedMemberIds));
+
+    $allTouchedIds = synk_schedule_merge_normalize_offering_ids(array_merge($requestedMemberIds, $existingMemberIds));
+    $memberRows = load_merge_context_rows_for_offerings($conn, $allTouchedIds, $college_id);
+    if (count($memberRows) !== count($allTouchedIds)) {
+        respond("error", "One or more merge members are out of sync. Re-run Generate Offerings first.");
+    }
+
+    $requiredSignature = merge_required_minutes_signature($owner);
+    $memberToOwner = synk_schedule_merge_load_member_to_owner_map($conn, $allTouchedIds);
+    $ownerToMembers = synk_schedule_merge_load_owner_to_members_map($conn, $allTouchedIds);
+    $workloadMap = load_workload_faculty_map_for_offerings($conn, $allTouchedIds, (int)$owner['ay_id'], (int)$owner['semester']);
+
+    if (!empty($toAdd) || !empty($toRemove)) {
+        foreach ($existingMemberIds as $existingMemberId) {
+            $existingMember = $memberRows[$existingMemberId] ?? null;
+            if ($existingMember && ($existingMember['offering_status'] ?? '') === 'locked') {
+                respond(
+                    "error",
+                    htmlspecialchars((string)$existingMember['full_section'], ENT_QUOTES, 'UTF-8') .
+                    " is locked. Remove the lock first before changing this merge group."
+                );
+            }
+        }
+    }
+
+    foreach ($toAdd as $memberId) {
+        $member = $memberRows[$memberId];
+
+        if ($member['offering_status'] === 'locked') {
+            respond("error", htmlspecialchars((string)$member['full_section'], ENT_QUOTES, 'UTF-8') . " is locked and cannot be merged.");
+        }
+
+        if ((int)$member['ay_id'] !== (int)$owner['ay_id'] || (int)$member['semester'] !== (int)$owner['semester']) {
+            respond("error", "Merged offerings must belong to the same Academic Year and Semester.");
+        }
+
+        if ((int)$member['sub_id'] !== (int)$owner['sub_id']) {
+            respond("error", "Only offerings with the same subject can be merged.");
+        }
+
+        if (merge_required_minutes_signature($member) !== $requiredSignature) {
+            respond("error", "Required lecture/laboratory hours do not match the owner schedule.");
+        }
+
+        $existingOwnerId = (int)($memberToOwner[$memberId] ?? 0);
+        if ($existingOwnerId > 0 && $existingOwnerId !== $ownerOfferingId) {
+            respond("error", htmlspecialchars((string)$member['full_section'], ENT_QUOTES, 'UTF-8') . " is already merged into another owner.");
+        }
+
+        if (!empty($ownerToMembers[$memberId])) {
+            respond("error", htmlspecialchars((string)$member['full_section'], ENT_QUOTES, 'UTF-8') . " already owns another merge group.");
+        }
+
+        if (!empty($workloadMap[$memberId])) {
+            respond("error", htmlspecialchars((string)$member['full_section'], ENT_QUOTES, 'UTF-8') . " is already assigned in Faculty Workload and cannot be merged into another owner.");
+        }
+    }
+
+    foreach ($toRemove as $memberId) {
+        $member = $memberRows[$memberId] ?? null;
+        if ($member && ($member['offering_status'] ?? '') === 'locked') {
+            respond("error", htmlspecialchars((string)$member['full_section'], ENT_QUOTES, 'UTF-8') . " is locked and cannot be removed from the merge group.");
+        }
+    }
+
+    $deleteScheduleIds = synk_schedule_merge_normalize_offering_ids($toAdd);
+
+    $conn->begin_transaction();
+    try {
+        if (!empty($deleteScheduleIds)) {
+            $deleteIdList = implode(',', array_map('intval', $deleteScheduleIds));
+            if (!$conn->query("
+                DELETE FROM tbl_class_schedule
+                WHERE offering_id IN ({$deleteIdList})
+            ")) {
+                throw new RuntimeException("Failed to clear merged member schedules.");
+            }
+        }
+
+        if (!empty($toRemove)) {
+            $removeIdList = implode(',', array_map('intval', $toRemove));
+            if (!$conn->query("
+                DELETE FROM `" . synk_schedule_merge_table_name() . "`
+                WHERE owner_offering_id = {$ownerOfferingId}
+                  AND member_offering_id IN ({$removeIdList})
+            ")) {
+                throw new RuntimeException("Failed to remove merge members.");
+            }
+        }
+
+        if (!empty($toAdd)) {
+            $insertStmt = $conn->prepare("
+                INSERT INTO `" . synk_schedule_merge_table_name() . "`
+                    (owner_offering_id, member_offering_id, created_by)
+                VALUES (?, ?, ?)
+            ");
+            if (!$insertStmt) {
+                throw new RuntimeException("Failed to save merge rows.");
+            }
+
+            $createdBy = (int)($_SESSION['user_id'] ?? 0);
+            foreach ($toAdd as $memberId) {
+                $insertStmt->bind_param("iii", $ownerOfferingId, $memberId, $createdBy);
+                if (!$insertStmt->execute()) {
+                    $insertStmt->close();
+                    throw new RuntimeException("Failed to save merge rows.");
+                }
+            }
+            $insertStmt->close();
+        }
+
+        if (!empty($requestedMemberIds)) {
+            $requestIdList = implode(',', array_map('intval', $requestedMemberIds));
+            if (!$conn->query("
+                UPDATE tbl_prospectus_offering
+                SET status = 'active'
+                WHERE offering_id IN ({$requestIdList})
+                  AND (status IS NULL OR status != 'locked')
+            ")) {
+                throw new RuntimeException("Failed to update merged member status.");
+            }
+        }
+
+        if (!empty($toRemove)) {
+            $removeIdList = implode(',', array_map('intval', $toRemove));
+            if (!$conn->query("
+                UPDATE tbl_prospectus_offering
+                SET status = 'pending'
+                WHERE offering_id IN ({$removeIdList})
+                  AND (status IS NULL OR status != 'locked')
+            ")) {
+                throw new RuntimeException("Failed to reset removed merge members.");
+            }
+        }
+
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        respond("error", "Failed to save the merge group.");
+    }
+
+    $displayContext = synk_schedule_merge_load_display_context($conn, array_merge([$ownerOfferingId], $requestedMemberIds));
+    $ownerDisplay = $displayContext[$ownerOfferingId] ?? [
+        'group_course_label' => (string)($owner['full_section'] ?? ''),
+        'group_size' => 1
+    ];
+
+    respond("ok", empty($requestedMemberIds) ? "Merge group cleared." : "Merge group saved.", [
+        'owner_offering_id' => $ownerOfferingId,
+        'group_course_label' => (string)($ownerDisplay['group_course_label'] ?? ($owner['full_section'] ?? '')),
+        'group_size' => (int)($ownerDisplay['group_size'] ?? 1),
+        'member_count' => count($requestedMemberIds)
+    ]);
+}
+
+/* =====================================================
    LOAD SAVED SCHEDULE SETS FOR CURRENT COLLEGE TERM
 ===================================================== */
 if (isset($_POST['load_schedule_sets'])) {
@@ -1960,6 +2531,10 @@ if (isset($_POST['save_schedule_set'])) {
 
     if ($set_name === '') {
         respond("error", "Provide a name for this saved schedule set.");
+    }
+
+    if (synk_schedule_merge_term_has_rows($conn, $college_id, $ay_id, $semester)) {
+        respond("error", "Saved schedule sets are disabled while merged schedule groups exist in this college term. Unmerge the affected offerings first.");
     }
 
     $snapshotRows = load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semester, $college_id);
@@ -2147,6 +2722,10 @@ if (isset($_POST['load_schedule_set_into_live'])) {
     $setRecord = load_saved_schedule_set_record($conn, $schedule_set_id, $college_id);
     if (!$setRecord) {
         respond("error", "Saved schedule set not found in your college scheduler.");
+    }
+
+    if (synk_schedule_merge_term_has_rows($conn, $college_id, (int)($setRecord['ay_id'] ?? 0), (int)($setRecord['semester'] ?? 0))) {
+        respond("error", "Loading a saved schedule set is disabled while merged schedule groups exist in this college term. Clear or unmerge the active merge groups first.");
     }
 
     $setRows = load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id);
@@ -2447,6 +3026,10 @@ if (
     !isset($_POST['load_schedule_sets']) &&
     !isset($_POST['save_schedule_set']) &&
     !isset($_POST['load_schedule_set_into_live']) &&
+    !isset($_POST['load_schedule_merge_candidates']) &&
+    !isset($_POST['save_schedule_merge']) &&
+    !isset($_POST['load_schedule_blocks']) &&
+    !isset($_POST['load_dual_schedule']) &&
     !isset($_POST['save_schedule']) &&
     !isset($_POST['save_dual_schedule']) &&
     !isset($_POST['save_schedule_blocks']) &&
@@ -2469,6 +3052,8 @@ if (isset($_POST['save_schedule'])) {
     if (!$offering_id || !$room_id || !$time_start || !$time_end || empty($days)) {
         respond("error", "Missing schedule fields.");
     }
+
+    ensure_offering_not_merged_member($conn, $offering_id, $college_id);
 
     if ($time_end <= $time_start) {
         respond("error", "End time must be later than start time.");
@@ -2556,6 +3141,8 @@ if (isset($_POST['save_dual_schedule'])) {
     if (!$offering_id || empty($schedules) || !is_array($schedules)) {
         respond("error", "Invalid dual schedule.");
     }
+
+    ensure_offering_not_merged_member($conn, $offering_id, $college_id);
 
     $ctx = load_context_live($conn, $offering_id, $college_id);
     if (!$ctx) {
