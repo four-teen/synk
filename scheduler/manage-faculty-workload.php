@@ -4,6 +4,7 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/offering_scope_helper.php';
+require_once '../backend/schema_helper.php';
 require_once '../backend/schedule_block_helper.php';
 require_once '../backend/schedule_merge_helper.php';
 
@@ -20,6 +21,10 @@ $ay_id = (string)($_GET['ay_id'] ?? ($currentTerm['ay_id'] ?? ''));
 $semester = (string)($_GET['semester'] ?? ($currentTerm['semester'] ?? ''));
 $doPrint = isset($_GET['print']) && $_GET['print'] === '1';
 $exportMode = strtolower(trim((string)($_GET['export'] ?? '')));
+$reportScope = strtolower(trim((string)($_GET['scope'] ?? 'program')));
+$reportScope = in_array($reportScope, ['program', 'college'], true) ? $reportScope : 'program';
+$isCollegeScope = $reportScope === 'college';
+$collegeName = trim((string)($_SESSION['college_name'] ?? ''));
 
 function semesterLabel($sem) {
     switch ((string)$sem) {
@@ -246,7 +251,7 @@ function xlsxInlineCellXml(int $rowNumber, int $columnIndex, string $value, int 
     return '<c r="' . $cellRef . '" t="inlineStr" s="' . $styleIndex . '"><is><t xml:space="preserve">' . excelXmlEscape($value) . '</t></is></c>';
 }
 
-function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, string $campusLabel, string $semester, string $ayLabel): ?string
+function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, string $campusLabel, string $semester, string $ayLabel, string $groupTitle = 'Program Offerings'): ?string
 {
     if (!class_exists('ZipArchive')) {
         return null;
@@ -273,7 +278,7 @@ function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, st
     $appendMergedRow(semesterLabel($semester) . ', AY ' . ($ayLabel !== '' ? $ayLabel : '-'), 3);
     $rowsXml[] = '<row r="' . $rowNumber . '"/>';
     $rowNumber++;
-    $appendMergedRow('Program Offerings', 4);
+    $appendMergedRow($groupTitle !== '' ? $groupTitle : 'Program Offerings', 4);
 
     $rowsXml[] = '<row r="' . $rowNumber . '">' .
         xlsxInlineCellXml($rowNumber, 1, 'Course Code', 5) .
@@ -442,7 +447,7 @@ function buildFacultyWorkloadXlsxBinary(array $courses, string $programLabel, st
     return $binary === false ? null : $binary;
 }
 
-function buildFacultyWorkloadExcelWorkbook(array $courses, string $programLabel, string $campusLabel, string $semester, string $ayLabel): string
+function buildFacultyWorkloadExcelWorkbook(array $courses, string $programLabel, string $campusLabel, string $semester, string $ayLabel, string $groupTitle = 'Program Offerings'): string
 {
     $rows = [];
     $rows[] = '<Row ss:Height="24">' . excelCellXml('SULTAN KUDARAT STATE UNIVERSITY', 'Title', 3) . '</Row>';
@@ -455,7 +460,7 @@ function buildFacultyWorkloadExcelWorkbook(array $courses, string $programLabel,
     $rows[] = '<Row>' . excelCellXml($campusLabel, 'Meta', 3) . '</Row>';
     $rows[] = '<Row>' . excelCellXml(semesterLabel($semester) . ', AY ' . ($ayLabel !== '' ? $ayLabel : '-'), 'Meta', 3) . '</Row>';
     $rows[] = '<Row/>';
-    $rows[] = '<Row>' . excelCellXml('Program Offerings', 'GroupTitle', 3) . '</Row>';
+    $rows[] = '<Row>' . excelCellXml($groupTitle !== '' ? $groupTitle : 'Program Offerings', 'GroupTitle', 3) . '</Row>';
     $rows[] = '<Row>' .
         excelCellXml('Course Code', 'Header') .
         excelCellXml('Section', 'Header') .
@@ -619,6 +624,7 @@ $campusLabel = 'CAMPUS';
 if ($collegeId > 0) {
     $campusStmt = $conn->prepare("
         SELECT tc.campus_name
+             , col.college_name
         FROM tbl_college col
         INNER JOIN tbl_campus tc ON tc.campus_id = col.campus_id
         WHERE col.college_id = ?
@@ -633,6 +639,9 @@ if ($collegeId > 0) {
 
         if (is_array($campusRow)) {
             $campusLabel = normalizeCampusLabel($campusRow['campus_name'] ?? '');
+            if ($collegeName === '') {
+                $collegeName = trim((string)($campusRow['college_name'] ?? ''));
+            }
         }
 
         $campusStmt->close();
@@ -692,8 +701,12 @@ if ($collegeId > 0) {
     }
 }
 
+$collegeReportLabel = synk_title_case_display($collegeName !== '' ? $collegeName : 'College');
 $selectedProgramLabel = '';
-if ($prospectus_id !== '') {
+$selectedReportLabel = '';
+if ($isCollegeScope) {
+    $selectedReportLabel = $collegeReportLabel !== '' ? $collegeReportLabel : 'Selected college';
+} elseif ($prospectus_id !== '') {
     foreach ($prospectusOptions as $option) {
         if ((string)($option['prospectus_id'] ?? '') !== $prospectus_id) {
             continue;
@@ -704,15 +717,39 @@ if ($prospectus_id !== '') {
             $option['program_name'] ?? '',
             $option['major'] ?? ''
         );
+        $selectedReportLabel = $selectedProgramLabel;
         break;
     }
 }
 
-$hasFilters = $prospectus_id !== '' && $ay_id !== '' && $semester !== '';
+$reportScopeLabel = $isCollegeScope ? 'College' : 'Program';
+$groupTitle = $isCollegeScope ? 'College Offerings' : 'Program Offerings';
+$selectedFilterLabel = $selectedReportLabel !== ''
+    ? $selectedReportLabel
+    : ($isCollegeScope ? 'Selected college' : 'Selected prospectus');
+
+$hasFilters = $ay_id !== '' && $semester !== '' && ($isCollegeScope || $prospectus_id !== '');
 $courses = [];
 
 if ($hasFilters && $collegeId > 0) {
     $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $whereClauses = [
+        'o.ay_id = ?',
+        'o.semester = ?',
+        'p.college_id = ?'
+    ];
+    $bindTypes = 'iii';
+    $bindParams = [
+        (int)$ay_id,
+        (int)$semester,
+        $collegeId
+    ];
+
+    if (!$isCollegeScope) {
+        $whereClauses[] = 'o.prospectus_id = ?';
+        $bindTypes .= 'i';
+        $bindParams[] = (int)$prospectus_id;
+    }
 
     $sql = "
         SELECT
@@ -730,19 +767,14 @@ if ($hasFilters && $collegeId > 0) {
         {$liveOfferingJoins}
         INNER JOIN tbl_program p ON p.program_id = o.program_id
         INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-        WHERE o.prospectus_id = ?
-          AND o.ay_id = ?
-          AND o.semester = ?
-          AND p.college_id = ?
-        ORDER BY sm.sub_code, sec.section_name
+        WHERE " . implode("
+          AND ", $whereClauses) . "
+        ORDER BY sm.sub_code, p.program_code, sec.section_name
     ";
 
     $stmt = $conn->prepare($sql);
     if ($stmt instanceof mysqli_stmt) {
-        $prospectusInt = (int)$prospectus_id;
-        $ayInt = (int)$ay_id;
-        $semesterInt = (int)$semester;
-        $stmt->bind_param("iiii", $prospectusInt, $ayInt, $semesterInt, $collegeId);
+        synk_bind_dynamic_params($stmt, $bindTypes, $bindParams);
         $stmt->execute();
         $res = $stmt->get_result();
         $baseRows = [];
@@ -813,9 +845,10 @@ if ($hasFilters && $collegeId > 0) {
 
 $reportQuery = $hasFilters
     ? http_build_query([
-        'prospectus_id' => $prospectus_id,
+        'scope' => $reportScope,
         'ay_id' => $ay_id,
-        'semester' => $semester
+        'semester' => $semester,
+        'prospectus_id' => $isCollegeScope ? null : $prospectus_id
     ])
     : '';
 $totalCourseCount = count($courses);
@@ -827,14 +860,14 @@ $printReportUrl = $reportQuery !== '' ? ('?' . $reportQuery . '&print=1') : '';
 $excelReportUrl = $reportQuery !== '' ? ('?' . $reportQuery . '&export=excel') : '';
 
 if ($exportMode === 'excel' && $hasFilters) {
-    $xlsxBinary = buildFacultyWorkloadXlsxBinary($courses, $selectedProgramLabel, $campusLabel, $semester, $ayLabel);
+    $xlsxBinary = buildFacultyWorkloadXlsxBinary($courses, $selectedReportLabel, $campusLabel, $semester, $ayLabel, $groupTitle);
 
     while (ob_get_level() > 0) {
         ob_end_clean();
     }
 
     if ($xlsxBinary !== null) {
-        $filename = buildReportFilename($selectedProgramLabel, $ayLabel, $semester, 'xlsx');
+        $filename = buildReportFilename($selectedReportLabel, $ayLabel, $semester, 'xlsx');
         header('Content-Type: application/vnd.openxmlformats-officedocument.spreadsheetml.sheet');
         header('Content-Disposition: attachment; filename="' . $filename . '"');
         header('Cache-Control: max-age=0, no-cache, no-store, must-revalidate');
@@ -845,8 +878,8 @@ if ($exportMode === 'excel' && $hasFilters) {
         exit;
     }
 
-    $filename = buildReportFilename($selectedProgramLabel, $ayLabel, $semester, 'xml');
-    $excelWorkbook = buildFacultyWorkloadExcelWorkbook($courses, $selectedProgramLabel, $campusLabel, $semester, $ayLabel);
+    $filename = buildReportFilename($selectedReportLabel, $ayLabel, $semester, 'xml');
+    $excelWorkbook = buildFacultyWorkloadExcelWorkbook($courses, $selectedReportLabel, $campusLabel, $semester, $ayLabel, $groupTitle);
     header('Content-Type: application/xml; charset=UTF-8');
     header('Content-Disposition: attachment; filename="' . $filename . '"');
     header('Cache-Control: max-age=0, no-cache, no-store, must-revalidate');
@@ -1463,16 +1496,29 @@ if ($exportMode === 'excel' && $hasFilters) {
             <div class="no-print mb-4">
               <h4 class="fw-bold mb-2 report-page-title">Faculty Workload Report</h4>
               <p class="report-filter-note mb-0">
-                The report updates automatically when you change the prospectus, academic year, or semester.
+                The report updates automatically when you change the scope, prospectus, academic year, or semester.
               </p>
             </div>
 
             <div class="card report-filter-card no-print mb-4">
               <div class="card-body">
                 <form method="GET" class="row g-3 align-items-end" id="facultyWorkloadFilterForm" novalidate>
+                  <div class="col-lg-2 col-md-3">
+                    <label class="form-label" for="scopeSelect">Scope</label>
+                    <select name="scope" id="scopeSelect" class="form-select">
+                      <option value="program" <?= $reportScope === 'program' ? 'selected' : '' ?>>Per Program</option>
+                      <option value="college" <?= $reportScope === 'college' ? 'selected' : '' ?>>Whole College</option>
+                    </select>
+                  </div>
+
                   <div class="col-lg-5 col-md-6">
-                    <label class="form-label" for="prospectusSelect">Prospectus</label>
-                    <select name="prospectus_id" id="prospectusSelect" class="form-select" required>
+                    <label class="form-label" for="prospectusSelect">Program Prospectus</label>
+                    <select
+                      name="prospectus_id"
+                      id="prospectusSelect"
+                      class="form-select"
+                      <?= $isCollegeScope ? 'disabled' : 'required' ?>
+                    >
                       <option value="">Select prospectus...</option>
                       <?php foreach ($prospectusOptions as $option): ?>
                         <?php
@@ -1526,7 +1572,7 @@ if ($exportMode === 'excel' && $hasFilters) {
                         <?php if ($hasFilters): ?>
                           <div class="report-filter-chip">
                             <i class="bx bx-collection"></i>
-                            <span><?= h($selectedProgramLabel !== '' ? $selectedProgramLabel : 'Selected prospectus') ?></span>
+                            <span><?= h($selectedFilterLabel) ?></span>
                           </div>
                           <div class="report-filter-chip">
                             <i class="bx bx-calendar"></i>
@@ -1539,7 +1585,7 @@ if ($exportMode === 'excel' && $hasFilters) {
                         <?php else: ?>
                           <div class="report-filter-chip">
                             <i class="bx bx-info-circle"></i>
-                            <span>Choose a prospectus to enable print and Excel export.</span>
+                            <span>Choose a program prospectus, or switch to whole college, to enable print and Excel export.</span>
                           </div>
                         <?php endif; ?>
                       </div>
@@ -1588,9 +1634,9 @@ if ($exportMode === 'excel' && $hasFilters) {
                 <div class="report-overview-card">
                   <div class="report-overview-label">
                     <i class="bx bx-book-content"></i>
-                    <span>Program</span>
+                    <span><?= h($reportScopeLabel) ?></span>
                   </div>
-                  <div class="report-overview-value"><?= h($selectedProgramLabel !== '' ? $selectedProgramLabel : 'Selected prospectus') ?></div>
+                  <div class="report-overview-value"><?= h($selectedFilterLabel) ?></div>
                 </div>
                 <div class="report-overview-card">
                   <div class="report-overview-label">
@@ -1639,9 +1685,9 @@ if ($exportMode === 'excel' && $hasFilters) {
                 <?php if (!$hasFilters): ?>
                   <div class="report-empty-state">
                     <i class="bx bx-filter-alt"></i>
-                    <h5 class="mb-2">Select a prospectus to load the report</h5>
+                    <h5 class="mb-2">Select report filters to load the report</h5>
                     <p class="mb-0">
-                      Academic year and semester are ready. Once you choose a prospectus, the report will load automatically.
+                      Program scope uses a single prospectus. Whole college scope loads all programs in this college for the selected term.
                     </p>
                   </div>
                 <?php else: ?>
@@ -1650,15 +1696,15 @@ if ($exportMode === 'excel' && $hasFilters) {
                       <div class="print-title">
                         <div class="uni">SULTAN KUDARAT STATE UNIVERSITY</div>
                         <div class="main">ALPHABETICAL LIST OF COURSES</div>
-                        <?php if ($selectedProgramLabel !== ''): ?>
-                          <div class="program-line"><?= h($selectedProgramLabel) ?></div>
+                        <?php if ($selectedReportLabel !== ''): ?>
+                          <div class="program-line"><?= h($selectedReportLabel) ?></div>
                         <?php endif; ?>
                         <div class="campus-line"><?= h($campusLabel) ?></div>
                         <div class="term-line"><?= h(semesterLabel($semester)) ?>, AY <?= h($ayLabel) ?></div>
                       </div>
                     </div>
 
-                    <div class="group-title">Program Offerings</div>
+                    <div class="group-title"><?= h($groupTitle) ?></div>
 
                     <?php if (!empty($courses)): ?>
                       <div class="report-table-wrap">
@@ -1827,11 +1873,29 @@ if ($exportMode === 'excel' && $hasFilters) {
           return false;
         }
 
+        var scope = form.elements['scope'] ? form.elements['scope'].value.trim() : 'program';
         var prospectus = form.elements['prospectus_id'] ? form.elements['prospectus_id'].value.trim() : '';
         var ay = form.elements['ay_id'] ? form.elements['ay_id'].value.trim() : '';
         var sem = form.elements['semester'] ? form.elements['semester'].value.trim() : '';
 
-        return prospectus !== '' && ay !== '' && sem !== '';
+        return ay !== '' && sem !== '' && (scope === 'college' || prospectus !== '');
+      }
+
+      function syncScopeFieldState() {
+        if (!form) {
+          return;
+        }
+
+        var scope = form.elements['scope'] ? form.elements['scope'].value.trim() : 'program';
+        var prospectusField = form.elements['prospectus_id'];
+
+        if (!prospectusField) {
+          return;
+        }
+
+        var needsProspectus = scope !== 'college';
+        prospectusField.disabled = !needsProspectus;
+        prospectusField.required = needsProspectus;
       }
 
       function navigateWithFilters() {
@@ -1841,6 +1905,11 @@ if ($exportMode === 'excel' && $hasFilters) {
 
         var params = new URLSearchParams(new FormData(form));
         params.delete('print');
+        params.delete('export');
+
+        if (form.elements['scope'] && form.elements['scope'].value.trim() === 'college') {
+          params.delete('prospectus_id');
+        }
 
         var nextSearch = params.toString();
         var currentSearch = window.location.search.replace(/^\?/, '');
@@ -1855,14 +1924,18 @@ if ($exportMode === 'excel' && $hasFilters) {
       }
 
       if (form) {
+        syncScopeFieldState();
+
         form.addEventListener('submit', function (event) {
           event.preventDefault();
           stopPendingNavigation();
+          syncScopeFieldState();
           navigateWithFilters();
         });
 
         Array.prototype.forEach.call(form.querySelectorAll('select'), function (select) {
           select.addEventListener('change', function () {
+            syncScopeFieldState();
             stopPendingNavigation();
             navigateTimer = window.setTimeout(function () {
               navigateWithFilters();
