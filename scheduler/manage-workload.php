@@ -504,6 +504,15 @@ if ($facultyStmt instanceof mysqli_stmt) {
             border-radius: 0 0 999px 999px;
         }
 
+        #scheduledClassTbody tr.schedule-conflict-disabled td {
+            opacity: 0.58;
+            background-image: linear-gradient(to right, rgba(220, 53, 69, 0.06), rgba(220, 53, 69, 0));
+        }
+
+        #scheduledClassTbody tr.schedule-conflict-disabled .chkSchedule {
+            cursor: not-allowed;
+        }
+
         .scheduled-pair-note {
             display: inline-flex;
             align-items: center;
@@ -1617,6 +1626,8 @@ let selectionRequestToken = 0;
 let facultyOverviewCacheKey = "";
 let facultyOverviewCache = [];
 let facultyBrowserDrawerInstance = null;
+let currentScheduledClassRows = [];
+let currentWorkloadRows = [];
 const SCHEDULE_PAIR_COLORS = ["#22a06b", "#e85d75", "#5d68f4", "#d39c0f", "#2e8de4", "#8a63f7"];
 
 $(document).ready(function () {
@@ -1991,6 +2002,139 @@ $(document).ready(function () {
         `;
     }
 
+    function normalizeDayList(value) {
+        const items = Array.isArray(value)
+            ? value
+            : String(value ?? "").split(",");
+        const uniqueDays = new Set();
+
+        items.forEach(function (item) {
+            const day = String(item ?? "").trim().toUpperCase();
+            if (day !== "") {
+                uniqueDays.add(day);
+            }
+        });
+
+        return Array.from(uniqueDays);
+    }
+
+    function parseTimeToMinutes(value) {
+        const raw = String(value ?? "").trim();
+        if (raw === "") {
+            return NaN;
+        }
+
+        let match = raw.match(/^(\d{1,2}):(\d{2})(?::(\d{2}))?$/);
+        if (match) {
+            return (Number(match[1]) * 60) + Number(match[2]);
+        }
+
+        match = raw.replace(/\s+/g, "").toUpperCase().match(/^(\d{1,2}):(\d{2})(AM|PM)$/);
+        if (!match) {
+            return NaN;
+        }
+
+        let hours = Number(match[1]) % 12;
+        if (match[3] === "PM") {
+            hours += 12;
+        }
+
+        return (hours * 60) + Number(match[2]);
+    }
+
+    function getRowTimeWindow(row) {
+        const rawStart = String(row?.time_start || "").trim();
+        const rawEnd = String(row?.time_end || "").trim();
+
+        if (rawStart !== "" && rawEnd !== "") {
+            return {
+                start: parseTimeToMinutes(rawStart),
+                end: parseTimeToMinutes(rawEnd)
+            };
+        }
+
+        const timeText = String(row?.time || "").trim();
+        const parts = timeText.split("-");
+
+        if (parts.length !== 2) {
+            return { start: NaN, end: NaN };
+        }
+
+        return {
+            start: parseTimeToMinutes(parts[0]),
+            end: parseTimeToMinutes(parts[1])
+        };
+    }
+
+    function rowsHaveTimeConflict(candidate, other) {
+        const candidateDays = normalizeDayList(candidate?.days_arr || candidate?.days || []);
+        const otherDays = normalizeDayList(other?.days_arr || other?.days || []);
+
+        if (!candidateDays.some(day => otherDays.includes(day))) {
+            return false;
+        }
+
+        const candidateWindow = getRowTimeWindow(candidate);
+        const otherWindow = getRowTimeWindow(other);
+
+        if (
+            !Number.isFinite(candidateWindow.start) ||
+            !Number.isFinite(candidateWindow.end) ||
+            !Number.isFinite(otherWindow.start) ||
+            !Number.isFinite(otherWindow.end)
+        ) {
+            return false;
+        }
+
+        return candidateWindow.start < otherWindow.end &&
+               candidateWindow.end > otherWindow.start;
+    }
+
+    function applyScheduledClassAvailability() {
+        if (!Array.isArray(currentScheduledClassRows) || currentScheduledClassRows.length === 0) {
+            updateApplyWorkloadControls();
+            return;
+        }
+
+        const scheduledRowsById = new Map();
+        currentScheduledClassRows.forEach(function (row) {
+            const scheduleId = String(row?.schedule_id ?? "").trim();
+            if (scheduleId !== "") {
+                scheduledRowsById.set(scheduleId, row);
+            }
+        });
+
+        $("#scheduledClassTbody .chkSchedule").each(function () {
+            const checkbox = $(this);
+            const tableRow = checkbox.closest("tr");
+            const scheduleId = String(checkbox.val() || "").trim();
+            const scheduledRow = scheduledRowsById.get(scheduleId) || null;
+            const hasConflict = scheduledRow
+                ? currentWorkloadRows.some(function (workloadRow) {
+                    return rowsHaveTimeConflict(scheduledRow, workloadRow);
+                })
+                : false;
+
+            checkbox.prop("checked", hasConflict ? false : checkbox.is(":checked"));
+            checkbox.prop("disabled", hasConflict);
+            tableRow.toggleClass("schedule-conflict-disabled", hasConflict);
+
+            if (hasConflict) {
+                tableRow.attr("title", "Conflicts with current faculty workload");
+                tableRow.attr("aria-disabled", "true");
+            } else {
+                tableRow.removeAttr("title");
+                tableRow.removeAttr("aria-disabled");
+            }
+        });
+
+        const selectableCount = $("#scheduledClassTbody .chkSchedule:not(:disabled)").length;
+        const checkedCount = $("#scheduledClassTbody .chkSchedule:checked:not(:disabled)").length;
+        $("#checkAllSchedules").prop("checked", selectableCount > 0 && selectableCount === checkedCount);
+
+        updateApplyWorkloadControls();
+    }
+
     function formatDesignationDisplay(meta) {
         const name = String(meta?.designation_name || meta?.designation_label || "").trim();
         const label = String(meta?.designation_label || name).trim();
@@ -2060,8 +2204,9 @@ $(document).ready(function () {
 
     function updateApplyWorkloadControls() {
         const cardVisible = $("#scheduledClassCard").is(":visible");
-        const total = $(".chkSchedule").length;
-        const checked = $(".chkSchedule:checked").length;
+        const totalRows = $(".chkSchedule").length;
+        const total = $(".chkSchedule:not(:disabled)").length;
+        const checked = $(".chkSchedule:checked:not(:disabled)").length;
 
         if (!cardVisible) {
             $("#floatingApplyBar").removeClass("is-visible");
@@ -2076,7 +2221,11 @@ $(document).ready(function () {
         setApplyWorkloadButtonsDisabled(!(total > 0 && checked > 0));
 
         if (total === 0) {
-            $("#floatingApplyCount").text("No scheduled classes available.");
+            $("#floatingApplyCount").text(
+                totalRows > 0
+                    ? "All scheduled classes conflict with the current workload."
+                    : "No scheduled classes available."
+            );
             return;
         }
 
@@ -2085,6 +2234,7 @@ $(document).ready(function () {
 
     function setScheduledClassesLoadingState(message = "Loading scheduled classes...") {
         $("#scheduledClassCard").show();
+        currentScheduledClassRows = [];
         $("#checkAllSchedules").prop("checked", false);
         setApplyWorkloadButtonsDisabled(true);
         $("#scheduledClassTbody").html(buildLoadingRow(11, message));
@@ -2093,6 +2243,7 @@ $(document).ready(function () {
 
     function setWorkloadLoadingState(message = "Loading faculty workload...") {
         $("#workloadCard").show();
+        currentWorkloadRows = [];
         $("#workloadTbody").html(buildLoadingRow(12, message));
         $("#designationText").text("");
         $("#designationLOAD").text("");
@@ -2252,6 +2403,8 @@ $(document).ready(function () {
         abortPendingRequest(workloadListRequest);
         currentAyId = null;
         currentSemesterNum = null;
+        currentScheduledClassRows = [];
+        currentWorkloadRows = [];
         $("#facultyAlert").hide();
         $("#scheduledClassCard").hide();
         $("#workloadCard").hide();
@@ -2323,6 +2476,7 @@ $(document).ready(function () {
             }
 
             if (data.length === 0) {
+                currentScheduledClassRows = [];
                 $("#checkAllSchedules").prop("checked", false);
                 $("#scheduledClassTbody").html(`
                     <tr>
@@ -2398,8 +2552,9 @@ $(document).ready(function () {
 
                 i += groupRows.length - 1;
             }
+            currentScheduledClassRows = data;
             $("#scheduledClassTbody").html(rows);
-            updateApplyWorkloadControls();
+            applyScheduledClassAvailability();
         }).fail(function (xhr, status) {
             if (status === "abort" || requestToken !== selectionRequestToken) {
                 return;
@@ -2411,6 +2566,7 @@ $(document).ready(function () {
     }
 
     function showInvalid() {
+        currentScheduledClassRows = [];
         $("#checkAllSchedules").prop("checked", false);
         $("#scheduledClassTbody").html(`
             <tr>
@@ -2423,13 +2579,13 @@ $(document).ready(function () {
     }
 
     $(document).on("change", "#checkAllSchedules", function () {
-        $(".chkSchedule").prop("checked", $(this).is(":checked"));
+        $(".chkSchedule:not(:disabled)").prop("checked", $(this).is(":checked"));
         updateApplyWorkloadControls();
     });
 
     $(document).on("change", ".chkSchedule", function () {
-        const total = $(".chkSchedule").length;
-        const checked = $(".chkSchedule:checked").length;
+        const total = $(".chkSchedule:not(:disabled)").length;
+        const checked = $(".chkSchedule:checked:not(:disabled)").length;
         $("#checkAllSchedules").prop("checked", total > 0 && total === checked);
         updateApplyWorkloadControls();
     });
@@ -2459,6 +2615,7 @@ $(document).ready(function () {
 
             const payload = normalizeWorkloadResponse(data);
             if (!payload) {
+                currentWorkloadRows = [];
                 $("#workloadTbody").html(`
                     <tr>
                         <td colspan="12" class="text-danger text-center">
@@ -2479,10 +2636,12 @@ $(document).ready(function () {
                 setPrintField("#printDesignation", "");
                 setPrintField("#printConforme", "");
                 $("#workloadCard").show();
+                applyScheduledClassAvailability();
                 return;
             }
 
             const rowsData = payload.rows;
+            currentWorkloadRows = rowsData;
             const meta = payload.meta || {};
             const preparationSet = new Set();
             const countedGroups = new Set();
@@ -2612,11 +2771,13 @@ $(document).ready(function () {
             setPrintField("#printConforme", context.facultyName, { uppercase: true });
 
             $("#workloadCard").show();
+            applyScheduledClassAvailability();
         }).fail(function (xhr, status) {
             if (status === "abort" || requestToken !== selectionRequestToken) {
                 return;
             }
 
+            currentWorkloadRows = [];
             $("#workloadTbody").html(`
                 <tr>
                     <td colspan="12" class="text-danger text-center">
@@ -2629,6 +2790,7 @@ $(document).ready(function () {
             setPrintField("#printDesignation", "");
             setPrintField("#printConforme", "");
             $("#workloadCard").show();
+            applyScheduledClassAvailability();
         });
     }
 

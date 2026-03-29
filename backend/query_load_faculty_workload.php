@@ -288,6 +288,9 @@ foreach ($rawRows as $rawRow) {
         'course' => $courseLabel,
         'section' => (string)$rawRow['section'],
         'type' => (string)$rawRow['type'],
+        'days_arr' => array_values((array)($rawRow['days_arr'] ?? [])),
+        'time_start' => (string)($rawRow['time_start'] ?? ''),
+        'time_end' => (string)($rawRow['time_end'] ?? ''),
         'days' => implode(", ", $rawRow['days_arr'] ?? []),
         'time' => date("g:iA", strtotime((string)$rawRow['time_start'])) . "-" .
                   date("g:iA", strtotime((string)$rawRow['time_end'])),

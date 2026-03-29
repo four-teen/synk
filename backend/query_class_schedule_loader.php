@@ -289,6 +289,9 @@ foreach ($rawRows as $row) {
         'section_name' => $sectionDisplay,
         'full_section' => (string)($row['full_section'] ?? ''),
         'merged_course_label' => $mergedCourseLabel,
+        'days_arr' => array_values((array)($row['days_arr'] ?? [])),
+        'time_start' => (string)($row['time_start'] ?? ''),
+        'time_end' => (string)($row['time_end'] ?? ''),
         'days' => implode(", ", $row['days_arr'] ?? []),
         'time' => date("g:iA", strtotime((string)($row['time_start'] ?? ''))) . "-" .
                   date("g:iA", strtotime((string)($row['time_end'] ?? ''))),
