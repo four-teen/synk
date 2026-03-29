@@ -287,6 +287,7 @@ foreach ($rawRows as $row) {
         'subject_code' => (string)($row['subject_code'] ?? ''),
         'subject_description' => (string)($row['subject_description'] ?? ''),
         'section_name' => $sectionDisplay,
+        'full_section' => (string)($row['full_section'] ?? ''),
         'merged_course_label' => $mergedCourseLabel,
         'days' => implode(", ", $row['days_arr'] ?? []),
         'time' => date("g:iA", strtotime((string)($row['time_start'] ?? ''))) . "-" .

@@ -2353,6 +2353,12 @@ $(document).ready(function () {
 
                 groupRows.forEach(function (groupRow, groupIndex) {
                     const type = String(groupRow.schedule_type || "").toUpperCase();
+                    const sectionLabel = String(
+                        groupRow.merged_course_label ||
+                        groupRow.full_section ||
+                        groupRow.section_name ||
+                        ""
+                    );
                     const displayUnits = getDisplayUnits(groupRow);
                     const displayLabUnits = getDisplayLabUnits(groupRow);
                     const displayLecUnits = getDisplayLecUnits(groupRow);
@@ -2378,7 +2384,7 @@ $(document).ready(function () {
                             </td>
                             <td>${escapeHtml(groupRow.subject_code)}</td>
                             <td>${escapeHtml(groupRow.subject_description)}${partnerNote}</td>
-                            <td>${escapeHtml(groupRow.section_name)}</td>
+                            <td>${escapeHtml(sectionLabel)}</td>
                             <td class="text-center">${typeBadge}</td>
                             <td>${escapeHtml(groupRow.days)}</td>
                             <td>${escapeHtml(groupRow.time)}</td>

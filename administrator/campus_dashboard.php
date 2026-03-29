@@ -3,6 +3,7 @@ session_start();
 ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/academic_schedule_policy_helper.php';
 require_once '../backend/offering_scope_helper.php';
 require_once '../backend/schema_helper.php';
 
@@ -126,6 +127,10 @@ $isUniversitySummary = ($campusIdParam === 'all');
 $collegeIdParam = $_GET['college_id'] ?? null;
 $selectedCollegeId = null;
 $selectedCollegeName = null;
+$selectedCollegeSchedulePolicy = [
+    'source_label' => 'Scheduling policy',
+    'window_label' => ''
+];
 
 if (!$isUniversitySummary && $collegeIdParam !== null && $collegeIdParam !== '') {
     $selectedCollegeId = (int)$collegeIdParam;
@@ -187,6 +192,7 @@ if (!$isUniversitySummary && $selectedCollegeId) {
     } else {
         $row = $res->fetch_assoc();
         $selectedCollegeName = $row['college_name'];
+        $selectedCollegeSchedulePolicy = synk_fetch_effective_schedule_policy($conn, $selectedCollegeId);
     }
     $stmt->close();
 }
@@ -365,11 +371,11 @@ $heatmapSubtext = $isUniversitySummary
         ? 'Each cell shows the percentage of this college\'s accessible rooms occupied in the current-term weekday window.'
         : 'Each cell shows the percentage of campus rooms occupied in the current-term weekday window.');
 $utilizationSubtext = $isUniversitySummary
-    ? 'Measures how busy each campus room pool is during the current term.'
+    ? 'Compares scheduled room-hours against the university\'s 40-hour weekly baseline for each campus room pool.'
     : ($selectedCollegeId
-        ? 'Measures occupancy across rooms this college can use for the current term.'
-        : 'Measures how busy each college room pool is during the current term.');
-$resourceCapacityNote = 'Room capacity is measured as 40 room-hours per week per room (Monday to Friday, 7:00 AM to 3:00 PM).';
+        ? 'Compares scheduled room-hours against the university\'s 40-hour weekly baseline for rooms this college can use.'
+        : 'Compares scheduled room-hours against the university\'s 40-hour weekly baseline for each college room pool.');
+$resourceCapacityNote = 'Utilization compares actual scheduled room-hours against the university standard of 40 room-hours per week per room. The heatmap above still shows real 30-minute activity from Monday to Friday, 7:00 AM to 6:00 PM, so utilization may exceed 100% when rooms run beyond the standard weekly load.';
 $assignmentCoveragePercent = 0.0;
 $highestUtilizationLabel = 'No room data';
 $highestUtilizationPercent = 0.0;
@@ -380,7 +386,7 @@ $heatmapTotalRooms = 0;
 if ($analyticsReady) {
     $daysOrder = ['M', 'T', 'W', 'Th', 'F'];
     $dayWindowStartMinutes = 7 * 60;
-    $dayWindowEndMinutes = $dayWindowStartMinutes + (8 * 60);
+    $dayWindowEndMinutes = 18 * 60;
     $slotDefinitions = [];
     for ($slotMinutes = $dayWindowStartMinutes; $slotMinutes < $dayWindowEndMinutes; $slotMinutes += 60) {
         $slotLabel = campus_dashboard_minutes_to_label($slotMinutes);
@@ -992,6 +998,69 @@ if ($isUniversitySummary) {
       color: #8592a3;
     }
 
+    .chart-shell {
+      min-height: 340px;
+    }
+
+    .chart-fallback {
+      min-height: 340px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #8592a3;
+      text-align: center;
+    }
+
+    .chart-loader {
+      min-height: 340px;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      color: #8592a3;
+      text-align: center;
+    }
+
+    .loader-inline {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.65rem;
+      font-weight: 600;
+    }
+
+    .chart-insight {
+      min-height: 40px;
+      margin-top: 0.75rem;
+      font-size: 0.84rem;
+      color: #8592a3;
+    }
+
+    .heatmap-toolbar {
+      display: flex;
+      flex-wrap: wrap;
+      align-items: flex-end;
+      justify-content: space-between;
+      gap: 0.85rem;
+    }
+
+    .heatmap-filter-control {
+      min-width: 240px;
+      max-width: 100%;
+    }
+
+    .heatmap-filter-label {
+      display: block;
+      margin-bottom: 0.35rem;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #8592a3;
+    }
+
+    .heatmap-room-filter {
+      min-width: 240px;
+    }
+
     .matrix-table th,
     .matrix-table td {
       min-width: 88px;
@@ -1086,6 +1155,7 @@ if ($isUniversitySummary) {
       --matrix-room-col-width: 118px;
       --matrix-day-col-width: 50px;
       --matrix-slot-col-width: 58px;
+      z-index: 1090;
     }
 
     #matrixModal .matrix-table {
@@ -1525,17 +1595,28 @@ if ($isUniversitySummary) {
                         <div class="col-xl-8">
                           <div class="d-flex justify-content-between align-items-start flex-column flex-md-row gap-2 mb-3">
                             <div>
-                              <h6 class="fw-bold mb-1">Weekly Schedule Heatmap</h6>
-                              <small class="text-muted"><?= htmlspecialchars($heatmapSubtext); ?></small>
+                              <h6 class="fw-bold mb-1" id="scheduleHeatmapTitle">Weekly Schedule Heatmap</h6>
+                              <small class="text-muted" id="scheduleHeatmapSubtitle"><?= htmlspecialchars($heatmapSubtext); ?></small>
                             </div>
-                            <span class="badge bg-label-primary">
-                              Peak: <?= htmlspecialchars($heatmapPeakLabel); ?>
-                              <?php if ($heatmapPeakOccupiedRooms > 0 && $heatmapTotalRooms > 0): ?>
-                                (<?= (int)$heatmapPeakOccupiedRooms; ?>/<?= (int)$heatmapTotalRooms; ?> rooms, <?= number_format($heatmapPeakPercent, 1); ?>%)
-                              <?php endif; ?>
+                            <span class="badge bg-label-primary" id="scheduleHeatmapBadge">
+                              Room Heat
                             </span>
                           </div>
-                          <div id="scheduleHeatmapChart"></div>
+                          <div class="heatmap-toolbar mb-3">
+                            <div class="small text-muted" id="scheduleHeatmapFilterSummary">
+                              Filter by room to inspect one classroom schedule.
+                            </div>
+                            <div class="heatmap-filter-control">
+                              <label class="heatmap-filter-label" for="scheduleHeatmapRoomFilter">Room View</label>
+                              <select class="form-select form-select-sm heatmap-room-filter" id="scheduleHeatmapRoomFilter" aria-label="Select room heatmap view" disabled>
+                                <option value="all">All rooms</option>
+                              </select>
+                            </div>
+                          </div>
+                          <div id="scheduleHeatmapChart" class="chart-shell"></div>
+                          <p class="chart-insight mb-0" id="scheduleHeatmapInsight">
+                            This heat map highlights the busiest 30-minute room intervals for scheduling.
+                          </p>
                         </div>
 
                         <div class="col-xl-4">
@@ -1558,13 +1639,13 @@ if ($isUniversitySummary) {
                             <div class="resource-stat">
                               <div class="resource-stat-label">Top <?= htmlspecialchars($utilizationMetricLabel); ?></div>
                               <div class="resource-stat-value"><?= htmlspecialchars($highestUtilizationLabel); ?></div>
-                              <div class="resource-stat-note"><?= number_format($highestUtilizationPercent, 1); ?>% utilization in the busiest item for this view.</div>
+                              <div class="resource-stat-note"><?= number_format($highestUtilizationPercent, 1); ?>% of the 40-hour weekly baseline in the busiest item for this view.</div>
                             </div>
 
                             <div class="resource-stat">
                               <div class="resource-stat-label">Interpretation</div>
                               <div class="resource-stat-note">
-                                Darker heatmap cells mean a higher percentage of rooms are occupied in that hour. Higher utilization shows where space is getting tight first.
+                                Darker heatmap cells mean a higher percentage of rooms are occupied in that 30-minute block. Higher utilization shows where space is getting tight first.
                               </div>
                             </div>
                           </div>
@@ -1581,7 +1662,10 @@ if ($isUniversitySummary) {
                         <small class="resource-note"><?= htmlspecialchars($resourceCapacityNote); ?></small>
                       </div>
 
-                      <div id="roomUtilizationChart"></div>
+                      <div id="roomUtilizationChart" class="chart-shell"></div>
+                      <p class="chart-insight mb-0" id="roomUtilizationInsight">
+                        This chart shows scheduled room-hours against the university's 40-hour weekly baseline so over-capacity room pools stand out immediately.
+                      </p>
 
                       <div class="table-responsive mt-4">
                         <table class="table table-sm table-hover align-middle mb-0">
@@ -1609,7 +1693,7 @@ if ($isUniversitySummary) {
                                   <td class="text-end"><?= number_format((float)$row['used_hours'], 1); ?></td>
                                   <td class="text-end"><?= number_format((float)$row['capacity_hours'], 1); ?></td>
                                   <td class="text-end">
-                                    <span class="badge <?= $row['utilization_percent'] >= 80 ? 'bg-label-warning' : 'bg-label-success'; ?>">
+                                    <span class="badge <?= $row['utilization_percent'] >= 100 ? 'bg-label-danger' : ($row['utilization_percent'] >= 80 ? 'bg-label-warning' : 'bg-label-success'); ?>">
                                       <?= number_format((float)$row['utilization_percent'], 1); ?>%
                                     </span>
                                   </td>
@@ -1756,14 +1840,23 @@ if ($isUniversitySummary) {
     <div class="layout-overlay layout-menu-toggle"></div>
   </div>
 
-  <div class="modal fade" id="matrixModal" tabindex="-1" aria-hidden="true">
-    <div class="modal-dialog modal-fullscreen-lg-down modal-dialog-scrollable">
+  <div class="modal fade" id="matrixModal" tabindex="-1" data-bs-backdrop="false" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xxl modal-dialog-scrollable">
       <div class="modal-content">
 
         <div class="modal-header">
-          <h5 class="modal-title" id="matrixModalTitle">
-            <i class="bx bx-grid-alt me-1"></i> Schedule Matrix
-          </h5>
+          <div>
+            <h5 class="modal-title mb-0" id="matrixModalTitle">
+              <i class="bx bx-building me-1"></i> Room-Time Matrix
+            </h5>
+            <div class="small text-muted mt-1" id="matrixModalNote">
+              <?php if ($selectedCollegeId): ?>
+                Viewing <?= htmlspecialchars((string)$selectedCollegeName, ENT_QUOTES, 'UTF-8'); ?> |
+              <?php endif; ?>
+              Follows <?= htmlspecialchars((string)($selectedCollegeSchedulePolicy['source_label'] ?? 'Scheduling policy'), ENT_QUOTES, 'UTF-8'); ?>:
+              <?= htmlspecialchars((string)($selectedCollegeSchedulePolicy['window_label'] ?? ''), ENT_QUOTES, 'UTF-8'); ?> | 12-hour time labels
+            </div>
+          </div>
           <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
         </div>
 
@@ -1794,27 +1887,265 @@ if ($isUniversitySummary) {
 
   <script>
     document.addEventListener("DOMContentLoaded", function () {
-      var heatmapSeries = <?= json_encode($heatmapSeries, JSON_NUMERIC_CHECK); ?>;
       var utilizationLabels = <?= json_encode($utilizationChartLabels); ?>;
       var utilizationUsed = <?= json_encode($utilizationChartUsed, JSON_NUMERIC_CHECK); ?>;
       var utilizationAvailable = <?= json_encode($utilizationChartAvailable, JSON_NUMERIC_CHECK); ?>;
       var analyticsReady = <?= $analyticsReady ? 'true' : 'false'; ?>;
+      var campusIdParam = <?= json_encode((string)$campusIdParam); ?>;
       var currentAyId = <?= (int)$currentAyId; ?>;
       var currentSem = <?= (int)$currentSem; ?>;
       var selectedCollegeId = <?= (int)$selectedCollegeId; ?>;
       var selectedCollegeName = <?= json_encode(htmlspecialchars((string)($selectedCollegeName ?? 'Selected College'), ENT_QUOTES, 'UTF-8')); ?>;
+      var selectedCollegePolicySource = <?= json_encode((string)($selectedCollegeSchedulePolicy['source_label'] ?? 'Scheduling policy')); ?>;
+      var selectedCollegePolicyWindow = <?= json_encode((string)($selectedCollegeSchedulePolicy['window_label'] ?? '')); ?>;
       var academicTermText = <?= json_encode(htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-8')); ?>;
       var csrfToken = <?= json_encode($csrfToken); ?>;
+      var dashboardViewType = <?= json_encode($selectedCollegeId ? 'college' : ($isUniversitySummary ? 'university' : 'campus')); ?>;
+      var utilizationMetricLabel = <?= json_encode((string)$utilizationMetricLabel); ?>;
+      var highestUtilizationLabel = <?= json_encode((string)$highestUtilizationLabel); ?>;
+      var highestUtilizationPercent = <?= json_encode((float)$highestUtilizationPercent, JSON_NUMERIC_CHECK); ?>;
+      var hasApexCharts = typeof ApexCharts !== "undefined";
+      var scheduleHeatmapChart = null;
+      var scheduleHeatmapRequest = null;
+      var roomUtilizationChart = null;
+      var scheduleHeatmapRoomSelection = "all";
+      var syncingScheduleHeatmapRoomFilter = false;
+      var scheduleHeatmapRoomFilter = document.getElementById("scheduleHeatmapRoomFilter");
+      var scheduleHeatmapFilterSummary = document.getElementById("scheduleHeatmapFilterSummary");
+      var scheduleHeatmapTitle = document.getElementById("scheduleHeatmapTitle");
+      var scheduleHeatmapSubtitle = document.getElementById("scheduleHeatmapSubtitle");
+      var scheduleHeatmapBadge = document.getElementById("scheduleHeatmapBadge");
 
-      if (!analyticsReady) {
-        return;
+      function escapeHtml(value) {
+        return String(value || "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/"/g, "&quot;")
+          .replace(/'/g, "&#039;");
       }
 
-      var hasApexCharts = typeof ApexCharts !== "undefined";
-      var heatmapElement = document.querySelector("#scheduleHeatmapChart");
-      if (heatmapElement && hasApexCharts) {
-        var heatmapOptions = {
-          series: heatmapSeries,
+      function buildInlineLoader(message) {
+        return (
+          '<div class="loader-inline">' +
+            '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' +
+            '<span>' + escapeHtml(message) + "</span>" +
+          "</div>"
+        );
+      }
+
+      function setChartFallback(containerId, message) {
+        var chartContainer = document.getElementById(containerId);
+        if (!chartContainer) {
+          return;
+        }
+
+        chartContainer.innerHTML =
+          '<div class="chart-fallback"><p class="mb-0">' + escapeHtml(message) + "</p></div>";
+      }
+
+      function setChartLoading(containerId, message) {
+        var chartContainer = document.getElementById(containerId);
+        if (!chartContainer) {
+          return;
+        }
+
+        chartContainer.innerHTML =
+          '<div class="chart-loader">' + buildInlineLoader(message) + "</div>";
+      }
+
+      function setInsight(elementId, message) {
+        var element = document.getElementById(elementId);
+        if (element) {
+          element.textContent = message;
+        }
+      }
+
+      function scheduleHeatmapAllRoomsLabel() {
+        if (dashboardViewType === "university") {
+          return "All active rooms";
+        }
+
+        return dashboardViewType === "campus" ? "All campus rooms" : "All accessible rooms";
+      }
+
+      function scheduleHeatmapAggregateSubtitle() {
+        if (dashboardViewType === "university") {
+          return "Each cell shows the percentage of active university rooms occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM across all campuses.";
+        }
+
+        if (dashboardViewType === "campus") {
+          return "Each cell shows the percentage of active campus rooms occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM.";
+        }
+
+        return "Each cell shows the percentage of active rooms accessible to the selected college that are occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM.";
+      }
+
+      function scheduleHeatmapTitleText() {
+        if (dashboardViewType === "university") {
+          return "University Room Occupancy Heatmap";
+        }
+
+        return dashboardViewType === "campus"
+          ? "Campus Room Occupancy Heatmap"
+          : "Accessible Room Occupancy Heatmap";
+      }
+
+      function scheduleHeatmapBadgeText(isSingleRoomView) {
+        if (isSingleRoomView) {
+          return "Room View";
+        }
+
+        if (dashboardViewType === "university") {
+          return "University Heat";
+        }
+
+        return dashboardViewType === "campus" ? "Campus Heat" : "Room Heat";
+      }
+
+      function scheduleHeatmapPoolLabel() {
+        if (dashboardViewType === "university") {
+          return "university room pool";
+        }
+
+        return dashboardViewType === "campus" ? "campus room pool" : "accessible room pool";
+      }
+
+      function syncScheduleHeatmapFilter(payload) {
+        var roomOptions = payload && Array.isArray(payload.room_options) ? payload.room_options : [];
+        var selectedRoomId = Number(payload && payload.selected_room_id) || 0;
+        var selectedRoomLabel = payload && payload.selected_room_label ? payload.selected_room_label : "the selected room";
+
+        if (scheduleHeatmapTitle) {
+          scheduleHeatmapTitle.textContent = scheduleHeatmapTitleText();
+        }
+
+        if (scheduleHeatmapRoomFilter) {
+          var optionMarkup = roomOptions.map(function (room) {
+            var roomId = Number(room && room.room_id) || 0;
+            var roomLabel = room && room.label ? room.label : ("Room " + roomId);
+            return '<option value="' + roomId + '">' + escapeHtml(roomLabel) + "</option>";
+          }).join("");
+          var nextValue = roomOptions.some(function (room) {
+            return String(Number(room && room.room_id) || 0) === String(selectedRoomId);
+          }) ? String(selectedRoomId) : "all";
+
+          syncingScheduleHeatmapRoomFilter = true;
+          scheduleHeatmapRoomFilter.innerHTML =
+            '<option value="all">' + escapeHtml(scheduleHeatmapAllRoomsLabel()) + "</option>" + optionMarkup;
+          scheduleHeatmapRoomFilter.value = nextValue;
+          scheduleHeatmapRoomFilter.disabled = roomOptions.length === 0;
+          syncingScheduleHeatmapRoomFilter = false;
+          scheduleHeatmapRoomSelection = nextValue;
+        }
+
+        if (scheduleHeatmapFilterSummary) {
+          if (roomOptions.length === 0) {
+            scheduleHeatmapFilterSummary.textContent = "No active rooms are available for this heatmap.";
+          } else if (selectedRoomId > 0) {
+            scheduleHeatmapFilterSummary.textContent = "Viewing classroom heatmap for " + selectedRoomLabel + ".";
+          } else {
+            scheduleHeatmapFilterSummary.textContent = "Filter by room to inspect one classroom schedule.";
+          }
+        }
+
+        if (scheduleHeatmapSubtitle) {
+          scheduleHeatmapSubtitle.textContent = selectedRoomId > 0
+            ? "Each cell shows whether " + selectedRoomLabel + " is occupied during each 30-minute weekday block from 7:00 AM to 6:00 PM."
+            : scheduleHeatmapAggregateSubtitle();
+        }
+      }
+
+      function setScheduleHeatmapFilterLoadingState() {
+        if (scheduleHeatmapRoomFilter) {
+          scheduleHeatmapRoomFilter.disabled = true;
+        }
+
+        if (scheduleHeatmapFilterSummary) {
+          scheduleHeatmapFilterSummary.textContent = "Loading room options for the heatmap.";
+        }
+
+        if (scheduleHeatmapTitle) {
+          scheduleHeatmapTitle.textContent = scheduleHeatmapTitleText();
+        }
+
+        if (scheduleHeatmapSubtitle) {
+          scheduleHeatmapSubtitle.textContent = scheduleHeatmapAggregateSubtitle();
+        }
+
+        if (scheduleHeatmapBadge) {
+          scheduleHeatmapBadge.textContent = scheduleHeatmapBadgeText(false);
+        }
+      }
+
+      function scheduleHeatmapInsightLoadingText() {
+        if (scheduleHeatmapRoomSelection !== "all") {
+          return "Loading the classroom heat map for the selected room.";
+        }
+
+        if (dashboardViewType === "university") {
+          return "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM have the highest room occupancy across the university.";
+        }
+
+        return dashboardViewType === "campus"
+          ? "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM have the highest room occupancy across the current campus."
+          : "Loading which 30-minute weekday blocks from 7:00 AM to 6:00 PM are busiest across rooms accessible to the selected college.";
+      }
+
+      function buildScheduleHeatmapRequestData() {
+        return {
+          campus_id: campusIdParam,
+          college_id: selectedCollegeId,
+          room_id: scheduleHeatmapRoomSelection === "all" ? "" : scheduleHeatmapRoomSelection,
+          csrf_token: csrfToken
+        };
+      }
+
+      function renderScheduleHeatmap(heatmap) {
+        var payload = heatmap && typeof heatmap === "object" ? heatmap : {};
+        var series = Array.isArray(payload.series) ? payload.series : [];
+        var totalRooms = Number(payload.total_rooms) || 0;
+        var peakPercent = Number(payload.peak_percent) || 0;
+        var peakOccupiedRooms = Number(payload.peak_occupied_rooms) || 0;
+        var peakLabel = payload.peak_label || "No occupied room slots";
+        var occupiedSlotCount = Number(payload.occupied_slot_count) || 0;
+        var busiestDayLabel = payload.busiest_day_label || "";
+        var busiestDaySlots = Number(payload.busiest_day_slots) || 0;
+        var selectedRoomLabel = payload.selected_room_label || "Selected room";
+        var isSingleRoomView = payload.view_mode === "room";
+        var poolLabel = scheduleHeatmapPoolLabel();
+        var chartContainer = document.querySelector("#scheduleHeatmapChart");
+
+        if (!chartContainer) {
+          return;
+        }
+
+        syncScheduleHeatmapFilter(payload);
+
+        if (scheduleHeatmapBadge) {
+          scheduleHeatmapBadge.textContent = scheduleHeatmapBadgeText(isSingleRoomView);
+        }
+
+        if (!series.length) {
+          setChartFallback("scheduleHeatmapChart", "No room occupancy heat map is available.");
+          setInsight("scheduleHeatmapInsight", "Room occupancy could not be measured for the current scheduling scope.");
+          return;
+        }
+
+        if (!hasApexCharts) {
+          setChartFallback("scheduleHeatmapChart", "ApexCharts failed to load.");
+          setInsight("scheduleHeatmapInsight", "Room occupancy data is available but the chart library could not be loaded.");
+          return;
+        }
+
+        if (scheduleHeatmapChart) {
+          scheduleHeatmapChart.destroy();
+        }
+
+        chartContainer.innerHTML = "";
+
+        scheduleHeatmapChart = new ApexCharts(chartContainer, {
+          series: series,
           chart: {
             type: "heatmap",
             height: 340,
@@ -1832,29 +2163,36 @@ if ($isUniversitySummary) {
               shadeIntensity: 0.6,
               enableShades: false,
               colorScale: {
-                ranges: [
-                  { from: 0, to: 0, name: "Idle", color: "#edf1f7" },
-                  { from: 0.1, to: 25, name: "Light", color: "#8fc2ff" },
-                  { from: 25.1, to: 50, name: "Moderate", color: "#4b97f2" },
-                  { from: 50.1, to: 75, name: "Busy", color: "#1f6fd1" },
-                  { from: 75.1, to: 100, name: "Peak", color: "#114aa3" }
-                ]
+                ranges: isSingleRoomView
+                  ? [
+                      { from: 0, to: 0, name: "Available", color: "#edf1f7" },
+                      { from: 0.1, to: 100, name: "Occupied", color: "#1f6fd1" }
+                    ]
+                  : [
+                      { from: 0, to: 0, name: "Idle", color: "#edf1f7" },
+                      { from: 0.1, to: 25, name: "Light", color: "#8fc2ff" },
+                      { from: 25.1, to: 50, name: "Moderate", color: "#4b97f2" },
+                      { from: 50.1, to: 75, name: "Busy", color: "#1f6fd1" },
+                      { from: 75.1, to: 100, name: "Peak", color: "#114aa3" }
+                    ]
               }
             }
           },
           xaxis: {
             labels: {
-              rotate: -35,
+              rotate: -55,
+              trim: false,
+              hideOverlappingLabels: false,
               style: {
-                fontSize: "11px",
-                colors: "#777"
+                fontSize: "9px",
+                colors: "#697a8d"
               }
             }
           },
           yaxis: {
             labels: {
               style: {
-                colors: "#777"
+                colors: "#697a8d"
               }
             }
           },
@@ -1869,31 +2207,159 @@ if ($isUniversitySummary) {
           tooltip: {
             y: {
               formatter: function (value) {
-                return Number(value).toFixed(1) + "% occupied";
+                return isSingleRoomView
+                  ? (Number(value) > 0 ? "Occupied" : "Available")
+                  : Number(value).toFixed(1) + "% occupied";
               }
             }
           }
-        };
+        });
 
-        new ApexCharts(heatmapElement, heatmapOptions).render();
+        scheduleHeatmapChart.render();
+
+        if (totalRooms <= 0) {
+          setInsight(
+            "scheduleHeatmapInsight",
+            "No active rooms are available in the current " + poolLabel + ", so occupancy cannot be measured yet."
+          );
+          return;
+        }
+
+        if (isSingleRoomView) {
+          if (occupiedSlotCount <= 0) {
+            setInsight(
+              "scheduleHeatmapInsight",
+              selectedRoomLabel + " has no scheduled occupancy between 7:00 AM and 6:00 PM on weekdays for the current term."
+            );
+            return;
+          }
+
+          setInsight(
+            "scheduleHeatmapInsight",
+            selectedRoomLabel +
+              " is occupied during " +
+              occupiedSlotCount +
+              " weekday 30-minute block" +
+              (occupiedSlotCount === 1 ? "" : "s") +
+              (busiestDaySlots > 0
+                ? ". " + busiestDayLabel + " is the busiest day with " + busiestDaySlots + " occupied block" + (busiestDaySlots === 1 ? "" : "s") + "."
+                : ".")
+          );
+          return;
+        }
+
+        if (peakPercent <= 0) {
+          setInsight(
+            "scheduleHeatmapInsight",
+            "No occupied room slots are mapped between 7:00 AM and 6:00 PM across the " + poolLabel + " of " + totalRooms + " room" + (totalRooms === 1 ? "" : "s") + "."
+          );
+          return;
+        }
+
+        setInsight(
+          "scheduleHeatmapInsight",
+          "Peak room pressure hits " +
+            peakLabel +
+            " with " +
+            peakOccupiedRooms +
+            "/" +
+            totalRooms +
+            " rooms occupied (" +
+            peakPercent.toFixed(1) +
+            "%) in the current " +
+            poolLabel +
+            "."
+        );
       }
 
-      if (!utilizationLabels.length) {
-        utilizationLabels = ["No data"];
-        utilizationUsed = [0];
-        utilizationAvailable = [0];
+      function loadScheduleHeatmap() {
+        if (scheduleHeatmapRequest && scheduleHeatmapRequest.readyState !== 4) {
+          scheduleHeatmapRequest.abort();
+        }
+
+        if (scheduleHeatmapChart) {
+          scheduleHeatmapChart.destroy();
+          scheduleHeatmapChart = null;
+        }
+
+        setScheduleHeatmapFilterLoadingState();
+        setChartLoading("scheduleHeatmapChart", "Loading room occupancy heat map...");
+        setInsight("scheduleHeatmapInsight", scheduleHeatmapInsightLoadingText());
+
+        scheduleHeatmapRequest = $.ajax({
+          url: "../backend/dashboard_admin_schedule_heatmap.php",
+          type: "POST",
+          dataType: "json",
+          data: buildScheduleHeatmapRequestData(),
+          success: function (data) {
+            scheduleHeatmapRequest = null;
+
+            if (!data || data.status !== "ok") {
+              if (scheduleHeatmapRoomFilter) {
+                scheduleHeatmapRoomFilter.disabled = scheduleHeatmapRoomFilter.options.length <= 1;
+              }
+              if (scheduleHeatmapFilterSummary) {
+                scheduleHeatmapFilterSummary.textContent = "Unable to refresh room options for the heatmap.";
+              }
+              setChartFallback("scheduleHeatmapChart", (data && data.message) ? data.message : "Unable to load room occupancy heat map.");
+              setInsight("scheduleHeatmapInsight", "Room occupancy data could not be loaded.");
+              return;
+            }
+
+            renderScheduleHeatmap((data || {}).schedule_heatmap || {});
+          },
+          error: function (xhr, statusText) {
+            if (statusText === "abort") {
+              return;
+            }
+
+            scheduleHeatmapRequest = null;
+            if (scheduleHeatmapRoomFilter) {
+              scheduleHeatmapRoomFilter.disabled = scheduleHeatmapRoomFilter.options.length <= 1;
+            }
+            if (scheduleHeatmapFilterSummary) {
+              scheduleHeatmapFilterSummary.textContent = "Unable to refresh room options for the heatmap.";
+            }
+
+            setChartFallback("scheduleHeatmapChart", "Unable to load room occupancy heat map.");
+            setInsight("scheduleHeatmapInsight", "Room occupancy data could not be loaded.");
+            console.error("Admin heatmap error:", xhr.responseText);
+          }
+        });
       }
 
-      var utilizationElement = document.querySelector("#roomUtilizationChart");
-      if (utilizationElement && hasApexCharts) {
-        var utilizationOptions = {
+      function renderRoomUtilizationChart() {
+        if (!utilizationLabels.length) {
+          setChartFallback("roomUtilizationChart", "No room utilization data is available.");
+          setInsight("roomUtilizationInsight", "No current-term room utilization data is available for this view.");
+          return;
+        }
+
+        if (!hasApexCharts) {
+          setChartFallback("roomUtilizationChart", "ApexCharts failed to load.");
+          setInsight("roomUtilizationInsight", "Room utilization data is available but the chart library could not be loaded.");
+          return;
+        }
+
+        var utilizationElement = document.querySelector("#roomUtilizationChart");
+        if (!utilizationElement) {
+          return;
+        }
+
+        if (roomUtilizationChart) {
+          roomUtilizationChart.destroy();
+        }
+
+        utilizationElement.innerHTML = "";
+
+        roomUtilizationChart = new ApexCharts(utilizationElement, {
           series: [
             {
-              name: "Used Room-Hours",
+              name: "Scheduled Room-Hours",
               data: utilizationUsed
             },
             {
-              name: "Available Room-Hours",
+              name: "Remaining Baseline Capacity",
               data: utilizationAvailable
             }
           ],
@@ -1921,7 +2387,7 @@ if ($isUniversitySummary) {
           xaxis: {
             categories: utilizationLabels,
             title: {
-              text: "Room-hours per week",
+              text: "40-hour baseline room-hours",
               style: { color: "#777" }
             },
             labels: {
@@ -1950,26 +2416,78 @@ if ($isUniversitySummary) {
               }
             }
           }
-        };
+        });
 
-        new ApexCharts(utilizationElement, utilizationOptions).render();
+        roomUtilizationChart.render();
+
+        if ((Number(highestUtilizationPercent) || 0) <= 0 || !highestUtilizationLabel || highestUtilizationLabel === "No room data") {
+          setInsight(
+            "roomUtilizationInsight",
+            "No room usage has been recorded in the current reporting window for this " + utilizationMetricLabel.toLowerCase() + " view yet."
+          );
+          return;
+        }
+
+        setInsight(
+          "roomUtilizationInsight",
+          highestUtilizationLabel +
+            " is currently the busiest " +
+            utilizationMetricLabel.toLowerCase() +
+            " at " +
+            Number(highestUtilizationPercent).toFixed(1) +
+            "% of the university's 40-hour weekly baseline."
+        );
+      }
+
+      if (!analyticsReady) {
+        return;
       }
 
       if (!hasApexCharts) {
         console.error("ApexCharts library failed to load.");
       }
 
+      renderRoomUtilizationChart();
+      loadScheduleHeatmap();
+
+      if (scheduleHeatmapRoomFilter) {
+        scheduleHeatmapRoomFilter.addEventListener("change", function () {
+          if (syncingScheduleHeatmapRoomFilter) {
+            return;
+          }
+
+          scheduleHeatmapRoomSelection = scheduleHeatmapRoomFilter.value || "all";
+          loadScheduleHeatmap();
+        });
+      }
+
       var openMatrixButton = document.getElementById("openMatrixModal");
       var matrixContainer = document.getElementById("matrixContainer");
       var matrixModalElement = document.getElementById("matrixModal");
       var matrixModalTitle = document.getElementById("matrixModalTitle");
+      var matrixModalNote = document.getElementById("matrixModalNote");
 
       if (openMatrixButton && matrixContainer && matrixModalElement && selectedCollegeId > 0) {
         var matrixModal = new bootstrap.Modal(matrixModalElement);
 
         openMatrixButton.addEventListener("click", function () {
-          matrixModalTitle.innerHTML = '<i class="bx bx-grid-alt me-1"></i> ' +
-            selectedCollegeName + ' Schedule Matrix <small class="text-muted">(' + academicTermText + ')</small>';
+          if (matrixModalTitle) {
+            matrixModalTitle.innerHTML = '<i class="bx bx-building me-1"></i> Room-Time Matrix';
+          }
+
+          if (matrixModalNote) {
+            var noteParts = [];
+            if (selectedCollegeName) {
+              noteParts.push("Viewing " + selectedCollegeName);
+            }
+            if (selectedCollegePolicySource || selectedCollegePolicyWindow) {
+              noteParts.push("Follows " + (selectedCollegePolicySource || "Scheduling policy") + (selectedCollegePolicyWindow ? ": " + selectedCollegePolicyWindow : ""));
+            } else if (academicTermText) {
+              noteParts.push(academicTermText);
+            }
+            noteParts.push("12-hour time labels");
+            matrixModalNote.textContent = noteParts.join(" | ");
+          }
 
           matrixContainer.innerHTML = `
             <div class="text-center text-muted py-5">
