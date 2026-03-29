@@ -30,11 +30,15 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
 
 $college_id = (int)($_SESSION['college_id'] ?? 0);
 $offering_id = (int)($_POST['offering_id'] ?? 0);
-$target_type = strtoupper(trim((string)($_POST['target_type'] ?? 'LEC')));
+$target_type = strtoupper(trim((string)($_POST['target_type'] ?? '')));
 $target_key = trim((string)($_POST['target_key'] ?? ''));
 
-if ($college_id <= 0 || $offering_id <= 0 || !in_array($target_type, ['LEC', 'LAB'], true)) {
+if ($college_id <= 0 || $offering_id <= 0) {
     respond('error', 'Missing scheduling context.');
+}
+
+if ($target_type !== '' && !in_array($target_type, ['LEC', 'LAB'], true)) {
+    respond('error', 'Unsupported suggestion target.');
 }
 
 $schedulePolicy = synk_fetch_effective_schedule_policy($conn, $college_id);
@@ -316,6 +320,164 @@ function load_term_schedule_snapshot_by_day($conn, $ayId, $semester, $excludeOff
     return $byDay;
 }
 
+function load_workload_faculties_for_offering_suggestions($conn, $offering_id, $ay_id, $semester) {
+    $sql = "
+        SELECT
+            fw.faculty_id,
+            CONCAT(
+                f.last_name,
+                ', ',
+                f.first_name,
+                CASE
+                    WHEN COALESCE(f.ext_name, '') <> '' THEN CONCAT(' ', f.ext_name)
+                    ELSE ''
+                END
+            ) AS faculty_name,
+            COUNT(*) AS assigned_rows
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = fw.faculty_id
+        WHERE cs.offering_id = ?
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+        GROUP BY fw.faculty_id, faculty_name
+        ORDER BY faculty_name
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iii", $offering_id, $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $faculties = [];
+    while ($row = $res->fetch_assoc()) {
+        $faculties[] = [
+            'faculty_id' => (int)($row['faculty_id'] ?? 0),
+            'faculty_name' => (string)($row['faculty_name'] ?? ''),
+            'assigned_rows' => (int)($row['assigned_rows'] ?? 0)
+        ];
+    }
+
+    $stmt->close();
+    return $faculties;
+}
+
+function load_other_faculty_workload_rows_suggestions($conn, $faculty_id, $ay_id, $semester, $offering_id) {
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            cs.schedule_id,
+            cs.schedule_type,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            sm.sub_code,
+            sec.section_name
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        WHERE fw.faculty_id = ?
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+          AND cs.offering_id <> ?
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iiii", $faculty_id, $ay_id, $semester, $offering_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $row['days'] = normalize_days_array(json_decode((string)($row['days_json'] ?? '[]'), true));
+        $rows[] = $row;
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function load_faculty_snapshot_by_day($conn, array $context, $offeringId) {
+    $faculties = load_workload_faculties_for_offering_suggestions(
+        $conn,
+        (int)$offeringId,
+        (int)($context['ay_id'] ?? 0),
+        (int)($context['semester'] ?? 0)
+    );
+
+    $snapshotByDay = [];
+    foreach (day_order() as $day) {
+        $snapshotByDay[$day] = [];
+    }
+
+    if (empty($faculties)) {
+        return [
+            'has_assignments' => false,
+            'faculty_names' => [],
+            'by_day' => $snapshotByDay
+        ];
+    }
+
+    $facultyNames = [];
+    foreach ($faculties as $faculty) {
+        $facultyName = trim((string)($faculty['faculty_name'] ?? ''));
+        if ($facultyName !== '') {
+            $facultyNames[] = $facultyName;
+        }
+
+        $rows = load_other_faculty_workload_rows_suggestions(
+            $conn,
+            (int)($faculty['faculty_id'] ?? 0),
+            (int)($context['ay_id'] ?? 0),
+            (int)($context['semester'] ?? 0),
+            (int)$offeringId
+        );
+
+        foreach ($rows as $row) {
+            $days = normalize_days_array($row['days'] ?? []);
+            if (empty($days)) {
+                continue;
+            }
+
+            $item = [
+                'schedule_id' => (int)($row['schedule_id'] ?? 0),
+                'schedule_type' => strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))),
+                'time_start' => (string)($row['time_start'] ?? ''),
+                'time_end' => (string)($row['time_end'] ?? ''),
+                'sub_code' => (string)($row['sub_code'] ?? ''),
+                'section_name' => (string)($row['section_name'] ?? ''),
+                'faculty_name' => $facultyName,
+                'days' => $days
+            ];
+
+            foreach ($days as $day) {
+                $snapshotByDay[$day][] = $item;
+            }
+        }
+    }
+
+    return [
+        'has_assignments' => true,
+        'faculty_names' => array_values(array_unique(array_filter($facultyNames))),
+        'by_day' => $snapshotByDay
+    ];
+}
+
 function normalize_draft_schedules($draftsRaw) {
     if (is_string($draftsRaw) && trim($draftsRaw) !== '') {
         $decoded = json_decode($draftsRaw, true);
@@ -410,6 +572,25 @@ function desired_weekly_minutes($targetType, $targetDraft, $allDrafts, $context)
     return ceil_to_slot($remaining, 30);
 }
 
+function collect_target_draft(array $drafts, string $targetType, string $targetKey = ''): array {
+    foreach ($drafts as $draft) {
+        if (($draft['block_key'] ?? '') === $targetKey && ($draft['type'] ?? '') === $targetType) {
+            return $draft;
+        }
+    }
+
+    foreach ($drafts as $draft) {
+        if (($draft['type'] ?? '') === $targetType) {
+            return $draft;
+        }
+    }
+
+    return [
+        'block_key' => $targetKey !== '' ? $targetKey : $targetType,
+        'type' => $targetType
+    ];
+}
+
 function add_pattern(&$patterns, $days, $weeklyMinutes, $weight, $label) {
     $days = normalize_days_array($days);
     $meetingCount = count($days);
@@ -469,7 +650,24 @@ function build_schedule_patterns($scheduleType, $weeklyMinutes) {
     return array_values($patterns);
 }
 
-function candidate_has_conflict($candidate, $snapshotByDay, $context, $drafts, $targetKey) {
+function build_preferred_patterns($scheduleType, $weeklyMinutes, array $targetDraft) {
+    $patterns = [];
+    $preferredDays = normalize_days_array($targetDraft['days'] ?? []);
+    if (!empty($preferredDays)) {
+        add_pattern($patterns, $preferredDays, $weeklyMinutes, 40, 'Selected day pattern');
+    }
+
+    return array_values($patterns);
+}
+
+function analyze_candidate_conflicts($candidate, $snapshotByDay, $facultyByDay, $context, $drafts, $targetKey) {
+    $analysis = [
+        'draft_conflict' => false,
+        'section_conflicts' => [],
+        'room_conflicts' => [],
+        'faculty_conflicts' => []
+    ];
+
     foreach ($candidate['days'] as $day) {
         foreach ($snapshotByDay[$day] ?? [] as $item) {
             if (!time_overlap($candidate['time_start'], $candidate['time_end'], $item['time_start'], $item['time_end'])) {
@@ -477,12 +675,23 @@ function candidate_has_conflict($candidate, $snapshotByDay, $context, $drafts, $
             }
 
             if ((int)$item['section_id'] === (int)$context['section_id']) {
-                return true;
+                $key = 'section|' . (int)($item['schedule_id'] ?? 0) . '|' . $day;
+                $analysis['section_conflicts'][$key] = $item;
             }
 
             if ((int)$item['room_id'] === (int)$candidate['room_id']) {
-                return true;
+                $key = 'room|' . (int)($item['schedule_id'] ?? 0) . '|' . $day;
+                $analysis['room_conflicts'][$key] = $item;
             }
+        }
+
+        foreach ($facultyByDay[$day] ?? [] as $item) {
+            if (!time_overlap($candidate['time_start'], $candidate['time_end'], $item['time_start'], $item['time_end'])) {
+                continue;
+            }
+
+            $key = 'faculty|' . (int)($item['schedule_id'] ?? 0) . '|' . (string)($item['faculty_name'] ?? '') . '|' . $day;
+            $analysis['faculty_conflicts'][$key] = $item;
         }
     }
 
@@ -499,11 +708,23 @@ function candidate_has_conflict($candidate, $snapshotByDay, $context, $drafts, $
             days_overlap($candidate['days'], $draft['days']) &&
             time_overlap($candidate['time_start'], $candidate['time_end'], $draft['time_start'], $draft['time_end'])
         ) {
-            return true;
+            $analysis['draft_conflict'] = true;
+            break;
         }
     }
 
-    return false;
+    $analysis['section_conflicts'] = array_values($analysis['section_conflicts']);
+    $analysis['room_conflicts'] = array_values($analysis['room_conflicts']);
+    $analysis['faculty_conflicts'] = array_values($analysis['faculty_conflicts']);
+    $analysis['section_count'] = count($analysis['section_conflicts']);
+    $analysis['room_count'] = count($analysis['room_conflicts']);
+    $analysis['faculty_count'] = count($analysis['faculty_conflicts']);
+    $analysis['total_live_conflicts'] =
+        $analysis['section_count'] +
+        $analysis['room_count'] +
+        $analysis['faculty_count'];
+
+    return $analysis;
 }
 
 function room_fit_score($room, $scheduleType) {
@@ -550,6 +771,68 @@ function companion_spacing_score($candidate, $drafts, $targetKey) {
     return $score;
 }
 
+function selected_days_score($candidate, array $targetDraft) {
+    $preferredDays = normalize_days_array($targetDraft['days'] ?? []);
+    if (empty($preferredDays)) {
+        return 0;
+    }
+
+    $candidateDays = normalize_days_array($candidate['days'] ?? []);
+    if ($candidateDays === $preferredDays) {
+        return 12;
+    }
+
+    $overlap = count(array_intersect($candidateDays, $preferredDays));
+    if ($overlap > 0) {
+        return 4 + $overlap;
+    }
+
+    return -2;
+}
+
+function selected_time_score($candidate, array $targetDraft) {
+    $preferredStart = trim((string)($targetDraft['time_start'] ?? ''));
+    $preferredEnd = trim((string)($targetDraft['time_end'] ?? ''));
+    if ($preferredStart === '' || $preferredEnd === '') {
+        return 0;
+    }
+
+    $candidateStart = time_to_minutes($candidate['time_start']);
+    $candidateEnd = time_to_minutes($candidate['time_end']);
+    $targetStartMinutes = time_to_minutes($preferredStart);
+    $targetEndMinutes = time_to_minutes($preferredEnd);
+
+    if ($candidateStart === null || $candidateEnd === null || $targetStartMinutes === null || $targetEndMinutes === null) {
+        return 0;
+    }
+
+    if ($candidateStart === $targetStartMinutes && $candidateEnd === $targetEndMinutes) {
+        return 12;
+    }
+
+    $totalDiff = abs($candidateStart - $targetStartMinutes) + abs($candidateEnd - $targetEndMinutes);
+    if ($totalDiff <= 60) {
+        return 8;
+    }
+    if ($totalDiff <= 120) {
+        return 4;
+    }
+    if ($totalDiff <= 180) {
+        return 1;
+    }
+
+    return -2;
+}
+
+function selected_room_score($candidate, array $targetDraft) {
+    $preferredRoomId = (int)($targetDraft['room_id'] ?? 0);
+    if ($preferredRoomId <= 0) {
+        return 0;
+    }
+
+    return $preferredRoomId === (int)($candidate['room_id'] ?? 0) ? 8 : -1;
+}
+
 function time_score($candidate) {
     $start = time_to_minutes($candidate['time_start']);
     $end = time_to_minutes($candidate['time_end']);
@@ -570,7 +853,15 @@ function time_score($candidate) {
     return $score;
 }
 
-function fit_bucket($score) {
+function fit_bucket($score, array $analysis) {
+    if ((int)($analysis['total_live_conflicts'] ?? 0) > 1) {
+        return ['label' => 'Conflict Risk', 'class' => 'review'];
+    }
+
+    if ((int)($analysis['total_live_conflicts'] ?? 0) === 1) {
+        return ['label' => 'Needs Review', 'class' => 'review'];
+    }
+
     if ($score >= 44) {
         return ['label' => 'Best Fit', 'class' => 'best'];
     }
@@ -580,20 +871,624 @@ function fit_bucket($score) {
     return ['label' => 'Valid Slot', 'class' => 'valid'];
 }
 
-function build_reasons($candidate, $room, $scheduleType) {
-    $reasons = [
-        'No room conflict',
-        'No section conflict',
-        $scheduleType === 'LAB' ? 'Laboratory-compatible room' : 'Lecture-compatible room'
-    ];
+function build_reasons($candidate, $room, $scheduleType, array $targetDraft, array $analysis, bool $hasFacultyAssignments) {
+    $reasons = [];
 
-    if (($room['access_type'] ?? 'owner') === 'shared') {
-        $reasons[] = 'Shared room is available';
-    } else {
-        $reasons[] = 'Owned room is available';
+    if (normalize_days_array($candidate['days'] ?? []) === normalize_days_array($targetDraft['days'] ?? [])) {
+        $reasons[] = 'Matches selected days';
     }
 
-    return array_slice($reasons, 0, 4);
+    if (
+        trim((string)($targetDraft['time_start'] ?? '')) !== '' &&
+        trim((string)($targetDraft['time_end'] ?? '')) !== '' &&
+        trim((string)($candidate['time_start'] ?? '')) === trim((string)($targetDraft['time_start'] ?? '')) &&
+        trim((string)($candidate['time_end'] ?? '')) === trim((string)($targetDraft['time_end'] ?? ''))
+    ) {
+        $reasons[] = 'Matches selected time';
+    }
+
+    if ((int)($targetDraft['room_id'] ?? 0) > 0 && (int)($targetDraft['room_id'] ?? 0) === (int)($candidate['room_id'] ?? 0)) {
+        $reasons[] = 'Uses selected room';
+    }
+
+    $reasons[] = (int)($analysis['room_count'] ?? 0) === 0
+        ? 'No room conflict'
+        : 'Room overlaps ' . (int)($analysis['room_count'] ?? 0) . ' scheduled class(es)';
+
+    $reasons[] = (int)($analysis['section_count'] ?? 0) === 0
+        ? 'No section conflict'
+        : 'Section overlaps ' . (int)($analysis['section_count'] ?? 0) . ' scheduled class(es)';
+
+    if ($hasFacultyAssignments) {
+        $reasons[] = (int)($analysis['faculty_count'] ?? 0) === 0
+            ? 'No faculty workload conflict'
+            : 'Faculty workload overlaps ' . (int)($analysis['faculty_count'] ?? 0) . ' assigned class(es)';
+    }
+
+    $reasons[] = $scheduleType === 'LAB' ? 'Laboratory-compatible room' : 'Lecture-compatible room';
+    $reasons[] = (($room['access_type'] ?? 'owner') === 'shared') ? 'Shared room access' : 'Owned room access';
+
+    $deduped = [];
+    $seen = [];
+    foreach ($reasons as $reason) {
+        $key = trim((string)$reason);
+        if ($key === '' || isset($seen[$key])) {
+            continue;
+        }
+
+        $seen[$key] = true;
+        $deduped[] = $key;
+    }
+
+    return array_slice($deduped, 0, 5);
+}
+
+function target_draft_has_any_filter(array $targetDraft): bool {
+    return !empty(normalize_days_array($targetDraft['days'] ?? []))
+        || trim((string)($targetDraft['time_start'] ?? '')) !== ''
+        || trim((string)($targetDraft['time_end'] ?? '')) !== ''
+        || (int)($targetDraft['room_id'] ?? 0) > 0;
+}
+
+function filter_candidate_rooms_for_target(array $rooms, string $targetType, array $targetDraft): array {
+    $filtered = array_values(array_filter($rooms, static function (array $room) use ($targetType): bool {
+        return room_type_allows_schedule($room['room_type'] ?? 'lecture', $targetType);
+    }));
+
+    $selectedRoomId = (int)($targetDraft['room_id'] ?? 0);
+    if ($selectedRoomId <= 0) {
+        return $filtered;
+    }
+
+    return array_values(array_filter($filtered, static function (array $room) use ($selectedRoomId): bool {
+        return (int)($room['room_id'] ?? 0) === $selectedRoomId;
+    }));
+}
+
+function build_filtered_patterns_for_target(string $targetType, int $desiredMinutes, array $targetDraft, array $schedulePolicy): array {
+    $selectedDays = normalize_days_array($targetDraft['days'] ?? []);
+    if (!empty($selectedDays)) {
+        if (!empty(array_intersect($selectedDays, $schedulePolicy['blocked_days'] ?? []))) {
+            return [];
+        }
+
+        $meetingMinutes = max(30, ceil_to_slot($desiredMinutes / max(1, count($selectedDays)), 30));
+        $selectedStart = trim((string)($targetDraft['time_start'] ?? ''));
+        $selectedEnd = trim((string)($targetDraft['time_end'] ?? ''));
+        if ($selectedStart !== '' && $selectedEnd !== '') {
+            $selectedStartMinutes = time_to_minutes($selectedStart);
+            $selectedEndMinutes = time_to_minutes($selectedEnd);
+            if ($selectedStartMinutes !== null && $selectedEndMinutes !== null && $selectedEndMinutes > $selectedStartMinutes) {
+                $meetingMinutes = $selectedEndMinutes - $selectedStartMinutes;
+            }
+        }
+
+        return [[
+            'days' => $selectedDays,
+            'meeting_minutes' => $meetingMinutes,
+            'weight' => 60,
+            'label' => 'Selected days'
+        ]];
+    }
+
+    return array_values(array_filter(
+        build_schedule_patterns($targetType, $desiredMinutes),
+        static function (array $pattern) use ($schedulePolicy): bool {
+            return empty(array_intersect($pattern['days'] ?? [], $schedulePolicy['blocked_days'] ?? []));
+        }
+    ));
+}
+
+function build_time_windows_for_pattern(array $pattern, array $targetDraft, array $schedulePolicy): array {
+    $meetingMinutes = (int)($pattern['meeting_minutes'] ?? 0);
+    $dayStart = time_to_minutes((string)($schedulePolicy['day_start'] ?? '07:30:00'));
+    $dayEnd = time_to_minutes((string)($schedulePolicy['day_end'] ?? '17:30:00'));
+    if ($meetingMinutes <= 0 || $dayStart === null || $dayEnd === null) {
+        return [];
+    }
+
+    $selectedStart = trim((string)($targetDraft['time_start'] ?? ''));
+    $selectedEnd = trim((string)($targetDraft['time_end'] ?? ''));
+    $selectedStartMinutes = $selectedStart !== '' ? time_to_minutes($selectedStart) : null;
+    $selectedEndMinutes = $selectedEnd !== '' ? time_to_minutes($selectedEnd) : null;
+
+    if ($selectedStartMinutes !== null && $selectedEndMinutes !== null && $selectedEndMinutes > $selectedStartMinutes) {
+        if ($selectedStartMinutes < $dayStart || $selectedEndMinutes > $dayEnd) {
+            return [];
+        }
+
+        return [[
+            'start' => $selectedStartMinutes,
+            'end' => $selectedEndMinutes,
+            'label' => 'Selected time'
+        ]];
+    }
+
+    if ($selectedStartMinutes !== null) {
+        $end = $selectedStartMinutes + $meetingMinutes;
+        if ($selectedStartMinutes < $dayStart || $end > $dayEnd) {
+            return [];
+        }
+
+        return [[
+            'start' => $selectedStartMinutes,
+            'end' => $end,
+            'label' => 'Starts at selected time'
+        ]];
+    }
+
+    if ($selectedEndMinutes !== null) {
+        $start = $selectedEndMinutes - $meetingMinutes;
+        if ($start < $dayStart || $selectedEndMinutes > $dayEnd) {
+            return [];
+        }
+
+        return [[
+            'start' => $start,
+            'end' => $selectedEndMinutes,
+            'label' => 'Ends at selected time'
+        ]];
+    }
+
+    $windows = [];
+    for ($start = $dayStart; ($start + $meetingMinutes) <= $dayEnd; $start += 30) {
+        $windows[] = [
+            'start' => $start,
+            'end' => $start + $meetingMinutes,
+            'label' => (string)($pattern['label'] ?? 'Suggested slot')
+        ];
+    }
+
+    return $windows;
+}
+
+function room_has_conflict_in_snapshot(int $roomId, array $days, string $timeStart, string $timeEnd, array $snapshotByDay): bool {
+    foreach ($days as $day) {
+        foreach ($snapshotByDay[$day] ?? [] as $item) {
+            if ((int)($item['room_id'] ?? 0) !== $roomId) {
+                continue;
+            }
+
+            if (time_overlap($timeStart, $timeEnd, (string)($item['time_start'] ?? ''), (string)($item['time_end'] ?? ''))) {
+                return true;
+            }
+        }
+    }
+
+    return false;
+}
+
+function build_availability_for_target(
+    array $context,
+    array $rooms,
+    array $schedulePolicy,
+    array $snapshotByDay,
+    array $facultySnapshot,
+    array $drafts,
+    string $targetType,
+    string $targetKey
+) {
+    $targetDraft = collect_target_draft($drafts, $targetType, $targetKey);
+    $desiredMinutes = desired_weekly_minutes($targetType, $targetDraft, $drafts, $context);
+
+    if (!target_draft_has_any_filter($targetDraft)) {
+        return [
+            'mode' => 'availability_finder',
+            'desired_minutes' => $desiredMinutes,
+            'target_draft' => $targetDraft,
+            'selected_time_key' => '',
+            'time_slots' => [],
+            'message' => 'Choose at least one day, time, or room first.'
+        ];
+    }
+
+    $patterns = build_filtered_patterns_for_target($targetType, $desiredMinutes, $targetDraft, $schedulePolicy);
+    $candidateRooms = filter_candidate_rooms_for_target($rooms, $targetType, $targetDraft);
+    $facultyByDay = $facultySnapshot['by_day'] ?? [];
+    $hasFacultyAssignments = !empty($facultySnapshot['has_assignments']);
+
+    if (empty($patterns) || empty($candidateRooms)) {
+        return [
+            'mode' => 'availability_finder',
+            'desired_minutes' => $desiredMinutes,
+            'target_draft' => $targetDraft,
+            'selected_time_key' => '',
+            'time_slots' => [],
+            'message' => 'No available entries matched the current filters.'
+        ];
+    }
+
+    $slotMap = [];
+    foreach ($patterns as $pattern) {
+        foreach (build_time_windows_for_pattern($pattern, $targetDraft, $schedulePolicy) as $window) {
+            $days = normalize_days_array($pattern['days'] ?? []);
+            $timeStart = minutes_to_time((int)$window['start']);
+            $timeEnd = minutes_to_time((int)$window['end']);
+
+            if (empty($days) || synk_schedule_policy_blocked_time_overlap($timeStart, $timeEnd, $schedulePolicy) !== null) {
+                continue;
+            }
+
+            $slotAnalysis = analyze_candidate_conflicts([
+                'room_id' => 0,
+                'days' => $days,
+                'time_start' => $timeStart,
+                'time_end' => $timeEnd
+            ], $snapshotByDay, $facultyByDay, $context, $drafts, $targetKey);
+
+            if (!empty($slotAnalysis['draft_conflict']) || (int)($slotAnalysis['section_count'] ?? 0) > 0 || (int)($slotAnalysis['faculty_count'] ?? 0) > 0) {
+                continue;
+            }
+
+            $availableRooms = [];
+            foreach ($candidateRooms as $room) {
+                $roomId = (int)($room['room_id'] ?? 0);
+                if ($roomId <= 0 || room_has_conflict_in_snapshot($roomId, $days, $timeStart, $timeEnd, $snapshotByDay)) {
+                    continue;
+                }
+
+                $candidate = [
+                    'schedule_type' => $targetType,
+                    'room_id' => $roomId,
+                    'room_label' => (string)($room['label'] ?? ''),
+                    'days' => $days,
+                    'time_start' => $timeStart,
+                    'time_end' => $timeEnd
+                ];
+                $roomAnalysis = [
+                    'room_count' => 0,
+                    'section_count' => 0,
+                    'faculty_count' => 0
+                ];
+
+                $availableRooms[] = [
+                    'room_id' => $roomId,
+                    'room_label' => (string)($room['label'] ?? ''),
+                    'fit_label' => 'Available',
+                    'fit_class' => 'best',
+                    'reasons' => build_reasons($candidate, $room, $targetType, $targetDraft, $roomAnalysis, $hasFacultyAssignments)
+                ];
+            }
+
+            if (empty($availableRooms)) {
+                continue;
+            }
+
+            usort($availableRooms, static function (array $left, array $right): int {
+                return strcmp((string)($left['room_label'] ?? ''), (string)($right['room_label'] ?? ''));
+            });
+
+            $timeKey = implode('-', $days) . '|' . $timeStart . '|' . $timeEnd;
+            $slotMap[$timeKey] = [
+                'time_key' => $timeKey,
+                'days' => $days,
+                'days_label' => days_to_label($days),
+                'time_start' => minutes_to_input_time((int)$window['start']),
+                'time_end' => minutes_to_input_time((int)$window['end']),
+                'time_label' => minutes_to_label((int)$window['start']) . ' - ' . minutes_to_label((int)$window['end']),
+                'pattern_label' => (string)($window['label'] ?? $pattern['label'] ?? 'Available slot'),
+                'room_count' => count($availableRooms),
+                'rooms' => $availableRooms,
+                'sort_weight' => (int)($pattern['weight'] ?? 0)
+            ];
+        }
+    }
+
+    $timeSlots = array_values($slotMap);
+    usort($timeSlots, static function (array $left, array $right): int {
+        if ((int)($left['room_count'] ?? 0) !== (int)($right['room_count'] ?? 0)) {
+            return ((int)($right['room_count'] ?? 0) <=> (int)($left['room_count'] ?? 0));
+        }
+
+        if ((int)($left['sort_weight'] ?? 0) !== (int)($right['sort_weight'] ?? 0)) {
+            return ((int)($right['sort_weight'] ?? 0) <=> (int)($left['sort_weight'] ?? 0));
+        }
+
+        if ((string)($left['days_label'] ?? '') !== (string)($right['days_label'] ?? '')) {
+            return strcmp((string)($left['days_label'] ?? ''), (string)($right['days_label'] ?? ''));
+        }
+
+        return strcmp((string)($left['time_start'] ?? ''), (string)($right['time_start'] ?? ''));
+    });
+
+    $timeSlots = array_slice($timeSlots, 0, 24);
+    $selectedTimeKey = (string)($timeSlots[0]['time_key'] ?? '');
+
+    return [
+        'mode' => 'availability_finder',
+        'desired_minutes' => $desiredMinutes,
+        'target_draft' => $targetDraft,
+        'selected_time_key' => $selectedTimeKey,
+        'time_slots' => $timeSlots,
+        'message' => empty($timeSlots)
+            ? 'No available entries matched the current day, time, or room filters.'
+            : 'Available entries loaded for the current filters.'
+    ];
+}
+
+function build_suggestions_for_target(
+    $conn,
+    array $context,
+    array $rooms,
+    array $schedulePolicy,
+    array $snapshotByDay,
+    array $facultySnapshot,
+    array $drafts,
+    string $targetType,
+    string $targetKey
+) {
+    $targetDraft = collect_target_draft($drafts, $targetType, $targetKey);
+    $desiredMinutes = desired_weekly_minutes($targetType, $targetDraft, $drafts, $context);
+    $strictFilters = trim($targetKey) !== '';
+
+    if ($strictFilters) {
+        if (!target_draft_has_any_filter($targetDraft)) {
+            return [
+                'desired_minutes' => $desiredMinutes,
+                'target_draft' => $targetDraft,
+                'suggestions' => [],
+                'has_conflict_free' => false,
+                'message' => 'Choose at least one day, time, or room first.'
+            ];
+        }
+
+        $patterns = build_filtered_patterns_for_target($targetType, $desiredMinutes, $targetDraft, $schedulePolicy);
+        $candidateRooms = filter_candidate_rooms_for_target($rooms, $targetType, $targetDraft);
+        $facultyByDay = $facultySnapshot['by_day'] ?? [];
+        $hasFacultyAssignments = !empty($facultySnapshot['has_assignments']);
+        $candidates = [];
+
+        foreach ($patterns as $pattern) {
+            foreach ($candidateRooms as $room) {
+                foreach (build_time_windows_for_pattern($pattern, $targetDraft, $schedulePolicy) as $window) {
+                    $candidate = [
+                        'schedule_type' => $targetType,
+                        'room_id' => (int)$room['room_id'],
+                        'room_label' => (string)$room['label'],
+                        'days' => $pattern['days'],
+                        'days_label' => days_to_label($pattern['days']),
+                        'time_start' => minutes_to_time((int)$window['start']),
+                        'time_end' => minutes_to_time((int)$window['end']),
+                        'time_start_input' => minutes_to_input_time((int)$window['start']),
+                        'time_end_input' => minutes_to_input_time((int)$window['end']),
+                        'time_label' => minutes_to_label((int)$window['start']) . ' - ' . minutes_to_label((int)$window['end']),
+                        'pattern_label' => (string)($window['label'] ?? $pattern['label'] ?? 'Suggested slot')
+                    ];
+
+                    if (synk_schedule_policy_blocked_time_overlap($candidate['time_start'], $candidate['time_end'], $schedulePolicy) !== null) {
+                        continue;
+                    }
+
+                    $analysis = analyze_candidate_conflicts($candidate, $snapshotByDay, $facultyByDay, $context, $drafts, $targetKey);
+                    if (!empty($analysis['draft_conflict']) || (int)($analysis['total_live_conflicts'] ?? 0) > 0) {
+                        continue;
+                    }
+
+                    $score = 20
+                        + (int)($pattern['weight'] ?? 0)
+                        + room_fit_score($room, $targetType)
+                        + time_score($candidate)
+                        + selected_days_score($candidate, $targetDraft)
+                        + selected_time_score($candidate, $targetDraft)
+                        + selected_room_score($candidate, $targetDraft);
+
+                    $fit = fit_bucket($score, $analysis);
+                    $candidate['fit_label'] = $fit['label'];
+                    $candidate['fit_class'] = $fit['class'];
+                    $candidate['score'] = $score;
+                    $candidate['is_conflict_free'] = true;
+                    $candidate['conflict_count'] = 0;
+                    $candidate['section_conflict_count'] = 0;
+                    $candidate['room_conflict_count'] = 0;
+                    $candidate['faculty_conflict_count'] = 0;
+                    $candidate['reasons'] = build_reasons($candidate, $room, $targetType, $targetDraft, $analysis, $hasFacultyAssignments);
+                    $candidates[] = $candidate;
+                }
+            }
+        }
+
+        usort($candidates, function ($a, $b) {
+            if ($a['score'] === $b['score']) {
+                if ($a['time_start'] === $b['time_start']) {
+                    return strcmp($a['room_label'], $b['room_label']);
+                }
+                return strcmp($a['time_start'], $b['time_start']);
+            }
+
+            return $b['score'] <=> $a['score'];
+        });
+
+        $selected = [];
+        $seen = [];
+        foreach ($candidates as $candidate) {
+            $signature = implode('-', $candidate['days']) . '|' . $candidate['time_start'] . '|' . $candidate['room_id'];
+            if (isset($seen[$signature])) {
+                continue;
+            }
+
+            $seen[$signature] = true;
+            $selected[] = [
+                'schedule_type' => $candidate['schedule_type'],
+                'room_id' => $candidate['room_id'],
+                'room_label' => $candidate['room_label'],
+                'days' => $candidate['days'],
+                'days_label' => $candidate['days_label'],
+                'time_start' => $candidate['time_start_input'],
+                'time_end' => $candidate['time_end_input'],
+                'time_label' => $candidate['time_label'],
+                'pattern_label' => $candidate['pattern_label'],
+                'fit_label' => $candidate['fit_label'],
+                'fit_class' => $candidate['fit_class'],
+                'is_conflict_free' => true,
+                'conflict_count' => 0,
+                'section_conflict_count' => 0,
+                'room_conflict_count' => 0,
+                'faculty_conflict_count' => 0,
+                'reasons' => $candidate['reasons']
+            ];
+
+            if (count($selected) >= 12) {
+                break;
+            }
+        }
+
+        return [
+            'desired_minutes' => $desiredMinutes,
+            'target_draft' => $targetDraft,
+            'suggestions' => $selected,
+            'has_conflict_free' => !empty($selected),
+            'message' => !empty($selected)
+                ? 'Available suggestions loaded for the selected filters.'
+                : 'No available suggestions matched the current day, time, or room filters.'
+        ];
+    }
+
+    $patternMap = [];
+
+    foreach (build_preferred_patterns($targetType, $desiredMinutes, $targetDraft) as $pattern) {
+        $key = implode('-', $pattern['days']) . '|' . (int)($pattern['meeting_minutes'] ?? 0);
+        if (!isset($patternMap[$key]) || (int)($pattern['weight'] ?? 0) > (int)($patternMap[$key]['weight'] ?? 0)) {
+            $patternMap[$key] = $pattern;
+        }
+    }
+
+    foreach (build_schedule_patterns($targetType, $desiredMinutes) as $pattern) {
+        $key = implode('-', $pattern['days']) . '|' . (int)($pattern['meeting_minutes'] ?? 0);
+        if (!isset($patternMap[$key]) || (int)($pattern['weight'] ?? 0) > (int)($patternMap[$key]['weight'] ?? 0)) {
+            $patternMap[$key] = $pattern;
+        }
+    }
+
+    $patterns = array_values(array_filter($patternMap, static function (array $pattern) use ($schedulePolicy): bool {
+        return empty(array_intersect($pattern['days'] ?? [], $schedulePolicy['blocked_days'] ?? []));
+    }));
+
+    $candidates = [];
+    $dayStart = time_to_minutes((string)($schedulePolicy['day_start'] ?? '07:30:00'));
+    $dayEnd = time_to_minutes((string)($schedulePolicy['day_end'] ?? '17:30:00'));
+    $facultyByDay = $facultySnapshot['by_day'] ?? [];
+    $hasFacultyAssignments = !empty($facultySnapshot['has_assignments']);
+
+    foreach ($patterns as $pattern) {
+        $meetingMinutes = (int)($pattern['meeting_minutes'] ?? 0);
+        if ($meetingMinutes <= 0 || $dayStart === null || $dayEnd === null || ($dayStart + $meetingMinutes) > $dayEnd) {
+            continue;
+        }
+
+        foreach ($rooms as $room) {
+            if (!room_type_allows_schedule($room['room_type'] ?? 'lecture', $targetType)) {
+                continue;
+            }
+
+            for ($start = $dayStart; ($start + $meetingMinutes) <= $dayEnd; $start += 30) {
+                $end = $start + $meetingMinutes;
+                $candidate = [
+                    'schedule_type' => $targetType,
+                    'room_id' => (int)$room['room_id'],
+                    'room_label' => (string)$room['label'],
+                    'days' => $pattern['days'],
+                    'days_label' => days_to_label($pattern['days']),
+                    'time_start' => minutes_to_time($start),
+                    'time_end' => minutes_to_time($end),
+                    'time_start_input' => minutes_to_input_time($start),
+                    'time_end_input' => minutes_to_input_time($end),
+                    'time_label' => minutes_to_label($start) . ' - ' . minutes_to_label($end),
+                    'pattern_label' => $pattern['label']
+                ];
+
+                if (synk_schedule_policy_blocked_time_overlap($candidate['time_start'], $candidate['time_end'], $schedulePolicy) !== null) {
+                    continue;
+                }
+
+                $analysis = analyze_candidate_conflicts($candidate, $snapshotByDay, $facultyByDay, $context, $drafts, $targetKey);
+                if (!empty($analysis['draft_conflict'])) {
+                    continue;
+                }
+
+                $score = 20
+                    + (int)($pattern['weight'] ?? 0)
+                    + room_fit_score($room, $targetType)
+                    + companion_spacing_score($candidate, $drafts, $targetKey)
+                    + time_score($candidate)
+                    + selected_days_score($candidate, $targetDraft)
+                    + selected_time_score($candidate, $targetDraft)
+                    + selected_room_score($candidate, $targetDraft)
+                    - ((int)($analysis['section_count'] ?? 0) * 40)
+                    - ((int)($analysis['room_count'] ?? 0) * 35)
+                    - ((int)($analysis['faculty_count'] ?? 0) * 45);
+
+                $fit = fit_bucket($score, $analysis);
+                $candidate['fit_label'] = $fit['label'];
+                $candidate['fit_class'] = $fit['class'];
+                $candidate['score'] = $score;
+                $candidate['is_conflict_free'] = (int)($analysis['total_live_conflicts'] ?? 0) === 0;
+                $candidate['conflict_count'] = (int)($analysis['total_live_conflicts'] ?? 0);
+                $candidate['section_conflict_count'] = (int)($analysis['section_count'] ?? 0);
+                $candidate['room_conflict_count'] = (int)($analysis['room_count'] ?? 0);
+                $candidate['faculty_conflict_count'] = (int)($analysis['faculty_count'] ?? 0);
+                $candidate['reasons'] = build_reasons($candidate, $room, $targetType, $targetDraft, $analysis, $hasFacultyAssignments);
+                $candidates[] = $candidate;
+            }
+        }
+    }
+
+    usort($candidates, function ($a, $b) {
+        if ((int)$a['conflict_count'] !== (int)$b['conflict_count']) {
+            return ((int)$a['conflict_count'] <=> (int)$b['conflict_count']);
+        }
+
+        if ($a['score'] === $b['score']) {
+            if ($a['time_start'] === $b['time_start']) {
+                return strcmp($a['room_label'], $b['room_label']);
+            }
+            return strcmp($a['time_start'], $b['time_start']);
+        }
+
+        return $b['score'] <=> $a['score'];
+    });
+
+    $selected = [];
+    $seen = [];
+    foreach ($candidates as $candidate) {
+        $signature = implode('-', $candidate['days']) . '|' . $candidate['time_start'] . '|' . $candidate['room_id'];
+        if (isset($seen[$signature])) {
+            continue;
+        }
+
+        $seen[$signature] = true;
+        $selected[] = [
+            'schedule_type' => $candidate['schedule_type'],
+            'room_id' => $candidate['room_id'],
+            'room_label' => $candidate['room_label'],
+            'days' => $candidate['days'],
+            'days_label' => $candidate['days_label'],
+            'time_start' => $candidate['time_start_input'],
+            'time_end' => $candidate['time_end_input'],
+            'time_label' => $candidate['time_label'],
+            'pattern_label' => $candidate['pattern_label'],
+            'fit_label' => $candidate['fit_label'],
+            'fit_class' => $candidate['fit_class'],
+            'is_conflict_free' => $candidate['is_conflict_free'],
+            'conflict_count' => $candidate['conflict_count'],
+            'section_conflict_count' => $candidate['section_conflict_count'],
+            'room_conflict_count' => $candidate['room_conflict_count'],
+            'faculty_conflict_count' => $candidate['faculty_conflict_count'],
+            'reasons' => $candidate['reasons']
+        ];
+
+        if (count($selected) >= 8) {
+            break;
+        }
+    }
+
+    return [
+        'desired_minutes' => $desiredMinutes,
+        'target_draft' => $targetDraft,
+        'suggestions' => $selected,
+        'has_conflict_free' => count(array_filter($selected, static function (array $candidate): bool {
+            return !empty($candidate['is_conflict_free']);
+        })) > 0
+    ];
 }
 
 $context = load_offering_context($conn, $offering_id, $college_id);
@@ -602,7 +1497,7 @@ if (!$context) {
 }
 
 $allowedTypes = ((float)$context['lab_units'] > 0) ? ['LEC', 'LAB'] : ['LEC'];
-if (!in_array($target_type, $allowedTypes, true)) {
+if ($target_type !== '' && !in_array($target_type, $allowedTypes, true)) {
     respond('error', 'This subject does not allow the selected schedule type.');
 }
 
@@ -615,6 +1510,20 @@ $semester = (int)$context['semester'];
 $rooms = load_accessible_rooms($conn, $college_id, $ay_id, $semester);
 
 if (empty($rooms)) {
+    if ($target_type === '') {
+        $suggestionsByType = [];
+        $desiredMinutesByType = [];
+        foreach ($allowedTypes as $allowedType) {
+            $suggestionsByType[$allowedType] = [];
+            $desiredMinutesByType[$allowedType] = 0;
+        }
+
+        respond('ok', 'No accessible rooms found for this term.', [
+            'desired_minutes' => $desiredMinutesByType,
+            'suggestions' => $suggestionsByType
+        ]);
+    }
+
     respond('ok', 'No accessible rooms found for this term.', [
         'target_type' => $target_type,
         'desired_minutes' => 0,
@@ -624,119 +1533,80 @@ if (empty($rooms)) {
 
 $drafts = normalize_draft_schedules($_POST['drafts_json'] ?? '');
 $snapshotByDay = load_term_schedule_snapshot_by_day($conn, $ay_id, $semester, $offering_id);
-$targetDraft = [
-    'block_key' => $target_key,
-    'type' => $target_type
-];
+$facultySnapshot = load_faculty_snapshot_by_day($conn, $context, $offering_id);
 
-foreach ($drafts as $draft) {
-    if (($draft['block_key'] ?? '') === $target_key) {
-        $targetDraft = $draft;
-        break;
-    }
+if ($target_key !== '') {
+    $result = build_availability_for_target(
+        $context,
+        $rooms,
+        $schedulePolicy,
+        $snapshotByDay,
+        $facultySnapshot,
+        $drafts,
+        $target_type,
+        $target_key
+    );
+
+    respond('ok', (string)($result['message'] ?? 'Availability loaded.'), [
+        'mode' => 'availability_finder',
+        'target_type' => $target_type,
+        'target_key' => $target_key,
+        'desired_minutes' => (int)($result['desired_minutes'] ?? 0),
+        'selected_time_key' => (string)($result['selected_time_key'] ?? ''),
+        'time_slots' => $result['time_slots'] ?? []
+    ]);
 }
 
-$desiredMinutes = desired_weekly_minutes($target_type, $targetDraft, $drafts, $context);
-$patterns = build_schedule_patterns($target_type, $desiredMinutes);
-$patterns = array_values(array_filter($patterns, static function (array $pattern) use ($schedulePolicy): bool {
-    return empty(array_intersect($pattern['days'] ?? [], $schedulePolicy['blocked_days'] ?? []));
-}));
-$candidates = [];
-$dayStart = time_to_minutes((string)($schedulePolicy['day_start'] ?? '07:30:00'));
-$dayEnd = time_to_minutes((string)($schedulePolicy['day_end'] ?? '17:30:00'));
+if ($target_type === '') {
+    $suggestionsByType = [];
+    $desiredMinutesByType = [];
 
-foreach ($patterns as $pattern) {
-    $meetingMinutes = (int)($pattern['meeting_minutes'] ?? 0);
-    if ($meetingMinutes <= 0 || ($dayStart + $meetingMinutes) > $dayEnd) {
-        continue;
+    foreach ($allowedTypes as $allowedType) {
+        $result = build_suggestions_for_target(
+            $conn,
+            $context,
+            $rooms,
+            $schedulePolicy,
+            $snapshotByDay,
+            $facultySnapshot,
+            $drafts,
+            $allowedType,
+            ''
+        );
+
+        $suggestionsByType[$allowedType] = $result['suggestions'];
+        $desiredMinutesByType[$allowedType] = (int)$result['desired_minutes'];
     }
 
-    foreach ($rooms as $room) {
-        if (!room_type_allows_schedule($room['room_type'] ?? 'lecture', $target_type)) {
-            continue;
-        }
-
-        for ($start = $dayStart; ($start + $meetingMinutes) <= $dayEnd; $start += 30) {
-            $end = $start + $meetingMinutes;
-            $candidate = [
-                'schedule_type' => $target_type,
-                'room_id' => (int)$room['room_id'],
-                'room_label' => (string)$room['label'],
-                'days' => $pattern['days'],
-                'days_label' => days_to_label($pattern['days']),
-                'time_start' => minutes_to_time($start),
-                'time_end' => minutes_to_time($end),
-                'time_start_input' => minutes_to_input_time($start),
-                'time_end_input' => minutes_to_input_time($end),
-                'time_label' => minutes_to_label($start) . ' - ' . minutes_to_label($end),
-                'pattern_label' => $pattern['label']
-            ];
-
-            if (synk_schedule_policy_blocked_time_overlap($candidate['time_start'], $candidate['time_end'], $schedulePolicy) !== null) {
-                continue;
-            }
-
-            if (candidate_has_conflict($candidate, $snapshotByDay, $context, $drafts, $target_key)) {
-                continue;
-            }
-
-            $score = 20
-                + (int)($pattern['weight'] ?? 0)
-                + room_fit_score($room, $target_type)
-                + companion_spacing_score($candidate, $drafts, $target_key)
-                + time_score($candidate);
-
-            $fit = fit_bucket($score);
-            $candidate['fit_label'] = $fit['label'];
-            $candidate['fit_class'] = $fit['class'];
-            $candidate['score'] = $score;
-            $candidate['reasons'] = build_reasons($candidate, $room, $target_type);
-            $candidates[] = $candidate;
-        }
-    }
+    respond('ok', 'Suggestions loaded.', [
+        'desired_minutes' => $desiredMinutesByType,
+        'suggestions' => $suggestionsByType
+    ]);
 }
 
-usort($candidates, function ($a, $b) {
-    if ($a['score'] === $b['score']) {
-        if ($a['time_start'] === $b['time_start']) {
-            return strcmp($a['room_label'], $b['room_label']);
-        }
-        return strcmp($a['time_start'], $b['time_start']);
-    }
-    return $b['score'] <=> $a['score'];
-});
+$result = build_suggestions_for_target(
+    $conn,
+    $context,
+    $rooms,
+    $schedulePolicy,
+    $snapshotByDay,
+    $facultySnapshot,
+    $drafts,
+    $target_type,
+    $target_key
+);
 
-$selected = [];
-$seen = [];
-foreach ($candidates as $candidate) {
-    $signature = implode('-', $candidate['days']) . '|' . $candidate['time_start'] . '|' . $candidate['room_id'];
-    if (isset($seen[$signature])) {
-        continue;
-    }
-    $seen[$signature] = true;
-    $selected[] = [
-        'schedule_type' => $candidate['schedule_type'],
-        'room_id' => $candidate['room_id'],
-        'room_label' => $candidate['room_label'],
-        'days' => $candidate['days'],
-        'days_label' => $candidate['days_label'],
-        'time_start' => $candidate['time_start_input'],
-        'time_end' => $candidate['time_end_input'],
-        'time_label' => $candidate['time_label'],
-        'pattern_label' => $candidate['pattern_label'],
-        'fit_label' => $candidate['fit_label'],
-        'fit_class' => $candidate['fit_class'],
-        'reasons' => $candidate['reasons']
-    ];
-
-    if (count($selected) >= 8) {
-        break;
-    }
+$message = trim((string)($result['message'] ?? ''));
+if ($message === '') {
+    $message = !empty($result['has_conflict_free'])
+        ? 'Suggestions loaded.'
+        : 'No conflict-free slots were found. Showing the closest available options to review.';
 }
 
-respond('ok', 'Suggestions loaded.', [
+respond('ok', $message, [
     'target_type' => $target_type,
     'target_key' => $target_key,
-    'desired_minutes' => $desiredMinutes,
-    'suggestions' => $selected
+    'desired_minutes' => (int)$result['desired_minutes'],
+    'has_conflict_free' => !empty($result['has_conflict_free']),
+    'suggestions' => $result['suggestions']
 ]);

@@ -170,6 +170,8 @@ function load_context_live($conn, $offering_id, $college_id) {
             o.status AS offering_status,
             sec.section_name,
             sec.full_section,
+            sec.year_level,
+            p.program_code,
             ps.sub_id,
             o.ps_id,
             sm.sub_code,
@@ -1222,6 +1224,300 @@ function load_merge_context_rows_for_offerings($conn, array $offeringIds, $colle
     return $rows;
 }
 
+function load_peer_section_rows_for_subject($conn, array $ctx, int $college_id): array
+{
+    $subjectId = (int)($ctx['sub_id'] ?? 0);
+    $ayId = (int)($ctx['ay_id'] ?? 0);
+    $semester = (int)($ctx['semester'] ?? 0);
+    $programId = (int)($ctx['program_id'] ?? 0);
+    $yearLevel = (int)($ctx['year_level'] ?? 0);
+
+    if ($subjectId <= 0 || $ayId <= 0 || $semester <= 0 || $college_id <= 0 || $programId <= 0 || $yearLevel <= 0) {
+        return [];
+    }
+
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            o.offering_id,
+            o.section_id,
+            sec.section_name,
+            sec.full_section,
+            sec.year_level,
+            p.program_code
+        FROM tbl_prospectus_offering o
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        WHERE o.ay_id = ?
+          AND o.semester = ?
+          AND p.college_id = ?
+          AND o.program_id = ?
+          AND ps.sub_id = ?
+          AND sec.year_level = ?
+        ORDER BY
+            sec.section_name ASC,
+            o.offering_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iiiiii", $ayId, $semester, $college_id, $programId, $subjectId, $yearLevel);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $sections = [];
+    while ($row = $res->fetch_assoc()) {
+        $sectionId = (int)($row['section_id'] ?? 0);
+        if ($sectionId <= 0 || isset($sections[$sectionId])) {
+            continue;
+        }
+
+        $sections[$sectionId] = [
+            'section_id' => $sectionId,
+            'offering_id' => (int)($row['offering_id'] ?? 0),
+            'section_name' => (string)($row['section_name'] ?? ''),
+            'full_section' => (string)($row['full_section'] ?? ''),
+            'year_level' => (int)($row['year_level'] ?? 0),
+            'program_code' => (string)($row['program_code'] ?? '')
+        ];
+    }
+
+    $stmt->close();
+    return array_values($sections);
+}
+
+function load_term_offering_ids_by_section($conn, array $sectionIds, int $ayId, int $semester): array
+{
+    $rowsBySection = [];
+    $safeSectionIds = array_values(array_unique(array_filter(array_map('intval', $sectionIds), static function ($value) {
+        return $value > 0;
+    })));
+
+    foreach ($safeSectionIds as $sectionId) {
+        $rowsBySection[$sectionId] = [];
+    }
+
+    if (empty($safeSectionIds) || $ayId <= 0 || $semester <= 0) {
+        return $rowsBySection;
+    }
+
+    $sql = "
+        SELECT section_id, offering_id
+        FROM tbl_prospectus_offering
+        WHERE ay_id = ?
+          AND semester = ?
+          AND section_id IN (" . implode(',', $safeSectionIds) . ")
+        ORDER BY section_id ASC, offering_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return $rowsBySection;
+    }
+
+    $stmt->bind_param("ii", $ayId, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($res && ($row = $res->fetch_assoc())) {
+        $sectionId = (int)($row['section_id'] ?? 0);
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($sectionId > 0 && $offeringId > 0) {
+            $rowsBySection[$sectionId][] = $offeringId;
+        }
+    }
+
+    $stmt->close();
+    return $rowsBySection;
+}
+
+function load_schedule_matrix_rows_by_offering($conn, array $offeringIds, int $ayId, int $semester): array
+{
+    $rowsByOffering = [];
+    $safeOfferingIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($safeOfferingIds) || $ayId <= 0 || $semester <= 0) {
+        return $rowsByOffering;
+    }
+
+    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            cs.offering_id,
+            cs.schedule_id,
+            cs.schedule_type,
+            cs.time_start,
+            cs.time_end,
+            cs.days_json,
+            sm.sub_code,
+            sm.sub_description,
+            COALESCE(
+                NULLIF(TRIM(r.room_code), ''),
+                NULLIF(TRIM(r.room_name), ''),
+                'TBA'
+            ) AS room_label
+        FROM tbl_class_schedule cs
+        INNER JOIN tbl_prospectus_offering po
+            ON po.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        WHERE cs.offering_id IN (" . implode(',', array_map('intval', $safeOfferingIds)) . ")
+          AND po.ay_id = ?
+          AND po.semester = ?
+          AND cs.schedule_type IN ('LEC', 'LAB')
+        ORDER BY
+            cs.offering_id ASC,
+            cs.time_start ASC,
+            sm.sub_code ASC,
+            FIELD(cs.schedule_type, 'LEC', 'LAB'),
+            cs.schedule_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return $rowsByOffering;
+    }
+
+    $stmt->bind_param("ii", $ayId, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($res && ($row = $res->fetch_assoc())) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        if (!isset($rowsByOffering[$offeringId])) {
+            $rowsByOffering[$offeringId] = [];
+        }
+
+        $rowsByOffering[$offeringId][] = [
+            'offering_id' => $offeringId,
+            'schedule_id' => (int)($row['schedule_id'] ?? 0),
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? ''),
+            'days' => normalize_days_array(json_decode((string)($row['days_json'] ?? '[]'), true)),
+            'subject_code' => (string)($row['sub_code'] ?? ''),
+            'subject_description' => (string)($row['sub_description'] ?? ''),
+            'room_label' => (string)($row['room_label'] ?? 'TBA')
+        ];
+    }
+
+    $stmt->close();
+    return $rowsByOffering;
+}
+
+function build_peer_section_schedule_matrix_payload($conn, array $ctx, int $college_id): array
+{
+    $peerSections = load_peer_section_rows_for_subject($conn, $ctx, $college_id);
+    if (empty($peerSections)) {
+        return [];
+    }
+
+    $sectionIds = array_map(static function (array $row): int {
+        return (int)($row['section_id'] ?? 0);
+    }, $peerSections);
+
+    $sectionOfferingIds = load_term_offering_ids_by_section(
+        $conn,
+        $sectionIds,
+        (int)($ctx['ay_id'] ?? 0),
+        (int)($ctx['semester'] ?? 0)
+    );
+
+    $allOfferingIds = [];
+    foreach ($sectionOfferingIds as $offeringIds) {
+        $allOfferingIds = array_merge($allOfferingIds, $offeringIds);
+    }
+
+    $allOfferingIds = synk_schedule_merge_normalize_offering_ids($allOfferingIds);
+    $mergeContext = empty($allOfferingIds)
+        ? []
+        : synk_schedule_merge_load_display_context($conn, $allOfferingIds);
+
+    $effectiveBySection = [];
+    foreach ($sectionOfferingIds as $sectionId => $offeringIds) {
+        $effectiveIds = [];
+        foreach ($offeringIds as $offeringId) {
+            $mergeInfo = $mergeContext[$offeringId] ?? null;
+            $effectiveIds[] = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
+        }
+
+        $effectiveBySection[$sectionId] = synk_schedule_merge_normalize_offering_ids($effectiveIds);
+    }
+
+    $allEffectiveIds = [];
+    foreach ($effectiveBySection as $effectiveIds) {
+        $allEffectiveIds = array_merge($allEffectiveIds, $effectiveIds);
+    }
+    $allEffectiveIds = synk_schedule_merge_normalize_offering_ids($allEffectiveIds);
+
+    $rowsByOffering = load_schedule_matrix_rows_by_offering(
+        $conn,
+        $allEffectiveIds,
+        (int)($ctx['ay_id'] ?? 0),
+        (int)($ctx['semester'] ?? 0)
+    );
+
+    $sections = [];
+    foreach ($peerSections as $sectionRow) {
+        $sectionId = (int)($sectionRow['section_id'] ?? 0);
+        $entries = [];
+
+        foreach ($effectiveBySection[$sectionId] ?? [] as $effectiveOfferingId) {
+            foreach ($rowsByOffering[$effectiveOfferingId] ?? [] as $entry) {
+                $entries[] = $entry;
+            }
+        }
+
+        usort($entries, static function (array $left, array $right): int {
+            if ((string)($left['time_start'] ?? '') !== (string)($right['time_start'] ?? '')) {
+                return strcmp((string)($left['time_start'] ?? ''), (string)($right['time_start'] ?? ''));
+            }
+
+            if ((string)($left['subject_code'] ?? '') !== (string)($right['subject_code'] ?? '')) {
+                return strcmp((string)($left['subject_code'] ?? ''), (string)($right['subject_code'] ?? ''));
+            }
+
+            if ((string)($left['schedule_type'] ?? '') !== (string)($right['schedule_type'] ?? '')) {
+                return strcmp((string)($left['schedule_type'] ?? ''), (string)($right['schedule_type'] ?? ''));
+            }
+
+            return (int)($left['schedule_id'] ?? 0) <=> (int)($right['schedule_id'] ?? 0);
+        });
+
+        $label = trim((string)($sectionRow['full_section'] ?? ''));
+        if ($label === '') {
+            $label = trim(
+                (string)($sectionRow['program_code'] ?? '') . ' ' .
+                (string)($sectionRow['section_name'] ?? '')
+            );
+        }
+
+        $sections[] = [
+            'section_id' => $sectionId,
+            'offering_id' => (int)($sectionRow['offering_id'] ?? 0),
+            'label' => $label,
+            'full_section' => (string)($sectionRow['full_section'] ?? ''),
+            'program_code' => (string)($sectionRow['program_code'] ?? ''),
+            'section_name' => (string)($sectionRow['section_name'] ?? ''),
+            'is_current' => $sectionId > 0 && $sectionId === (int)($ctx['section_id'] ?? 0),
+            'entry_count' => count($entries),
+            'entries' => $entries
+        ];
+    }
+
+    return $sections;
+}
+
 function merge_required_minutes_signature(array $ctx): string {
     $required = synk_required_minutes_by_type(
         (float)($ctx['lec_units'] ?? 0),
@@ -1589,6 +1885,38 @@ if (isset($_POST['load_schedule_blocks'])) {
         'scheduled_minutes' => $coverage['scheduled_minutes'],
         'required_types' => required_schedule_types_for_context($ctx),
         'blocks' => $blocks
+    ]);
+}
+
+/* =====================================================
+   LOAD PEER SECTION SCHEDULE MATRIX
+===================================================== */
+if (isset($_POST['load_section_schedule_matrix'])) {
+    $offering_id = (int)($_POST['offering_id'] ?? 0);
+    if ($offering_id <= 0) {
+        respond("error", "Missing offering reference.");
+    }
+
+    $ctx = load_context_live($conn, $offering_id, $college_id);
+    if (!$ctx) {
+        respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
+    }
+
+    $sections = build_peer_section_schedule_matrix_payload($conn, $ctx, $college_id);
+    if (empty($sections)) {
+        respond("ok", "No peer sections were found for this subject.", [
+            'current_section_id' => (int)($ctx['section_id'] ?? 0),
+            'subject_code' => (string)($ctx['sub_code'] ?? ''),
+            'subject_description' => (string)($ctx['sub_description'] ?? ''),
+            'sections' => []
+        ]);
+    }
+
+    respond("ok", "Loaded peer section matrix.", [
+        'current_section_id' => (int)($ctx['section_id'] ?? 0),
+        'subject_code' => (string)($ctx['sub_code'] ?? ''),
+        'subject_description' => (string)($ctx['sub_description'] ?? ''),
+        'sections' => $sections
     ]);
 }
 
@@ -3029,6 +3357,7 @@ if (
     !isset($_POST['load_schedule_merge_candidates']) &&
     !isset($_POST['save_schedule_merge']) &&
     !isset($_POST['load_schedule_blocks']) &&
+    !isset($_POST['load_section_schedule_matrix']) &&
     !isset($_POST['load_dual_schedule']) &&
     !isset($_POST['save_schedule']) &&
     !isset($_POST['save_dual_schedule']) &&

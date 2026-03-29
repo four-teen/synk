@@ -610,6 +610,11 @@ body.swal2-shown .modal {
     border-color: #7ac8a0;
 }
 
+.suggestion-card.review {
+    border-color: #f2c56b;
+    background: #fffaf0;
+}
+
 .suggestion-fit {
     display: inline-flex;
     align-items: center;
@@ -634,6 +639,11 @@ body.swal2-shown .modal {
 .suggestion-fit.valid {
     background: #eef1f5;
     color: #5a6578;
+}
+
+.suggestion-fit.review {
+    background: #fff1cf;
+    color: #9a5a00;
 }
 
 .suggestion-chip {
@@ -672,6 +682,60 @@ body.swal2-shown .modal {
     background: #f2f5fb;
     color: #53627c;
     font-size: 0.72rem;
+}
+
+.availability-shell {
+    display: grid;
+    grid-template-columns: minmax(220px, 0.95fr) minmax(0, 1.35fr);
+    gap: 1rem;
+}
+
+.availability-list {
+    display: grid;
+    gap: 0.7rem;
+}
+
+.availability-slot-card {
+    width: 100%;
+    border: 1px solid #d6e0f3;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0.85rem;
+    text-align: left;
+    box-shadow: 0 8px 20px rgba(31, 42, 68, 0.06);
+    transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+}
+
+.availability-slot-card:hover,
+.availability-slot-card:focus {
+    border-color: #7d8bff;
+    box-shadow: 0 10px 24px rgba(74, 88, 232, 0.12);
+    transform: translateY(-1px);
+}
+
+.availability-slot-card.is-selected {
+    border-color: #4a58e8;
+    background: #eef2ff;
+    box-shadow: 0 12px 26px rgba(74, 88, 232, 0.16);
+}
+
+.availability-count {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    min-width: 2.25rem;
+    border-radius: 999px;
+    padding: 0.18rem 0.65rem;
+    background: #e8f7ee;
+    color: #167c49;
+    font-size: 0.72rem;
+    font-weight: 700;
+}
+
+@media (max-width: 991.98px) {
+    .availability-shell {
+        grid-template-columns: 1fr;
+    }
 }
 
 .schedule-block-toolbar {
@@ -1171,6 +1235,194 @@ body.swal2-shown .modal {
 
 #matrixModal .modal-body {
     overflow: hidden;
+}
+
+#sectionScheduleMatrixModal {
+    z-index: 1110;
+}
+
+#sectionScheduleMatrixModal .modal-dialog {
+    max-width: min(1400px, calc(100vw - 2rem));
+}
+
+#sectionScheduleMatrixModal .modal-body {
+    background: linear-gradient(180deg, #f7f9ff 0%, #eef4ff 100%);
+}
+
+.section-matrix-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.section-matrix-day-pills {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.section-matrix-shell {
+    border: 1px solid #d8e1f2;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.92);
+    overflow: hidden;
+    box-shadow: 0 14px 36px rgba(31, 42, 68, 0.08);
+}
+
+.section-matrix-scroll {
+    overflow: auto;
+    max-height: 68vh;
+}
+
+.section-matrix-table {
+    width: 100%;
+    min-width: 760px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.section-matrix-table th,
+.section-matrix-table td {
+    border-right: 1px solid #e1e8f6;
+    border-bottom: 1px solid #e1e8f6;
+    padding: 0.55rem;
+    vertical-align: top;
+}
+
+.section-matrix-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f5f8ff;
+}
+
+.section-matrix-time {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    width: 104px;
+    min-width: 104px;
+    background: #f8fbff;
+    color: #44536e;
+    font-weight: 700;
+}
+
+.section-matrix-time-label {
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.05rem;
+    line-height: 1.15;
+}
+
+.section-matrix-time-label span:last-child {
+    font-size: 0.76rem;
+    color: #5f6f8c;
+    font-weight: 600;
+}
+
+.section-matrix-section {
+    min-width: 170px;
+    text-align: center;
+    background: #f5f8ff;
+}
+
+.section-matrix-section.is-current {
+    background: #eef2ff;
+    color: #3446c3;
+}
+
+.section-matrix-cell {
+    min-width: 170px;
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.section-matrix-cell.is-vacant {
+    background: rgba(245, 248, 255, 0.88);
+}
+
+.section-matrix-cell.is-occupied {
+    background: rgba(239, 246, 255, 0.88);
+}
+
+.section-matrix-cell.is-conflict {
+    background: rgba(255, 244, 228, 0.92);
+}
+
+.section-matrix-entry {
+    border: 1px solid #d6e0f3;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.45rem 0.55rem;
+    box-shadow: 0 6px 18px rgba(31, 42, 68, 0.05);
+}
+
+.section-matrix-entry + .section-matrix-entry {
+    margin-top: 0.45rem;
+}
+
+.section-matrix-entry.is-focus {
+    border-color: #7d8bff;
+    background: #eef2ff;
+}
+
+.section-matrix-entry-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-weight: 700;
+    color: #1f2a44;
+}
+
+.section-matrix-entry-meta {
+    margin-top: 0.3rem;
+    font-size: 0.74rem;
+    color: #596b89;
+    line-height: 1.35;
+}
+
+.section-matrix-fill {
+    min-height: 44px;
+    border-radius: 10px;
+    background: linear-gradient(180deg, rgba(99, 133, 255, 0.18) 0%, rgba(99, 133, 255, 0.08) 100%);
+}
+
+.section-matrix-vacant {
+    min-height: 44px;
+    border-radius: 10px;
+    border: 1px dashed #d4dff3;
+    background: rgba(250, 252, 255, 0.86);
+}
+
+.section-matrix-empty {
+    border: 1px dashed #c8d5ef;
+    border-radius: 14px;
+    padding: 1rem;
+    text-align: center;
+    color: #5a6b89;
+    background: rgba(255, 255, 255, 0.8);
+}
+
+@media (max-width: 767.98px) {
+    .section-matrix-table {
+        min-width: 620px;
+    }
+
+    .section-matrix-time {
+        min-width: 92px;
+        width: 92px;
+    }
+
+    .section-matrix-section,
+    .section-matrix-cell {
+        min-width: 138px;
+    }
 }
 
 @media (min-width: 1200px) {
@@ -2379,12 +2631,15 @@ while ($ay = $ayQ->fetch_assoc()) {
 
           <div class="modal-assist-strip">
             <div class="modal-assist-copy">
-              <strong>Need room and time visibility?</strong>
-              <small>Open the room-time matrix while keeping this block editor open.</small>
+              <strong>Need more schedule visibility?</strong>
+              <small>Open a helper matrix while keeping this block editor open.</small>
             </div>
             <div class="modal-assist-actions">
               <button type="button" class="btn btn-outline-primary btn-sm btn-open-modal-matrix">
                 <i class="bx bx-grid-alt me-1"></i> Room-Time Matrix
+              </button>
+              <button type="button" class="btn btn-outline-info btn-sm btn-open-section-matrix">
+                <i class="bx bx-table me-1"></i> Show All Section Matrix
               </button>
             </div>
           </div>
@@ -2565,6 +2820,30 @@ while ($ay = $ayQ->fetch_assoc()) {
 
       </div>
 
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="sectionScheduleMatrixModal" tabindex="-1" data-bs-backdrop="false">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0">
+            <i class="bx bx-table me-1"></i> All Section Schedule Matrix
+          </h5>
+          <div class="small text-muted mt-1" id="sectionScheduleMatrixHeaderNote">
+            Compare scheduled subjects across peer sections without leaving the block editor.
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div id="sectionScheduleMatrixContainer">
+          <div class="section-matrix-empty">Loading section matrix...</div>
+        </div>
+      </div>
     </div>
   </div>
 </div>
@@ -2782,6 +3061,9 @@ while ($ay = $ayQ->fetch_assoc()) {
     let dualSuggestionTimer = null;
     let roomBrowserDrawerInstance = null;
     let matrixModalInstance = null;
+    let sectionScheduleMatrixModalInstance = null;
+    let sectionScheduleMatrixRequest = null;
+    let sectionScheduleMatrixState = null;
     const ROOM_BROWSER_TYPE_META = {
         lecture: {
             label: "Lecture Rooms",
@@ -2840,6 +3122,396 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function openMatrixHelper() {
         loadRoomTimeMatrix(true, { preservePosition: false });
+    }
+
+    function abortSectionScheduleMatrixRequest() {
+        if (sectionScheduleMatrixRequest && sectionScheduleMatrixRequest.readyState !== 4) {
+            sectionScheduleMatrixRequest.abort();
+        }
+
+        sectionScheduleMatrixRequest = null;
+    }
+
+    function normalizeMatrixTimeInput(value) {
+        const text = String(value || "").trim();
+        if (text === "") {
+            return "";
+        }
+
+        const parts = text.split(":");
+        if (parts.length < 2) {
+            return text;
+        }
+
+        return `${parts[0].padStart(2, "0")}:${parts[1].padStart(2, "0")}`;
+    }
+
+    function matrixTimeToMinutes(value) {
+        const normalized = normalizeMatrixTimeInput(value);
+        if (!/^\d{2}:\d{2}$/.test(normalized)) {
+            return null;
+        }
+
+        const [hourText, minuteText] = normalized.split(":");
+        const hour = Number(hourText);
+        const minute = Number(minuteText);
+        if (!Number.isFinite(hour) || !Number.isFinite(minute)) {
+            return null;
+        }
+
+        return (hour * 60) + minute;
+    }
+
+    function matrixMinutesToTime(minutes) {
+        const safeMinutes = Number(minutes);
+        if (!Number.isFinite(safeMinutes)) {
+            return "";
+        }
+
+        const hour = Math.floor(safeMinutes / 60);
+        const minute = safeMinutes % 60;
+        return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
+
+    function buildSectionMatrixTimeSlots() {
+        const slots = [];
+        const start = matrixTimeToMinutes(SUPPORTED_TIME_START);
+        const end = matrixTimeToMinutes(SUPPORTED_TIME_END);
+        if (start === null || end === null || end <= start) {
+            return slots;
+        }
+
+        for (let value = start; value < end; value += 30) {
+            const timeValue = matrixMinutesToTime(value);
+            const nextTimeValue = matrixMinutesToTime(Math.min(value + 30, end));
+            slots.push({
+                value: timeValue,
+                minutes: value,
+                label: formatPolicyTimeLabel(timeValue),
+                endLabel: formatPolicyTimeLabel(nextTimeValue)
+            });
+        }
+
+        return slots;
+    }
+
+    function normalizeSectionMatrixEntry(entry) {
+        return {
+            schedule_id: parseInt(entry?.schedule_id, 10) || 0,
+            schedule_type: String(entry?.schedule_type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC",
+            time_start: normalizeMatrixTimeInput(entry?.time_start || ""),
+            time_end: normalizeMatrixTimeInput(entry?.time_end || ""),
+            days: normalizeScheduleDays(Array.isArray(entry?.days) ? entry.days : []),
+            subject_code: String(entry?.subject_code || ""),
+            subject_description: String(entry?.subject_description || ""),
+            room_label: String(entry?.room_label || "TBA")
+        };
+    }
+
+    function getSectionMatrixDefaultDay(sections) {
+        const list = Array.isArray(sections) ? sections : [];
+        for (const day of SCHEDULE_DAY_ORDER) {
+            const hasEntry = list.some(section => Array.isArray(section?.entries) && section.entries.some(entry => Array.isArray(entry.days) && entry.days.includes(day)));
+            if (hasEntry) {
+                return day;
+            }
+        }
+
+        return SCHEDULE_DAY_ORDER[0] || "M";
+    }
+
+    function sortSectionMatrixEntries(entries) {
+        return (Array.isArray(entries) ? entries.slice() : []).sort((left, right) => {
+            const leftStart = matrixTimeToMinutes(left?.time_start);
+            const rightStart = matrixTimeToMinutes(right?.time_start);
+            if (leftStart !== rightStart) {
+                return (leftStart ?? 0) - (rightStart ?? 0);
+            }
+
+            const leftEnd = matrixTimeToMinutes(left?.time_end);
+            const rightEnd = matrixTimeToMinutes(right?.time_end);
+            if (leftEnd !== rightEnd) {
+                return (leftEnd ?? 0) - (rightEnd ?? 0);
+            }
+
+            const leftCode = String(left?.subject_code || "");
+            const rightCode = String(right?.subject_code || "");
+            if (leftCode !== rightCode) {
+                return leftCode.localeCompare(rightCode);
+            }
+
+            const leftType = String(left?.schedule_type || "");
+            const rightType = String(right?.schedule_type || "");
+            if (leftType !== rightType) {
+                return leftType.localeCompare(rightType);
+            }
+
+            return (parseInt(left?.schedule_id, 10) || 0) - (parseInt(right?.schedule_id, 10) || 0);
+        });
+    }
+
+    function buildSectionMatrixSignature(entries) {
+        return sortSectionMatrixEntries(entries).map(entry => {
+            const scheduleId = parseInt(entry?.schedule_id, 10) || 0;
+            if (scheduleId > 0) {
+                return `id:${scheduleId}`;
+            }
+
+            return [
+                String(entry?.subject_code || ""),
+                String(entry?.schedule_type || ""),
+                String(entry?.time_start || ""),
+                String(entry?.time_end || ""),
+                String(entry?.room_label || "")
+            ].join("|");
+        }).join("||");
+    }
+
+    function buildSectionMatrixColumnState(section, selectedDay, timeSlots) {
+        const state = Array.from({ length: timeSlots.length }, () => null);
+        const entries = (Array.isArray(section?.entries) ? section.entries : [])
+            .map(entry => {
+                const startMinutes = matrixTimeToMinutes(entry?.time_start);
+                const endMinutes = matrixTimeToMinutes(entry?.time_end);
+
+                return {
+                    ...entry,
+                    _startMinutes: startMinutes,
+                    _endMinutes: endMinutes
+                };
+            })
+            .filter(entry => Array.isArray(entry.days)
+                && entry.days.includes(selectedDay)
+                && entry._startMinutes !== null
+                && entry._endMinutes !== null
+                && entry._endMinutes > entry._startMinutes);
+
+        const slotEntries = timeSlots.map(slot => sortSectionMatrixEntries(entries.filter(entry => (
+            slot.minutes >= entry._startMinutes && slot.minutes < entry._endMinutes
+        ))));
+
+        for (let slotIndex = 0; slotIndex < timeSlots.length; slotIndex++) {
+            if (state[slotIndex]) {
+                continue;
+            }
+
+            const activeEntries = slotEntries[slotIndex];
+            if (!activeEntries.length) {
+                state[slotIndex] = {
+                    skip: false,
+                    rowspan: 1,
+                    items: [],
+                    cellClass: "is-vacant"
+                };
+                continue;
+            }
+
+            const signature = buildSectionMatrixSignature(activeEntries);
+            let rowspan = 1;
+
+            for (let nextIndex = slotIndex + 1; nextIndex < timeSlots.length; nextIndex++) {
+                const nextEntries = slotEntries[nextIndex];
+                if (!nextEntries.length || buildSectionMatrixSignature(nextEntries) !== signature) {
+                    break;
+                }
+
+                rowspan++;
+            }
+
+            state[slotIndex] = {
+                skip: false,
+                rowspan: rowspan,
+                items: activeEntries,
+                cellClass: activeEntries.length > 1 ? "is-conflict" : "is-occupied"
+            };
+
+            for (let coveredIndex = slotIndex + 1; coveredIndex < slotIndex + rowspan; coveredIndex++) {
+                state[coveredIndex] = {
+                    skip: true
+                };
+            }
+        }
+
+        return state;
+    }
+
+    function renderSectionScheduleMatrix() {
+        const container = $("#sectionScheduleMatrixContainer");
+        if (!sectionScheduleMatrixState || container.length === 0) {
+            return;
+        }
+
+        const sections = Array.isArray(sectionScheduleMatrixState.sections) ? sectionScheduleMatrixState.sections : [];
+        const selectedDay = String(sectionScheduleMatrixState.selectedDay || getSectionMatrixDefaultDay(sections));
+        const timeSlots = buildSectionMatrixTimeSlots();
+
+        $("#sectionScheduleMatrixHeaderNote").text(
+            sections.length > 1
+                ? `${sectionScheduleMatrixState.subjectLabel || "Subject"} across ${sections.length} peer sections, shown in 30-minute intervals.`
+                : `Only one section offering is currently available for ${sectionScheduleMatrixState.subjectLabel || "this subject"}, shown in 30-minute intervals.`
+        );
+
+        if (sections.length === 0) {
+            container.html('<div class="section-matrix-empty">No peer sections were found for this subject in the current term.</div>');
+            return;
+        }
+
+        const dayButtons = SCHEDULE_DAY_ORDER.map(day => `
+            <button
+                type="button"
+                class="btn btn-sm ${day === selectedDay ? "btn-primary" : "btn-outline-secondary"} btn-section-matrix-day"
+                data-day="${escapeHtml(day)}"
+            >
+                ${escapeHtml(day)}
+            </button>
+        `).join("");
+
+        const sectionColumnStates = sections.map(section => buildSectionMatrixColumnState(section, selectedDay, timeSlots));
+
+        const rowsHtml = timeSlots.map((slot, slotIndex) => {
+            const cellsHtml = sectionColumnStates.map(columnState => {
+                const cellState = columnState[slotIndex];
+                if (!cellState || cellState.skip) {
+                    return "";
+                }
+
+                if (!Array.isArray(cellState.items) || cellState.items.length === 0) {
+                    return `
+                        <td class="section-matrix-cell is-vacant">
+                            <div class="section-matrix-vacant"></div>
+                        </td>
+                    `;
+                }
+
+                const entryHtml = cellState.items.map(entry => {
+                    const isFocus = String(entry.subject_code || "").toUpperCase() === String(sectionScheduleMatrixState.subjectCode || "").toUpperCase();
+                    return `
+                        <div class="section-matrix-entry ${isFocus ? "is-focus" : ""}">
+                            <div class="section-matrix-entry-title">
+                                <span>${escapeHtml(entry.subject_code || "TBA")}</span>
+                                <span class="suggestion-chip">${escapeHtml(entry.schedule_type || "LEC")}</span>
+                            </div>
+                            <div class="section-matrix-entry-meta">
+                                <div>${escapeHtml(entry.room_label || "TBA")}</div>
+                                <div>${escapeHtml(formatPolicyTimeLabel(entry.time_start))} - ${escapeHtml(formatPolicyTimeLabel(entry.time_end))}</div>
+                            </div>
+                        </div>
+                    `;
+                }).join("");
+
+                const rowspanAttr = cellState.rowspan > 1 ? ` rowspan="${cellState.rowspan}"` : "";
+                return `<td class="section-matrix-cell ${cellState.cellClass}"${rowspanAttr}>${entryHtml}</td>`;
+            }).join("");
+
+            return `
+                <tr>
+                    <th class="section-matrix-time">
+                        <div class="section-matrix-time-label">
+                            <span>${escapeHtml(slot.label)}</span>
+                            <span>${escapeHtml(slot.endLabel || "")}</span>
+                        </div>
+                    </th>
+                    ${cellsHtml}
+                </tr>
+            `;
+        }).join("");
+
+        const sectionHeaders = sections.map(section => `
+            <th class="section-matrix-section ${section.is_current ? "is-current" : ""}">
+                <div>${escapeHtml(section.label || "Section")}</div>
+                <div class="small text-muted mt-1">${escapeHtml(String(section.entry_count || 0))} scheduled block(s)</div>
+            </th>
+        `).join("");
+
+        container.html(`
+            <div class="section-matrix-toolbar">
+                <div>
+                    <div class="fw-semibold">${escapeHtml(sectionScheduleMatrixState.subjectLabel || "Subject")}</div>
+                    <div class="text-muted small">${escapeHtml(sectionScheduleMatrixState.sectionLabel || "")}</div>
+                </div>
+                <div class="section-matrix-day-pills">${dayButtons}</div>
+            </div>
+            <div class="section-matrix-shell">
+                <div class="section-matrix-scroll">
+                    <table class="section-matrix-table">
+                        <thead>
+                            <tr>
+                                <th class="section-matrix-time">Time</th>
+                                ${sectionHeaders}
+                            </tr>
+                        </thead>
+                        <tbody>${rowsHtml}</tbody>
+                    </table>
+                </div>
+            </div>
+        `);
+    }
+
+    function openSectionScheduleMatrixHelper() {
+        if (!scheduleBlockState || !scheduleBlockState.offeringId) {
+            Swal.fire("Unavailable", "Open a class schedule block first.", "info");
+            return;
+        }
+
+        sectionScheduleMatrixState = {
+            offeringId: Number(scheduleBlockState.offeringId || 0),
+            subjectLabel: String(scheduleBlockState.subjectLabel || "Subject"),
+            sectionLabel: String(scheduleBlockState.sectionLabel || ""),
+            subjectCode: "",
+            sections: [],
+            selectedDay: SCHEDULE_DAY_ORDER[0] || "M"
+        };
+
+        $("#sectionScheduleMatrixHeaderNote").text("Loading peer section schedules...");
+        $("#sectionScheduleMatrixContainer").html('<div class="section-matrix-empty">Loading section matrix...</div>');
+
+        if (sectionScheduleMatrixModalInstance) {
+            sectionScheduleMatrixModalInstance.show();
+        } else {
+            $("#sectionScheduleMatrixModal").modal("show");
+        }
+
+        abortSectionScheduleMatrixRequest();
+        sectionScheduleMatrixRequest = $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_section_schedule_matrix: 1,
+                offering_id: sectionScheduleMatrixState.offeringId
+            },
+            success: function (res) {
+                if (!res || res.status !== "ok") {
+                    $("#sectionScheduleMatrixHeaderNote").text("Unable to load peer section schedules.");
+                    $("#sectionScheduleMatrixContainer").html(`<div class="section-matrix-empty">${escapeHtml((res && res.message) ? res.message : "Failed to load section matrix.")}</div>`);
+                    return;
+                }
+
+                const sections = Array.isArray(res.sections) ? res.sections.map(section => ({
+                    section_id: parseInt(section?.section_id, 10) || 0,
+                    label: String(section?.label || ""),
+                    entry_count: parseInt(section?.entry_count, 10) || 0,
+                    is_current: Boolean(section?.is_current),
+                    entries: Array.isArray(section?.entries) ? section.entries.map(normalizeSectionMatrixEntry) : []
+                })) : [];
+
+                sectionScheduleMatrixState.subjectCode = String(res.subject_code || "");
+                sectionScheduleMatrixState.sections = sections;
+                sectionScheduleMatrixState.selectedDay = getSectionMatrixDefaultDay(sections);
+                renderSectionScheduleMatrix();
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                $("#sectionScheduleMatrixHeaderNote").text("Unable to load peer section schedules.");
+                $("#sectionScheduleMatrixContainer").html('<div class="section-matrix-empty">Failed to load section matrix.</div>');
+            },
+            complete: function () {
+                sectionScheduleMatrixRequest = null;
+            }
+        });
     }
 
     function roomMatchesSchedule(room, scheduleType) {
@@ -3081,6 +3753,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     let scheduleBlockState = null;
     let scheduleBlockCounter = 0;
+    const blockSuggestionTimers = {};
 
     function createScheduleBlockKey() {
         scheduleBlockCounter += 1;
@@ -3155,6 +3828,9 @@ while ($ay = $ayQ->fetch_assoc()) {
             time_end: String(source.time_end || ""),
             days: Array.isArray(source.days) ? source.days.filter(day => SCHEDULE_DAY_ORDER.includes(day)) : [],
             suggestions: Array.isArray(source.suggestions) ? source.suggestions : [],
+            availabilityTimeSlots: Array.isArray(source.availabilityTimeSlots) ? source.availabilityTimeSlots : [],
+            availabilitySelectedKey: String(source.availabilitySelectedKey || ""),
+            suggestionMessage: String(source.suggestionMessage || ""),
             suggestionsVisible: Boolean(source.suggestionsVisible)
         };
     }
@@ -3167,6 +3843,87 @@ while ($ay = $ayQ->fetch_assoc()) {
         const type = normalizeScheduleBlockType(block.type);
         indexMap[type] = (indexMap[type] || 0) + 1;
         return type === "LAB" ? `Laboratory ${indexMap[type]}` : `Lecture ${indexMap[type]}`;
+    }
+
+    function blockHasSuggestionFilter(block) {
+        const days = normalizeScheduleDays(block?.days || []);
+        const timeStart = String(block?.time_start || "").trim();
+        const timeEnd = String(block?.time_end || "").trim();
+        const roomId = String(block?.room_id || "").trim();
+        return days.length > 0 || timeStart !== "" || timeEnd !== "" || roomId !== "";
+    }
+
+    function normalizeScheduleBlockSuggestionState() {
+        if (!scheduleBlockState || !Array.isArray(scheduleBlockState.blocks)) {
+            return;
+        }
+
+        scheduleBlockState.blocks = scheduleBlockState.blocks.map(block => {
+            if (blockHasSuggestionFilter(block)) {
+                return block;
+            }
+
+            return {
+                ...block,
+                suggestionsVisible: false,
+                suggestions: [],
+                availabilityTimeSlots: [],
+                availabilitySelectedKey: "",
+                suggestionMessage: "Choose at least one day, time, or room first."
+            };
+        });
+    }
+
+    function updateRenderedBlockSuggestionState() {
+        if (!scheduleBlockState || !Array.isArray(scheduleBlockState.blocks)) {
+            return;
+        }
+
+        scheduleBlockState.blocks.forEach(block => {
+            const root = $(`[data-schedule-block="${block.block_key}"]`);
+            if (!root.length) {
+                return;
+            }
+
+            const canSuggest = blockHasSuggestionFilter(block);
+            root.find(".btn-block-suggestions").toggleClass("d-none", !canSuggest);
+            root.find(".block-suggestion-hint").toggleClass("d-none", canSuggest);
+
+            const panel = root.find(".suggestion-panel");
+            if (!canSuggest || !block.suggestionsVisible) {
+                panel.addClass("d-none");
+            } else {
+                panel.removeClass("d-none");
+            }
+
+            if (!canSuggest) {
+                root.find(".suggestion-list").html('<div class="suggestion-empty">Choose at least one day, time, or room first.</div>');
+            }
+        });
+    }
+
+    function queueBlockSuggestionRefresh(blockKey) {
+        if (!blockKey) {
+            return;
+        }
+
+        if (blockSuggestionTimers[blockKey]) {
+            clearTimeout(blockSuggestionTimers[blockKey]);
+        }
+
+        blockSuggestionTimers[blockKey] = window.setTimeout(function () {
+            delete blockSuggestionTimers[blockKey];
+            if (!scheduleBlockState || !$("#blockScheduleModal").hasClass("show")) {
+                return;
+            }
+
+            const block = scheduleBlockState.blocks.find(item => item.block_key === blockKey);
+            if (!block || !block.suggestionsVisible || !blockHasSuggestionFilter(block)) {
+                return;
+            }
+
+            loadSuggestionsForBlock(blockKey);
+        }, 220);
     }
 
     function renderScheduleBlockCoverageSummary() {
@@ -3217,9 +3974,96 @@ while ($ay = $ayQ->fetch_assoc()) {
         `);
     }
 
+    function getSelectedAvailabilitySlot(block) {
+        const timeSlots = Array.isArray(block?.availabilityTimeSlots) ? block.availabilityTimeSlots : [];
+        if (timeSlots.length === 0) {
+            return null;
+        }
+
+        const selectedKey = String(block?.availabilitySelectedKey || "");
+        return timeSlots.find(item => String(item.time_key || "") === selectedKey) || timeSlots[0];
+    }
+
+    function renderBlockAvailabilityFinder(block) {
+        const timeSlots = Array.isArray(block?.availabilityTimeSlots) ? block.availabilityTimeSlots : [];
+        if (timeSlots.length === 0) {
+            const emptyMessage = String(block?.suggestionMessage || "").trim() || "No available entries matched the current filters.";
+            return `<div class="suggestion-empty">${escapeHtml(emptyMessage)}</div>`;
+        }
+
+        const selectedSlot = getSelectedAvailabilitySlot(block);
+        const selectedKey = String(selectedSlot?.time_key || "");
+
+        const timeSlotCards = timeSlots.map(slot => {
+            const slotKey = String(slot.time_key || "");
+            const isSelected = slotKey !== "" && slotKey === selectedKey;
+            return `
+                <button
+                    type="button"
+                    class="availability-slot-card btn-select-block-time-slot ${isSelected ? "is-selected" : ""}"
+                    data-block-key="${escapeHtml(block.block_key)}"
+                    data-time-key="${escapeHtml(slotKey)}"
+                >
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div>
+                            <div class="suggestion-slot">${escapeHtml(slot.days_label || "")} | ${escapeHtml(slot.time_label || "")}</div>
+                            <div class="suggestion-meta mt-1">${escapeHtml(slot.pattern_label || "Available slot")}</div>
+                        </div>
+                        <span class="availability-count">${escapeHtml(String(slot.room_count || 0))}</span>
+                    </div>
+                </button>
+            `;
+        }).join("");
+
+        const roomCards = Array.isArray(selectedSlot?.rooms) && selectedSlot.rooms.length > 0
+            ? selectedSlot.rooms.map(room => `
+                <div class="suggestion-card ${escapeHtml(room.fit_class || "best")}">
+                    <div class="d-flex justify-content-between align-items-start gap-2">
+                        <div class="d-flex flex-wrap gap-2">
+                            <span class="suggestion-fit ${escapeHtml(room.fit_class || "best")}">${escapeHtml(room.fit_label || "Available")}</span>
+                            <span class="suggestion-chip">${escapeHtml(selectedSlot.pattern_label || "Selected time")}</span>
+                        </div>
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-outline-primary btn-use-block-suggestion"
+                            data-block-key="${escapeHtml(block.block_key)}"
+                            data-room-id="${escapeHtml(room.room_id || "")}"
+                            data-time-start="${escapeHtml(selectedSlot.time_start || "")}"
+                            data-time-end="${escapeHtml(selectedSlot.time_end || "")}"
+                            data-days='${escapeHtml(JSON.stringify(selectedSlot.days || []))}'
+                        >
+                            Use
+                        </button>
+                    </div>
+                    <div class="suggestion-slot mt-2">${escapeHtml(room.room_label || "")}</div>
+                    <div class="suggestion-meta mt-1">${escapeHtml(selectedSlot.days_label || "")} | ${escapeHtml(selectedSlot.time_label || "")}</div>
+                    <div class="suggestion-reasons mt-2">
+                        ${Array.isArray(room.reasons) && room.reasons.length > 0
+                            ? room.reasons.map(reason => `<span class="suggestion-reason">${escapeHtml(reason)}</span>`).join("")
+                            : '<span class="suggestion-reason">Ready to use</span>'}
+                    </div>
+                </div>
+            `).join("")
+            : '<div class="suggestion-empty">Select a time slot to view available rooms.</div>';
+
+        return `
+            <div class="availability-shell">
+                <div>
+                    <div class="step-label mb-2">Available Time Slots</div>
+                    <div class="availability-list">${timeSlotCards}</div>
+                </div>
+                <div>
+                    <div class="step-label mb-2">Available Rooms</div>
+                    <div class="suggestion-list">${roomCards}</div>
+                </div>
+            </div>
+        `;
+    }
+
     function renderBlockSuggestionCards(block) {
         if (!Array.isArray(block.suggestions) || block.suggestions.length === 0) {
-            return `<div class="suggestion-empty">No conflict-free suggestions found for this block.</div>`;
+            const emptyMessage = String(block?.suggestionMessage || "").trim() || "No ranked suggestions are available for this block.";
+            return `<div class="suggestion-empty">${escapeHtml(emptyMessage)}</div>`;
         }
 
         return block.suggestions.map(item => `
@@ -3326,35 +4170,6 @@ while ($ay = $ayQ->fetch_assoc()) {
                             </select>
                         </div>
                     </div>
-
-                    <div class="mt-3">
-                        <button
-                            type="button"
-                            class="btn btn-outline-primary btn-sm btn-block-suggestions"
-                            data-block-key="${escapeHtml(block.block_key)}"
-                        >
-                            <i class="bx bx-bulb me-1"></i>${block.suggestionsVisible ? "Hide Suggested Schedule" : "Show Suggested Schedule"}
-                        </button>
-                    </div>
-
-                    <div class="suggestion-panel mt-3 ${block.suggestionsVisible ? "" : "d-none"}" id="blockSuggestionPanel_${escapeHtml(block.block_key)}">
-                        <div class="suggestion-board">
-                            <div class="d-flex justify-content-between align-items-start gap-3">
-                                <div>
-                                    <div class="step-label mb-1">Suggested Slots</div>
-                                    <div class="schedule-hint mb-0">
-                                        Ranked conflict-free options for this ${type === "LAB" ? "laboratory" : "lecture"} block.
-                                    </div>
-                                </div>
-                                <button type="button" class="btn btn-outline-primary btn-sm btn-refresh-block-suggestions" data-block-key="${escapeHtml(block.block_key)}">
-                                    Refresh
-                                </button>
-                            </div>
-                            <div class="suggestion-list mt-3" id="blockSuggestionBoard_${escapeHtml(block.block_key)}">
-                                ${block.suggestionsVisible ? renderBlockSuggestionCards(block) : '<div class="suggestion-empty">Suggestions will load when you open this panel.</div>'}
-                            </div>
-                        </div>
-                    </div>
                 </div>
             `;
         }).join("");
@@ -3397,6 +4212,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                 days
             };
         });
+        normalizeScheduleBlockSuggestionState();
     }
 
     function collectScheduleBlockDrafts() {
@@ -3836,8 +4652,18 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
+        if (!blockHasSuggestionFilter(block)) {
+            block.suggestionsVisible = false;
+            block.suggestions = [];
+            block.availabilityTimeSlots = [];
+            block.availabilitySelectedKey = "";
+            block.suggestionMessage = "Choose at least one day, time, or room first.";
+            renderScheduleBlocks();
+            return;
+        }
+
         const board = $(`#blockSuggestionBoard_${blockKey}`);
-        board.html(`<div class="suggestion-empty">Loading suggestions...</div>`);
+        board.html(`<div class="suggestion-empty">Loading availability...</div>`);
 
         $.ajax({
             url: "../backend/load_schedule_suggestions.php",
@@ -3851,16 +4677,42 @@ while ($ay = $ayQ->fetch_assoc()) {
             },
             success: function (res) {
                 if (!res || res.status !== "ok") {
-                    board.html(`<div class="suggestion-empty">${escapeHtml((res && res.message) ? res.message : "Failed to load suggestions.")}</div>`);
+                    block.suggestionMessage = (res && res.message) ? String(res.message) : "Failed to load availability.";
+                    block.suggestions = [];
+                    block.availabilityTimeSlots = [];
+                    block.availabilitySelectedKey = "";
+                    board.html(`<div class="suggestion-empty">${escapeHtml((res && res.message) ? res.message : "Failed to load availability.")}</div>`);
                     return;
                 }
 
-                block.suggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
+                block.suggestionMessage = String((res && res.message) ? res.message : "");
                 block.suggestionsVisible = true;
+                if (String(res.mode || "") === "availability_finder") {
+                    const timeSlots = Array.isArray(res.time_slots) ? res.time_slots : [];
+                    const currentSelectedKey = String(block.availabilitySelectedKey || "");
+                    const responseSelectedKey = String(res.selected_time_key || "");
+                    const firstKey = String((timeSlots[0] && timeSlots[0].time_key) || "");
+                    const hasCurrentSelection = timeSlots.some(item => String(item.time_key || "") === currentSelectedKey);
+                    const hasResponseSelection = timeSlots.some(item => String(item.time_key || "") === responseSelectedKey);
+
+                    block.suggestions = [];
+                    block.availabilityTimeSlots = timeSlots;
+                    block.availabilitySelectedKey = hasCurrentSelection
+                        ? currentSelectedKey
+                        : (hasResponseSelection ? responseSelectedKey : firstKey);
+                } else {
+                    block.suggestions = Array.isArray(res.suggestions) ? res.suggestions : [];
+                    block.availabilityTimeSlots = [];
+                    block.availabilitySelectedKey = "";
+                }
                 renderScheduleBlocks();
             },
             error: function () {
-                board.html(`<div class="suggestion-empty">Failed to load suggestions.</div>`);
+                block.suggestionMessage = "Failed to load availability.";
+                block.suggestions = [];
+                block.availabilityTimeSlots = [];
+                block.availabilitySelectedKey = "";
+                board.html(`<div class="suggestion-empty">Failed to load availability.</div>`);
             }
         });
     }
@@ -5694,6 +6546,10 @@ const matrixModalElement = document.getElementById("matrixModal");
 if (matrixModalElement) {
   matrixModalInstance = bootstrap.Modal.getOrCreateInstance(matrixModalElement);
 }
+const sectionScheduleMatrixModalElement = document.getElementById("sectionScheduleMatrixModal");
+if (sectionScheduleMatrixModalElement) {
+  sectionScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(sectionScheduleMatrixModalElement);
+}
 renderRoomBrowser();
 
 $("#prospectus_id, #ay_id, #semester").on("change", function () {
@@ -5756,6 +6612,10 @@ $("#btnOpenRoomBrowser").on("click", function () {
 
 $(document).on("click", ".btn-open-modal-matrix", function () {
   openMatrixHelper();
+});
+
+$(document).on("click", "#blockScheduleModal .btn-open-section-matrix", function () {
+  openSectionScheduleMatrixHelper();
 });
 
 $("#btnToggleSingleSuggestions").on("click", function () {
@@ -5824,6 +6684,27 @@ $("#autoDraftModal").on("hidden.bs.modal", function () {
 
 $("#matrixModal").on("hidden.bs.modal", function () {
   restoreBodyModalStateForScheduling();
+});
+
+$("#sectionScheduleMatrixModal").on("show.bs.modal", function () {
+  $(this).appendTo("body").css("z-index", 1110);
+});
+
+$("#sectionScheduleMatrixModal").on("hidden.bs.modal", function () {
+  abortSectionScheduleMatrixRequest();
+  sectionScheduleMatrixState = null;
+  $("#sectionScheduleMatrixContainer").html('<div class="section-matrix-empty">Loading section matrix...</div>');
+  $("#sectionScheduleMatrixHeaderNote").text("Compare scheduled subjects across peer sections without leaving the block editor.");
+  restoreBodyModalStateForScheduling();
+});
+
+$(document).on("click", "#sectionScheduleMatrixModal .btn-section-matrix-day", function () {
+  if (!sectionScheduleMatrixState) {
+    return;
+  }
+
+  sectionScheduleMatrixState.selectedDay = String($(this).data("day") || "");
+  renderSectionScheduleMatrix();
 });
 
 $(document).on("input change", "#scheduleModal .sched-day, #scheduleModal #sched_time_start, #scheduleModal #sched_time_end, #scheduleModal #sched_room_id", function () {
@@ -6400,6 +7281,14 @@ success: function (res) {
 });
 
 $("#blockScheduleModal").on("hidden.bs.modal", function () {
+    if ($("#sectionScheduleMatrixModal").hasClass("show")) {
+        if (sectionScheduleMatrixModalInstance) {
+            sectionScheduleMatrixModalInstance.hide();
+        } else {
+            $("#sectionScheduleMatrixModal").modal("hide");
+        }
+    }
+
     scheduleBlockState = null;
     $("#block_sched_subject_label, #block_sched_section_label").text("");
     $("#block_sched_context_line").addClass("d-none");
@@ -6459,6 +7348,27 @@ $(document).on("click", "#blockScheduleModal .btn-block-suggestions", function (
 
 $(document).on("click", "#blockScheduleModal .btn-refresh-block-suggestions", function () {
     loadSuggestionsForBlock(String($(this).data("blockKey") || ""));
+});
+
+$(document).on("click", "#blockScheduleModal .btn-select-block-time-slot", function () {
+    if (!scheduleBlockState) {
+        return;
+    }
+
+    const blockKey = String($(this).data("blockKey") || "");
+    const timeKey = String($(this).data("timeKey") || "");
+    const block = scheduleBlockState.blocks.find(item => item.block_key === blockKey);
+    if (!block || !Array.isArray(block.availabilityTimeSlots)) {
+        return;
+    }
+
+    const hasMatch = block.availabilityTimeSlots.some(item => String(item.time_key || "") === timeKey);
+    if (!hasMatch) {
+        return;
+    }
+
+    block.availabilitySelectedKey = timeKey;
+    renderScheduleBlocks();
 });
 
 $(document).on("click", "#blockScheduleModal .btn-use-block-suggestion", function () {
