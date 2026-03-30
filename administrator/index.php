@@ -43,7 +43,7 @@
             'campus_name' => $campus['campus_name'],
             'faculty_count' => 0,
             'section_count' => 0,
-            'workload_count' => 0,
+            'schedule_count' => 0,
         ];
     }
     
@@ -56,8 +56,6 @@
 | - resolved via class_schedule → prospectus_offering → sections → program → college → campus
 |--------------------------------------------------------------------------
 */
-
-$facultyPerCampus = [];
 
 if ($currentAyId && $currentSem) {
 
@@ -100,7 +98,6 @@ if ($currentAyId && $currentSem) {
         $campusId = (int)$row['campus_id'];
         $facultyCount = (int)$row['faculty_count'];
 
-        $facultyPerCampus[$campusId] = $facultyCount;
         if (isset($campusAnalytics[$campusId])) {
             $campusAnalytics[$campusId]['faculty_count'] = $facultyCount;
         }
@@ -163,7 +160,7 @@ if ($currentAyId && $currentSem) {
 
 /*
 |--------------------------------------------------------------------------
-| SCHEDULED WORKLOADS PER CAMPUS (CURRENT TERM ONLY)
+| SCHEDULE COUNT PER CAMPUS (CURRENT TERM ONLY)
 |--------------------------------------------------------------------------
 | Source:
 | - tbl_class_schedule
@@ -173,10 +170,10 @@ if ($currentAyId && $currentSem) {
 
 if ($currentAyId && $currentSem) {
 
-    $workloadsPerCampusSql = "
+    $schedulesPerCampusSql = "
         SELECT
             camp.campus_id,
-            COUNT(cs.schedule_id) AS workload_count
+            COUNT(cs.schedule_id) AS schedule_count
         FROM tbl_class_schedule cs
 
         INNER JOIN tbl_prospectus_offering po
@@ -200,7 +197,7 @@ if ($currentAyId && $currentSem) {
         GROUP BY camp.campus_id
     ";
 
-    $stmt = $conn->prepare($workloadsPerCampusSql);
+    $stmt = $conn->prepare($schedulesPerCampusSql);
     $stmt->bind_param("ii", $currentAyId, $currentSem);
     $stmt->execute();
     $res = $stmt->get_result();
@@ -208,14 +205,31 @@ if ($currentAyId && $currentSem) {
     while ($row = $res->fetch_assoc()) {
         $campusId = (int)$row['campus_id'];
         if (isset($campusAnalytics[$campusId])) {
-            $campusAnalytics[$campusId]['workload_count'] = (int)$row['workload_count'];
+            $campusAnalytics[$campusId]['schedule_count'] = (int)$row['schedule_count'];
         }
     }
 
     $stmt->close();
 }
 
-$campusAnalytics = array_values($campusAnalytics);
+$campusAnalyticsMap = $campusAnalytics;
+$campusAnalytics = array_values($campusAnalyticsMap);
+
+$activeCampusCount = 0;
+$campusesWithSchedules = 0;
+foreach ($campusAnalytics as $campusMetric) {
+    $facultyCount = (int)($campusMetric['faculty_count'] ?? 0);
+    $sectionCount = (int)($campusMetric['section_count'] ?? 0);
+    $scheduleCount = (int)($campusMetric['schedule_count'] ?? 0);
+
+    if (($facultyCount + $sectionCount + $scheduleCount) > 0) {
+        $activeCampusCount++;
+    }
+
+    if ($scheduleCount > 0) {
+        $campusesWithSchedules++;
+    }
+}
 
 /*
 |--------------------------------------------------------------------------
@@ -339,7 +353,7 @@ if ($currentAyId && $currentSem) {
 
 /*
 |--------------------------------------------------------------------------
-| TOTAL FACULTY WORKLOADS (SCHEDULED CLASSES)
+| TOTAL SCHEDULES (SCHEDULED CLASSES)
 |--------------------------------------------------------------------------
 | Definition:
 | - Counts class schedules
@@ -350,12 +364,12 @@ if ($currentAyId && $currentSem) {
 |--------------------------------------------------------------------------
 */
 
-$totalWorkloads = 0;
+$totalSchedules = 0;
 
 if ($currentAyId && $currentSem) {
 
-    $workloadSql = "
-        SELECT COUNT(cs.schedule_id) AS total_workloads
+    $scheduleSql = "
+        SELECT COUNT(cs.schedule_id) AS total_schedules
         FROM tbl_class_schedule cs
         INNER JOIN tbl_prospectus_offering po
             ON po.offering_id = cs.offering_id
@@ -363,13 +377,13 @@ if ($currentAyId && $currentSem) {
           AND po.semester = ?
     ";
 
-    $stmt = $conn->prepare($workloadSql);
+    $stmt = $conn->prepare($scheduleSql);
     $stmt->bind_param("ii", $currentAyId, $currentSem);
     $stmt->execute();
     $res = $stmt->get_result();
 
     if ($row = $res->fetch_assoc()) {
-        $totalWorkloads = (int)$row['total_workloads'];
+        $totalSchedules = (int)$row['total_schedules'];
     }
 
     $stmt->close();
@@ -430,36 +444,218 @@ if ($currentAyId && $currentSem) {
 .campus-scroll-area {
   max-height: 700px;
   overflow-y: auto;
-  padding-left: 1.5rem;
-  padding-right: 1.5rem;
+  padding: 1rem 1.25rem 1.25rem;
   scrollbar-gutter: stable;
+  display: flex;
+  flex-direction: column;
+  gap: 0.95rem;
+  background: linear-gradient(180deg, #fbfcff 0%, #f6f8fc 100%);
 }
 
-.campus-card {
-  border: 1px solid #e4e4e4;
-  border-radius: 10px;
-  padding: 14px 18px;
-  margin-bottom: 14px;
-  background: white;
-  transition: 0.2s ease-in-out;
+.snapshot-overview-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.75rem;
 }
 
-.campus-card:hover {
-  transform: translateX(4px);
-  box-shadow: 0 6px 18px rgba(0,0,0,0.08);
+.snapshot-overview-item {
+  border: 1px solid #e6ebf4;
+  border-radius: 14px;
+  padding: 0.85rem 0.9rem;
+  background: #fff;
+  box-shadow: 0 8px 18px rgba(67, 89, 113, 0.06);
+}
+
+.snapshot-overview-item span {
+  display: block;
+  color: #8c9ab0;
+  font-size: 0.72rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.snapshot-overview-item strong {
+  display: block;
+  margin-top: 0.35rem;
+  color: #2f3e52;
+  font-size: 1.2rem;
+  font-weight: 800;
+  line-height: 1.1;
 }
 
 .campus-card-link {
   text-decoration: none !important;
+  color: inherit;
+  display: block;
+}
+
+.campus-card {
+  border: 1px solid #e4eaf5;
+  border-radius: 18px;
+  padding: 1rem;
+  background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+  box-shadow: 0 10px 24px rgba(67, 89, 113, 0.08);
+  transition: transform 0.2s ease, box-shadow 0.2s ease, border-color 0.2s ease;
+}
+
+.campus-card:hover {
+  transform: translateY(-2px);
+  box-shadow: 0 16px 28px rgba(67, 89, 113, 0.14);
+  border-color: #ccd7ea;
+}
+
+.campus-card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 0.85rem;
+  margin-bottom: 0.9rem;
+}
+
+.campus-card-meta {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.45rem;
+  margin-bottom: 0.5rem;
+}
+
+.campus-code-pill,
+.campus-status-pill {
+  display: inline-flex;
+  align-items: center;
+  border-radius: 999px;
+  padding: 0.28rem 0.6rem;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+}
+
+.campus-code-pill {
+  background: #eef3ff;
+  color: #5f67df;
+}
+
+.campus-status-pill.is-live {
+  background: #e8f7ec;
+  color: #1f8a4c;
+}
+
+.campus-status-pill.is-planning {
+  background: #fff4de;
+  color: #b97700;
+}
+
+.campus-status-pill.is-idle {
+  background: #f1f3f7;
+  color: #7b8ca4;
+}
+
+.campus-card-title {
+  margin: 0;
+  color: #2f3e52;
+  font-size: 1rem;
+  font-weight: 700;
+}
+
+.campus-card-subtitle {
+  margin: 0.32rem 0 0;
+  color: #8392a8;
+  font-size: 0.82rem;
+  line-height: 1.45;
 }
 
 .campus-icon {
-  width: 34px;
-  height: 34px;
-  border-radius: 50%;
+  width: 42px;
+  height: 42px;
+  border-radius: 14px;
   display: flex;
   justify-content: center;
   align-items: center;
+  flex-shrink: 0;
+  background: linear-gradient(135deg, #696cff 0%, #858cff 100%);
+  box-shadow: 0 12px 20px rgba(105, 108, 255, 0.24);
+}
+
+.campus-metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 0.65rem;
+}
+
+.campus-metric {
+  border: 1px solid #e8edf6;
+  border-radius: 14px;
+  padding: 0.72rem 0.78rem;
+  background: #fff;
+}
+
+.campus-metric span {
+  display: block;
+  color: #91a0b8;
+  font-size: 0.68rem;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  text-transform: uppercase;
+}
+
+.campus-metric strong {
+  display: block;
+  margin-top: 0.28rem;
+  color: #2f3e52;
+  font-size: 1.08rem;
+  font-weight: 800;
+  line-height: 1.1;
+}
+
+.campus-metric.is-faculty {
+  background: #f4f3ff;
+  border-color: #e2dcff;
+}
+
+.campus-metric.is-sections {
+  background: #eef9e9;
+  border-color: #d7edca;
+}
+
+.campus-metric.is-schedules {
+  background: #fff6de;
+  border-color: #ffe1a6;
+}
+
+.campus-summary-card {
+  border-color: #d5efe2;
+  background: linear-gradient(135deg, #f4fbf7 0%, #ffffff 100%);
+}
+
+.campus-summary-card .campus-icon {
+  background: linear-gradient(135deg, #56ca00 0%, #72d929 100%);
+  box-shadow: 0 12px 20px rgba(86, 202, 0, 0.22);
+}
+
+@media (max-width: 575.98px) {
+  .campus-scroll-area {
+    padding: 0.85rem;
+  }
+
+  .snapshot-overview-grid {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .campus-card {
+    padding: 0.9rem;
+  }
+
+  .campus-card-header {
+    flex-direction: column;
+  }
+
+  .campus-icon {
+    width: 38px;
+    height: 38px;
+    border-radius: 12px;
+  }
 }
 
 .kpi-box {
@@ -618,16 +814,16 @@ if ($currentAyId && $currentSem) {
             </div>
           </div>
 
-          <!-- TOTAL WORKLOADS -->
+          <!-- TOTAL SCHEDULES -->
           <div class="col-md-3 col-6">
-            <div class="kpi-box text-center cursor-pointer" id="kpiFacultyWorkloads">
+            <div class="kpi-box text-center cursor-pointer" id="kpiSchedules">
               <div class="kpi-icon bg-warning">
                 <i class="bx bx-calendar"></i>
               </div>
               <h3 class="kpi-value text-warning mt-2">
-                <?php echo $totalWorkloads; ?>
+                <?php echo $totalSchedules; ?>
               </h3>
-              <small class="text-muted">Faculty Workloads</small>
+              <small class="text-muted">Schedules</small>
             </div>
           </div>
 
@@ -643,8 +839,8 @@ if ($currentAyId && $currentSem) {
 
     <div class="card-header d-flex justify-content-between align-items-center">
       <div>
-        <h5 class="m-0">Campus Academic Load</h5>
-        <small class="text-muted">Faculty coverage, section volume, and scheduled classes by campus</small>
+        <h5 class="m-0">Campus Academic Activity</h5>
+        <small class="text-muted">Faculty coverage, section volume, and schedules by campus</small>
       </div>
       <span class="badge bg-label-info"><?= $academicTermTextEscaped ?></span>
     </div>
@@ -658,7 +854,7 @@ if ($currentAyId && $currentSem) {
       <div class="mt-4">
         <div class="d-flex flex-column flex-md-row justify-content-between align-items-md-center gap-2 mb-2">
           <h6 class="fw-bold mb-0">Campus Breakdown</h6>
-          <small class="text-muted">Most useful first-glance view: staffing versus teaching load.</small>
+          <small class="text-muted">Most useful first-glance view: staffing, sections, and schedules.</small>
         </div>
 
         <?php if (!empty($campusAnalytics)): ?>
@@ -676,7 +872,7 @@ if ($currentAyId && $currentSem) {
               <div class="d-flex flex-wrap gap-2 justify-content-lg-end">
                 <span class="badge bg-label-primary"><?php echo (int)$campusMetric['faculty_count']; ?> Faculty</span>
                 <span class="badge bg-label-success"><?php echo (int)$campusMetric['section_count']; ?> Sections</span>
-                <span class="badge bg-label-warning"><?php echo (int)$campusMetric['workload_count']; ?> Workloads</span>
+                <span class="badge bg-label-warning"><?php echo (int)$campusMetric['schedule_count']; ?> Schedules</span>
               </div>
             </div>
           </div>
@@ -708,33 +904,94 @@ if ($currentAyId && $currentSem) {
                 <div class="col-md-6 col-lg-4 order-2 mb-4">
                   <div class="card h-100 shadow-sm">
                     <div class="card-header d-flex align-items-center justify-content-between">
-                      <h5 class="card-title m-0">Campus Snapshot</h5>
-                      <span class="badge bg-label-primary">Executive View</span>
+                      <div>
+                        <h5 class="card-title m-0">Campus Snapshot</h5>
+                        <small class="text-muted">Current-term dashboard by campus</small>
+                      </div>
+                      <span class="badge bg-label-primary">Live View</span>
                     </div>
 
                     <div class="card-body campus-scroll-area">
+                      <div class="snapshot-overview-grid">
+                        <div class="snapshot-overview-item">
+                          <span>Campuses</span>
+                          <strong><?php echo count($campuses); ?></strong>
+                        </div>
+                        <div class="snapshot-overview-item">
+                          <span>Active</span>
+                          <strong><?php echo $activeCampusCount; ?></strong>
+                        </div>
+                        <div class="snapshot-overview-item">
+                          <span>Schedules</span>
+                          <strong><?php echo $totalSchedules; ?></strong>
+                        </div>
+                      </div>
 
                       <?php foreach ($campuses as $c): ?>
+                      <?php
+                        $campusId = (int)$c['campus_id'];
+                        $campusMetric = $campusAnalyticsMap[$campusId] ?? [
+                          'faculty_count' => 0,
+                          'section_count' => 0,
+                          'schedule_count' => 0
+                        ];
+                        $facCount = (int)($campusMetric['faculty_count'] ?? 0);
+                        $sectionCount = (int)($campusMetric['section_count'] ?? 0);
+                        $scheduleCount = (int)($campusMetric['schedule_count'] ?? 0);
+                        $campusCode = trim((string)($c['campus_code'] ?? ''));
+
+                        if ($scheduleCount > 0) {
+                          $campusStatusClass = 'is-live';
+                          $campusStatusText = 'Schedules live';
+                          $campusSummaryText = $facCount . ' faculty supporting ' . $sectionCount . ' sections this term.';
+                        } elseif ($sectionCount > 0) {
+                          $campusStatusClass = 'is-planning';
+                          $campusStatusText = 'For scheduling';
+                          $campusSummaryText = $sectionCount . ' sections are ready for scheduling this term.';
+                        } else {
+                          $campusStatusClass = 'is-idle';
+                          $campusStatusText = 'No activity yet';
+                          $campusSummaryText = 'No current-term sections or schedules recorded yet.';
+                        }
+                      ?>
                       <a href="campus_dashboard.php?campus_id=<?php echo $c['campus_id']; ?>" class="campus-card-link">
                         <div class="campus-card shadow-sm">
-                          <div class="d-flex justify-content-between align-items-center">
-                            
-                            <div class="campus-info">
-                              <h6 class="mb-1 fw-bold text-dark">
-                                <?php echo $c['campus_name']; ?>
+                          <div class="campus-card-header">
+                            <div>
+                              <div class="campus-card-meta">
+                                <?php if ($campusCode !== ''): ?>
+                                  <span class="campus-code-pill"><?php echo htmlspecialchars($campusCode, ENT_QUOTES, 'UTF-8'); ?></span>
+                                <?php endif; ?>
+                                <span class="campus-status-pill <?php echo $campusStatusClass; ?>">
+                                  <?php echo $campusStatusText; ?>
+                                </span>
+                              </div>
+                              <h6 class="campus-card-title">
+                                <?php echo htmlspecialchars($c['campus_name'], ENT_QUOTES, 'UTF-8'); ?>
                               </h6>
-                              <small class="text-muted">
-                                <?php
-                                $facCount = $facultyPerCampus[$c['campus_id']] ?? 0;
-                                ?>
-                                Faculty: <span class="fw-semibold text-primary"><?= $facCount ?></span> <!-- placeholder -->
-                              </small>
+                              <p class="campus-card-subtitle mb-0">
+                                <?php echo htmlspecialchars($campusSummaryText, ENT_QUOTES, 'UTF-8'); ?>
+                              </p>
                             </div>
 
                             <div class="campus-icon bg-primary">
                               <i class="bx bx-chevron-right text-white"></i>
                             </div>
+                          </div>
 
+                          <div class="campus-metrics-grid">
+                            <div class="campus-metric is-faculty">
+                              <span>Faculty</span>
+                              <strong><?php echo $facCount; ?></strong>
+                            </div>
+                            <div class="campus-metric is-sections">
+                              <span>Sections</span>
+                              <strong><?php echo $sectionCount; ?></strong>
+                            </div>
+                            <div class="campus-metric is-schedules">
+                              <span>Schedules</span>
+                              <strong><?php echo $scheduleCount; ?></strong>
+                            </div>
                           </div>
                         </div>
                       </a>
@@ -742,14 +999,35 @@ if ($currentAyId && $currentSem) {
 
                       <!-- ALL CAMPUS SUMMARY -->
                       <a href="campus_dashboard.php?campus_id=all" class="campus-card-link">
-                        <div class="campus-card shadow-sm bg-light">
-                          <div class="d-flex justify-content-between align-items-center">
-                            <div class="campus-info">
-                              <h6 class="mb-1 fw-bold text-dark">University Summary</h6>
-                              <small class="text-muted">Overall institutional performance</small>
+                        <div class="campus-card campus-summary-card shadow-sm">
+                          <div class="campus-card-header">
+                            <div>
+                              <div class="campus-card-meta">
+                                <span class="campus-code-pill">SKSU</span>
+                                <span class="campus-status-pill is-live">
+                                  <?php echo $campusesWithSchedules; ?> campuses with schedules
+                                </span>
+                              </div>
+                              <h6 class="campus-card-title">University Summary</h6>
+                              <p class="campus-card-subtitle mb-0">Overall institutional performance across all active campuses.</p>
                             </div>
                             <div class="campus-icon bg-success">
                               <i class="bx bx-globe text-white"></i>
+                            </div>
+                          </div>
+
+                          <div class="campus-metrics-grid">
+                            <div class="campus-metric is-faculty">
+                              <span>Faculty</span>
+                              <strong><?php echo $totalFaculty; ?></strong>
+                            </div>
+                            <div class="campus-metric is-sections">
+                              <span>Sections</span>
+                              <strong><?php echo $totalSections; ?></strong>
+                            </div>
+                            <div class="campus-metric is-schedules">
+                              <span>Schedules</span>
+                              <strong><?php echo $totalSchedules; ?></strong>
                             </div>
                           </div>
                         </div>
@@ -982,16 +1260,16 @@ if ($currentAyId && $currentSem) {
 </div>
 
 <!-- ======================================================
-     FACULTY WORKLOADS MODAL (KPI C)
+     SCHEDULES MODAL (KPI C)
 ====================================================== -->
-<div class="modal fade" id="facultyWorkloadsModal" tabindex="-1">
+<div class="modal fade" id="schedulesModal" tabindex="-1">
   <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
     <div class="modal-content">
 
       <div class="modal-header">
         <h5 class="modal-title">
           <i class="bx bx-calendar me-2 text-warning"></i>
-          Faculty Workloads (Scheduled Classes)
+          Scheduled Classes
         </h5>
         <button class="btn-close" data-bs-dismiss="modal"></button>
       </div>
@@ -1006,7 +1284,7 @@ if ($currentAyId && $currentSem) {
         </div>
 
         <div class="table-responsive">
-          <table class="table table-bordered table-hover align-middle" id="facultyWorkloadsTable">
+          <table class="table table-bordered table-hover align-middle" id="schedulesTable">
             <thead class="table-light">
               <tr>
                 <th>Subject</th>
@@ -1075,21 +1353,21 @@ document.addEventListener("DOMContentLoaded", function () {
   var campusNames = <?= json_encode(array_column($campusAnalytics, 'campus_name')); ?>;
   var facultyCounts = <?= json_encode(array_column($campusAnalytics, 'faculty_count')); ?>;
   var sectionCounts = <?= json_encode(array_column($campusAnalytics, 'section_count')); ?>;
-  var workloadCounts = <?= json_encode(array_column($campusAnalytics, 'workload_count')); ?>;
+  var scheduleCounts = <?= json_encode(array_column($campusAnalytics, 'schedule_count')); ?>;
 
   if (!campusNames.length) {
     campusNames = ['No campuses'];
     facultyCounts = [0];
     sectionCounts = [0];
-    workloadCounts = [0];
+    scheduleCounts = [0];
   } else if (campusNames.length === 1) {
     campusNames = ['', campusNames[0]];
     facultyCounts = [0].concat(facultyCounts);
     sectionCounts = [0].concat(sectionCounts);
-    workloadCounts = [0].concat(workloadCounts);
+    scheduleCounts = [0].concat(scheduleCounts);
   }
 
-  var chartMax = Math.max.apply(null, facultyCounts.concat(sectionCounts, workloadCounts, [0])) + 2;
+  var chartMax = Math.max.apply(null, facultyCounts.concat(sectionCounts, scheduleCounts, [0])) + 2;
 
   var campusOperationsOptions = {
     series: [
@@ -1102,8 +1380,8 @@ document.addEventListener("DOMContentLoaded", function () {
         data: sectionCounts
       },
       {
-        name: 'Scheduled Workloads',
-        data: workloadCounts
+        name: 'Scheduled Classes',
+        data: scheduleCounts
       }
     ],
 
@@ -1560,17 +1838,17 @@ $(document)
 
 
 /* =====================================================
-   FACULTY WORKLOADS KPI → MODAL → AJAX
+   SCHEDULES KPI -> MODAL -> AJAX
 ===================================================== */
 
-let facultyWorkloadsDT = null;
+let schedulesDT = null;
 
-const facultyWorkloadsKpi = document.getElementById("kpiFacultyWorkloads");
+const schedulesKpi = document.getElementById("kpiSchedules");
 
-if (facultyWorkloadsKpi) {
-  facultyWorkloadsKpi.addEventListener("click", function () {
+if (schedulesKpi) {
+  schedulesKpi.addEventListener("click", function () {
 
-    const table = $("#facultyWorkloadsTable");
+    const table = $("#schedulesTable");
     const tbody = table.find("tbody");
 
     if ($.fn.DataTable.isDataTable(table)) {
@@ -1587,7 +1865,7 @@ if (facultyWorkloadsKpi) {
     `);
 
     new bootstrap.Modal(
-      document.getElementById("facultyWorkloadsModal")
+      document.getElementById("schedulesModal")
     ).show();
 
     fetch("../backend/get_faculty_workloads.php", { cache: "no-store" })
@@ -1598,7 +1876,7 @@ if (facultyWorkloadsKpi) {
           tbody.html(`
             <tr>
               <td colspan="8" class="text-center text-danger py-4">
-                Failed to load workloads.
+                Failed to load scheduled classes.
               </td>
             </tr>
           `);
@@ -1641,7 +1919,7 @@ if (facultyWorkloadsKpi) {
 
         tbody.html(rows);
 
-        facultyWorkloadsDT = table.DataTable({
+        schedulesDT = table.DataTable({
           pageLength: 10,
           ordering: true,
           order: [[2, 'asc']],
@@ -1654,7 +1932,7 @@ if (facultyWorkloadsKpi) {
         tbody.html(`
           <tr>
             <td colspan="8" class="text-center text-danger py-4">
-              Failed to load workloads.
+              Failed to load scheduled classes.
             </td>
           </tr>
         `);
