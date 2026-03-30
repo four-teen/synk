@@ -129,7 +129,7 @@ if (isset($_POST['login'])) {
         --login-card-border: #d9e2ef;
         --login-card-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
         --login-title: #1f3552;
-        --login-subtitle: #526a86;
+        --login-subtitle: #1f5c3f;
         --login-note-bg: #edf5ff;
         --login-note-border: #cbdff8;
         --login-note-text: #1f4e7a;
@@ -140,18 +140,22 @@ if (isset($_POST['login'])) {
 
       body {
         min-height: 100vh;
+        min-height: 100dvh;
         background: var(--login-bg);
       }
 
       .login-shell {
         min-height: 100vh;
+        min-height: 100dvh;
         padding: 2rem 1rem;
         position: relative;
-        overflow: hidden;
+        overflow-x: hidden;
+        overflow-y: auto;
       }
 
       .login-stage {
         min-height: calc(100vh - 4rem);
+        min-height: calc(100dvh - 4rem);
         max-width: 980px;
         margin: 0 auto;
         display: flex;
@@ -256,10 +260,12 @@ if (isset($_POST['login'])) {
       }
 
       .login-title {
-        margin: 0.85rem 0 0.45rem;
+        max-width: 280px;
+        margin: 0.85rem auto 0.45rem;
         color: var(--login-title);
         font-size: 1rem;
         font-weight: 800;
+        line-height: 1.35;
         text-align: center;
       }
 
@@ -419,29 +425,6 @@ if (isset($_POST['login'])) {
         margin-bottom: 0.95rem;
       }
 
-      .login-footer-note {
-        max-width: 304px;
-        margin: 0 auto 0.75rem;
-        padding: 0.95rem 1rem;
-        border-radius: 12px;
-        border: 1px solid #1b5e20;
-        background: #e8f5e9;
-        color: #1b5e20;
-        font-size: 0.9rem;
-        font-weight: 600;
-        line-height: 1.55;
-        text-align: center;
-      }
-
-      .login-student-link {
-        max-width: 304px;
-        margin: 0 auto 0.9rem;
-      }
-
-      .login-student-link .btn {
-        border-radius: 10px;
-      }
-
       .login-footnote {
         max-width: 288px;
         margin: 0 auto;
@@ -489,38 +472,64 @@ if (isset($_POST['login'])) {
 
       @media (max-width: 767.98px) {
         .login-shell {
-          padding: 1.5rem 1rem;
+          min-height: 100dvh;
+          padding: 1rem 0.85rem 1.15rem;
         }
 
         .login-stage {
-          min-height: calc(100vh - 3rem);
+          min-height: auto;
+          align-items: flex-start;
+          padding: 0.35rem 0 0.85rem;
         }
 
         .login-panel {
           max-width: 100%;
-          padding-top: 1.7rem;
+          padding-top: 1.35rem;
         }
 
         .login-emblem {
-          width: 82px;
-          height: 82px;
+          width: 72px;
+          height: 72px;
+          border-width: 6px;
+        }
+
+        .login-card {
+          margin-top: 0.8rem;
         }
 
         .login-card .card-body {
-          padding: 3.15rem 1.2rem 1.45rem;
+          padding: 2.85rem 1rem 1rem;
         }
 
         .login-footer {
-          margin: 1.3rem -1.2rem -1.45rem;
-          padding: 1.05rem 1.2rem 1.2rem;
+          margin: 1.1rem -1rem -1rem;
+          padding: 1rem 1rem 1.05rem;
         }
 
         .login-brand {
-          font-size: 1.42rem;
+          font-size: 1.34rem;
         }
 
         .login-title {
-          font-size: 0.95rem;
+          max-width: 248px;
+          font-size: 0.92rem;
+        }
+
+        .login-subtitle {
+          margin-bottom: 0.95rem;
+          font-size: 0.9rem;
+          line-height: 1.45;
+        }
+
+        .login-alert {
+          margin-bottom: 0.85rem;
+          padding: 0.8rem 0.9rem;
+          font-size: 0.86rem;
+        }
+
+        .login-footnote {
+          font-size: 0.82rem;
+          line-height: 1.45;
         }
 
         .login-dot-grid-right,
@@ -535,6 +544,14 @@ if (isset($_POST['login'])) {
 
         .login-plate-left {
           left: 8%;
+        }
+      }
+
+      @media (max-height: 820px) {
+        .login-stage {
+          min-height: auto;
+          align-items: flex-start;
+          padding: 0.35rem 0 1rem;
         }
       }
     </style>
@@ -564,9 +581,10 @@ if (isset($_POST['login'])) {
             <div class="card-body">
               <div class="login-brand">sksu synk</div>
 
-              <h1 class="login-title">Master Scheduling Workspace</h1>
+              <h1 class="login-title">Centralized Academic Management Platform</h1>
               <p class="login-subtitle">
-                Official portal for centralized schedule preparation and academic load planning.
+                Official platform for centralized academic operations, designed to unify scheduling,
+                enrollment, billing, and other university processes in one system.
                 <small>Sultan Kudarat State University</small>
               </p>
 
@@ -649,20 +667,8 @@ if (isset($_POST['login'])) {
                   </div>
                 <?php endif; ?>
 
-                <div class="login-footer-note">
-                  Prospectus preparation, faculty workload, class scheduling, and room utilization
-                  are managed from one scheduling workspace.
-                </div>
-
-                <div class="login-student-link d-grid">
-                  <a href="student/login.php" class="btn btn-outline-secondary">
-                    Open Student Portal
-                  </a>
-                </div>
-
                 <div class="login-footnote">
-                  Login will be validated against the Synk access account registry for approved
-                  administrator and scheduler accounts. Students have a separate Google-only portal.
+                  Access is limited to approved Synk administrator and scheduler accounts.
                 </div>
 
                 <div class="login-project-note">SAM + eSKALA project 2026</div>
