@@ -21,6 +21,15 @@ function synk_schedule_merge_normalize_offering_ids(array $offeringIds): array
     return array_values($normalized);
 }
 
+function synk_schedule_merge_array_first_key(array $values)
+{
+    foreach ($values as $key => $_unused) {
+        return $key;
+    }
+
+    return null;
+}
+
 function synk_schedule_merge_table_exists(mysqli $conn): bool
 {
     synk_schedule_merge_ensure_table($conn);
@@ -287,11 +296,12 @@ function synk_schedule_merge_compose_group_label(array $groupRows): string
     }
 
     if (count($fullSections) <= 1) {
-        return (string)reset($fullSections);
+        $singleFullSection = synk_schedule_merge_array_first_key($fullSections);
+        return $singleFullSection !== null ? (string)$singleFullSection : '';
     }
 
     if (count($programCodes) === 1 && count($sectionNames) === count($rows)) {
-        $programCode = (string)array_key_first($programCodes);
+        $programCode = (string)synk_schedule_merge_array_first_key($programCodes);
         $sections = array_keys($sectionNames);
         natcasesort($sections);
         return trim($programCode . ' ' . implode('/', $sections));
