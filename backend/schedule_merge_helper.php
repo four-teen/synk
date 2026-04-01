@@ -222,6 +222,7 @@ function synk_schedule_merge_load_section_rows_by_offering(mysqli $conn, array $
             o.offering_id,
             COALESCE(NULLIF(TRIM(sec.section_name), ''), CONCAT('Section ', o.section_id)) AS section_name,
             COALESCE(NULLIF(TRIM(p.program_code), ''), '') AS program_code,
+            COALESCE(NULLIF(TRIM(p.major), ''), '') AS major,
             COALESCE(
                 NULLIF(TRIM(sec.full_section), ''),
                 CONCAT(
@@ -251,12 +252,44 @@ function synk_schedule_merge_load_section_rows_by_offering(mysqli $conn, array $
                 'offering_id' => $offeringId,
                 'section_name' => (string)($row['section_name'] ?? ''),
                 'program_code' => (string)($row['program_code'] ?? ''),
+                'major' => (string)($row['major'] ?? ''),
                 'full_section' => (string)($row['full_section'] ?? '')
             ];
         }
     }
 
     return $rows;
+}
+
+function synk_schedule_merge_compose_base_section_label(array $row): string
+{
+    $fullSection = trim((string)($row['full_section'] ?? ''));
+    if ($fullSection !== '') {
+        return $fullSection;
+    }
+
+    $programCode = trim((string)($row['program_code'] ?? ''));
+    $sectionName = trim((string)($row['section_name'] ?? ''));
+    if ($programCode !== '' && $sectionName !== '') {
+        return trim($programCode . ' ' . $sectionName);
+    }
+
+    return $sectionName;
+}
+
+function synk_schedule_merge_compose_section_major_label(array $row): string
+{
+    $baseLabel = synk_schedule_merge_compose_base_section_label($row);
+    if ($baseLabel === '') {
+        return '';
+    }
+
+    $major = strtoupper(trim((string)($row['major'] ?? '')));
+    if ($major === '') {
+        return $baseLabel;
+    }
+
+    return $baseLabel . '-' . $major;
 }
 
 function synk_schedule_merge_compose_group_label(array $groupRows): string
@@ -267,20 +300,30 @@ function synk_schedule_merge_compose_group_label(array $groupRows): string
 
     $rows = array_values($groupRows);
     usort($rows, static function (array $left, array $right): int {
+        $sectionCompare = strnatcasecmp(
+            synk_schedule_merge_compose_base_section_label($left),
+            synk_schedule_merge_compose_base_section_label($right)
+        );
+        if ($sectionCompare !== 0) {
+            return $sectionCompare;
+        }
+
         return strnatcasecmp(
-            (string)($left['full_section'] ?? ''),
-            (string)($right['full_section'] ?? '')
+            strtoupper(trim((string)($left['major'] ?? ''))),
+            strtoupper(trim((string)($right['major'] ?? '')))
         );
     });
 
     $programCodes = [];
     $sectionNames = [];
     $fullSections = [];
+    $majorLabelsBySection = [];
 
     foreach ($rows as $row) {
         $programCode = trim((string)($row['program_code'] ?? ''));
         $sectionName = trim((string)($row['section_name'] ?? ''));
-        $fullSection = trim((string)($row['full_section'] ?? ''));
+        $fullSection = synk_schedule_merge_compose_base_section_label($row);
+        $majorLabel = trim((string)(strtoupper((string)($row['major'] ?? ''))));
 
         if ($programCode !== '') {
             $programCodes[$programCode] = true;
@@ -292,7 +335,37 @@ function synk_schedule_merge_compose_group_label(array $groupRows): string
 
         if ($fullSection !== '') {
             $fullSections[$fullSection] = true;
+
+            if (!isset($majorLabelsBySection[$fullSection])) {
+                $majorLabelsBySection[$fullSection] = [];
+            }
+
+            $majorLabelsBySection[$fullSection][$majorLabel] = true;
         }
+    }
+
+    $needsMajorDisambiguation = false;
+    foreach ($majorLabelsBySection as $majorLabels) {
+        $normalizedMajorLabels = array_keys($majorLabels);
+        if (count($normalizedMajorLabels) > 1) {
+            $needsMajorDisambiguation = true;
+            break;
+        }
+    }
+
+    if ($needsMajorDisambiguation) {
+        $labels = [];
+        foreach ($rows as $row) {
+            $label = synk_schedule_merge_compose_section_major_label($row);
+            if ($label !== '') {
+                $labels[$label] = true;
+            }
+        }
+
+        $labelValues = array_keys($labels);
+        natcasesort($labelValues);
+
+        return implode('/', $labelValues);
     }
 
     if (count($fullSections) <= 1) {
