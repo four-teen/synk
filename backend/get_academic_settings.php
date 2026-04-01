@@ -12,9 +12,11 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
+require_once __DIR__ . '/signatory_settings_helper.php';
 header('Content-Type: application/json');
 
 $schedulePolicy = synk_fetch_schedule_policy($conn);
+$signatorySettings = synk_fetch_signatory_settings($conn, 'global', 0);
 $selectedCollegeId = (int)($_GET['college_id'] ?? 0);
 $overrideColleges = synk_fetch_colleges_using_schedule_overrides($conn);
 $collegeOverridePolicy = $selectedCollegeId > 0
@@ -51,6 +53,7 @@ if ($row = mysqli_fetch_assoc($res)) {
         'academic_year' => $row['academic_year'],
         'semester' => $semester_map[$row['current_semester']] ?? 'Unknown',
         'schedule_policy' => $schedulePolicy,
+        'signatory_settings' => $signatorySettings,
         'override_colleges' => $overrideColleges,
         'selected_college_id' => $selectedCollegeId,
         'college_override_policy' => $collegeOverridePolicy,
@@ -61,6 +64,7 @@ if ($row = mysqli_fetch_assoc($res)) {
         'status' => 'error',
         'message' => 'Academic settings not found.',
         'schedule_policy' => $schedulePolicy,
+        'signatory_settings' => $signatorySettings,
         'override_colleges' => $overrideColleges,
         'selected_college_id' => $selectedCollegeId,
         'college_override_policy' => $collegeOverridePolicy,

@@ -12,6 +12,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
+require_once __DIR__ . '/signatory_settings_helper.php';
 header('Content-Type: application/json');
 
 function academic_settings_response(array $payload): void
@@ -203,6 +204,40 @@ if ($policyScope === 'global_policy') {
         'status' => 'success',
         'message' => 'Global schedule policy updated successfully.',
         'schedule_policy' => synk_fetch_schedule_policy($conn)
+    ]);
+}
+
+if ($policyScope === 'report_signatories') {
+    $payload = [
+        'checked_by_left' => [
+            'signatory_name' => trim((string)($_POST['checked_by_left_name'] ?? '')),
+            'signatory_title' => trim((string)($_POST['checked_by_left_title'] ?? ''))
+        ],
+        'checked_by_right' => [
+            'signatory_name' => trim((string)($_POST['checked_by_right_name'] ?? '')),
+            'signatory_title' => trim((string)($_POST['checked_by_right_title'] ?? ''))
+        ],
+        'recommending_approval' => [
+            'signatory_name' => trim((string)($_POST['recommending_approval_name'] ?? '')),
+            'signatory_title' => trim((string)($_POST['recommending_approval_title'] ?? ''))
+        ],
+        'approved_by' => [
+            'signatory_name' => trim((string)($_POST['approved_by_name'] ?? '')),
+            'signatory_title' => trim((string)($_POST['approved_by_title'] ?? ''))
+        ]
+    ];
+
+    if (!synk_save_signatory_settings($conn, 'global', 0, $payload, $userId)) {
+        academic_settings_response([
+            'status' => 'error',
+            'message' => 'Failed to save the report signatories.'
+        ]);
+    }
+
+    academic_settings_response([
+        'status' => 'success',
+        'message' => 'Report signatories updated successfully.',
+        'signatory_settings' => synk_fetch_signatory_settings($conn, 'global', 0)
     ]);
 }
 

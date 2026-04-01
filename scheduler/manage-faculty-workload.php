@@ -7,6 +7,7 @@ require_once '../backend/offering_scope_helper.php';
 require_once '../backend/schema_helper.php';
 require_once '../backend/schedule_block_helper.php';
 require_once '../backend/schedule_merge_helper.php';
+require_once '../backend/signatory_settings_helper.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'scheduler') {
     header("Location: ../index.php");
@@ -92,6 +93,40 @@ function h($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
+function reportSignatoryUppercase(string $value): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    if (function_exists('mb_strtoupper')) {
+        return mb_strtoupper($value, 'UTF-8');
+    }
+
+    return strtoupper($value);
+}
+
+function normalizeReportSignatorySlot(array $settings, string $slotCode, string $fallbackLabel): array
+{
+    $row = is_array($settings[$slotCode] ?? null) ? $settings[$slotCode] : [];
+
+    return [
+        'slot_code' => $slotCode,
+        'label' => trim((string)($row['label'] ?? $fallbackLabel)) ?: $fallbackLabel,
+        'faculty_id' => (int)($row['faculty_id'] ?? 0),
+        'signatory_name' => trim((string)($row['signatory_name'] ?? '')),
+        'signatory_title' => trim((string)($row['signatory_title'] ?? '')),
+    ];
+}
+
+function reportSignatoryHasContent(array $slot): bool
+{
+    return (int)($slot['faculty_id'] ?? 0) > 0
+        || trim((string)($slot['signatory_name'] ?? '')) !== ''
+        || trim((string)($slot['signatory_title'] ?? '')) !== '';
+}
+
 function excelXmlEscape($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_XML1, 'UTF-8');
 }
@@ -141,6 +176,34 @@ function buildSectionDisplayLabel(array $row): string {
     }
 
     return $baseLabel;
+}
+
+function buildCourseReportRowSignature(array $row): string
+{
+    $display = buildScheduleDisplayParts($row);
+    $sectionLabel = buildSectionDisplayLabel($row);
+
+    return implode('|', [
+        strtoupper(trim((string)($row['sub_code'] ?? ''))),
+        strtoupper(trim($sectionLabel)),
+        strtoupper(trim((string)($display['schedule'] ?? '-'))),
+        strtoupper(trim((string)($display['room'] ?? '-')))
+    ]);
+}
+
+function appendUniqueCourseReportRow(array &$courses, array &$rowSignaturesByCode, string $code, array $row): void
+{
+    if (!isset($rowSignaturesByCode[$code])) {
+        $rowSignaturesByCode[$code] = [];
+    }
+
+    $signature = buildCourseReportRowSignature($row);
+    if (isset($rowSignaturesByCode[$code][$signature])) {
+        return;
+    }
+
+    $rowSignaturesByCode[$code][$signature] = true;
+    $courses[$code]['rows'][] = $row;
 }
 
 function buildSubjectHourUnitDisplay(array $row): array {
@@ -730,6 +793,7 @@ $selectedFilterLabel = $selectedReportLabel !== ''
 
 $hasFilters = $ay_id !== '' && $semester !== '' && ($isCollegeScope || $prospectus_id !== '');
 $courses = [];
+$courseRowSignatures = [];
 
 if ($hasFilters && $collegeId > 0) {
     $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
@@ -822,21 +886,22 @@ if ($hasFilters && $collegeId > 0) {
                         'desc' => (string)($row['sub_description'] ?? ''),
                         'rows' => []
                     ];
+                    $courseRowSignatures[$code] = [];
                 }
 
                 $scheduleRows = $scheduleRowsByOwner[$ownerOfferingId] ?? [];
                 if (empty($scheduleRows)) {
-                    $courses[$code]['rows'][] = array_merge($row, [
+                    appendUniqueCourseReportRow($courses, $courseRowSignatures, $code, array_merge($row, [
                         'days_json' => '[]',
                         'time_start' => '',
                         'time_end' => '',
                         'room_name' => ''
-                    ]);
+                    ]));
                     continue;
                 }
 
                 foreach ($scheduleRows as $scheduleRow) {
-                    $courses[$code]['rows'][] = array_merge($row, $scheduleRow);
+                    appendUniqueCourseReportRow($courses, $courseRowSignatures, $code, array_merge($row, $scheduleRow));
                 }
             }
         }
@@ -856,6 +921,19 @@ $totalScheduleEntryCount = 0;
 foreach ($courses as $courseGroup) {
     $totalScheduleEntryCount += count($courseGroup['rows'] ?? []);
 }
+$globalSignatorySettings = synk_fetch_signatory_settings($conn, 'global', 0);
+$collegeSignatorySettings = $collegeId > 0 ? synk_fetch_signatory_settings($conn, 'college', $collegeId) : [];
+$preparedBySignatory = normalizeReportSignatorySlot($collegeSignatorySettings, 'prepared_by', 'Prepared by');
+$checkedByLeftSignatory = normalizeReportSignatorySlot($globalSignatorySettings, 'checked_by_left', 'Checked by (Left)');
+$checkedByRightSignatory = normalizeReportSignatorySlot($globalSignatorySettings, 'checked_by_right', 'Checked by (Right)');
+$recommendingApprovalSignatory = normalizeReportSignatorySlot($globalSignatorySettings, 'recommending_approval', 'Recommending Approval');
+$approvedBySignatory = normalizeReportSignatorySlot($globalSignatorySettings, 'approved_by', 'Approved by');
+$hasPrintableSignatorySheet =
+    reportSignatoryHasContent($preparedBySignatory)
+    || reportSignatoryHasContent($checkedByLeftSignatory)
+    || reportSignatoryHasContent($checkedByRightSignatory)
+    || reportSignatoryHasContent($recommendingApprovalSignatory)
+    || reportSignatoryHasContent($approvedBySignatory);
 $printReportUrl = $reportQuery !== '' ? ('?' . $reportQuery . '&print=1') : '';
 $excelReportUrl = $reportQuery !== '' ? ('?' . $reportQuery . '&export=excel') : '';
 
@@ -1335,6 +1413,108 @@ if ($exportMode === 'excel' && $hasFilters) {
       border-top: none;
     }
 
+    .report-signatory-sheet {
+      clear: both;
+      margin-top: 10mm;
+      padding-top: 0;
+      color: #000;
+      page-break-inside: avoid;
+      break-inside: avoid-page;
+    }
+
+    .report-signatory-top-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+    }
+
+    .report-signatory-top-table td {
+      vertical-align: top;
+      padding: 0;
+    }
+
+    .report-signatory-top-table .report-signatory-head-cell {
+      font-size: 14px;
+      font-weight: 700;
+      line-height: 1.2;
+      padding-bottom: 1.7rem;
+    }
+
+    .report-signatory-top-table .report-signatory-entry-cell {
+      width: 33.333%;
+      box-sizing: border-box;
+      padding-right: 12mm;
+    }
+
+    .report-signatory-top-table .report-signatory-entry-cell:last-child {
+      padding-right: 0;
+    }
+
+    .report-signatory-bottom-stack {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 14mm 0;
+      margin-top: 14mm;
+      max-width: calc((100% - 24mm) / 3);
+    }
+
+    .report-signatory-block,
+    .report-signatory-entry {
+      min-width: 0;
+      break-inside: avoid;
+      page-break-inside: avoid;
+    }
+
+    .report-signatory-label {
+      margin-bottom: 1.7rem;
+      font-size: 13px;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .report-signatory-name {
+      min-height: 1.15rem;
+      font-size: 12px;
+      font-weight: 800;
+      line-height: 1.15;
+      letter-spacing: -0.01em;
+      text-transform: uppercase;
+      white-space: nowrap;
+    }
+
+    .report-signatory-title {
+      min-height: 1.1rem;
+      margin-top: 0.18rem;
+      font-size: 12px;
+      line-height: 1.25;
+      word-break: break-word;
+      overflow-wrap: anywhere;
+    }
+
+    @media screen and (max-width: 767.98px) {
+      .report-signatory-top-table,
+      .report-signatory-top-table tbody,
+      .report-signatory-top-table tr,
+      .report-signatory-top-table td {
+        display: block;
+        width: 100%;
+      }
+
+      .report-signatory-top-table .report-signatory-head-cell {
+        padding-bottom: 0.75rem;
+      }
+
+      .report-signatory-top-table .report-signatory-entry-cell {
+        padding-right: 0;
+        padding-bottom: 1.3rem;
+      }
+
+      .report-signatory-bottom-stack {
+        max-width: 100%;
+        margin-top: 1.5rem;
+      }
+    }
+
     .print-preview-mode {
       background: #eef2f7;
     }
@@ -1390,6 +1570,13 @@ if ($exportMode === 'excel' && $hasFilters) {
 
     .print-preview-mode .report-table-wrap {
       overflow: visible !important;
+    }
+
+    .print-preview-mode .report-signatory-sheet {
+      margin-top: 8mm !important;
+      padding-top: 0 !important;
+      page-break-before: auto;
+      break-before: auto;
     }
 
     @media print {
@@ -1457,6 +1644,32 @@ if ($exportMode === 'excel' && $hasFilters) {
 
       .report-table-wrap {
         overflow: visible;
+      }
+
+      .report-signatory-sheet {
+        margin-top: 8mm;
+        padding-top: 0;
+        page-break-before: auto;
+        break-before: auto;
+      }
+
+      .report-signatory-top-table {
+        display: table;
+        width: 100%;
+        table-layout: fixed;
+      }
+
+      .report-signatory-top-table tbody {
+        display: table-row-group;
+      }
+
+      .report-signatory-top-table tr {
+        display: table-row;
+      }
+
+      .report-signatory-top-table td {
+        display: table-cell;
+        width: auto;
       }
 
       .group-title {
@@ -1757,6 +1970,67 @@ if ($exportMode === 'excel' && $hasFilters) {
                         <p class="mb-0">
                           Try another prospectus, academic year, or semester to view available schedule data.
                         </p>
+                      </div>
+                    <?php endif; ?>
+
+                    <?php if ($doPrint && $hasPrintableSignatorySheet): ?>
+                      <div class="report-signatory-sheet">
+                        <table class="report-signatory-top-table" aria-hidden="true">
+                          <tbody>
+                            <tr>
+                              <td class="report-signatory-head-cell">Prepared by:</td>
+                              <td class="report-signatory-head-cell" colspan="2">Checked by:</td>
+                            </tr>
+                            <tr>
+                              <td class="report-signatory-entry-cell">
+                                <div class="report-signatory-name<?= $preparedBySignatory['signatory_name'] === '' ? ' is-empty' : '' ?>">
+                                  <?= $preparedBySignatory['signatory_name'] !== '' ? h(reportSignatoryUppercase($preparedBySignatory['signatory_name'])) : '&nbsp;' ?>
+                                </div>
+                                <div class="report-signatory-title<?= $preparedBySignatory['signatory_title'] === '' ? ' is-empty' : '' ?>">
+                                  <?= $preparedBySignatory['signatory_title'] !== '' ? h($preparedBySignatory['signatory_title']) : '&nbsp;' ?>
+                                </div>
+                              </td>
+                              <td class="report-signatory-entry-cell">
+                                <div class="report-signatory-name<?= $checkedByLeftSignatory['signatory_name'] === '' ? ' is-empty' : '' ?>">
+                                  <?= $checkedByLeftSignatory['signatory_name'] !== '' ? h(reportSignatoryUppercase($checkedByLeftSignatory['signatory_name'])) : '&nbsp;' ?>
+                                </div>
+                                <div class="report-signatory-title<?= $checkedByLeftSignatory['signatory_title'] === '' ? ' is-empty' : '' ?>">
+                                  <?= $checkedByLeftSignatory['signatory_title'] !== '' ? h($checkedByLeftSignatory['signatory_title']) : '&nbsp;' ?>
+                                </div>
+                              </td>
+                              <td class="report-signatory-entry-cell">
+                                <div class="report-signatory-name<?= $checkedByRightSignatory['signatory_name'] === '' ? ' is-empty' : '' ?>">
+                                  <?= $checkedByRightSignatory['signatory_name'] !== '' ? h(reportSignatoryUppercase($checkedByRightSignatory['signatory_name'])) : '&nbsp;' ?>
+                                </div>
+                                <div class="report-signatory-title<?= $checkedByRightSignatory['signatory_title'] === '' ? ' is-empty' : '' ?>">
+                                  <?= $checkedByRightSignatory['signatory_title'] !== '' ? h($checkedByRightSignatory['signatory_title']) : '&nbsp;' ?>
+                                </div>
+                              </td>
+                            </tr>
+                          </tbody>
+                        </table>
+
+                        <div class="report-signatory-bottom-stack">
+                          <div class="report-signatory-block">
+                            <div class="report-signatory-label">Recommending Approval:</div>
+                            <div class="report-signatory-name<?= $recommendingApprovalSignatory['signatory_name'] === '' ? ' is-empty' : '' ?>">
+                              <?= $recommendingApprovalSignatory['signatory_name'] !== '' ? h(reportSignatoryUppercase($recommendingApprovalSignatory['signatory_name'])) : '&nbsp;' ?>
+                            </div>
+                            <div class="report-signatory-title<?= $recommendingApprovalSignatory['signatory_title'] === '' ? ' is-empty' : '' ?>">
+                              <?= $recommendingApprovalSignatory['signatory_title'] !== '' ? h($recommendingApprovalSignatory['signatory_title']) : '&nbsp;' ?>
+                            </div>
+                          </div>
+
+                          <div class="report-signatory-block">
+                            <div class="report-signatory-label">Approved by:</div>
+                            <div class="report-signatory-name<?= $approvedBySignatory['signatory_name'] === '' ? ' is-empty' : '' ?>">
+                              <?= $approvedBySignatory['signatory_name'] !== '' ? h(reportSignatoryUppercase($approvedBySignatory['signatory_name'])) : '&nbsp;' ?>
+                            </div>
+                            <div class="report-signatory-title<?= $approvedBySignatory['signatory_title'] === '' ? ' is-empty' : '' ?>">
+                              <?= $approvedBySignatory['signatory_title'] !== '' ? h($approvedBySignatory['signatory_title']) : '&nbsp;' ?>
+                            </div>
+                          </div>
+                        </div>
                       </div>
                     <?php endif; ?>
                   </div>

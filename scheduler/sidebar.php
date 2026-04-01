@@ -48,6 +48,15 @@ $sidebarSections = [
                         'pages' => ['manage-college-faculty.php', 'manage-faculty.php'],
                     ],
                     [
+                        'key' => 'report_signatories',
+                        'href' => 'manage-report-signatories.php',
+                        'icon_bg' => 'bg-label-warning',
+                        'icon' => 'bx-pen',
+                        'title' => 'Report Signatories',
+                        'description' => 'Set the college prepared-by signatory and review admin signatories',
+                        'pages' => ['manage-report-signatories.php'],
+                    ],
+                    [
                         'key' => 'rooms',
                         'href' => 'manage-rooms.php',
                         'icon_bg' => 'bg-label-secondary',

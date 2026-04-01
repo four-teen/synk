@@ -261,6 +261,48 @@ while ($row = mysqli_fetch_assoc($collegeResult)) {
     .override-policy-list { display:grid; gap:.75rem; max-height:16rem; overflow:auto; padding-right:.25rem; }
     .override-policy-item { border:1px solid #e2e8f0; border-radius:.85rem; padding:1rem; background:#fff; }
     .override-policy-empty { border:1px dashed #cbd5e1; border-radius:.85rem; padding:1rem; text-align:center; color:#6b7280; }
+    .signatory-grid { display:grid; gap:1rem; }
+    .signatory-card {
+      border: 1px solid #e6edf7;
+      border-radius: 1rem;
+      padding: 1rem;
+      background: linear-gradient(180deg, #ffffff 0%, #fbfcff 100%);
+    }
+    .signatory-card h6 {
+      margin-bottom: .25rem;
+      color: #233446;
+    }
+    .signatory-card p {
+      margin-bottom: 0;
+      color: #8592a3;
+      font-size: .84rem;
+    }
+    .signatory-preview-stack {
+      display: grid;
+      gap: .85rem;
+    }
+    .signatory-preview-item {
+      padding: .85rem 1rem;
+      border-radius: .9rem;
+      border: 1px solid #e6edf7;
+      background: #fff;
+    }
+    .signatory-preview-label {
+      font-size: .73rem;
+      font-weight: 700;
+      letter-spacing: .08em;
+      text-transform: uppercase;
+      color: #8592a3;
+      margin-bottom: .2rem;
+    }
+    .signatory-preview-name {
+      font-weight: 700;
+      color: #233446;
+    }
+    .signatory-preview-title {
+      color: #6b7280;
+      font-size: .85rem;
+    }
     @media (max-width: 991.98px) {
       .settings-tab-nav .nav-item {
         flex-basis: 100%;
@@ -353,7 +395,7 @@ while ($row = mysqli_fetch_assoc($collegeResult)) {
                   <h5 class="mb-1">Configuration Tabs</h5>
                   <p class="text-muted mb-0">Open a focused tab for the setting type you want to review or update.</p>
                 </div>
-                <div class="text-muted small align-self-xl-center">Academic term, global defaults, and college overrides stay organized separately.</div>
+                <div class="text-muted small align-self-xl-center">Academic term, scheduling policies, and report signatories stay organized in separate tabs.</div>
               </div>
 
               <ul class="nav settings-tab-nav mt-4" id="settingsTabs" role="tablist">
@@ -373,6 +415,12 @@ while ($row = mysqli_fetch_assoc($collegeResult)) {
                   <button class="nav-link" id="college-policy-tab" data-bs-toggle="tab" data-bs-target="#college-policy-pane" type="button" role="tab" aria-controls="college-policy-pane" aria-selected="false">
                     <span class="settings-tab-title">College Override Policy</span>
                     <span class="settings-tab-copy">Review or enforce a college-specific scheduling policy when needed.</span>
+                  </button>
+                </li>
+                <li class="nav-item" role="presentation">
+                  <button class="nav-link" id="signatory-tab" data-bs-toggle="tab" data-bs-target="#signatory-pane" type="button" role="tab" aria-controls="signatory-pane" aria-selected="false">
+                    <span class="settings-tab-title">Report Signatories</span>
+                    <span class="settings-tab-copy">Manage the global signatories used in institutional printouts and approval pages.</span>
                   </button>
                 </li>
               </ul>
@@ -578,6 +626,122 @@ while ($row = mysqli_fetch_assoc($collegeResult)) {
                     </div>
                   </div>
                 </div>
+
+                <div class="tab-pane fade" id="signatory-pane" role="tabpanel" aria-labelledby="signatory-tab">
+                  <div class="row g-4">
+                    <div class="col-xl-8">
+                      <div class="settings-pane">
+                        <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 align-items-lg-start mb-4">
+                          <div>
+                            <span class="settings-kicker-sm">Global Print Signatories</span>
+                            <h5 class="mb-1">Report Signatories</h5>
+                            <p class="text-muted mb-0">Save the institution-wide signatories that appear on generated approval sheets and PDF signatory pages.</p>
+                          </div>
+                        </div>
+
+                        <div class="alert alert-info mb-4">
+                          <strong>Prepared by</strong> is intentionally excluded here.
+                          It will be handled later in the scheduler college settings module so each college can manage its own preparer.
+                        </div>
+
+                        <div class="signatory-grid">
+                          <div class="signatory-card">
+                            <h6>Checked by (Left)</h6>
+                            <p>Use this for the first checker shown on the signatory page.</p>
+                            <div class="row g-3 mt-1">
+                              <div class="col-lg-6">
+                                <label class="form-label" for="checkedByLeftName">Name</label>
+                                <input type="text" class="form-control" id="checkedByLeftName" maxlength="150">
+                              </div>
+                              <div class="col-lg-6">
+                                <label class="form-label" for="checkedByLeftTitle">Title / Position</label>
+                                <input type="text" class="form-control" id="checkedByLeftTitle" maxlength="150">
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="signatory-card">
+                            <h6>Checked by (Right)</h6>
+                            <p>Use this for the second checker shown beside the first checked-by entry.</p>
+                            <div class="row g-3 mt-1">
+                              <div class="col-lg-6">
+                                <label class="form-label" for="checkedByRightName">Name</label>
+                                <input type="text" class="form-control" id="checkedByRightName" maxlength="150">
+                              </div>
+                              <div class="col-lg-6">
+                                <label class="form-label" for="checkedByRightTitle">Title / Position</label>
+                                <input type="text" class="form-control" id="checkedByRightTitle" maxlength="150">
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="signatory-card">
+                            <h6>Recommending Approval</h6>
+                            <p>Use this for the signatory who recommends the report for approval.</p>
+                            <div class="row g-3 mt-1">
+                              <div class="col-lg-6">
+                                <label class="form-label" for="recommendingApprovalName">Name</label>
+                                <input type="text" class="form-control" id="recommendingApprovalName" maxlength="150">
+                              </div>
+                              <div class="col-lg-6">
+                                <label class="form-label" for="recommendingApprovalTitle">Title / Position</label>
+                                <input type="text" class="form-control" id="recommendingApprovalTitle" maxlength="150">
+                              </div>
+                            </div>
+                          </div>
+
+                          <div class="signatory-card">
+                            <h6>Approved by</h6>
+                            <p>Use this for the final approving authority shown on the printout.</p>
+                            <div class="row g-3 mt-1">
+                              <div class="col-lg-6">
+                                <label class="form-label" for="approvedByName">Name</label>
+                                <input type="text" class="form-control" id="approvedByName" maxlength="150">
+                              </div>
+                              <div class="col-lg-6">
+                                <label class="form-label" for="approvedByTitle">Title / Position</label>
+                                <input type="text" class="form-control" id="approvedByTitle" maxlength="150">
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="settings-save-row">
+                          <button class="btn btn-primary" id="saveSignatoriesBtn">Save Report Signatories</button>
+                        </div>
+                      </div>
+                    </div>
+
+                    <div class="col-xl-4">
+                      <div class="settings-pane settings-pane-soft">
+                        <span class="settings-kicker-sm">Preview Order</span>
+                        <h5 class="mb-3">Current signatory stack</h5>
+                        <div class="signatory-preview-stack">
+                          <div class="signatory-preview-item">
+                            <div class="signatory-preview-label">Checked by (Left)</div>
+                            <div class="signatory-preview-name" id="checkedByLeftPreviewName">-</div>
+                            <div class="signatory-preview-title" id="checkedByLeftPreviewTitle">-</div>
+                          </div>
+                          <div class="signatory-preview-item">
+                            <div class="signatory-preview-label">Checked by (Right)</div>
+                            <div class="signatory-preview-name" id="checkedByRightPreviewName">-</div>
+                            <div class="signatory-preview-title" id="checkedByRightPreviewTitle">-</div>
+                          </div>
+                          <div class="signatory-preview-item">
+                            <div class="signatory-preview-label">Recommending Approval</div>
+                            <div class="signatory-preview-name" id="recommendingApprovalPreviewName">-</div>
+                            <div class="signatory-preview-title" id="recommendingApprovalPreviewTitle">-</div>
+                          </div>
+                          <div class="signatory-preview-item">
+                            <div class="signatory-preview-label">Approved by</div>
+                            <div class="signatory-preview-name" id="approvedByPreviewName">-</div>
+                            <div class="signatory-preview-title" id="approvedByPreviewTitle">-</div>
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+                </div>
               </div>
             </div>
           </div>
@@ -619,6 +783,29 @@ function normalizePolicy(policy) {
   };
 }
 
+function normalizeSignatorySettings(settings) {
+  const source = settings || {};
+  const defaults = {
+    checked_by_left: { label: "Checked by (Left)" },
+    checked_by_right: { label: "Checked by (Right)" },
+    recommending_approval: { label: "Recommending Approval" },
+    approved_by: { label: "Approved by" }
+  };
+
+  const normalized = {};
+  Object.keys(defaults).forEach(slotCode => {
+    const row = source[slotCode] || {};
+    normalized[slotCode] = {
+      slot_code: slotCode,
+      label: String(row.label || defaults[slotCode].label),
+      signatory_name: String(row.signatory_name || ""),
+      signatory_title: String(row.signatory_title || "")
+    };
+  });
+
+  return normalized;
+}
+
 function escapeHtml(value) {
   return String(value ?? "").replace(/[&<>"']/g, char => ({
     "&": "&amp;",
@@ -633,6 +820,13 @@ function setText(targetId, value) {
   const target = document.getElementById(targetId);
   if (target) {
     target.innerText = value;
+  }
+}
+
+function setInputValue(targetId, value) {
+  const target = document.getElementById(targetId);
+  if (target) {
+    target.value = value;
   }
 }
 
@@ -772,6 +966,53 @@ function updateTermSnapshot(academicYear, semester) {
   setText("currentSemesterPreview", semesterLabel);
 }
 
+function syncSignatoryPreviewFromInputs() {
+  setText("checkedByLeftPreviewName", String(document.getElementById("checkedByLeftName")?.value || "").trim() || "-");
+  setText("checkedByLeftPreviewTitle", String(document.getElementById("checkedByLeftTitle")?.value || "").trim() || "-");
+  setText("checkedByRightPreviewName", String(document.getElementById("checkedByRightName")?.value || "").trim() || "-");
+  setText("checkedByRightPreviewTitle", String(document.getElementById("checkedByRightTitle")?.value || "").trim() || "-");
+  setText("recommendingApprovalPreviewName", String(document.getElementById("recommendingApprovalName")?.value || "").trim() || "-");
+  setText("recommendingApprovalPreviewTitle", String(document.getElementById("recommendingApprovalTitle")?.value || "").trim() || "-");
+  setText("approvedByPreviewName", String(document.getElementById("approvedByName")?.value || "").trim() || "-");
+  setText("approvedByPreviewTitle", String(document.getElementById("approvedByTitle")?.value || "").trim() || "-");
+}
+
+function setSignatoryForm(settings) {
+  const data = normalizeSignatorySettings(settings);
+
+  setInputValue("checkedByLeftName", data.checked_by_left.signatory_name);
+  setInputValue("checkedByLeftTitle", data.checked_by_left.signatory_title);
+  setInputValue("checkedByRightName", data.checked_by_right.signatory_name);
+  setInputValue("checkedByRightTitle", data.checked_by_right.signatory_title);
+  setInputValue("recommendingApprovalName", data.recommending_approval.signatory_name);
+  setInputValue("recommendingApprovalTitle", data.recommending_approval.signatory_title);
+  setInputValue("approvedByName", data.approved_by.signatory_name);
+  setInputValue("approvedByTitle", data.approved_by.signatory_title);
+
+  syncSignatoryPreviewFromInputs();
+}
+
+function buildSignatoryPayload() {
+  return {
+    checked_by_left: {
+      signatory_name: String(document.getElementById("checkedByLeftName")?.value || "").trim(),
+      signatory_title: String(document.getElementById("checkedByLeftTitle")?.value || "").trim()
+    },
+    checked_by_right: {
+      signatory_name: String(document.getElementById("checkedByRightName")?.value || "").trim(),
+      signatory_title: String(document.getElementById("checkedByRightTitle")?.value || "").trim()
+    },
+    recommending_approval: {
+      signatory_name: String(document.getElementById("recommendingApprovalName")?.value || "").trim(),
+      signatory_title: String(document.getElementById("recommendingApprovalTitle")?.value || "").trim()
+    },
+    approved_by: {
+      signatory_name: String(document.getElementById("approvedByName")?.value || "").trim(),
+      signatory_title: String(document.getElementById("approvedByTitle")?.value || "").trim()
+    }
+  };
+}
+
 function renderCollegeEffectivePolicy(policy) {
   const data = normalizePolicy(policy);
   const badge = document.getElementById("collegeEffectiveBadge");
@@ -816,6 +1057,7 @@ function loadSettings(collegeId = Number(document.getElementById("collegeSelect"
       document.getElementById("academicYearSelect").value = data.current_ay_id || "";
       setSemester(data.current_semester || "");
       setPolicy("global", globalPolicy);
+      setSignatoryForm(data.signatory_settings || {});
 
       document.getElementById("collegeOverrideEnabled").checked = overridePolicy.is_override_enabled;
       setPolicy("college", overridePolicy);
@@ -838,6 +1080,12 @@ document.getElementById("addGlobalBlockedTimeBtn").addEventListener("click", () 
 document.getElementById("addCollegeBlockedTimeBtn").addEventListener("click", () => appendTime("collegeTimes", "college"));
 document.getElementById("collegeSelect").addEventListener("change", event => loadSettings(Number(event.target.value || 0)));
 document.getElementById("collegeOverrideEnabled").addEventListener("change", event => updateCollegeNotice(event.target.checked));
+["checkedByLeftName","checkedByLeftTitle","checkedByRightName","checkedByRightTitle","recommendingApprovalName","recommendingApprovalTitle","approvedByName","approvedByTitle"].forEach(id => {
+  const target = document.getElementById(id);
+  if (target) {
+    target.addEventListener("input", syncSignatoryPreviewFromInputs);
+  }
+});
 
 document.addEventListener("click", event => {
   const dayToggle = event.target.closest(".policy-day-toggle");
@@ -937,6 +1185,31 @@ document.getElementById("saveCollegeBtn").addEventListener("click", () => {
       }
       Swal.fire({ icon: "success", title: "Updated!", text: data.message, timer: 1500, showConfirmButton: false });
       loadSettings(collegeId);
+    });
+});
+
+document.getElementById("saveSignatoriesBtn").addEventListener("click", () => {
+  const payload = buildSignatoryPayload();
+  const formData = new FormData();
+  formData.append("policy_scope", "report_signatories");
+  formData.append("checked_by_left_name", payload.checked_by_left.signatory_name);
+  formData.append("checked_by_left_title", payload.checked_by_left.signatory_title);
+  formData.append("checked_by_right_name", payload.checked_by_right.signatory_name);
+  formData.append("checked_by_right_title", payload.checked_by_right.signatory_title);
+  formData.append("recommending_approval_name", payload.recommending_approval.signatory_name);
+  formData.append("recommending_approval_title", payload.recommending_approval.signatory_title);
+  formData.append("approved_by_name", payload.approved_by.signatory_name);
+  formData.append("approved_by_title", payload.approved_by.signatory_title);
+
+  postSettings(formData, "Failed to save the report signatories.")
+    .then(data => {
+      if (data.status !== "success") {
+        Swal.fire({ icon: "error", title: "Error", text: data.message || "Failed to save the report signatories." });
+        return;
+      }
+
+      Swal.fire({ icon: "success", title: "Updated!", text: data.message, timer: 1500, showConfirmButton: false });
+      loadSettings(Number(document.getElementById("collegeSelect").value || 0));
     });
 });
 </script>

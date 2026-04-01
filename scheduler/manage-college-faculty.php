@@ -169,7 +169,13 @@ if ($myCollege > 0) {
         letter-spacing: 0.08em;
         color: #667a93;
         border-bottom: 1px solid #dbe5f1;
-        white-space: nowrap;
+        white-space: normal;
+        line-height: 1.35;
+      }
+
+      .faculty-table {
+        width: 100%;
+        table-layout: fixed;
       }
 
       .faculty-table tbody td {
@@ -178,6 +184,7 @@ if ($myCollege > 0) {
         color: #4f6078;
         border-color: #edf2f7;
         vertical-align: middle;
+        overflow-wrap: anywhere;
       }
 
       .faculty-index {
@@ -188,19 +195,22 @@ if ($myCollege > 0) {
       .faculty-name {
         font-weight: 700;
         color: #2f3f57;
+        white-space: normal;
+        word-break: break-word;
       }
 
       .faculty-designation-pill {
-        display: inline-flex;
-        align-items: center;
-        gap: 0.35rem;
+        display: inline-block;
+        max-width: 100%;
         padding: 0.3rem 0.65rem;
         border: 1px solid transparent;
-        border-radius: 999px;
+        border-radius: 0.9rem;
         font-size: 0.76rem;
         font-weight: 700;
-        line-height: 1.1;
-        white-space: nowrap;
+        line-height: 1.35;
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
       }
 
       .faculty-assigned-pill {
@@ -234,12 +244,16 @@ if ($myCollege > 0) {
         display: inline-flex;
         align-items: center;
         justify-content: flex-end;
-        flex-wrap: nowrap;
-        white-space: nowrap;
+        flex-wrap: wrap;
+        gap: 0.35rem;
+        white-space: normal;
+        max-width: 100%;
       }
 
-      .faculty-action-group.btn-group > .btn {
+      .faculty-action-group > .btn {
         padding: 0.42rem 0.65rem;
+        border-radius: 0.55rem !important;
+        margin-left: 0 !important;
       }
 
       .faculty-action-label {
@@ -333,7 +347,7 @@ if ($myCollege > 0) {
 
       @media (min-width: 768px) {
         .faculty-action-label {
-          font-size: 0.78rem;
+          font-size: 0.74rem;
         }
       }
 
@@ -416,7 +430,7 @@ if ($myCollege > 0) {
               </p>
               <div class="faculty-page-note">
                 <i class="bx bx-shield-quarter"></i>
-                <span>Only designation can be edited from this page. Faculty profile details stay read-only.</span>
+                <span>Only designation can be edited from this page. Manage the prepared-by signatory from Report Signatories.</span>
               </div>
             </div>
 
@@ -427,9 +441,14 @@ if ($myCollege > 0) {
 
               <input type="hidden" id="college_id" value="<?= $myCollege ?>">
 
-              <button class="btn btn-primary" id="btnAddFaculty">
-                <i class="bx bx-plus"></i> Add Faculty to College
-              </button>
+              <div class="d-flex flex-column flex-sm-row gap-2">
+                <a class="btn btn-outline-primary" href="manage-report-signatories.php">
+                  <i class="bx bx-pen"></i> Report Signatories
+                </a>
+                <button class="btn btn-primary" id="btnAddFaculty">
+                  <i class="bx bx-plus"></i> Add Faculty to College
+                </button>
+              </div>
             </div>
           </div>
 
@@ -482,12 +501,12 @@ if ($myCollege > 0) {
                 <table class="table table-hover align-middle faculty-table mb-0" id="collegeFacultyTable">
                   <thead>
                     <tr>
-                      <th style="width:60px;">#</th>
-                      <th>Faculty Name</th>
-                      <th style="width:220px;">Designation</th>
-                      <th style="width:150px;">Assigned</th>
-                      <th style="width:130px;">Status</th>
-                      <th class="text-end" style="width:190px;">Actions</th>
+                      <th style="width:5%;">#</th>
+                      <th style="width:24%;">Faculty Name</th>
+                      <th style="width:32%;">Designation</th>
+                      <th style="width:12%;">Assigned</th>
+                      <th style="width:10%;">Status</th>
+                      <th class="text-end" style="width:17%;">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="collegeFacultyTableBody"></tbody>
@@ -1281,7 +1300,7 @@ function buildActionHtml(row) {
 
   if (isActive) {
     return (
-      "<div class='btn-group btn-group-sm faculty-action-group' role='group' aria-label='Faculty row actions'>" +
+      "<div class='faculty-action-group' role='group' aria-label='Faculty row actions'>" +
         designationButton +
         "<button type='button' class='btn btn-sm btn-outline-danger btn-remove-assignment' title='Remove Assignment' aria-label='Remove Assignment' data-id='" +
         escapeHtml(String(row.college_faculty_id || 0)) +
@@ -1294,7 +1313,7 @@ function buildActionHtml(row) {
   }
 
   return (
-    "<div class='btn-group btn-group-sm faculty-action-group' role='group' aria-label='Faculty row actions'>" +
+    "<div class='faculty-action-group' role='group' aria-label='Faculty row actions'>" +
       "<button type='button' class='btn btn-sm btn-outline-success btn-reactivate-assignment' title='Reactivate Assignment' aria-label='Reactivate Assignment' data-faculty-id='" +
       escapeHtml(String(row.faculty_id || 0)) +
       "'>" +
