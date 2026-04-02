@@ -178,6 +178,45 @@ function buildSectionDisplayLabel(array $row): string {
     return $baseLabel;
 }
 
+function buildMergedSectionDisplayLabel(array $mergeInfo, array $sectionRowsByOffering): string
+{
+    $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+    $groupOfferingIds = synk_schedule_merge_normalize_offering_ids((array)($mergeInfo['group_offering_ids'] ?? []));
+
+    if ($groupLabel === '' || empty($groupOfferingIds)) {
+        return $groupLabel;
+    }
+
+    $hasMissingMajor = false;
+    $rebuiltLabels = [];
+
+    foreach ($groupOfferingIds as $groupOfferingId) {
+        $sectionRow = $sectionRowsByOffering[$groupOfferingId] ?? null;
+        if (!is_array($sectionRow)) {
+            continue;
+        }
+
+        $major = strtoupper(trim((string)($sectionRow['major'] ?? '')));
+        if ($major !== '' && stripos($groupLabel, $major) === false) {
+            $hasMissingMajor = true;
+        }
+
+        $sectionLabel = buildSectionDisplayLabel($sectionRow);
+        if ($sectionLabel !== '' && $sectionLabel !== '-') {
+            $rebuiltLabels[$sectionLabel] = true;
+        }
+    }
+
+    if (!$hasMissingMajor || empty($rebuiltLabels)) {
+        return $groupLabel;
+    }
+
+    $labelValues = array_keys($rebuiltLabels);
+    natcasesort($labelValues);
+
+    return implode('/', $labelValues);
+}
+
 function buildCourseReportRowSignature(array $row): string
 {
     $display = buildScheduleDisplayParts($row);
@@ -854,6 +893,13 @@ if ($hasFilters && $collegeId > 0) {
                 return (int)($row['offering_id'] ?? 0);
             }, $baseRows);
             $mergeContext = synk_schedule_merge_load_display_context($conn, $offeringIds);
+            $groupSectionOfferingIds = [];
+            foreach ($mergeContext as $mergeInfo) {
+                foreach ((array)($mergeInfo['group_offering_ids'] ?? []) as $groupOfferingId) {
+                    $groupSectionOfferingIds[] = (int)$groupOfferingId;
+                }
+            }
+            $groupSectionRowsByOffering = synk_schedule_merge_load_section_rows_by_offering($conn, $groupSectionOfferingIds);
             $effectiveOwnerIds = [];
 
             foreach ($offeringIds as $offeringId) {
@@ -877,7 +923,7 @@ if ($hasFilters && $collegeId > 0) {
                 }
 
                 if ($groupSize > 1 && $groupLabel !== '') {
-                    $row['full_section'] = $groupLabel;
+                    $row['full_section'] = buildMergedSectionDisplayLabel((array)$mergeInfo, $groupSectionRowsByOffering);
                     $row['major'] = '';
                 }
 
