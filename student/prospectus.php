@@ -5,11 +5,25 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/student_portal_helper.php';
 
-synk_student_require_login($conn);
+synk_student_require_login($conn, true);
 
-$studentEmail = synk_normalize_email((string)($_SESSION['email'] ?? ''));
-$studentPortalProfile = synk_student_fetch_portal_profile($conn, $studentEmail);
-$selectedProgramId = (int)($studentPortalProfile['program_id'] ?? 0);
+$studentPortalContext = synk_student_resolve_portal_context($conn);
+$studentEmail = (string)($studentPortalContext['student_email'] ?? '');
+$studentDirectoryRecord = is_array($studentPortalContext['directory_record'] ?? null)
+    ? $studentPortalContext['directory_record']
+    : null;
+$studentPortalProfile = is_array($studentPortalContext['portal_profile'] ?? null)
+    ? $studentPortalContext['portal_profile']
+    : null;
+$selectedProgramId = (int)($studentPortalProfile['program_id'] ?? $studentDirectoryRecord['program_id'] ?? 0);
+$studentPortalDisplayName = (string)($studentPortalContext['student_name'] ?? 'Student');
+$studentPortalDisplayEmail = $studentEmail !== ''
+    ? $studentEmail
+    : trim((string)($_SESSION['email'] ?? ''));
+$studentPortalPreviewMode = !empty($studentPortalContext['is_admin_preview']);
+$studentPortalBackUrl = $studentPortalPreviewMode
+    ? synk_student_preview_return_to_url('../administrator/students/directory.php')
+    : '';
 
 $prospectusVersions = synk_student_fetch_prospectus_versions($conn, $selectedProgramId);
 $selectedProspectusId = !empty($prospectusVersions)

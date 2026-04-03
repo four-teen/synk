@@ -246,9 +246,9 @@ $chartInsight = $hasLatestBatch
                             </div>
 
                             <div class="d-flex flex-wrap gap-2">
-                              <a href="upload.php" class="btn btn-sm btn-primary">Upload Student Data</a>
-                              <a href="exam-permits.php" class="btn btn-sm btn-outline-warning">Upload Class Roster CSV</a>
+                              <a href="exam-permits.php" class="btn btn-sm btn-primary">Upload Backward Encoding CSV</a>
                               <a href="directory.php" class="btn btn-sm btn-outline-primary">Open Student Directory</a>
+                              <a href="faculty-evaluation-reports.php" class="btn btn-sm btn-outline-warning">Faculty Evaluation Reports</a>
                             </div>
                           </div>
 
@@ -346,6 +346,27 @@ $chartInsight = $hasLatestBatch
                 </div>
 
                 <div class="col-md-6 col-lg-4 order-2 mb-4">
+                  <div class="card shadow-sm mb-4">
+                    <div class="card-body">
+                      <div class="d-flex align-items-start justify-content-between gap-3">
+                        <div>
+                          <span class="badge bg-label-warning mb-2">New Card Menu</span>
+                          <h5 class="mb-2">Faculty Evaluation Reports</h5>
+                          <p class="text-muted mb-3">
+                            Open the dedicated administrator page for student rating sheet rows, individual faculty reports, and the consolidated report.
+                          </p>
+                          <a href="faculty-evaluation-reports.php" class="btn btn-warning">
+                            <i class="bx bx-bar-chart-alt-2 me-1"></i>
+                            Open Reports Page
+                          </a>
+                        </div>
+                        <div class="kpi-icon bg-warning flex-shrink-0">
+                          <i class="bx bx-spreadsheet"></i>
+                        </div>
+                      </div>
+                    </div>
+                  </div>
+
                   <div class="card h-100 shadow-sm">
                     <div class="card-header d-flex align-items-center justify-content-between">
                       <h5 class="card-title m-0">Campus Snapshot</h5>

@@ -1,51 +1,48 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once __DIR__ . '/../../backend/academic_term_helper.php';
 
 $flash = student_management_pull_flash();
 $filters = [
     'search' => trim((string)($_GET['search'] ?? '')),
     'year_level' => max(0, (int)($_GET['year_level'] ?? 0)),
-    'source_program_name' => trim((string)($_GET['source_program_name'] ?? '')),
-    'academic_year_label' => trim((string)($_GET['academic_year_label'] ?? '')),
-    'semester_label' => trim((string)($_GET['semester_label'] ?? '')),
+    'program_id' => max(0, (int)($_GET['program_id'] ?? 0)),
+    'ay_id' => max(0, (int)($_GET['ay_id'] ?? 0)),
+    'semester' => max(0, (int)($_GET['semester'] ?? 0)),
 ];
 
-$programOptions = [];
 $programCatalog = [];
-$programFilterOptions = [];
 $batchOptions = [];
-$defaultAcademicYearLabel = '';
-$defaultSemesterLabel = '';
+$currentTerm = [
+    'ay_id' => 0,
+    'semester' => 0,
+    'ay_label' => '',
+    'semester_label' => '',
+    'term_text' => 'Current academic term',
+];
+$defaultAyId = 0;
+$defaultSemester = 0;
+$canAddStudents = false;
 
 if ($studentManagementPageError === '') {
     try {
-        $programOptions = synk_student_management_distinct_programs($conn);
+        $currentTerm = synk_fetch_current_academic_term($conn);
         $programCatalog = synk_student_management_fetch_program_catalog($conn);
         $batchOptions = synk_student_management_distinct_batches($conn);
 
-        $programFilterMap = [];
-        foreach ($programCatalog as $program) {
-            $programName = trim((string)($program['source_program_name'] ?? ''));
-            if ($programName !== '' && !isset($programFilterMap[$programName])) {
-                $programFilterMap[$programName] = true;
-            }
-        }
+        $defaultAyId = $filters['ay_id'] > 0
+            ? $filters['ay_id']
+            : (int)($currentTerm['ay_id'] ?? 0);
+        $defaultSemester = $filters['semester'] > 0
+            ? $filters['semester']
+            : (int)($currentTerm['semester'] ?? 0);
 
-        foreach ($programOptions as $programName) {
-            $programName = trim((string)$programName);
-            if ($programName !== '' && !isset($programFilterMap[$programName])) {
-                $programFilterMap[$programName] = true;
-            }
-        }
-
-        $programFilterOptions = array_keys($programFilterMap);
-
-        if (!empty($batchOptions)) {
+        if (($defaultAyId <= 0 || $defaultSemester <= 0) && !empty($batchOptions)) {
             $defaultBatchOption = $batchOptions[0];
 
             foreach ($batchOptions as $batchOption) {
-                $matchesAcademicYear = $filters['academic_year_label'] === '' || $filters['academic_year_label'] === (string)($batchOption['academic_year_label'] ?? '');
-                $matchesSemester = $filters['semester_label'] === '' || $filters['semester_label'] === (string)($batchOption['semester_label'] ?? '');
+                $matchesAcademicYear = $filters['ay_id'] <= 0 || $filters['ay_id'] === (int)($batchOption['ay_id'] ?? 0);
+                $matchesSemester = $filters['semester'] <= 0 || $filters['semester'] === (int)($batchOption['semester'] ?? 0);
 
                 if ($matchesAcademicYear && $matchesSemester) {
                     $defaultBatchOption = $batchOption;
@@ -53,13 +50,15 @@ if ($studentManagementPageError === '') {
                 }
             }
 
-            $defaultAcademicYearLabel = $filters['academic_year_label'] !== ''
-                ? $filters['academic_year_label']
-                : (string)($defaultBatchOption['academic_year_label'] ?? '');
-            $defaultSemesterLabel = $filters['semester_label'] !== ''
-                ? $filters['semester_label']
-                : (string)($defaultBatchOption['semester_label'] ?? '');
+            if ($defaultAyId <= 0) {
+                $defaultAyId = (int)($defaultBatchOption['ay_id'] ?? 0);
+            }
+            if ($defaultSemester <= 0) {
+                $defaultSemester = (int)($defaultBatchOption['semester'] ?? 0);
+            }
         }
+
+        $canAddStudents = !empty($programCatalog) && $defaultAyId > 0 && $defaultSemester > 0;
     } catch (Throwable $e) {
         $studentManagementPageError = $e->getMessage();
     }
@@ -93,6 +92,9 @@ $yearOptions = [
     <link rel="stylesheet" href="../../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../../assets/css/demo.css" />
     <link rel="stylesheet" href="../../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/1.13.6/css/dataTables.bootstrap5.min.css" />
+    <link rel="stylesheet" href="https://cdn.datatables.net/responsive/2.5.0/css/responsive.bootstrap5.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
 
     <script src="../../assets/vendor/js/helpers.js"></script>
     <script src="../../assets/js/config.js"></script>
@@ -153,6 +155,12 @@ $yearOptions = [
         min-width: 240px;
       }
 
+      .student-table td.subject-count-cell,
+      .student-table th.subject-count-head {
+        min-width: 130px;
+        text-align: center;
+      }
+
       .student-id-cell {
         font-variant-numeric: tabular-nums;
       }
@@ -184,16 +192,66 @@ $yearOptions = [
         text-transform: uppercase;
       }
 
+      .dataTables_wrapper .dataTables_processing {
+        border: 1px solid #dce5f1;
+        border-radius: 1rem;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+      }
+
+      .student-directory-table-shell .dataTables_wrapper .row {
+        margin-left: 0;
+        margin-right: 0;
+      }
+
+      .student-directory-table-shell .dataTables_wrapper .dataTables_length,
+      .student-directory-table-shell .dataTables_wrapper .dataTables_info,
+      .student-directory-table-shell .dataTables_wrapper .dataTables_paginate {
+        padding-top: 1rem;
+      }
+
+      .student-directory-table-shell .dataTables_wrapper .dataTables_paginate .paginate_button {
+        padding: 0 !important;
+        margin-left: 0.25rem;
+      }
+
+      .student-directory-table-shell .dataTables_wrapper .dataTables_paginate .page-link {
+        border-radius: 0.55rem;
+      }
+
+      .select2-container {
+        width: 100% !important;
+      }
+
+      .select2-container--default .select2-selection--single {
+        min-height: calc(2.25rem + 2px);
+        border: 1px solid #d9dee3;
+        border-radius: 0.5rem;
+        padding: 0.375rem 0.75rem;
+        display: flex;
+        align-items: center;
+      }
+
+      .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #566a7f;
+        line-height: 1.4;
+        padding-left: 0;
+      }
+
+      .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 100%;
+        right: 0.65rem;
+      }
+
+      .select2-dropdown {
+        border-color: #d9dee3;
+        border-radius: 0.75rem;
+        box-shadow: 0 12px 30px rgba(15, 23, 42, 0.08);
+      }
+
       .empty-state {
         padding: 3rem 1rem;
         text-align: center;
         color: #6b7280;
-      }
-
-      .list-sentinel {
-        padding: 1rem 0 0.25rem;
-        text-align: center;
-        color: #8592a3;
       }
 
       @media (max-width: 991.98px) {
@@ -222,13 +280,21 @@ $yearOptions = [
                       <span class="badge bg-label-primary mb-3">Student Directory Management</span>
                       <h3 class="fw-bold mb-2 text-primary">Manage student records directly from the directory page.</h3>
                       <p class="text-muted mb-0">
-                        Add, edit, and delete student records here. The table keeps only the requested identity columns and loads continuously as you scroll.
+                        Add, edit, and delete student records here. The directory now uses a searchable, sortable DataTable and keeps only the requested identity columns.
                       </p>
                     </div>
 
                     <div class="d-flex flex-wrap gap-2">
                       <a href="index.php" class="btn btn-outline-primary">Back to Dashboard</a>
-                      <button type="button" class="btn btn-primary" id="openAddStudentBtn" <?php echo empty($batchOptions) ? 'disabled' : ''; ?>>
+                      <button
+                        type="button"
+                        class="btn btn-primary"
+                        id="openAddStudentBtn"
+                        <?php echo $canAddStudents ? '' : 'disabled'; ?>
+                        <?php if (!$canAddStudents): ?>
+                          title="Set the current academic term and make sure active programs are available before adding students."
+                        <?php endif; ?>
+                      >
                         <i class="bx bx-plus me-1"></i> Add Student
                       </button>
                     </div>
@@ -288,19 +354,20 @@ $yearOptions = [
                       </div>
 
                       <div>
-                        <label class="form-label" for="academic_year_label">Academic Year</label>
-                        <select class="form-select" id="academic_year_label" name="academic_year_label">
+                        <label class="form-label" for="ay_id">Academic Year</label>
+                        <select class="form-select" id="ay_id" name="ay_id">
                           <option value="">All academic years</option>
                           <?php
                           $seenAcademicYears = [];
                           foreach ($batchOptions as $batchOption):
+                              $ayId = (int)($batchOption['ay_id'] ?? 0);
                               $academicYearLabel = (string)($batchOption['academic_year_label'] ?? '');
-                              if ($academicYearLabel === '' || isset($seenAcademicYears[$academicYearLabel])) {
+                              if ($ayId <= 0 || $academicYearLabel === '' || isset($seenAcademicYears[$ayId])) {
                                   continue;
                               }
-                              $seenAcademicYears[$academicYearLabel] = true;
+                              $seenAcademicYears[$ayId] = true;
                           ?>
-                            <option value="<?php echo htmlspecialchars($academicYearLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filters['academic_year_label'] === $academicYearLabel ? 'selected' : ''; ?>>
+                            <option value="<?php echo $ayId; ?>" <?php echo $filters['ay_id'] === $ayId ? 'selected' : ''; ?>>
                               <?php echo htmlspecialchars($academicYearLabel, ENT_QUOTES, 'UTF-8'); ?>
                             </option>
                           <?php endforeach; ?>
@@ -308,19 +375,20 @@ $yearOptions = [
                       </div>
 
                       <div>
-                        <label class="form-label" for="semester_label">Semester</label>
-                        <select class="form-select" id="semester_label" name="semester_label">
+                        <label class="form-label" for="semester">Semester</label>
+                        <select class="form-select" id="semester" name="semester">
                           <option value="">All semesters</option>
                           <?php
                           $seenSemesters = [];
                           foreach ($batchOptions as $batchOption):
+                              $semesterValue = (int)($batchOption['semester'] ?? 0);
                               $semesterLabel = (string)($batchOption['semester_label'] ?? '');
-                              if ($semesterLabel === '' || isset($seenSemesters[$semesterLabel])) {
+                              if ($semesterValue <= 0 || $semesterLabel === '' || isset($seenSemesters[$semesterValue])) {
                                   continue;
                               }
-                              $seenSemesters[$semesterLabel] = true;
+                              $seenSemesters[$semesterValue] = true;
                           ?>
-                            <option value="<?php echo htmlspecialchars($semesterLabel, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filters['semester_label'] === $semesterLabel ? 'selected' : ''; ?>>
+                            <option value="<?php echo $semesterValue; ?>" <?php echo $filters['semester'] === $semesterValue ? 'selected' : ''; ?>>
                               <?php echo htmlspecialchars($semesterLabel, ENT_QUOTES, 'UTF-8'); ?>
                             </option>
                           <?php endforeach; ?>
@@ -328,12 +396,12 @@ $yearOptions = [
                       </div>
 
                       <div>
-                        <label class="form-label" for="source_program_name">Program</label>
-                        <select class="form-select" id="source_program_name" name="source_program_name">
+                        <label class="form-label" for="program_id_filter">Program</label>
+                        <select class="form-select" id="program_id_filter" name="program_id">
                           <option value="">All programs</option>
-                          <?php foreach ($programFilterOptions as $programName): ?>
-                            <option value="<?php echo htmlspecialchars($programName, ENT_QUOTES, 'UTF-8'); ?>" <?php echo $filters['source_program_name'] === $programName ? 'selected' : ''; ?>>
-                              <?php echo htmlspecialchars($programName, ENT_QUOTES, 'UTF-8'); ?>
+                          <?php foreach ($programCatalog as $program): ?>
+                            <option value="<?php echo (int)$program['program_id']; ?>" <?php echo $filters['program_id'] === (int)$program['program_id'] ? 'selected' : ''; ?>>
+                              <?php echo htmlspecialchars((string)$program['source_program_name'], ENT_QUOTES, 'UTF-8'); ?>
                             </option>
                           <?php endforeach; ?>
                         </select>
@@ -355,32 +423,29 @@ $yearOptions = [
                   <div class="d-flex flex-column flex-lg-row justify-content-between align-items-lg-center gap-2">
                     <div>
                       <h5 class="mb-1">Student List</h5>
-                      <p class="text-muted mb-0">Requested columns only, plus actions for editing and deleting.</p>
+                      <p class="text-muted mb-0">Requested columns only, with DataTable paging, sorting, preview, editing, and deleting.</p>
                     </div>
-                    <div class="small text-muted">Infinite scroll enabled</div>
+                    <div class="small text-muted">DataTable enabled</div>
                   </div>
                 </div>
-                <div class="card-body">
+                <div class="card-body student-directory-table-shell">
                   <div class="table-responsive">
-                    <table class="table table-hover align-middle student-table">
+                    <table class="table table-hover align-middle student-table" id="studentDirectoryTable">
                       <thead>
                         <tr>
                           <th>ID Number</th>
                           <th>Full Name</th>
                           <th>Email Address</th>
+                          <th class="subject-count-head">Subject Count</th>
                           <th class="text-end">Actions</th>
                         </tr>
                       </thead>
                       <tbody id="studentListBody">
                         <tr>
-                          <td colspan="4" class="empty-state">Loading student records...</td>
+                          <td colspan="5" class="empty-state">Loading student records...</td>
                         </tr>
                       </tbody>
                     </table>
-                  </div>
-
-                  <div id="listSentinel" class="list-sentinel">
-                    <div id="listSentinelText">Scroll to load more students.</div>
                   </div>
                 </div>
               </div>
@@ -407,11 +472,8 @@ $yearOptions = [
           <form id="studentForm">
             <div class="modal-body">
               <input type="hidden" name="student_id" id="student_id" value="0" />
-              <input type="hidden" name="academic_year_label" id="academic_year_label_hidden" value="" />
-              <input type="hidden" name="semester_label" id="semester_label_hidden" value="" />
-              <input type="hidden" name="college_name" id="college_name_hidden" value="" />
-              <input type="hidden" name="campus_name" id="campus_name_hidden" value="" />
-              <input type="hidden" name="source_program_name" id="source_program_name_hidden" value="" />
+              <input type="hidden" name="ay_id" id="ay_id_hidden" value="0" />
+              <input type="hidden" name="semester" id="semester_hidden" value="0" />
               <input type="hidden" name="program_id" id="program_id" value="0" />
 
               <div class="modal-form-grid">
@@ -503,9 +565,10 @@ $yearOptions = [
     <script>
       window.studentDirectoryConfig = <?php echo json_encode([
           'apiUrl' => 'directory_api.php',
+          'previewBaseUrl' => '../../student/index.php',
           'initialFilters' => $filters,
-          'defaultAcademicYearLabel' => $defaultAcademicYearLabel,
-          'defaultSemesterLabel' => $defaultSemesterLabel,
+          'defaultAyId' => $defaultAyId,
+          'defaultSemester' => $defaultSemester,
       ], JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE); ?>;
     </script>
     <script src="../../assets/vendor/libs/jquery/jquery.js"></script>
@@ -514,6 +577,11 @@ $yearOptions = [
     <script src="../../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
     <script src="../../assets/vendor/js/menu.js"></script>
     <script src="../../assets/js/main.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/jquery.dataTables.min.js"></script>
+    <script src="https://cdn.datatables.net/1.13.6/js/dataTables.bootstrap5.min.js"></script>
+    <script src="https://cdn.datatables.net/responsive/2.5.0/js/dataTables.responsive.min.js"></script>
+    <script src="https://cdn.datatables.net/responsive/2.5.0/js/responsive.bootstrap5.min.js"></script>
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="directory.js"></script>
   </body>
 </html>

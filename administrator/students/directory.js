@@ -1,12 +1,12 @@
 (function () {
   const config = window.studentDirectoryConfig || {};
   const apiUrl = config.apiUrl || "directory_api.php";
+  const previewBaseUrl = config.previewBaseUrl || "../../student/index.php";
+  const $ = window.jQuery;
 
   const filterForm = document.getElementById("directoryFilterForm");
-  const listBody = document.getElementById("studentListBody");
+  const tableElement = document.getElementById("studentDirectoryTable");
   const resultCountLabel = document.getElementById("resultCountLabel");
-  const sentinel = document.getElementById("listSentinel");
-  const sentinelText = document.getElementById("listSentinelText");
   const feedbackContainer = document.getElementById("directoryFeedback");
   const addStudentBtn = document.getElementById("openAddStudentBtn");
   const resetFiltersBtn = document.getElementById("resetDirectoryFilters");
@@ -17,7 +17,7 @@
   const generateEmailBtn = document.getElementById("generateEmailBtn");
   const studentIdField = document.getElementById("student_id");
   const programIdField = document.getElementById("program_id");
-  const sourceProgramNameField = document.getElementById("source_program_name_hidden");
+  const programFilterField = document.getElementById("program_id_filter");
   const programSelectField = document.getElementById("program_select_modal");
   const yearLevelField = document.getElementById("year_level_modal");
   const studentNumberField = document.getElementById("student_number_modal");
@@ -26,24 +26,18 @@
   const middleNameField = document.getElementById("middle_name_modal");
   const suffixNameField = document.getElementById("suffix_name_modal");
   const emailField = document.getElementById("email_address_modal");
-  const hiddenAcademicYear = document.getElementById("academic_year_label_hidden");
-  const hiddenSemester = document.getElementById("semester_label_hidden");
-  const hiddenCollege = document.getElementById("college_name_hidden");
-  const hiddenCampus = document.getElementById("campus_name_hidden");
-  const academicYearFilterField = document.getElementById("academic_year_label");
-  const semesterFilterField = document.getElementById("semester_label");
+  const hiddenAyId = document.getElementById("ay_id_hidden");
+  const hiddenSemester = document.getElementById("semester_hidden");
+  const academicYearFilterField = document.getElementById("ay_id");
+  const semesterFilterField = document.getElementById("semester");
 
-  if (!filterForm || !listBody) {
+  if (!filterForm || !tableElement || !$ || !$.fn || !$.fn.DataTable) {
     return;
   }
 
-  const state = {
-    page: 1,
-    hasMore: true,
-    loading: false,
-    observer: null
-  };
   let autoEmailEnabled = true;
+  let directoryTable = null;
+  let loadingData = false;
 
   function escapeHtml(value) {
     return String(value ?? "")
@@ -68,6 +62,27 @@
     window.scrollTo({ top: 0, behavior: "smooth" });
   }
 
+  function clearFeedback() {
+    if (feedbackContainer) {
+      feedbackContainer.innerHTML = "";
+    }
+  }
+
+  function updateResultCount(count) {
+    if (!resultCountLabel) {
+      return;
+    }
+
+    resultCountLabel.textContent = Number(count || 0).toLocaleString() + " matching records";
+  }
+
+  function setLoadingState(isLoading) {
+    loadingData = Boolean(isLoading);
+    if (isLoading) {
+      updateResultCount(0);
+    }
+  }
+
   function normalizeLookupValue(value) {
     return String(value ?? "").trim().toLowerCase();
   }
@@ -90,6 +105,52 @@
     const params = serializeFilters();
     const nextUrl = "directory.php" + (params.toString() ? "?" + params.toString() : "");
     window.history.replaceState({}, "", nextUrl);
+  }
+
+  async function fetchJson(url, fallbackMessage, options) {
+    const response = await fetch(url, options || {
+      headers: { "X-Requested-With": "XMLHttpRequest" },
+      cache: "no-store"
+    });
+    const responseText = await response.text();
+
+    let payload = null;
+    if (responseText.trim() !== "") {
+      try {
+        payload = JSON.parse(responseText);
+      } catch (error) {
+        throw new Error(responseText.trim() || fallbackMessage);
+      }
+    }
+
+    if (!response.ok) {
+      throw new Error((payload && payload.message) || responseText.trim() || fallbackMessage);
+    }
+
+    return payload || {};
+  }
+
+  function buildDataTableQueryString(requestPayload) {
+    const params = serializeFilters();
+    const orderItems = Array.isArray(requestPayload.order) ? requestPayload.order : [];
+    const columnItems = Array.isArray(requestPayload.columns) ? requestPayload.columns : [];
+
+    params.set("action", "list");
+    params.set("draw", String(Number(requestPayload.draw || 0)));
+    params.set("start", String(Math.max(0, Number(requestPayload.start || 0))));
+    params.set("length", String(Math.max(1, Number(requestPayload.length || 25))));
+
+    orderItems.forEach(function (orderItem, index) {
+      params.set("order[" + index + "][column]", String(Math.max(0, Number(orderItem.column || 0))));
+      params.set("order[" + index + "][dir]", String(orderItem.dir || "asc"));
+    });
+
+    columnItems.forEach(function (columnItem, index) {
+      params.set("columns[" + index + "][data]", String(columnItem.data || ""));
+      params.set("columns[" + index + "][name]", String(columnItem.name || ""));
+    });
+
+    return params.toString();
   }
 
   function formatUpper(value) {
@@ -123,123 +184,63 @@
     return html || '<span class="text-muted">NO NAME</span>';
   }
 
-  function renderRows(items, resetList) {
-    if (resetList) {
-      listBody.innerHTML = "";
-    }
-
-    if (!items.length && resetList) {
-      listBody.innerHTML =
-        '<tr><td colspan="4" class="empty-state">' +
-          '<i class="bx bx-spreadsheet fs-1 d-block mb-2 text-primary"></i>' +
-          "No student records matched the current filters." +
-        "</td></tr>";
+  function initSelect2(element, options) {
+    if (!$ || !$.fn || !$.fn.select2 || !element) {
       return;
     }
 
-    const html = items.map(function (item) {
-      return (
-        "<tr>" +
-          '<td class="student-id-cell">' + escapeHtml(String(item.student_number ?? "")) + "</td>" +
-          '<td class="student-name-cell">' + buildFullNameHtml(item) + "</td>" +
-          '<td class="email-cell">' + escapeHtml(item.email_address) + "</td>" +
-          '<td class="text-end">' +
-            '<div class="d-inline-flex gap-1">' +
-              '<button type="button" class="btn btn-sm btn-outline-primary btn-edit-student" data-student-id="' + Number(item.student_id || 0) + '">' +
-                '<i class="bx bx-edit-alt"></i>' +
-              "</button>" +
-              '<button type="button" class="btn btn-sm btn-outline-danger btn-delete-student" data-student-id="' + Number(item.student_id || 0) + '">' +
-                '<i class="bx bx-trash"></i>' +
-              "</button>" +
-            "</div>" +
-          "</td>" +
-        "</tr>"
-      );
-    }).join("");
+    const $element = $(element);
+    if ($element.hasClass("select2-hidden-accessible")) {
+      $element.select2("destroy");
+    }
 
-    if (resetList) {
-      listBody.innerHTML = html;
-    } else {
-      listBody.insertAdjacentHTML("beforeend", html);
+    $element.select2(options);
+  }
+
+  function refreshSelect2(element) {
+    if (!$ || !element) {
+      return;
+    }
+
+    const $element = $(element);
+    if ($element.hasClass("select2-hidden-accessible")) {
+      $element.trigger("change.select2");
     }
   }
 
-  async function fetchList(resetList) {
-    if (state.loading || (!state.hasMore && !resetList)) {
-      return;
-    }
+  function initializeProgramSelects() {
+    initSelect2(programFilterField, {
+      width: "100%",
+      allowClear: true,
+      placeholder: "All programs"
+    });
 
-    state.loading = true;
-    if (resetList) {
-      state.page = 1;
-      state.hasMore = true;
-      listBody.innerHTML = '<tr><td colspan="4" class="empty-state">Loading student records...</td></tr>';
-    }
-
-    if (sentinelText) {
-      sentinelText.textContent = "Loading more students...";
-    }
-
-    try {
-      const params = serializeFilters();
-      params.set("action", "list");
-      params.set("page", state.page);
-
-      const response = await fetch(apiUrl + "?" + params.toString(), {
-        headers: { "X-Requested-With": "XMLHttpRequest" },
-        cache: "no-store"
-      });
-      const result = await response.json();
-
-      if (!response.ok || result.status !== "success") {
-        throw new Error(result.message || "Unable to load student records.");
-      }
-
-      renderRows(result.items || [], resetList);
-      if (resultCountLabel) {
-        resultCountLabel.textContent = Number(result.total || 0).toLocaleString() + " matching records";
-      }
-      state.hasMore = Boolean(result.has_more);
-      state.page += 1;
-      if (sentinelText) {
-        sentinelText.textContent = state.hasMore ? "Scroll to load more students." : "All matching students are loaded.";
-      }
-    } catch (error) {
-      if (resetList) {
-        listBody.innerHTML = '<tr><td colspan="4" class="empty-state">' + escapeHtml(error.message || "Unable to load student records.") + "</td></tr>";
-      }
-      if (sentinelText) {
-        sentinelText.textContent = "Unable to load more students.";
-      }
-      showFeedback("danger", error.message || "Unable to load student records.");
-    } finally {
-      state.loading = false;
-    }
+    initSelect2(programSelectField, {
+      width: "100%",
+      dropdownParent: studentModalElement ? $(studentModalElement) : $(document.body),
+      placeholder: "Select program from program table"
+    });
   }
 
   function resolveAcademicYearContext() {
     const filterValue = academicYearFilterField ? String(academicYearFilterField.value || "").trim() : "";
-    return filterValue || String(config.defaultAcademicYearLabel || "").trim();
+    return filterValue || String(config.defaultAyId || "").trim();
   }
 
   function resolveSemesterContext() {
     const filterValue = semesterFilterField ? String(semesterFilterField.value || "").trim() : "";
-    return filterValue || String(config.defaultSemesterLabel || "").trim();
+    return filterValue || String(config.defaultSemester || "").trim();
   }
 
   function setAcademicContext(record) {
     if (record) {
-      hiddenAcademicYear.value = String(record.academic_year_label || "");
-      hiddenSemester.value = String(record.semester_label || "");
-      hiddenCollege.value = String(record.college_name || "");
-      hiddenCampus.value = String(record.campus_name || "");
+      hiddenAyId.value = String(record.ay_id || 0);
+      hiddenSemester.value = String(record.semester || 0);
       return;
     }
 
-    hiddenAcademicYear.value = resolveAcademicYearContext();
+    hiddenAyId.value = resolveAcademicYearContext();
     hiddenSemester.value = resolveSemesterContext();
-    hiddenCollege.value = "";
-    hiddenCampus.value = "";
   }
 
   function findProgramOptionById(programId) {
@@ -318,15 +319,6 @@
 
     const option = programSelectField.options[programSelectField.selectedIndex];
     programIdField.value = option ? String(option.dataset.programId || option.value || 0) : "0";
-    sourceProgramNameField.value = option ? String(option.dataset.sourceName || "") : "";
-
-    const selectedCollege = option ? String(option.dataset.college || "") : "";
-    const selectedCampus = option ? String(option.dataset.campus || "") : "";
-
-    if (selectedCollege || selectedCampus) {
-      hiddenCollege.value = selectedCollege;
-      hiddenCampus.value = selectedCampus;
-    }
   }
 
   function setProgramSelection(record, allowLegacy) {
@@ -347,15 +339,18 @@
 
     if (option) {
       programSelectField.value = option.value;
+      refreshSelect2(programSelectField);
       return;
     }
 
     if (allowLegacy && sourceProgramName) {
       createLegacyProgramOption(record);
+      refreshSelect2(programSelectField);
       return;
     }
 
     programSelectField.value = "";
+    refreshSelect2(programSelectField);
   }
 
   function buildInstitutionalEmail() {
@@ -402,7 +397,6 @@
     studentForm.reset();
     removeLegacyProgramOption();
     programIdField.value = "0";
-    sourceProgramNameField.value = "";
     autoEmailEnabled = true;
 
     if (record) {
@@ -421,13 +415,13 @@
       studentModalTitle.textContent = "Add Student";
       studentIdField.value = "0";
 
-      const currentProgramFilter = document.getElementById("source_program_name");
       const currentYearFilter = document.getElementById("year_level");
       setAcademicContext(null);
-      if (currentProgramFilter && currentProgramFilter.value) {
-        setProgramSelection({ source_program_name: currentProgramFilter.value }, false);
+      if (programFilterField && programFilterField.value) {
+        setProgramSelection({ program_id: programFilterField.value }, false);
       } else if (programSelectField) {
         programSelectField.value = "";
+        refreshSelect2(programSelectField);
       }
       if (currentYearFilter && currentYearFilter.value !== "0") {
         yearLevelField.value = currentYearFilter.value;
@@ -445,13 +439,12 @@
   function loadStudentForEdit(studentId) {
     return (async function () {
       try {
-        const response = await fetch(apiUrl + "?action=get&student_id=" + encodeURIComponent(studentId), {
-          headers: { "X-Requested-With": "XMLHttpRequest" },
-          cache: "no-store"
-        });
-        const result = await response.json();
+        const result = await fetchJson(
+          apiUrl + "?action=get&student_id=" + encodeURIComponent(studentId),
+          "Unable to load the student record."
+        );
 
-        if (!response.ok || result.status !== "success") {
+        if (result.status !== "success") {
           throw new Error(result.message || "Unable to load the student record.");
         }
 
@@ -471,23 +464,182 @@
       const formData = new FormData();
       formData.append("student_id", studentId);
 
-      const response = await fetch(apiUrl + "?action=delete", {
+      const result = await fetchJson(apiUrl + "?action=delete", "Unable to delete the student record.", {
         method: "POST",
         body: formData,
         headers: { "X-Requested-With": "XMLHttpRequest" }
       });
-      const result = await response.json();
 
-      if (!response.ok || result.status !== "success") {
+      if (result.status !== "success") {
         throw new Error(result.message || "Unable to delete the student record.");
       }
 
       showFeedback("success", result.message || "Student record deleted.");
-      fetchList(true);
+      reloadDirectoryTable(false);
     } catch (error) {
       showFeedback("danger", error.message || "Unable to delete the student record.");
     }
   }
+
+  function renderActionButtons(item) {
+    const returnTo = window.location.pathname + window.location.search;
+    const previewUrl =
+      previewBaseUrl +
+      "?preview_student_id=" + encodeURIComponent(String(Number(item.student_id || 0))) +
+      "&return_to=" + encodeURIComponent(returnTo);
+
+    return (
+      '<div class="d-inline-flex gap-1">' +
+        '<a href="' + escapeHtml(previewUrl) + '" class="btn btn-sm btn-outline-secondary" title="Preview Student Dashboard">' +
+          '<i class="bx bx-show-alt"></i>' +
+        "</a>" +
+        '<button type="button" class="btn btn-sm btn-outline-primary btn-edit-student" data-student-id="' + Number(item.student_id || 0) + '">' +
+          '<i class="bx bx-edit-alt"></i>' +
+        "</button>" +
+        '<button type="button" class="btn btn-sm btn-outline-danger btn-delete-student" data-student-id="' + Number(item.student_id || 0) + '">' +
+          '<i class="bx bx-trash"></i>' +
+        "</button>" +
+      "</div>"
+    );
+  }
+
+  function initializeDataTable() {
+    directoryTable = $(tableElement).DataTable({
+      processing: true,
+      serverSide: true,
+      searching: false,
+      lengthChange: true,
+      autoWidth: false,
+      responsive: true,
+      pageLength: 25,
+      order: [[0, "asc"]],
+      dom:
+        "<'row align-items-center gy-2 mb-3'<'col-sm-6'l><'col-sm-6 text-sm-end'>>" +
+        "rt" +
+        "<'row align-items-center gy-2 mt-3'<'col-sm-6'i><'col-sm-6 d-flex justify-content-sm-end'p>>",
+      ajax: function (requestPayload, callback) {
+        setLoadingState(true);
+
+        (async function () {
+          try {
+            const result = await fetchJson(
+              apiUrl + "?" + buildDataTableQueryString(requestPayload),
+              "Unable to load student records."
+            );
+
+            clearFeedback();
+            updateResultCount(Number(result.recordsFiltered || 0));
+            callback({
+              draw: Number(result.draw || requestPayload.draw || 0),
+              recordsTotal: Number(result.recordsTotal || 0),
+              recordsFiltered: Number(result.recordsFiltered || 0),
+              data: Array.isArray(result.data) ? result.data : []
+            });
+          } catch (error) {
+            updateResultCount(0);
+            showFeedback("danger", error.message || "Unable to load student records.");
+            callback({
+              draw: Number(requestPayload.draw || 0),
+              recordsTotal: 0,
+              recordsFiltered: 0,
+              data: []
+            });
+          } finally {
+            setLoadingState(false);
+          }
+        })();
+      },
+      columns: [
+        {
+          data: "student_number",
+          name: "student_number",
+          className: "student-id-cell",
+          render: function (data, type) {
+            const value = String(data ?? "");
+            return type === "display" ? escapeHtml(value) : value;
+          }
+        },
+        {
+          data: null,
+          name: "full_name",
+          className: "student-name-cell",
+          render: function (data, type, row) {
+            if (type !== "display") {
+              return [
+                String(row.last_name || ""),
+                String(row.first_name || ""),
+                String(row.middle_name || ""),
+                String(row.suffix_name || "")
+              ].join(" ").trim();
+            }
+
+            return buildFullNameHtml(row);
+          }
+        },
+        {
+          data: "email_address",
+          name: "email_address",
+          className: "email-cell",
+          render: function (data, type) {
+            const value = String(data ?? "");
+            return type === "display" ? escapeHtml(value) : value;
+          }
+        },
+        {
+          data: "subject_count",
+          name: "subject_count",
+          className: "subject-count-cell",
+          render: function (data, type) {
+            const value = Number(data || 0);
+            if (type !== "display") {
+              return value;
+            }
+
+            return '<span class="badge bg-label-primary">' + escapeHtml(String(value)) + "</span>";
+          }
+        },
+        {
+          data: null,
+          name: "actions",
+          orderable: false,
+          searchable: false,
+          className: "text-end",
+          render: function (data, type, row) {
+            if (type !== "display") {
+              return "";
+            }
+
+            return renderActionButtons(row);
+          }
+        }
+      ],
+      language: {
+        processing: "Loading student records...",
+        emptyTable: "No student records matched the current filters.",
+        zeroRecords: "No student records matched the current filters.",
+        info: "_START_ to _END_ of _TOTAL_ students",
+        infoEmpty: "0 students",
+        infoFiltered: "",
+        lengthMenu: "_MENU_ per page",
+        paginate: {
+          previous: "Prev",
+          next: "Next"
+        }
+      }
+    });
+  }
+
+  function reloadDirectoryTable(resetPaging) {
+    if (!directoryTable) {
+      return;
+    }
+
+    directoryTable.ajax.reload(null, resetPaging !== false);
+  }
+
+  initializeProgramSelects();
+  setAcademicContext(null);
+  initializeDataTable();
 
   if (addStudentBtn) {
     addStudentBtn.addEventListener("click", function () {
@@ -520,59 +672,66 @@
   filterForm.addEventListener("submit", function (event) {
     event.preventDefault();
     syncFiltersToUrl();
-    fetchList(true);
+    reloadDirectoryTable(true);
   });
 
   if (resetFiltersBtn) {
     resetFiltersBtn.addEventListener("click", function () {
       const searchField = document.getElementById("search");
       const yearFilter = document.getElementById("year_level");
-      const academicYearFilter = document.getElementById("academic_year_label");
-      const semesterFilter = document.getElementById("semester_label");
-      const programFilter = document.getElementById("source_program_name");
 
-      if (searchField) searchField.value = "";
-      if (yearFilter) yearFilter.value = "0";
-      if (academicYearFilter) academicYearFilter.value = "";
-      if (semesterFilter) semesterFilter.value = "";
-      if (programFilter) programFilter.value = "";
+      if (searchField) {
+        searchField.value = "";
+      }
+      if (yearFilter) {
+        yearFilter.value = "0";
+      }
+      if (academicYearFilterField) {
+        academicYearFilterField.value = "";
+      }
+      if (semesterFilterField) {
+        semesterFilterField.value = "";
+      }
+      if (programFilterField) {
+        programFilterField.value = "";
+        refreshSelect2(programFilterField);
+      }
 
       syncFiltersToUrl();
-      fetchList(true);
+      reloadDirectoryTable(true);
     });
   }
 
   if (studentForm) {
     studentForm.addEventListener("submit", async function (event) {
       event.preventDefault();
-      if (!hiddenAcademicYear.value.trim() || !hiddenSemester.value.trim()) {
+      if (!hiddenAyId.value.trim() || !hiddenSemester.value.trim() || hiddenAyId.value === "0" || hiddenSemester.value === "0") {
         setAcademicContext(null);
       }
       syncProgramSelection();
 
       try {
         const formData = new FormData(studentForm);
-        const response = await fetch(apiUrl + "?action=save", {
+        const result = await fetchJson(apiUrl + "?action=save", "Unable to save the student record.", {
           method: "POST",
           body: formData,
           headers: { "X-Requested-With": "XMLHttpRequest" }
         });
-        const result = await response.json();
 
-        if (!response.ok || result.status !== "success") {
+        if (result.status !== "success") {
           throw new Error(result.message || "Unable to save the student record.");
         }
 
         studentModal.hide();
         showFeedback("success", result.message || "Student record saved.");
-        fetchList(true);
+        reloadDirectoryTable(false);
       } catch (error) {
         showFeedback("danger", error.message || "Unable to save the student record.");
       }
     });
   }
 
-  listBody.addEventListener("click", function (event) {
+  tableElement.addEventListener("click", function (event) {
     const editButton = event.target.closest(".btn-edit-student");
     if (editButton) {
       loadStudentForEdit(editButton.dataset.studentId);
@@ -584,21 +743,4 @@
       deleteStudent(deleteButton.dataset.studentId);
     }
   });
-
-  if (sentinel && "IntersectionObserver" in window) {
-    state.observer = new IntersectionObserver(function (entries) {
-      entries.forEach(function (entry) {
-        if (entry.isIntersecting) {
-          fetchList(false);
-        }
-      });
-    }, {
-      rootMargin: "200px 0px"
-    });
-
-    state.observer.observe(sentinel);
-  }
-
-  setAcademicContext(null);
-  fetchList(true);
 })();

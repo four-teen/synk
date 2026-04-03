@@ -20,19 +20,51 @@ try {
     $action = (string)($_GET['action'] ?? '');
 
     if ($action === 'list') {
+        $isDataTableRequest = isset($_GET['draw']);
         $filters = [
             'search' => trim((string)($_GET['search'] ?? '')),
             'year_level' => max(0, (int)($_GET['year_level'] ?? 0)),
-            'source_program_name' => trim((string)($_GET['source_program_name'] ?? '')),
-            'academic_year_label' => trim((string)($_GET['academic_year_label'] ?? '')),
-            'semester_label' => trim((string)($_GET['semester_label'] ?? '')),
+            'program_id' => max(0, (int)($_GET['program_id'] ?? 0)),
+            'ay_id' => max(0, (int)($_GET['ay_id'] ?? 0)),
+            'semester' => max(0, (int)($_GET['semester'] ?? 0)),
         ];
-        $page = max(1, (int)($_GET['page'] ?? 1));
-        $limit = 40;
-        $offset = ($page - 1) * $limit;
+        $sort = [];
 
-        $total = synk_student_management_count_records($conn, $filters);
-        $records = synk_student_management_fetch_records($conn, $filters, $limit, $offset);
+        if ($isDataTableRequest) {
+            $draw = max(0, (int)($_GET['draw'] ?? 0));
+            $offset = max(0, (int)($_GET['start'] ?? 0));
+            $limit = (int)($_GET['length'] ?? 25);
+            if ($limit <= 0) {
+                $limit = 25;
+            }
+            $limit = min(250, $limit);
+
+            $orderColumnIndex = max(0, (int)($_GET['order'][0]['column'] ?? 0));
+            $columns = $_GET['columns'] ?? [];
+            $columnConfig = (is_array($columns) && isset($columns[$orderColumnIndex]) && is_array($columns[$orderColumnIndex]))
+                ? $columns[$orderColumnIndex]
+                : [];
+
+            $sort = [
+                'column' => (string)($columnConfig['name'] ?? $columnConfig['data'] ?? ''),
+                'direction' => (string)($_GET['order'][0]['dir'] ?? 'asc'),
+            ];
+
+            $recordsTotal = synk_student_management_count_records($conn, []);
+            $recordsFiltered = synk_student_management_count_records($conn, $filters);
+            $records = synk_student_management_fetch_records($conn, $filters, $limit, $offset, $sort);
+        } else {
+            $page = max(1, (int)($_GET['page'] ?? 1));
+            $limit = (int)($_GET['limit'] ?? 40);
+            if ($limit <= 0) {
+                $limit = 40;
+            }
+            $limit = min(5000, $limit);
+            $offset = ($page - 1) * $limit;
+            $recordsFiltered = synk_student_management_count_records($conn, $filters);
+            $recordsTotal = $recordsFiltered;
+            $records = synk_student_management_fetch_records($conn, $filters, $limit, $offset, $sort);
+        }
 
         $items = array_map(static function ($row) {
             return [
@@ -43,14 +75,24 @@ try {
                 'middle_name' => (string)($row['middle_name'] ?? ''),
                 'suffix_name' => (string)($row['suffix_name'] ?? ''),
                 'email_address' => (string)($row['email_address'] ?? ''),
+                'subject_count' => (int)($row['subject_count'] ?? 0),
             ];
         }, $records);
+
+        if ($isDataTableRequest) {
+            student_management_directory_api_response([
+                'draw' => $draw,
+                'recordsTotal' => $recordsTotal,
+                'recordsFiltered' => $recordsFiltered,
+                'data' => $items,
+            ]);
+        }
 
         student_management_directory_api_response([
             'status' => 'success',
             'items' => $items,
-            'total' => $total,
-            'has_more' => ($offset + count($items)) < $total,
+            'total' => $recordsFiltered,
+            'has_more' => ($offset + count($items)) < $recordsFiltered,
         ]);
     }
 
@@ -74,11 +116,8 @@ try {
 
         $studentId = (int)($_POST['student_id'] ?? 0);
         $payload = [
-            'academic_year_label' => (string)($_POST['academic_year_label'] ?? ''),
-            'semester_label' => (string)($_POST['semester_label'] ?? ''),
-            'college_name' => (string)($_POST['college_name'] ?? ''),
-            'campus_name' => (string)($_POST['campus_name'] ?? ''),
-            'source_program_name' => (string)($_POST['source_program_name'] ?? ''),
+            'ay_id' => (int)($_POST['ay_id'] ?? 0),
+            'semester' => (int)($_POST['semester'] ?? 0),
             'year_level' => (int)($_POST['year_level'] ?? 0),
             'student_number' => (int)($_POST['student_number'] ?? 0),
             'last_name' => (string)($_POST['last_name'] ?? ''),

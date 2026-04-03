@@ -23,9 +23,9 @@ $studentSidebarItems = [
         'key' => 'class_program',
         'href' => 'class-program.php',
         'icon_bg' => 'bg-label-info',
-        'icon' => 'bx-table',
-        'title' => 'Class Program',
-        'description' => 'View the current term section schedule grid',
+        'icon' => 'bx-user-voice',
+        'title' => 'Faculty Evaluation',
+        'description' => 'Evaluate faculty members who handled your subjects',
         'pages' => ['class-program.php'],
     ],
 ];
@@ -41,7 +41,7 @@ foreach ($studentSidebarItems as $sidebarItem) {
 
 <aside id="layout-menu" class="layout-menu menu-vertical menu bg-menu-theme">
   <div class="app-brand demo">
-    <a href="index.php" class="app-brand-link">
+    <a href="<?php echo htmlspecialchars(function_exists('synk_student_build_portal_url') ? synk_student_build_portal_url('index.php') : 'index.php', ENT_QUOTES, 'UTF-8'); ?>" class="app-brand-link">
       <span class="app-brand-logo demo">
         <svg
           width="25"
@@ -218,7 +218,7 @@ foreach ($studentSidebarItems as $sidebarItem) {
     <?php foreach ($studentSidebarItems as $sidebarItem): ?>
       <li class="menu-item px-2<?php echo $studentSidebarActiveKey === $sidebarItem['key'] ? ' active' : ''; ?>">
         <a
-          href="<?php echo htmlspecialchars($sidebarItem['href'], ENT_QUOTES, 'UTF-8'); ?>"
+          href="<?php echo htmlspecialchars(function_exists('synk_student_build_portal_url') ? synk_student_build_portal_url($sidebarItem['href']) : $sidebarItem['href'], ENT_QUOTES, 'UTF-8'); ?>"
           class="menu-link student-menu-card<?php echo $studentSidebarActiveKey === $sidebarItem['key'] ? ' active' : ''; ?>"
         >
           <span class="student-menu-icon <?php echo htmlspecialchars($sidebarItem['icon_bg'], ENT_QUOTES, 'UTF-8'); ?>">
