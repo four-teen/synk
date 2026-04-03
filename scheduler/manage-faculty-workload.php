@@ -131,19 +131,41 @@ function excelXmlEscape($value) {
     return htmlspecialchars((string)$value, ENT_QUOTES | ENT_XML1, 'UTF-8');
 }
 
+function buildRoomDisplayLabel($roomCode, $roomName): string {
+    $roomCode = trim((string)$roomCode);
+    $roomName = trim((string)$roomName);
+
+    if ($roomCode !== '' && $roomName !== '') {
+        return strcasecmp($roomCode, $roomName) === 0
+            ? $roomCode
+            : $roomCode . ' - ' . $roomName;
+    }
+
+    if ($roomCode !== '') {
+        return $roomCode;
+    }
+
+    if ($roomName !== '') {
+        return $roomName;
+    }
+
+    return '-';
+}
+
 function buildScheduleDisplayParts(array $row): array {
     $decodedDays = json_decode((string)($row['days_json'] ?? ''), true);
     $days = (is_array($decodedDays) && !empty($decodedDays)) ? implode('', $decodedDays) : '-';
     $time = (!empty($row['time_start']) && !empty($row['time_end']))
         ? date("h:i A", strtotime((string)$row['time_start'])) . ' - ' . date("h:i A", strtotime((string)$row['time_end']))
         : '-';
+    $roomCode = trim((string)($row['room_code'] ?? ''));
     $roomName = trim((string)($row['room_name'] ?? ''));
     $schedule = ($days === '-' && $time === '-') ? '-' : trim($days . ' ' . $time);
 
     return [
         'days' => $days,
         'time' => $time,
-        'room' => $roomName !== '' ? $roomName : '-',
+        'room' => buildRoomDisplayLabel($roomCode, $roomName),
         'schedule' => $schedule
     ];
 }
@@ -291,11 +313,8 @@ function loadReportScheduleRowsByOffering(mysqli $conn, array $offeringIds): arr
             cs.days_json,
             cs.time_start,
             cs.time_end,
-            COALESCE(
-                NULLIF(TRIM(r.room_name), ''),
-                NULLIF(TRIM(r.room_code), ''),
-                ''
-            ) AS room_name
+            NULLIF(TRIM(r.room_code), '') AS room_code,
+            NULLIF(TRIM(r.room_name), '') AS room_name
         FROM tbl_class_schedule cs
         LEFT JOIN tbl_rooms r
             ON r.room_id = cs.room_id
@@ -322,6 +341,7 @@ function loadReportScheduleRowsByOffering(mysqli $conn, array $offeringIds): arr
             'days_json' => (string)($row['days_json'] ?? '[]'),
             'time_start' => (string)($row['time_start'] ?? ''),
             'time_end' => (string)($row['time_end'] ?? ''),
+            'room_code' => (string)($row['room_code'] ?? ''),
             'room_name' => (string)($row['room_name'] ?? '')
         ];
     }
@@ -941,6 +961,7 @@ if ($hasFilters && $collegeId > 0) {
                         'days_json' => '[]',
                         'time_start' => '',
                         'time_end' => '',
+                        'room_code' => '',
                         'room_name' => ''
                     ]));
                     continue;
