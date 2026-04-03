@@ -6,6 +6,7 @@ require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
 require_once __DIR__ . '/schedule_merge_helper.php';
+require_once __DIR__ . '/schema_helper.php';
 
 header('Content-Type: application/json');
 
@@ -1122,6 +1123,243 @@ function load_workload_faculty_map_for_offerings($conn, array $offering_ids, $ay
     return $map;
 }
 
+function format_faculty_display_name(array $row) {
+    $lastName = trim((string)($row['last_name'] ?? ''));
+    $firstName = trim((string)($row['first_name'] ?? ''));
+    $extName = trim((string)($row['ext_name'] ?? ''));
+
+    $name = $lastName;
+    if ($firstName !== '') {
+        $name .= ($name !== '' ? ', ' : '') . $firstName;
+    }
+
+    if ($extName !== '') {
+        $name .= ($name !== '' ? ' ' : '') . $extName;
+    }
+
+    $name = trim($name);
+    if ($name !== '') {
+        return $name;
+    }
+
+    $facultyId = (int)($row['faculty_id'] ?? 0);
+    return $facultyId > 0 ? 'Faculty #' . $facultyId : 'Faculty';
+}
+
+function load_college_term_faculty_rows($conn, $college_id, $ay_id, $semester) {
+    $assignmentHasAyId = synk_table_has_column($conn, 'tbl_college_faculty', 'ay_id');
+    $assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'semester');
+    $assignmentHasStatus = synk_table_has_column($conn, 'tbl_college_faculty', 'status');
+    $facultyHasExtName = synk_table_has_column($conn, 'tbl_faculty', 'ext_name');
+
+    $where = ['cf.college_id = ?'];
+    $types = 'i';
+    $params = [$college_id];
+
+    if ($assignmentHasStatus) {
+        $where[] = "LOWER(TRIM(COALESCE(cf.status, 'active'))) = 'active'";
+    }
+
+    if ($assignmentHasAyId) {
+        $where[] = 'cf.ay_id = ?';
+        $types .= 'i';
+        $params[] = $ay_id;
+    }
+
+    if ($assignmentHasSemester) {
+        $where[] = 'cf.semester = ?';
+        $types .= 'i';
+        $params[] = $semester;
+    }
+
+    $sql = "
+        SELECT DISTINCT
+            f.faculty_id,
+            f.last_name,
+            f.first_name,
+            " . ($facultyHasExtName ? "COALESCE(f.ext_name, '') AS ext_name" : "'' AS ext_name") . "
+        FROM tbl_college_faculty cf
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = cf.faculty_id
+        WHERE " . implode("\n          AND ", $where) . "
+        ORDER BY f.last_name ASC, f.first_name ASC, f.faculty_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    synk_bind_dynamic_params($stmt, $types, $params);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $rows[] = [
+            'faculty_id' => (int)($row['faculty_id'] ?? 0),
+            'last_name' => (string)($row['last_name'] ?? ''),
+            'first_name' => (string)($row['first_name'] ?? ''),
+            'ext_name' => (string)($row['ext_name'] ?? ''),
+            'faculty_name' => format_faculty_display_name($row)
+        ];
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function load_faculty_schedule_counts_by_faculty($conn, array $facultyIds, $ay_id, $semester, $college_id) {
+    $counts = [];
+    $safeFacultyIds = array_map('intval', array_values(array_unique($facultyIds)));
+    $safeFacultyIds = array_values(array_filter($safeFacultyIds, static function ($value) {
+        return $value > 0;
+    }));
+
+    if (empty($safeFacultyIds)) {
+        return $counts;
+    }
+
+    $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+    $contextExpr = $classScheduleHasGroupId
+        ? "CASE
+                WHEN cs.schedule_group_id IS NOT NULL AND cs.schedule_group_id > 0
+                    THEN CONCAT('group:', cs.schedule_group_id)
+                ELSE CONCAT('offering:', cs.offering_id)
+           END"
+        : "CONCAT('offering:', cs.offering_id)";
+
+    $sql = "
+        SELECT
+            fw.faculty_id,
+            COUNT(DISTINCT fw.schedule_id) AS scheduled_block_count,
+            COUNT(DISTINCT {$contextExpr}) AS scheduled_class_count
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        WHERE fw.faculty_id IN (" . implode(',', $safeFacultyIds) . ")
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+          AND p.college_id = ?
+        GROUP BY fw.faculty_id
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return $counts;
+    }
+
+    $stmt->bind_param("iii", $ay_id, $semester, $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $facultyId = (int)($row['faculty_id'] ?? 0);
+        $counts[$facultyId] = [
+            'scheduled_block_count' => (int)($row['scheduled_block_count'] ?? 0),
+            'scheduled_class_count' => (int)($row['scheduled_class_count'] ?? 0)
+        ];
+    }
+
+    $stmt->close();
+    return $counts;
+}
+
+function load_college_term_faculty_record($conn, $college_id, $ay_id, $semester, $faculty_id) {
+    $rows = load_college_term_faculty_rows($conn, $college_id, $ay_id, $semester);
+    foreach ($rows as $row) {
+        if ((int)($row['faculty_id'] ?? 0) === (int)$faculty_id) {
+            return $row;
+        }
+    }
+
+    return null;
+}
+
+function load_faculty_schedule_entries_for_term($conn, $faculty_id, $ay_id, $semester, $college_id, $currentOfferingId = 0) {
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+    $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+
+    $sql = "
+        SELECT
+            cs.schedule_id,
+            cs.offering_id,
+            " . ($classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id') . ",
+            " . ($classScheduleHasType ? "cs.schedule_type AS schedule_type" : "'LEC' AS schedule_type") . ",
+            sm.sub_code,
+            sm.sub_description,
+            sec.section_name,
+            sec.full_section,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            COALESCE(NULLIF(TRIM(r.room_code), ''), NULLIF(TRIM(r.room_name), ''), 'TBA') AS room_label
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        WHERE fw.faculty_id = ?
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+          AND p.college_id = ?
+        ORDER BY
+            cs.time_start ASC,
+            sec.section_name ASC,
+            sm.sub_code ASC,
+            " . ($classScheduleHasType ? "FIELD(cs.schedule_type, 'LEC', 'LAB')," : "") . "
+            cs.schedule_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iiii", $faculty_id, $ay_id, $semester, $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $entries = [];
+    while ($row = $res->fetch_assoc()) {
+        $days = normalize_days_array(json_decode((string)($row['days_json'] ?? ''), true));
+        $sectionLabel = trim((string)($row['full_section'] ?? ''));
+        if ($sectionLabel === '') {
+            $sectionLabel = trim((string)($row['section_name'] ?? ''));
+        }
+
+        $entries[] = [
+            'schedule_id' => (int)($row['schedule_id'] ?? 0),
+            'offering_id' => (int)($row['offering_id'] ?? 0),
+            'group_id' => (int)($row['group_id'] ?? 0),
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'subject_code' => (string)($row['sub_code'] ?? ''),
+            'subject_description' => (string)($row['sub_description'] ?? ''),
+            'section_label' => $sectionLabel,
+            'room_label' => (string)($row['room_label'] ?? 'TBA'),
+            'days' => $days,
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? ''),
+            'is_current_offering' => (int)($row['offering_id'] ?? 0) === (int)$currentOfferingId
+        ];
+    }
+
+    $stmt->close();
+    return $entries;
+}
+
 function load_schedule_row_counts_for_offerings($conn, array $offering_ids) {
     $counts = [];
     if (empty($offering_ids)) {
@@ -1917,6 +2155,151 @@ if (isset($_POST['load_section_schedule_matrix'])) {
         'subject_code' => (string)($ctx['sub_code'] ?? ''),
         'subject_description' => (string)($ctx['sub_description'] ?? ''),
         'sections' => $sections
+    ]);
+}
+
+/* =====================================================
+   LOAD FACULTY OPTIONS FOR BLOCK SCHEDULER
+===================================================== */
+if (isset($_POST['load_schedule_faculty_options'])) {
+    $offering_id = (int)($_POST['offering_id'] ?? 0);
+    if ($offering_id <= 0) {
+        respond("error", "Missing offering reference.");
+    }
+
+    $ctx = load_context_live($conn, $offering_id, $college_id);
+    if (!$ctx) {
+        respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
+    }
+
+    $facultyRows = load_college_term_faculty_rows(
+        $conn,
+        $college_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester']
+    );
+
+    $facultyIds = array_map(static function ($row) {
+        return (int)($row['faculty_id'] ?? 0);
+    }, $facultyRows);
+
+    $countMap = load_faculty_schedule_counts_by_faculty(
+        $conn,
+        $facultyIds,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester'],
+        $college_id
+    );
+
+    $assignedFaculties = load_workload_faculties_for_offering(
+        $conn,
+        $offering_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester']
+    );
+    $assignedSet = [];
+    foreach ($assignedFaculties as $faculty) {
+        $facultyId = (int)($faculty['faculty_id'] ?? 0);
+        if ($facultyId > 0) {
+            $assignedSet[$facultyId] = true;
+        }
+    }
+
+    $faculty = [];
+    foreach ($facultyRows as $row) {
+        $facultyId = (int)($row['faculty_id'] ?? 0);
+        $counts = $countMap[$facultyId] ?? [
+            'scheduled_block_count' => 0,
+            'scheduled_class_count' => 0
+        ];
+
+        $faculty[] = [
+            'faculty_id' => $facultyId,
+            'faculty_name' => (string)($row['faculty_name'] ?? format_faculty_display_name($row)),
+            'scheduled_block_count' => (int)($counts['scheduled_block_count'] ?? 0),
+            'scheduled_class_count' => (int)($counts['scheduled_class_count'] ?? 0),
+            'is_assigned' => isset($assignedSet[$facultyId])
+        ];
+    }
+
+    respond("ok", "Loaded faculty options.", [
+        'assigned_faculty_ids' => array_values(array_map('intval', array_keys($assignedSet))),
+        'faculty' => $faculty
+    ]);
+}
+
+/* =====================================================
+   LOAD FACULTY SCHEDULE OVERVIEW FOR BLOCK SCHEDULER
+===================================================== */
+if (isset($_POST['load_faculty_schedule_overview'])) {
+    $offering_id = (int)($_POST['offering_id'] ?? 0);
+    $faculty_id = (int)($_POST['faculty_id'] ?? 0);
+
+    if ($offering_id <= 0 || $faculty_id <= 0) {
+        respond("error", "Missing faculty schedule context.");
+    }
+
+    $ctx = load_context_live($conn, $offering_id, $college_id);
+    if (!$ctx) {
+        respond("error", "Offering is out of sync. Re-run Generate Offerings first.");
+    }
+
+    $facultyRow = load_college_term_faculty_record(
+        $conn,
+        $college_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester'],
+        $faculty_id
+    );
+
+    if (!$facultyRow) {
+        respond("error", "Selected faculty is not available under this college term.");
+    }
+
+    $countMap = load_faculty_schedule_counts_by_faculty(
+        $conn,
+        [$faculty_id],
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester'],
+        $college_id
+    );
+    $counts = $countMap[$faculty_id] ?? [
+        'scheduled_block_count' => 0,
+        'scheduled_class_count' => 0
+    ];
+
+    $assignedFaculties = load_workload_faculties_for_offering(
+        $conn,
+        $offering_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester']
+    );
+    $isAssigned = false;
+    foreach ($assignedFaculties as $faculty) {
+        if ((int)($faculty['faculty_id'] ?? 0) === $faculty_id) {
+            $isAssigned = true;
+            break;
+        }
+    }
+
+    $entries = load_faculty_schedule_entries_for_term(
+        $conn,
+        $faculty_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester'],
+        $college_id,
+        $offering_id
+    );
+
+    respond("ok", "Loaded faculty schedule overview.", [
+        'faculty' => [
+            'faculty_id' => $faculty_id,
+            'faculty_name' => (string)($facultyRow['faculty_name'] ?? format_faculty_display_name($facultyRow)),
+            'scheduled_block_count' => (int)($counts['scheduled_block_count'] ?? 0),
+            'scheduled_class_count' => (int)($counts['scheduled_class_count'] ?? 0),
+            'is_assigned' => $isAssigned
+        ],
+        'entries' => $entries
     ]);
 }
 
@@ -3358,6 +3741,8 @@ if (
     !isset($_POST['save_schedule_merge']) &&
     !isset($_POST['load_schedule_blocks']) &&
     !isset($_POST['load_section_schedule_matrix']) &&
+    !isset($_POST['load_schedule_faculty_options']) &&
+    !isset($_POST['load_faculty_schedule_overview']) &&
     !isset($_POST['load_dual_schedule']) &&
     !isset($_POST['save_schedule']) &&
     !isset($_POST['save_dual_schedule']) &&

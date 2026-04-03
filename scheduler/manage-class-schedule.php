@@ -74,7 +74,7 @@ body.swal2-shown .modal {
 }
 
 /* =====================================================
-   ROOM–TIME MATRIX (BASE – KEPT)
+   ROOM-TIME MATRIX (BASE - KEPT)
 ===================================================== */
 .matrix-table th,
 .matrix-table td {
@@ -1044,8 +1044,8 @@ body.swal2-shown .modal {
 .sub-11 { background: #475569; }
 
 /* =====================================================
-   ROOM–TIME MATRIX (ENHANCEMENTS – SCOPED)
-   👉 Scoped to #matrixModal ONLY to avoid conflicts
+   ROOM-TIME MATRIX (ENHANCEMENTS - SCOPED)
+   Scoped to #matrixModal ONLY to avoid conflicts
 ===================================================== */
 
 #matrixModal {
@@ -1194,12 +1194,12 @@ body.swal2-shown .modal {
     min-width: 100%;
 }
 /* =====================================================
-   FORCE ROOM–TIME MATRIX TO USE SCREEN WIDTH
-   (Bootstrap modal override – SAFE & SCOPED)
+   FORCE ROOM-TIME MATRIX TO USE SCREEN WIDTH
+   (Bootstrap modal override - SAFE & SCOPED)
 ===================================================== */
 
 #matrixModal .modal-dialog {
-    max-width: 95vw !important;   /* ← THIS IS THE KEY */
+    max-width: 95vw !important;   /* <- THIS IS THE KEY */
     width: 95vw;
     margin-left: auto;
     margin-right: auto;
@@ -1409,6 +1409,444 @@ body.swal2-shown .modal {
     background: rgba(255, 255, 255, 0.8);
 }
 
+.faculty-helper-shell {
+    border: 1px solid #d7e1f2;
+    border-radius: 16px;
+    background: linear-gradient(180deg, #ffffff 0%, #f7faff 100%);
+    padding: 1rem;
+    box-shadow: 0 12px 28px rgba(31, 42, 68, 0.05);
+}
+
+.faculty-helper-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 0.9rem;
+}
+
+.faculty-helper-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+}
+
+.faculty-helper-summary {
+    min-height: 100%;
+    border: 1px solid #dbe4f5;
+    border-radius: 14px;
+    background: rgba(255, 255, 255, 0.96);
+    padding: 0.95rem;
+}
+
+.faculty-helper-title-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.75rem;
+    flex-wrap: wrap;
+}
+
+.faculty-helper-title {
+    font-size: 1rem;
+    font-weight: 700;
+    color: #1f2a44;
+}
+
+.faculty-helper-note {
+    margin-top: 0.2rem;
+    font-size: 0.83rem;
+    color: #60708f;
+    line-height: 1.4;
+}
+
+.faculty-helper-metrics {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 0.5rem;
+    margin-top: 0.75rem;
+}
+
+.faculty-helper-metric {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 0.35rem 0.75rem;
+    background: #eef3ff;
+    color: #3f58a7;
+    font-size: 0.78rem;
+    font-weight: 700;
+}
+
+.faculty-helper-section-title {
+    margin-top: 0.95rem;
+    margin-bottom: 0.55rem;
+    font-size: 0.78rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #7584a0;
+}
+
+.faculty-helper-day-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 0.7rem;
+}
+
+.faculty-helper-day-card {
+    border: 1px solid #dce4f5;
+    border-radius: 12px;
+    background: #f8fbff;
+    padding: 0.75rem;
+}
+
+.faculty-helper-day-label {
+    display: block;
+    font-size: 0.76rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #60708f;
+}
+
+.faculty-helper-day-value {
+    display: block;
+    margin-top: 0.35rem;
+    font-size: 0.84rem;
+    font-weight: 700;
+    color: #1f2a44;
+    line-height: 1.4;
+}
+
+.faculty-helper-day-meta {
+    display: block;
+    margin-top: 0.25rem;
+    font-size: 0.75rem;
+    color: #6d7c98;
+}
+
+.faculty-helper-subject-list {
+    display: grid;
+    gap: 0.55rem;
+}
+
+.faculty-helper-subject-card {
+    border: 1px solid #dbe4f5;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.75rem 0.8rem;
+}
+
+.faculty-helper-subject-title {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 0.5rem;
+    flex-wrap: wrap;
+    font-weight: 700;
+    color: #1f2a44;
+}
+
+.faculty-helper-subject-meta {
+    margin-top: 0.3rem;
+    font-size: 0.8rem;
+    color: #61708f;
+    line-height: 1.45;
+}
+
+.faculty-helper-empty {
+    border: 1px dashed #c7d4ee;
+    border-radius: 12px;
+    background: rgba(249, 251, 255, 0.8);
+    color: #5f6f8d;
+    padding: 1rem;
+    text-align: center;
+}
+
+#facultyScheduleMatrixModal {
+    z-index: 1115;
+}
+
+#facultyScheduleMatrixModal .modal-dialog {
+    max-width: min(1450px, calc(100vw - 2rem));
+}
+
+#facultyScheduleMatrixModal .modal-body {
+    background: linear-gradient(180deg, #f7f9ff 0%, #eef4ff 100%);
+}
+
+.faculty-matrix-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.faculty-matrix-shell {
+    border: 1px solid #d8e1f2;
+    border-radius: 16px;
+    background: rgba(255, 255, 255, 0.94);
+    overflow: hidden;
+    box-shadow: 0 14px 36px rgba(31, 42, 68, 0.08);
+}
+
+.faculty-matrix-scroll {
+    overflow: auto;
+    max-height: 68vh;
+}
+
+.faculty-matrix-table {
+    width: 100%;
+    min-width: 880px;
+    border-collapse: separate;
+    border-spacing: 0;
+}
+
+.faculty-matrix-table th,
+.faculty-matrix-table td {
+    border-right: 1px solid #e1e8f6;
+    border-bottom: 1px solid #e1e8f6;
+    padding: 0.55rem;
+    vertical-align: top;
+}
+
+.faculty-matrix-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: #f5f8ff;
+}
+
+.faculty-matrix-time {
+    position: sticky;
+    left: 0;
+    z-index: 3;
+    width: 104px;
+    min-width: 104px;
+    background: #f8fbff;
+    color: #44536e;
+    font-weight: 700;
+}
+
+.faculty-matrix-time-label {
+    min-height: 44px;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    gap: 0.05rem;
+    line-height: 1.15;
+}
+
+.faculty-matrix-time-label span:last-child {
+    font-size: 0.76rem;
+    color: #5f6f8c;
+    font-weight: 600;
+}
+
+.faculty-matrix-day {
+    min-width: 178px;
+    text-align: center;
+    background: #f5f8ff;
+}
+
+.faculty-matrix-cell {
+    min-width: 178px;
+    background: rgba(255, 255, 255, 0.96);
+}
+
+.faculty-matrix-cell.is-vacant {
+    background: rgba(245, 248, 255, 0.88);
+}
+
+.faculty-matrix-cell.is-occupied {
+    background: rgba(239, 246, 255, 0.88);
+}
+
+.faculty-matrix-cell.is-conflict {
+    background: rgba(255, 244, 228, 0.92);
+}
+
+.faculty-matrix-entry {
+    border: 1px solid #d6e0f3;
+    border-radius: 12px;
+    background: #ffffff;
+    padding: 0.45rem 0.55rem;
+    box-shadow: 0 6px 18px rgba(31, 42, 68, 0.05);
+}
+
+.faculty-matrix-entry + .faculty-matrix-entry {
+    margin-top: 0.45rem;
+}
+
+.faculty-matrix-entry.is-current {
+    border-color: #7d8bff;
+    background: #eef2ff;
+}
+
+.faculty-matrix-entry-title {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.5rem;
+    font-weight: 700;
+    color: #1f2a44;
+}
+
+.faculty-matrix-entry-meta {
+    margin-top: 0.3rem;
+    font-size: 0.74rem;
+    color: #596b89;
+    line-height: 1.35;
+}
+
+.faculty-matrix-vacant {
+    min-height: 44px;
+    border-radius: 10px;
+    border: 1px dashed #d4dff3;
+    background: rgba(250, 252, 255, 0.86);
+}
+
+.faculty-matrix-empty {
+    border: 1px dashed #c8d5ef;
+    border-radius: 14px;
+    padding: 1rem;
+    text-align: center;
+    color: #5a6b89;
+    background: rgba(255, 255, 255, 0.8);
+}
+
+.faculty-schedule-summary {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 1rem;
+    flex-wrap: wrap;
+    margin-bottom: 1rem;
+}
+
+.faculty-schedule-sheet {
+    border: 1px solid #d9e2ec;
+    border-radius: 12px;
+    overflow: hidden;
+    background: #fff;
+}
+
+.faculty-schedule-table {
+    width: 100%;
+    min-width: 960px;
+    margin-bottom: 0;
+    table-layout: fixed;
+}
+
+.faculty-schedule-table thead th {
+    font-size: 0.78rem;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    text-align: center;
+    color: #4d627a;
+    background: #f9fbfd;
+    border-color: #cfd8e3;
+    vertical-align: middle;
+}
+
+.faculty-schedule-table tbody td {
+    border-color: #d9e2ec;
+    color: #576c85;
+    vertical-align: top;
+    background: #fff;
+    padding: 0.55rem 0.6rem;
+}
+
+.faculty-schedule-table th:first-child,
+.faculty-schedule-table td:first-child {
+    width: 15%;
+}
+
+.faculty-schedule-table th:not(:first-child),
+.faculty-schedule-table td:not(:first-child) {
+    width: 14.16%;
+}
+
+.faculty-schedule-time-cell {
+    white-space: nowrap;
+    font-weight: 600;
+    color: #334a63;
+    font-size: 0.82rem;
+    background: #fbfcfe;
+}
+
+.faculty-schedule-empty-cell {
+    background: #fff;
+    min-height: 48px;
+}
+
+.faculty-schedule-class-cell {
+    background: #fbfdff !important;
+}
+
+.faculty-schedule-class-cell.is-current {
+    background: #eef3ff !important;
+}
+
+.faculty-schedule-class-block {
+    min-height: 100%;
+}
+
+.faculty-schedule-subject-code {
+    font-size: 0.88rem;
+    font-weight: 700;
+    color: #253a53;
+    line-height: 1.25;
+}
+
+.faculty-schedule-subject-description {
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    color: #60768f;
+}
+
+.faculty-schedule-block-line {
+    margin-top: 0.2rem;
+    font-size: 0.72rem;
+    line-height: 1.25;
+    color: #3d546d;
+}
+
+.faculty-schedule-block-chip {
+    display: inline-block;
+    margin-top: 0.35rem;
+    margin-right: 0.25rem;
+    padding: 0.16rem 0.42rem;
+    border-radius: 999px;
+    background: #eef4ff;
+    color: #3d63dd;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+}
+
+.faculty-schedule-block-chip.is-current {
+    background: #e7f7ef;
+    color: #157347;
+}
+
+.faculty-schedule-warning {
+    margin-bottom: 1rem;
+    border: 1px solid #ffe3a6;
+    border-radius: 10px;
+    background: #fff8e6;
+    color: #7a5a00;
+    padding: 0.75rem 0.9rem;
+    font-size: 0.84rem;
+}
+
 @media (max-width: 767.98px) {
     .section-matrix-table {
         min-width: 620px;
@@ -1422,6 +1860,28 @@ body.swal2-shown .modal {
     .section-matrix-section,
     .section-matrix-cell {
         min-width: 138px;
+    }
+
+    .faculty-helper-day-grid {
+        grid-template-columns: 1fr;
+    }
+
+    .faculty-matrix-table {
+        min-width: 700px;
+    }
+
+    .faculty-matrix-time {
+        min-width: 92px;
+        width: 92px;
+    }
+
+    .faculty-matrix-day,
+    .faculty-matrix-cell {
+        min-width: 150px;
+    }
+
+    .faculty-schedule-table {
+        min-width: 760px;
     }
 }
 
@@ -2090,9 +2550,9 @@ body.swal2-shown .modal {
   $q = $prosStmt->get_result();
   while ($r = $q->fetch_assoc()) {
 
-      $label = $r['program_code'] . " — " . $r['program_name'];
+      $label = $r['program_code'] . " - " . $r['program_name'];
 
-      // ✅ Append major ONLY if it exists
+      // Append major only if it exists
       if (!empty($r['major'])) {
           $label .= " major in " . $r['major'];
       }
@@ -2305,7 +2765,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     <hr>
 
-    <div class="step-label mb-2">Step 1 — When does the class meet?</div>
+    <div class="step-label mb-2">Step 1 - When does the class meet?</div>
 
     <div class="row g-3 mb-3">
     <div class="col-md-6">
@@ -2345,7 +2805,7 @@ while ($ay = $ayQ->fetch_assoc()) {
     </div>
     </div>
 
-    <div class="step-label mb-2">Step 2 — Where is the class held?</div>
+    <div class="step-label mb-2">Step 2 - Where is the class held?</div>
 
     <div class="mb-3">
     <select id="sched_room_id" class="form-select">
@@ -2645,6 +3105,42 @@ while ($ay = $ayQ->fetch_assoc()) {
           </div>
         </div>
 
+        <div class="faculty-helper-shell mb-3">
+          <div class="faculty-helper-toolbar">
+            <div>
+              <div class="step-label mb-1">Faculty Schedule Viewer</div>
+              <div class="schedule-hint mb-0">
+                Select a faculty from this college term, then open the faculty schedule board before saving blocks.
+              </div>
+            </div>
+            <div class="faculty-helper-actions">
+              <button type="button" class="btn btn-outline-info btn-sm" id="btnOpenFacultyScheduleMatrix" disabled>
+                <i class="bx bx-calendar me-1"></i> Show Workload
+              </button>
+            </div>
+          </div>
+
+          <div class="row g-3 align-items-end">
+            <div class="col-lg-6">
+              <label class="form-label" for="blockScheduleFacultySelect">Faculty</label>
+              <select id="blockScheduleFacultySelect" class="form-select" disabled>
+                <option value="">Select faculty...</option>
+              </select>
+            </div>
+            <div class="col-lg-6">
+              <div class="schedule-hint" id="blockScheduleFacultyHint">
+                Faculty from the selected college term will load here.
+              </div>
+            </div>
+          </div>
+
+          <div class="faculty-helper-summary d-none" id="blockScheduleFacultySummary">
+            <div class="faculty-helper-empty">
+              Select a faculty to view scheduled subjects and available time windows.
+            </div>
+          </div>
+        </div>
+
         <div class="schedule-block-toolbar mb-3">
           <button type="button" class="btn btn-outline-primary btn-sm" id="btnAddLectureBlock">
             <i class="bx bx-plus me-1"></i> Add Lecture Schedule
@@ -2848,13 +3344,37 @@ while ($ay = $ayQ->fetch_assoc()) {
   </div>
 </div>
 
+<div class="modal fade" id="facultyScheduleMatrixModal" tabindex="-1" data-bs-backdrop="false">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0">
+            <i class="bx bx-user-pin me-1"></i> Faculty Workload Schedule
+          </h5>
+          <div class="small text-muted mt-1" id="facultyScheduleMatrixHeaderNote">
+            View the selected faculty schedule in the same day-by-time board layout.
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div id="facultyScheduleMatrixContainer">
+          <div class="faculty-matrix-empty">Select a faculty and click Show Workload.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
 
     <script src="../assets/vendor/libs/jquery/jquery.js"></script>
     <script src="../assets/vendor/libs/popper/popper.js"></script>
     <script src="../assets/vendor/js/bootstrap.js"></script>
     <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
     <script src="https://cdn.jsdelivr.net/npm/sweetalert2@11"></script>
-    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>    
+    <script src="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/js/select2.min.js"></script>
     <script src="../assets/vendor/js/menu.js"></script>
     <script src="../assets/vendor/libs/apex-charts/apexcharts.js"></script>
     <script src="../assets/js/main.js"></script>
@@ -2864,8 +3384,17 @@ while ($ay = $ayQ->fetch_assoc()) {
     const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
     const SCHEDULE_POLICY = <?= json_encode($schedulePolicy, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE) ?>;
     const SCHEDULE_DAY_ORDER = ["M", "T", "W", "Th", "F", "S"];
+    const FACULTY_SCHEDULE_DAY_COLUMNS = [
+        { key: "M", label: "Mon" },
+        { key: "T", label: "Tue" },
+        { key: "W", label: "Wed" },
+        { key: "Th", label: "Thu" },
+        { key: "F", label: "Fri" },
+        { key: "S", label: "Sat" }
+    ];
     const SUPPORTED_TIME_START = String(SCHEDULE_POLICY.day_start_input || "07:30");
     const SUPPORTED_TIME_END = String(SCHEDULE_POLICY.day_end_input || "17:30");
+    const FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES = 30;
     const BLOCKED_SCHEDULE_DAYS = Array.isArray(SCHEDULE_POLICY.blocked_days)
         ? SCHEDULE_POLICY.blocked_days.filter(day => SCHEDULE_DAY_ORDER.includes(day))
         : [];
@@ -3064,6 +3593,9 @@ while ($ay = $ayQ->fetch_assoc()) {
     let sectionScheduleMatrixModalInstance = null;
     let sectionScheduleMatrixRequest = null;
     let sectionScheduleMatrixState = null;
+    let facultyScheduleMatrixModalInstance = null;
+    let scheduleBlockFacultyOptionsRequest = null;
+    let scheduleBlockFacultyDetailRequest = null;
     const ROOM_BROWSER_TYPE_META = {
         lecture: {
             label: "Lecture Rooms",
@@ -3171,6 +3703,10 @@ while ($ay = $ayQ->fetch_assoc()) {
         const hour = Math.floor(safeMinutes / 60);
         const minute = safeMinutes % 60;
         return `${String(hour).padStart(2, "0")}:${String(minute).padStart(2, "0")}`;
+    }
+
+    function formatFacultyScheduleTimeRange(startMinutes, endMinutes) {
+        return `${formatPolicyTimeLabel(matrixMinutesToTime(startMinutes))} - ${formatPolicyTimeLabel(matrixMinutesToTime(endMinutes))}`;
     }
 
     function buildSectionMatrixTimeSlots() {
@@ -3512,6 +4048,769 @@ while ($ay = $ayQ->fetch_assoc()) {
                 sectionScheduleMatrixRequest = null;
             }
         });
+    }
+
+    function createScheduleBlockFacultyHelperState() {
+        return {
+            options: [],
+            assignedFacultyIds: [],
+            selectedFacultyId: 0,
+            selectedFacultySchedule: null,
+            optionsLoading: false,
+            detailLoading: false,
+            optionError: "",
+            detailError: ""
+        };
+    }
+
+    function normalizeFacultyScheduleOption(option) {
+        return {
+            faculty_id: parseInt(option?.faculty_id, 10) || 0,
+            faculty_name: String(option?.faculty_name || "").trim(),
+            scheduled_block_count: parseInt(option?.scheduled_block_count, 10) || 0,
+            scheduled_class_count: parseInt(option?.scheduled_class_count, 10) || 0,
+            is_assigned: Boolean(option?.is_assigned)
+        };
+    }
+
+    function normalizeFacultyScheduleEntry(entry) {
+        const roomLabel = String(entry?.room_label || entry?.room || "").trim();
+        const sectionLabel = String(entry?.section_label || entry?.section || "").trim();
+
+        return {
+            offering_id: parseInt(entry?.offering_id, 10) || 0,
+            schedule_id: parseInt(entry?.schedule_id, 10) || 0,
+            schedule_type: String(entry?.schedule_type || entry?.type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC",
+            time_start: normalizeMatrixTimeInput(entry?.time_start || ""),
+            time_end: normalizeMatrixTimeInput(entry?.time_end || ""),
+            days: normalizeScheduleDays(Array.isArray(entry?.days) ? entry.days : []),
+            subject_code: String(entry?.subject_code || entry?.sub_code || ""),
+            subject_description: String(entry?.subject_description || entry?.sub_description || ""),
+            section_label: sectionLabel || "Section",
+            room_label: roomLabel || "TBA",
+            is_current_offering: Boolean(entry?.is_current_offering)
+        };
+    }
+
+    function abortScheduleBlockFacultyRequests() {
+        if (scheduleBlockFacultyOptionsRequest && scheduleBlockFacultyOptionsRequest.readyState !== 4) {
+            scheduleBlockFacultyOptionsRequest.abort();
+        }
+
+        if (scheduleBlockFacultyDetailRequest && scheduleBlockFacultyDetailRequest.readyState !== 4) {
+            scheduleBlockFacultyDetailRequest.abort();
+        }
+
+        scheduleBlockFacultyOptionsRequest = null;
+        scheduleBlockFacultyDetailRequest = null;
+    }
+
+    function getSelectedScheduleBlockFacultyOption() {
+        const helper = scheduleBlockState?.facultyHelper;
+        if (!helper || !Array.isArray(helper.options)) {
+            return null;
+        }
+
+        return helper.options.find(option => option.faculty_id === (parseInt(helper.selectedFacultyId, 10) || 0)) || null;
+    }
+
+    function formatFacultyAvailabilityRanges(ranges, windowStart, windowEnd) {
+        if (!Array.isArray(ranges) || ranges.length === 0) {
+            return "Fully booked";
+        }
+
+        if (
+            ranges.length === 1
+            && ranges[0].start === windowStart
+            && ranges[0].end === windowEnd
+        ) {
+            return "Open all day";
+        }
+
+        const preview = ranges.slice(0, 2).map(range => (
+            `${formatPolicyTimeLabel(matrixMinutesToTime(range.start))} - ${formatPolicyTimeLabel(matrixMinutesToTime(range.end))}`
+        ));
+
+        if (ranges.length > 2) {
+            preview.push(`+${ranges.length - 2} more`);
+        }
+
+        return preview.join(" | ");
+    }
+
+    function buildFacultyAvailabilitySnapshot(entries) {
+        const windowStart = matrixTimeToMinutes(SUPPORTED_TIME_START);
+        const windowEnd = matrixTimeToMinutes(SUPPORTED_TIME_END);
+        if (windowStart === null || windowEnd === null || windowEnd <= windowStart) {
+            return [];
+        }
+
+        return SCHEDULE_DAY_ORDER.map(day => {
+            const dayEntries = (Array.isArray(entries) ? entries : [])
+                .map(entry => {
+                    const start = matrixTimeToMinutes(entry?.time_start);
+                    const end = matrixTimeToMinutes(entry?.time_end);
+
+                    return {
+                        start,
+                        end,
+                        days: Array.isArray(entry?.days) ? entry.days : []
+                    };
+                })
+                .filter(entry => Array.isArray(entry.days)
+                    && entry.days.includes(day)
+                    && entry.start !== null
+                    && entry.end !== null
+                    && entry.end > entry.start)
+                .sort((left, right) => left.start - right.start);
+
+            const occupied = [];
+            dayEntries.forEach(entry => {
+                const interval = {
+                    start: Math.max(windowStart, entry.start),
+                    end: Math.min(windowEnd, entry.end)
+                };
+
+                if (interval.end <= interval.start) {
+                    return;
+                }
+
+                const last = occupied[occupied.length - 1];
+                if (!last || interval.start > last.end) {
+                    occupied.push(interval);
+                    return;
+                }
+
+                last.end = Math.max(last.end, interval.end);
+            });
+
+            const freeRanges = [];
+            let cursor = windowStart;
+            occupied.forEach(interval => {
+                if (interval.start > cursor) {
+                    freeRanges.push({ start: cursor, end: interval.start });
+                }
+                cursor = Math.max(cursor, interval.end);
+            });
+
+            if (cursor < windowEnd) {
+                freeRanges.push({ start: cursor, end: windowEnd });
+            }
+
+            return {
+                day,
+                free_ranges: freeRanges,
+                summary: formatFacultyAvailabilityRanges(freeRanges, windowStart, windowEnd),
+                occupied_count: dayEntries.length
+            };
+        });
+    }
+
+    function renderScheduleBlockFacultyOptions() {
+        const select = $("#blockScheduleFacultySelect");
+        const hint = $("#blockScheduleFacultyHint");
+        const matrixButton = $("#btnOpenFacultyScheduleMatrix");
+        const helper = scheduleBlockState?.facultyHelper;
+
+        if (!helper) {
+            select.html('<option value="">Select faculty...</option>').prop("disabled", true);
+            hint.text("Faculty from the selected college term will load here.");
+            matrixButton.prop("disabled", true);
+            return;
+        }
+
+        let optionsHtml = '<option value="">Select faculty...</option>';
+        if (helper.optionsLoading && helper.options.length === 0) {
+            optionsHtml = '<option value="">Loading faculty...</option>';
+        } else if (helper.options.length > 0) {
+            optionsHtml += helper.options.map(option => {
+                const meta = [];
+                if (option.is_assigned) {
+                    meta.push("assigned here");
+                }
+
+                if (option.scheduled_block_count > 0) {
+                    meta.push(`${option.scheduled_block_count} block${option.scheduled_block_count === 1 ? "" : "s"}`);
+                } else {
+                    meta.push("no workload blocks");
+                }
+
+                const label = `${option.faculty_name}${meta.length > 0 ? " - " + meta.join(", ") : ""}`;
+                return `<option value="${escapeHtml(String(option.faculty_id))}">${escapeHtml(label)}</option>`;
+            }).join("");
+        } else if (helper.optionError) {
+            optionsHtml = '<option value="">Unable to load faculty</option>';
+        } else {
+            optionsHtml = '<option value="">No faculty found for this term</option>';
+        }
+
+        select.html(optionsHtml);
+        select.val(helper.selectedFacultyId ? String(helper.selectedFacultyId) : "");
+        select.prop("disabled", helper.optionsLoading || helper.options.length === 0);
+
+        const assignedNames = helper.options
+            .filter(option => option.is_assigned)
+            .map(option => option.faculty_name);
+
+        if (helper.optionsLoading && helper.options.length === 0) {
+            hint.text("Loading active faculty for this college term...");
+        } else if (helper.optionError) {
+            hint.text(helper.optionError);
+        } else if (helper.options.length === 0) {
+            hint.text("No active faculty were found for this college term.");
+        } else if (assignedNames.length > 0) {
+            hint.text(`Currently assigned in Faculty Workload: ${assignedNames.join(", ")}. Pick a faculty, then click Show Workload.`);
+        } else {
+            hint.text("Select a faculty, then click Show Workload to open the schedule board.");
+        }
+
+        matrixButton.prop("disabled", !helper.selectedFacultyId || helper.detailLoading);
+    }
+
+    function renderScheduleBlockFacultySummary() {
+        const container = $("#blockScheduleFacultySummary");
+        const helper = scheduleBlockState?.facultyHelper;
+        if (!helper || container.length === 0) {
+            return;
+        }
+
+        const selectedOption = getSelectedScheduleBlockFacultyOption();
+        if (helper.optionsLoading && helper.options.length === 0) {
+            container.html('<div class="faculty-helper-empty">Loading faculty availability helper...</div>');
+            return;
+        }
+
+        if (helper.detailLoading && helper.selectedFacultyId) {
+            const facultyName = selectedOption?.faculty_name || "Selected faculty";
+            container.html(`<div class="faculty-helper-empty">Loading the current schedule for <strong>${escapeHtml(facultyName)}</strong>...</div>`);
+            return;
+        }
+
+        if (helper.detailError) {
+            container.html(`<div class="faculty-helper-empty">${escapeHtml(helper.detailError)}</div>`);
+            return;
+        }
+
+        const schedule = helper.selectedFacultySchedule;
+        if (!schedule || !schedule.faculty_id) {
+            container.html('<div class="faculty-helper-empty">Select a faculty to preview scheduled subjects for this term.</div>');
+            return;
+        }
+
+        const entries = Array.isArray(schedule.entries) ? schedule.entries.slice() : [];
+        const availability = buildFacultyAvailabilitySnapshot(entries);
+        const openDays = availability.filter(item => Array.isArray(item.free_ranges) && item.free_ranges.length > 0).length;
+        const sortedEntries = entries.sort((left, right) => {
+            const leftDayIndex = SCHEDULE_DAY_ORDER.findIndex(day => Array.isArray(left.days) && left.days.includes(day));
+            const rightDayIndex = SCHEDULE_DAY_ORDER.findIndex(day => Array.isArray(right.days) && right.days.includes(day));
+            if (leftDayIndex !== rightDayIndex) {
+                return (leftDayIndex === -1 ? 999 : leftDayIndex) - (rightDayIndex === -1 ? 999 : rightDayIndex);
+            }
+
+            const leftStart = matrixTimeToMinutes(left?.time_start);
+            const rightStart = matrixTimeToMinutes(right?.time_start);
+            if (leftStart !== rightStart) {
+                return (leftStart ?? 0) - (rightStart ?? 0);
+            }
+
+            return String(left?.subject_code || "").localeCompare(String(right?.subject_code || ""));
+        });
+
+        const previewEntries = sortedEntries.slice(0, 6);
+        const entryCards = previewEntries.length > 0
+            ? previewEntries.map(entry => `
+                <div class="faculty-helper-subject-card">
+                    <div class="faculty-helper-subject-title">
+                        <span>${escapeHtml(entry.subject_code || "TBA")}</span>
+                        <span class="suggestion-chip">${escapeHtml(entry.schedule_type || "LEC")}${entry.is_current_offering ? " | Current" : ""}</span>
+                    </div>
+                    <div class="faculty-helper-subject-meta">
+                        <div>${escapeHtml(entry.section_label || "Section")}</div>
+                        <div>${escapeHtml((entry.days || []).join(""))} | ${escapeHtml(formatPolicyTimeLabel(entry.time_start))} - ${escapeHtml(formatPolicyTimeLabel(entry.time_end))}</div>
+                        <div>${escapeHtml(entry.room_label || "TBA")}</div>
+                    </div>
+                </div>
+            `).join("")
+            : '<div class="faculty-helper-empty">No scheduled workload blocks yet. This faculty appears open within the current scheduling window.</div>';
+
+        const availabilityCards = availability.length > 0
+            ? availability.map(item => `
+                <div class="faculty-helper-day-card">
+                    <span class="faculty-helper-day-label">${escapeHtml(item.day)}</span>
+                    <span class="faculty-helper-day-value">${escapeHtml(item.summary)}</span>
+                    <span class="faculty-helper-day-meta">
+                        ${item.occupied_count > 0
+                            ? `${escapeHtml(String(item.occupied_count))} scheduled block(s)`
+                            : `Open for ${escapeHtml(scheduleWindowLabel())}`}
+                    </span>
+                </div>
+            `).join("")
+            : '<div class="faculty-helper-empty">Availability could not be calculated for the current schedule window.</div>';
+
+        const footerNote = sortedEntries.length > previewEntries.length
+            ? `<div class="faculty-helper-note">Showing ${escapeHtml(String(previewEntries.length))} of ${escapeHtml(String(sortedEntries.length))} scheduled block(s). Use Show Workload for the complete schedule board.</div>`
+            : "";
+
+        container.html(`
+            <div class="faculty-helper-title-row">
+                <div>
+                    <div class="faculty-helper-title">${escapeHtml(schedule.faculty_name || "Faculty")}</div>
+                    <div class="faculty-helper-note">Scheduled subjects from Faculty Workload for the current college term.</div>
+                </div>
+                ${schedule.is_assigned
+                    ? '<span class="badge bg-label-info text-info">Assigned To Current Subject</span>'
+                    : ''}
+            </div>
+            <div class="faculty-helper-metrics">
+                <span class="faculty-helper-metric">${escapeHtml(String(schedule.scheduled_block_count || entries.length))} block(s)</span>
+                <span class="faculty-helper-metric">${escapeHtml(String(schedule.scheduled_class_count || 0))} class(es)</span>
+                <span class="faculty-helper-metric">${escapeHtml(String(openDays))} day(s) with free time</span>
+            </div>
+            <div class="faculty-helper-section-title">Availability Snapshot</div>
+            <div class="faculty-helper-day-grid">${availabilityCards}</div>
+            <div class="faculty-helper-section-title">Scheduled Subjects</div>
+            <div class="faculty-helper-subject-list">${entryCards}</div>
+            ${footerNote}
+        `);
+    }
+
+    function loadScheduleBlockFacultyOptions(offeringId) {
+        if (!scheduleBlockState || !scheduleBlockState.facultyHelper || !offeringId) {
+            return;
+        }
+
+        const helper = scheduleBlockState.facultyHelper;
+        helper.optionsLoading = true;
+        helper.optionError = "";
+        helper.detailError = "";
+        helper.options = [];
+        helper.assignedFacultyIds = [];
+        helper.selectedFacultyId = 0;
+        helper.selectedFacultySchedule = null;
+        renderScheduleBlockFacultyOptions();
+        renderScheduleBlockFacultySummary();
+
+        if (scheduleBlockFacultyOptionsRequest && scheduleBlockFacultyOptionsRequest.readyState !== 4) {
+            scheduleBlockFacultyOptionsRequest.abort();
+        }
+
+        scheduleBlockFacultyOptionsRequest = $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_schedule_faculty_options: 1,
+                offering_id: offeringId
+            },
+            success: function (res) {
+                if (!scheduleBlockState || !scheduleBlockState.facultyHelper || scheduleBlockState.offeringId !== offeringId) {
+                    return;
+                }
+
+                if (!res || res.status !== "ok") {
+                    helper.optionsLoading = false;
+                    helper.optionError = (res && res.message) ? String(res.message) : "Unable to load faculty for this term.";
+                    renderScheduleBlockFacultyOptions();
+                    renderScheduleBlockFacultySummary();
+                    return;
+                }
+
+                const options = Array.isArray(res.faculty) ? res.faculty.map(normalizeFacultyScheduleOption) : [];
+                helper.options = options;
+                helper.assignedFacultyIds = Array.isArray(res.assigned_faculty_ids)
+                    ? res.assigned_faculty_ids.map(value => parseInt(value, 10) || 0).filter(value => value > 0)
+                    : [];
+                helper.optionsLoading = false;
+                helper.optionError = "";
+
+                const assignedOption = options.find(option => option.is_assigned);
+                helper.selectedFacultyId = assignedOption ? assignedOption.faculty_id : 0;
+
+                renderScheduleBlockFacultyOptions();
+                renderScheduleBlockFacultySummary();
+
+                if (helper.selectedFacultyId > 0) {
+                    loadScheduleBlockFacultyDetails(helper.selectedFacultyId);
+                }
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                if (!scheduleBlockState || !scheduleBlockState.facultyHelper || scheduleBlockState.offeringId !== offeringId) {
+                    return;
+                }
+
+                helper.optionsLoading = false;
+                helper.optionError = xhr.responseText || "Unable to load faculty for this term.";
+                renderScheduleBlockFacultyOptions();
+                renderScheduleBlockFacultySummary();
+            },
+            complete: function () {
+                scheduleBlockFacultyOptionsRequest = null;
+            }
+        });
+    }
+
+    function loadScheduleBlockFacultyDetails(facultyId, options = {}) {
+        if (!scheduleBlockState || !scheduleBlockState.facultyHelper || !scheduleBlockState.offeringId) {
+            return;
+        }
+
+        const helper = scheduleBlockState.facultyHelper;
+        const normalizedFacultyId = parseInt(facultyId, 10) || 0;
+        const shouldOpenMatrix = Boolean(options.openMatrix);
+        const shouldForceReload = Boolean(options.forceReload);
+
+        helper.selectedFacultyId = normalizedFacultyId;
+        helper.detailError = "";
+
+        if (!normalizedFacultyId) {
+            helper.detailLoading = false;
+            helper.selectedFacultySchedule = null;
+            renderScheduleBlockFacultyOptions();
+            renderScheduleBlockFacultySummary();
+            return;
+        }
+
+        if (
+            !shouldForceReload
+            && helper.selectedFacultySchedule
+            && helper.selectedFacultySchedule.faculty_id === normalizedFacultyId
+            && !helper.detailLoading
+        ) {
+            renderScheduleBlockFacultyOptions();
+            renderScheduleBlockFacultySummary();
+            if (shouldOpenMatrix) {
+                renderFacultyScheduleMatrix();
+                if (facultyScheduleMatrixModalInstance) {
+                    facultyScheduleMatrixModalInstance.show();
+                } else {
+                    $("#facultyScheduleMatrixModal").modal("show");
+                }
+            }
+            return;
+        }
+
+        if (scheduleBlockFacultyDetailRequest && scheduleBlockFacultyDetailRequest.readyState !== 4) {
+            scheduleBlockFacultyDetailRequest.abort();
+        }
+
+        helper.detailLoading = true;
+        helper.selectedFacultySchedule = null;
+        renderScheduleBlockFacultyOptions();
+        renderScheduleBlockFacultySummary();
+
+        scheduleBlockFacultyDetailRequest = $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_faculty_schedule_overview: 1,
+                offering_id: scheduleBlockState.offeringId,
+                faculty_id: normalizedFacultyId
+            },
+            success: function (res) {
+                if (!scheduleBlockState || !scheduleBlockState.facultyHelper || helper.selectedFacultyId !== normalizedFacultyId) {
+                    return;
+                }
+
+                if (!res || res.status !== "ok") {
+                    helper.detailLoading = false;
+                    helper.detailError = (res && res.message) ? String(res.message) : "Unable to load the selected faculty schedule.";
+                    renderScheduleBlockFacultyOptions();
+                    renderScheduleBlockFacultySummary();
+                    if ($("#facultyScheduleMatrixModal").hasClass("show")) {
+                        renderFacultyScheduleMatrix();
+                    }
+                    return;
+                }
+
+                const facultySchedule = normalizeFacultyScheduleOption(res.faculty || {});
+                facultySchedule.entries = Array.isArray(res.entries) ? res.entries.map(normalizeFacultyScheduleEntry) : [];
+                helper.selectedFacultySchedule = facultySchedule;
+                helper.detailLoading = false;
+                helper.detailError = "";
+                helper.options = helper.options.map(option => (
+                    option.faculty_id === facultySchedule.faculty_id
+                        ? { ...option, ...facultySchedule }
+                        : option
+                ));
+
+                renderScheduleBlockFacultyOptions();
+                renderScheduleBlockFacultySummary();
+
+                if ($("#facultyScheduleMatrixModal").hasClass("show") || shouldOpenMatrix) {
+                    renderFacultyScheduleMatrix();
+                }
+
+                if (shouldOpenMatrix) {
+                    if (facultyScheduleMatrixModalInstance) {
+                        facultyScheduleMatrixModalInstance.show();
+                    } else {
+                        $("#facultyScheduleMatrixModal").modal("show");
+                    }
+                }
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                if (!scheduleBlockState || !scheduleBlockState.facultyHelper || helper.selectedFacultyId !== normalizedFacultyId) {
+                    return;
+                }
+
+                helper.detailLoading = false;
+                helper.detailError = xhr.responseText || "Unable to load the selected faculty schedule.";
+                renderScheduleBlockFacultyOptions();
+                renderScheduleBlockFacultySummary();
+                if ($("#facultyScheduleMatrixModal").hasClass("show")) {
+                    renderFacultyScheduleMatrix();
+                }
+            },
+            complete: function () {
+                scheduleBlockFacultyDetailRequest = null;
+            }
+        });
+    }
+
+    function buildFacultyScheduleBoard(entries) {
+        const startMinutes = matrixTimeToMinutes(SUPPORTED_TIME_START);
+        const endMinutes = matrixTimeToMinutes(SUPPORTED_TIME_END);
+        const slots = [];
+        const occupancy = {};
+        const warnings = [];
+
+        if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+            return {
+                slots,
+                occupancy,
+                warnings
+            };
+        }
+
+        for (let minutes = startMinutes; minutes < endMinutes; minutes += FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES) {
+            slots.push(minutes);
+        }
+
+        FACULTY_SCHEDULE_DAY_COLUMNS.forEach(day => {
+            occupancy[day.key] = {};
+        });
+
+        (Array.isArray(entries) ? entries : []).forEach(entry => {
+            let entryStart = matrixTimeToMinutes(entry?.time_start);
+            let entryEnd = matrixTimeToMinutes(entry?.time_end);
+            const days = normalizeScheduleDays(Array.isArray(entry?.days) ? entry.days : []);
+
+            if (entryStart === null || entryEnd === null) {
+                return;
+            }
+
+            entryStart = Math.max(startMinutes, entryStart);
+            entryEnd = Math.min(endMinutes, entryEnd);
+            if (!days.length || entryEnd <= entryStart) {
+                return;
+            }
+
+            let hasConflict = false;
+            days.forEach(dayKey => {
+                for (let cursor = entryStart; cursor < entryEnd; cursor += FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES) {
+                    if (occupancy[dayKey]?.[cursor]) {
+                        hasConflict = true;
+                        return;
+                    }
+                }
+            });
+
+            if (hasConflict) {
+                const subjectCode = String(entry?.subject_code || "Scheduled class").trim() || "Scheduled class";
+                warnings.push(`${subjectCode} overlaps another block and was skipped in the board view.`);
+                return;
+            }
+
+            const block = {
+                ...entry,
+                _slotSpan: Math.max(1, Math.ceil((entryEnd - entryStart) / FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES))
+            };
+
+            days.forEach(dayKey => {
+                occupancy[dayKey][entryStart] = {
+                    type: "start",
+                    block
+                };
+
+                for (let cursor = entryStart + FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES; cursor < entryEnd; cursor += FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES) {
+                    occupancy[dayKey][cursor] = {
+                        type: "covered",
+                        start: entryStart
+                    };
+                }
+            });
+        });
+
+        return {
+            slots,
+            occupancy,
+            warnings: warnings.filter((warning, index, list) => list.indexOf(warning) === index)
+        };
+    }
+
+    function buildFacultyScheduleBoardCell(entry) {
+        const subjectCode = String(entry?.subject_code || "").trim();
+        const subjectDescription = String(entry?.subject_description || "").trim();
+        const sectionLabel = String(entry?.section_label || "TBA").trim() || "TBA";
+        const roomLabel = String(entry?.room_label || "TBA").trim() || "TBA";
+        const scheduleType = String(entry?.schedule_type || "").trim().toUpperCase();
+
+        return `
+            <div class="faculty-schedule-class-block">
+                ${subjectCode ? `<div class="faculty-schedule-subject-code">${escapeHtml(subjectCode)}</div>` : ""}
+                ${subjectDescription ? `<div class="faculty-schedule-subject-description">${escapeHtml(subjectDescription)}</div>` : ""}
+                <div class="faculty-schedule-block-line">${escapeHtml(sectionLabel)}</div>
+                <div class="faculty-schedule-block-line">${escapeHtml(roomLabel)}</div>
+                ${scheduleType === "LAB" ? '<span class="faculty-schedule-block-chip">LAB</span>' : ""}
+                ${entry?.is_current_offering ? '<span class="faculty-schedule-block-chip is-current">Current</span>' : ""}
+            </div>
+        `;
+    }
+
+    function renderFacultyScheduleMatrix() {
+        const container = $("#facultyScheduleMatrixContainer");
+        const helper = scheduleBlockState?.facultyHelper;
+        if (!container.length) {
+            return;
+        }
+
+        if (!scheduleBlockState || !helper || !helper.selectedFacultyId) {
+            $("#facultyScheduleMatrixHeaderNote").text("View the selected faculty schedule in the same day-by-time board layout.");
+            container.html('<div class="faculty-matrix-empty">Select a faculty and click Show Workload.</div>');
+            return;
+        }
+
+        if (helper.detailLoading) {
+            $("#facultyScheduleMatrixHeaderNote").text("Loading the selected faculty schedule...");
+            container.html('<div class="faculty-matrix-empty">Loading faculty schedule...</div>');
+            return;
+        }
+
+        if (helper.detailError) {
+            $("#facultyScheduleMatrixHeaderNote").text("Unable to load the selected faculty schedule.");
+            container.html(`<div class="faculty-matrix-empty">${escapeHtml(helper.detailError)}</div>`);
+            return;
+        }
+
+        const schedule = helper.selectedFacultySchedule;
+        if (!schedule || !schedule.faculty_id) {
+            $("#facultyScheduleMatrixHeaderNote").text("View the selected faculty schedule in the same day-by-time board layout.");
+            container.html('<div class="faculty-matrix-empty">Select a faculty and click Show Workload.</div>');
+            return;
+        }
+
+        const entries = Array.isArray(schedule.entries) ? schedule.entries : [];
+        const board = buildFacultyScheduleBoard(entries);
+        const hasCurrentOffering = entries.some(entry => entry.is_current_offering);
+
+        $("#facultyScheduleMatrixHeaderNote").text(
+            entries.length > 0
+                ? `${schedule.faculty_name || "Selected faculty"} schedule for the current college term.`
+                : `${schedule.faculty_name || "Selected faculty"} has no scheduled workload blocks in the current college term.`
+        );
+
+        let html = `
+            <div class="faculty-schedule-summary">
+                <div>
+                    <div class="fw-semibold">${escapeHtml(schedule.faculty_name || "Faculty")}</div>
+                    <div class="text-muted small">
+                        ${schedule.is_assigned ? "Assigned to the current subject in Faculty Workload." : "Selected faculty schedule for this term."}
+                        ${hasCurrentOffering ? " Current subject blocks are marked." : ""}
+                    </div>
+                </div>
+                <div class="faculty-helper-metrics">
+                    <span class="faculty-helper-metric">${escapeHtml(String(schedule.scheduled_block_count || entries.length))} block(s)</span>
+                    <span class="faculty-helper-metric">${escapeHtml(String(schedule.scheduled_class_count || 0))} class(es)</span>
+                </div>
+            </div>
+        `;
+
+        if (board.warnings.length > 0) {
+            html += `
+                <div class="faculty-schedule-warning">
+                    ${board.warnings.map(warning => `<div>${escapeHtml(warning)}</div>`).join("")}
+                </div>
+            `;
+        }
+
+        if (board.slots.length === 0) {
+            container.html(`${html}<div class="faculty-matrix-empty">No schedule window is available for rendering.</div>`);
+            return;
+        }
+
+        html += `
+            <div class="faculty-schedule-sheet">
+                <div class="table-responsive">
+                    <table class="table table-bordered faculty-schedule-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                ${FACULTY_SCHEDULE_DAY_COLUMNS.map(day => `<th>${escapeHtml(day.label)}</th>`).join("")}
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+
+        board.slots.forEach(slotStart => {
+            const slotEnd = slotStart + FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES;
+            html += `
+                <tr>
+                    <td class="faculty-schedule-time-cell">${escapeHtml(formatFacultyScheduleTimeRange(slotStart, slotEnd))}</td>
+            `;
+
+            FACULTY_SCHEDULE_DAY_COLUMNS.forEach(day => {
+                const entry = board.occupancy[day.key]?.[slotStart];
+                if (entry && entry.type === "covered") {
+                    return;
+                }
+
+                if (entry && entry.type === "start") {
+                    html += `
+                        <td rowspan="${entry.block._slotSpan}" class="faculty-schedule-class-cell ${entry.block.is_current_offering ? "is-current" : ""}">
+                            ${buildFacultyScheduleBoardCell(entry.block)}
+                        </td>
+                    `;
+                    return;
+                }
+
+                html += '<td class="faculty-schedule-empty-cell"></td>';
+            });
+
+            html += "</tr>";
+        });
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        container.html(html);
+    }
+
+    function openFacultyScheduleMatrixHelper() {
+        if (!scheduleBlockState || !scheduleBlockState.facultyHelper) {
+            Swal.fire("Unavailable", "Open a class schedule block first.", "info");
+            return;
+        }
+
+        const selectedFacultyId = parseInt($("#blockScheduleFacultySelect").val(), 10) || 0;
+        if (!selectedFacultyId) {
+            Swal.fire("Select Faculty", "Choose a faculty first to view the faculty schedule board.", "info");
+            return;
+        }
+
+        loadScheduleBlockFacultyDetails(selectedFacultyId, { openMatrix: true });
     }
 
     function roomMatchesSchedule(room, scheduleType) {
@@ -4085,7 +5384,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         Use
                     </button>
                 </div>
-                <div class="suggestion-slot mt-2">${escapeHtml(item.days_label || "")} • ${escapeHtml(item.time_label || "")}</div>
+                <div class="suggestion-slot mt-2">${escapeHtml(item.days_label || "")} | ${escapeHtml(item.time_label || "")}</div>
                 <div class="suggestion-meta mt-1">${escapeHtml(item.room_label || "")}</div>
                 <div class="suggestion-reasons mt-2">
                     ${(item.reasons || []).map(reason => `<span class="suggestion-reason">${escapeHtml(reason)}</span>`).join("")}
@@ -4251,7 +5550,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         const labUnits = Number(button.data("labUnits")) || 0;
         const lecUnits = Number(button.data("lecUnits")) || 0;
         const totalUnits = Number(button.data("totalUnits")) || 0;
-        const subjectLabel = `${button.data("subCode")} — ${button.data("subDesc")}`;
+        const subjectLabel = `${button.data("subCode")} - ${button.data("subDesc")}`;
         const sectionLabel = String(button.data("sectionLabel") || `Section: ${button.data("section")}`);
 
         if (!offeringId) {
@@ -4295,7 +5594,8 @@ while ($ay = $ayQ->fetch_assoc()) {
                         offeringId,
                         subjectLabel,
                         sectionLabel,
-                        blocks
+                        blocks,
+                        facultyHelper: createScheduleBlockFacultyHelperState()
                     };
 
                     $("#block_sched_offering_id").val(String(offeringId));
@@ -4311,6 +5611,9 @@ while ($ay = $ayQ->fetch_assoc()) {
                         .toggleClass("d-none", !(Array.isArray(res.blocks) && res.blocks.length > 0));
 
                     renderScheduleBlocks();
+                    renderScheduleBlockFacultyOptions();
+                    renderScheduleBlockFacultySummary();
+                    loadScheduleBlockFacultyOptions(offeringId);
                     $("#blockScheduleModal").modal("show");
                 },
                 error: function (xhr) {
@@ -4835,7 +6138,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                             <span class="suggestion-fit ${escapeHtml(item.fit_class || "valid")}">${escapeHtml(item.fit_label || "Valid Slot")}</span>
                             <span class="suggestion-chip">${escapeHtml(item.pattern_label || "Suggested Slot")}</span>
                         </div>
-                        <div class="suggestion-slot">${escapeHtml(item.days_label || "")} • ${escapeHtml(item.time_label || "")}</div>
+                        <div class="suggestion-slot">${escapeHtml(item.days_label || "")} | ${escapeHtml(item.time_label || "")}</div>
                         <div class="suggestion-meta mt-1">${escapeHtml(item.room_label || "")}</div>
                     </div>
                     <button
@@ -6032,7 +7335,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         </div>
                         <div class="auto-draft-block-meta">${escapeHtml(block.days_label || "")}</div>
                     </div>
-                    <div class="suggestion-slot mt-2">${escapeHtml(block.days_label || "")} • ${escapeHtml(block.time_label || "")}</div>
+                    <div class="suggestion-slot mt-2">${escapeHtml(block.days_label || "")} | ${escapeHtml(block.time_label || "")}</div>
                     <div class="auto-draft-block-meta mt-1">${escapeHtml(block.room_label || "")}</div>
                 </div>
             `).join("");
@@ -6550,6 +7853,10 @@ const sectionScheduleMatrixModalElement = document.getElementById("sectionSchedu
 if (sectionScheduleMatrixModalElement) {
   sectionScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(sectionScheduleMatrixModalElement);
 }
+const facultyScheduleMatrixModalElement = document.getElementById("facultyScheduleMatrixModal");
+if (facultyScheduleMatrixModalElement) {
+  facultyScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(facultyScheduleMatrixModalElement);
+}
 renderRoomBrowser();
 
 $("#prospectus_id, #ay_id, #semester").on("change", function () {
@@ -6698,6 +8005,17 @@ $("#sectionScheduleMatrixModal").on("hidden.bs.modal", function () {
   restoreBodyModalStateForScheduling();
 });
 
+$("#facultyScheduleMatrixModal").on("show.bs.modal", function () {
+  $(this).appendTo("body").css("z-index", 1115);
+  renderFacultyScheduleMatrix();
+});
+
+$("#facultyScheduleMatrixModal").on("hidden.bs.modal", function () {
+  $("#facultyScheduleMatrixContainer").html('<div class="faculty-matrix-empty">Select a faculty and click Show Workload.</div>');
+  $("#facultyScheduleMatrixHeaderNote").text("View the selected faculty schedule in the same day-by-time board layout.");
+  restoreBodyModalStateForScheduling();
+});
+
 $(document).on("click", "#sectionScheduleMatrixModal .btn-section-matrix-day", function () {
   if (!sectionScheduleMatrixState) {
     return;
@@ -6705,6 +8023,21 @@ $(document).on("click", "#sectionScheduleMatrixModal .btn-section-matrix-day", f
 
   sectionScheduleMatrixState.selectedDay = String($(this).data("day") || "");
   renderSectionScheduleMatrix();
+});
+
+$(document).on("change", "#blockScheduleFacultySelect", function () {
+  if (!scheduleBlockState || !scheduleBlockState.facultyHelper) {
+    return;
+  }
+
+  const selectedFacultyId = parseInt($(this).val(), 10) || 0;
+  loadScheduleBlockFacultyDetails(selectedFacultyId, {
+    openMatrix: $("#facultyScheduleMatrixModal").hasClass("show")
+  });
+});
+
+$("#btnOpenFacultyScheduleMatrix").on("click", function () {
+  openFacultyScheduleMatrixHelper();
 });
 
 $(document).on("input change", "#scheduleModal .sched-day, #scheduleModal #sched_time_start, #scheduleModal #sched_time_end, #scheduleModal #sched_room_id", function () {
@@ -6815,10 +8148,10 @@ $(document).on("click", ".btn-schedule", function () {
     const section = btn.data("section");
 
     // Shared labels
-    const subjectLabel = subCode + " — " + subDesc;
+    const subjectLabel = subCode + " - " + subDesc;
 
     // ============================
-    // CASE A — LECTURE ONLY
+    // CASE A - LECTURE ONLY
     // ============================
     if (labUnits === 0) {
 
@@ -6868,7 +8201,7 @@ $(document).on("click", ".btn-schedule", function () {
     }
 
 // ============================
-// CASE B — LECTURE + LAB
+// CASE B - LECTURE + LAB
 // ============================
 $("#dual_offering_id").val(offeringId);
 $("#dual_subject_label").text(subjectLabel);
@@ -6892,7 +8225,7 @@ $(".lec-day, .lab-day").prop("checked", false);
 applyDualScheduleRestrictions();
 
 // ============================
-// EDIT MODE → LOAD EXISTING
+// EDIT MODE -> LOAD EXISTING
 // ============================
 if (isEditMode) {
 
@@ -7289,11 +8622,25 @@ $("#blockScheduleModal").on("hidden.bs.modal", function () {
         }
     }
 
+    if ($("#facultyScheduleMatrixModal").hasClass("show")) {
+        if (facultyScheduleMatrixModalInstance) {
+            facultyScheduleMatrixModalInstance.hide();
+        } else {
+            $("#facultyScheduleMatrixModal").modal("hide");
+        }
+    }
+
+    abortScheduleBlockFacultyRequests();
+
     scheduleBlockState = null;
     $("#block_sched_subject_label, #block_sched_section_label").text("");
     $("#block_sched_context_line").addClass("d-none");
     $("#scheduleBlockList").empty();
     $("#scheduleBlockCoverageSummary").html("<strong>Schedule coverage will appear here.</strong>");
+    $("#blockScheduleFacultySelect").html('<option value="">Select faculty...</option>').prop("disabled", true);
+    $("#blockScheduleFacultyHint").text("Faculty from the selected college term will load here.");
+    $("#blockScheduleFacultySummary").html('<div class="faculty-helper-empty">Select a faculty to preview scheduled subjects for this term.</div>');
+    $("#btnOpenFacultyScheduleMatrix").prop("disabled", true);
 });
 
 $("#btnAddLectureBlock").on("click", function () {
