@@ -220,6 +220,16 @@ body.swal2-shown .modal {
     justify-content: center;
 }
 
+.schedule-status-faculty {
+    max-width: 132px;
+    font-size: 0.74rem;
+    line-height: 1.3;
+    color: #6c757d;
+    text-align: center;
+    white-space: normal;
+    word-break: break-word;
+}
+
 .schedule-section-name {
     display: block;
     font-weight: 600;

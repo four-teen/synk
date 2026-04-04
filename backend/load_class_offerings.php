@@ -222,6 +222,13 @@ function render_offering_status_cell_html(array $row, array $status): string
         $html[] = "<div class='schedule-status-item'>{$badge}</div>";
     }
 
+    $facultyNames = array_values(array_filter(array_map('trim', (array)($row['workload_faculty_names'] ?? []))));
+    if (!empty($facultyNames)) {
+        $html[] = "<div class='schedule-status-faculty'>" .
+            htmlspecialchars(implode(', ', $facultyNames), ENT_QUOTES, 'UTF-8') .
+            "</div>";
+    }
+
     return "<div class='schedule-status-stack'>" . implode('', $html) . "</div>";
 }
 
@@ -355,6 +362,86 @@ function load_schedule_rows_by_offering(mysqli $conn, array $offeringIds): array
     return $rowsByOffering;
 }
 
+function workload_faculty_short_name(array $row): string
+{
+    $lastName = trim((string)($row['last_name'] ?? ''));
+    $firstName = trim((string)($row['first_name'] ?? ''));
+    if ($lastName === '' && $firstName === '') {
+        return '';
+    }
+
+    $initial = '';
+    if ($firstName !== '') {
+        $initial = function_exists('mb_substr')
+            ? mb_strtoupper(mb_substr($firstName, 0, 1))
+            : strtoupper(substr($firstName, 0, 1));
+    }
+
+    if ($lastName !== '' && $initial !== '') {
+        return "{$lastName}, {$initial}";
+    }
+
+    return $lastName !== '' ? $lastName : $firstName;
+}
+
+function load_workload_faculty_names_for_offerings(mysqli $conn, array $offeringIds, int $ay_id, int $semester): array
+{
+    $map = [];
+    $safeIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($safeIds)) {
+        return $map;
+    }
+
+    $sql = "
+        SELECT
+            cs.offering_id,
+            f.last_name,
+            f.first_name
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = fw.faculty_id
+        WHERE cs.offering_id IN (" . implode(',', array_map('intval', $safeIds)) . ")
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+        GROUP BY cs.offering_id, fw.faculty_id, f.last_name, f.first_name
+        ORDER BY f.last_name ASC, f.first_name ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return $map;
+    }
+
+    $stmt->bind_param("ii", $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    while ($row = $res->fetch_assoc()) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        $name = workload_faculty_short_name($row);
+        if ($name === '') {
+            continue;
+        }
+
+        if (!isset($map[$offeringId])) {
+            $map[$offeringId] = [];
+        }
+
+        if (!in_array($name, $map[$offeringId], true)) {
+            $map[$offeringId][] = $name;
+        }
+    }
+
+    $stmt->close();
+    return $map;
+}
+
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
 $orderByClause = $sortBy === 'subject'
     ? "
@@ -447,6 +534,7 @@ foreach ($offeringOrder as $offeringId) {
 
 $ownerIds = synk_schedule_merge_normalize_offering_ids($ownerIds);
 $scheduleRowsByOffering = load_schedule_rows_by_offering($conn, $ownerIds);
+$workloadFacultyMap = load_workload_faculty_names_for_offerings($conn, $ownerIds, (int)$ay_id, (int)$semester);
 $ownerSectionRows = synk_schedule_merge_load_section_rows_by_offering($conn, $ownerIds);
 
 foreach ($offeringOrder as $offeringId) {
@@ -460,6 +548,7 @@ foreach ($offeringOrder as $offeringId) {
     $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
 
     $row['entries'] = $scheduleRowsByOffering[$ownerOfferingId] ?? [];
+    $row['workload_faculty_names'] = $workloadFacultyMap[$ownerOfferingId] ?? [];
     $row['schedule_owner_offering_id'] = $ownerOfferingId;
     $row['schedule_modal_section_label'] = ((int)($mergeInfo['group_size'] ?? 1) > 1 && $groupLabel !== '')
         ? ('Merged Group: ' . $groupLabel)
