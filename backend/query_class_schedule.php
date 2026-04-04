@@ -105,6 +105,28 @@ function validate_schedule_policy($days, $timeStart, $timeEnd, $label, array $po
     }
 }
 
+function schedule_policy_issue_message($days, $timeStart, $timeEnd, $label, array $policy) {
+    $disallowedDays = synk_schedule_policy_disallowed_days((array)$days, $policy);
+    if (!empty($disallowedDays)) {
+        return "{$label} uses blocked day(s): " . implode(', ', $disallowedDays) . ".";
+    }
+
+    if (!synk_schedule_policy_is_within_window($timeStart, $timeEnd, $policy)) {
+        return "{$label} must stay within the supported scheduling window of " . $policy['window_label'] . ".";
+    }
+
+    $blockedTime = synk_schedule_policy_blocked_time_overlap($timeStart, $timeEnd, $policy);
+    if ($blockedTime !== null) {
+        return "{$label} overlaps the blocked time range of " .
+            synk_schedule_policy_window_label(
+                (string)($blockedTime['start'] ?? ''),
+                (string)($blockedTime['end'] ?? '')
+            ) . ".";
+    }
+
+    return null;
+}
+
 function normalize_days_array($days) {
     if (!is_array($days)) {
         return [];
@@ -1360,6 +1382,134 @@ function load_faculty_schedule_entries_for_term($conn, $faculty_id, $ay_id, $sem
     return $entries;
 }
 
+function load_other_faculty_schedule_entries_for_term($conn, $selected_faculty_id, $ay_id, $semester, $college_id, $currentOfferingId = 0) {
+    if ($ay_id <= 0 || $semester <= 0 || $college_id <= 0) {
+        return [];
+    }
+
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+    $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+
+    $sql = "
+        SELECT
+            cs.schedule_id,
+            cs.offering_id,
+            " . ($classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id') . ",
+            " . ($classScheduleHasType ? "cs.schedule_type AS schedule_type" : "'LEC' AS schedule_type") . ",
+            sm.sub_code,
+            sm.sub_description,
+            sec.section_name,
+            sec.full_section,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            COALESCE(NULLIF(TRIM(r.room_code), ''), NULLIF(TRIM(r.room_name), ''), 'TBA') AS room_label,
+            fw.faculty_id,
+            CONCAT(
+                f.last_name,
+                ', ',
+                f.first_name,
+                CASE
+                    WHEN COALESCE(f.ext_name, '') <> '' THEN CONCAT(' ', f.ext_name)
+                    ELSE ''
+                END
+            ) AS faculty_name
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = fw.faculty_id
+        WHERE fw.ay_id = ?
+          AND fw.semester = ?
+          AND p.college_id = ?
+        ORDER BY
+            cs.time_start ASC,
+            sec.section_name ASC,
+            sm.sub_code ASC,
+            " . ($classScheduleHasType ? "FIELD(cs.schedule_type, 'LEC', 'LAB')," : "") . "
+            cs.schedule_id ASC,
+            faculty_name ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iii", $ay_id, $semester, $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $entriesBySchedule = [];
+    while ($row = $res->fetch_assoc()) {
+        $scheduleId = (int)($row['schedule_id'] ?? 0);
+        if ($scheduleId <= 0) {
+            continue;
+        }
+
+        if (!isset($entriesBySchedule[$scheduleId])) {
+            $days = normalize_days_array(json_decode((string)($row['days_json'] ?? ''), true));
+            $sectionLabel = trim((string)($row['full_section'] ?? ''));
+            if ($sectionLabel === '') {
+                $sectionLabel = trim((string)($row['section_name'] ?? ''));
+            }
+
+            $entriesBySchedule[$scheduleId] = [
+                'schedule_id' => $scheduleId,
+                'offering_id' => (int)($row['offering_id'] ?? 0),
+                'group_id' => (int)($row['group_id'] ?? 0),
+                'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+                'subject_code' => (string)($row['sub_code'] ?? ''),
+                'subject_description' => (string)($row['sub_description'] ?? ''),
+                'section_label' => $sectionLabel,
+                'room_label' => (string)($row['room_label'] ?? 'TBA'),
+                'days' => $days,
+                'time_start' => (string)($row['time_start'] ?? ''),
+                'time_end' => (string)($row['time_end'] ?? ''),
+                'is_current_offering' => (int)($row['offering_id'] ?? 0) === (int)$currentOfferingId,
+                'is_other_faculty_assignment' => true,
+                'owner_faculty_names' => [],
+                '_owner_faculty_ids' => []
+            ];
+        }
+
+        $facultyId = (int)($row['faculty_id'] ?? 0);
+        $facultyName = trim((string)($row['faculty_name'] ?? ''));
+        if ($facultyId > 0 && !in_array($facultyId, $entriesBySchedule[$scheduleId]['_owner_faculty_ids'], true)) {
+            $entriesBySchedule[$scheduleId]['_owner_faculty_ids'][] = $facultyId;
+        }
+        if ($facultyName !== '' && !in_array($facultyName, $entriesBySchedule[$scheduleId]['owner_faculty_names'], true)) {
+            $entriesBySchedule[$scheduleId]['owner_faculty_names'][] = $facultyName;
+        }
+    }
+
+    $stmt->close();
+
+    $entries = [];
+    foreach ($entriesBySchedule as $entry) {
+        if (in_array((int)$selected_faculty_id, $entry['_owner_faculty_ids'], true)) {
+            continue;
+        }
+
+        unset($entry['_owner_faculty_ids']);
+        if (!empty($entry['owner_faculty_names'])) {
+            $entries[] = $entry;
+        }
+    }
+
+    return $entries;
+}
+
 function load_schedule_row_counts_for_offerings($conn, array $offering_ids) {
     $counts = [];
     if (empty($offering_ids)) {
@@ -1824,6 +1974,361 @@ function load_other_faculty_workload_rows($conn, $faculty_id, $ay_id, $semester,
     return $rows;
 }
 
+function preview_room_validation_result($conn, $room_id, $college_id, $ay_id, $semester, $schedule_type) {
+    $room = load_room_access_in_term($conn, $room_id, $college_id, $ay_id, $semester);
+    if (!$room) {
+        return [
+            'room' => null,
+            'message' => "Selected room is not available for this Academic Year and Semester."
+        ];
+    }
+
+    if (!room_type_allows_schedule($room['room_type'], $schedule_type)) {
+        $roomLabel = trim((string)($room['room_code'] ?: $room['room_name'] ?: 'Selected room'));
+        $typeLabel = strtoupper(trim((string)$schedule_type)) === 'LAB'
+            ? 'laboratory'
+            : 'lecture';
+
+        return [
+            'room' => $room,
+            'message' => "{$roomLabel} is not compatible with {$typeLabel} scheduling."
+        ];
+    }
+
+    return [
+        'room' => $room,
+        'message' => null
+    ];
+}
+
+function load_live_conflicts_for_schedule_block($conn, $ctx, $offering_id, $room_id, $days, $time_start, $time_end) {
+    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            cs.schedule_id,
+            cs.room_id,
+            cs.schedule_type,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            o.section_id,
+            sec.section_name,
+            sm.sub_code,
+            COALESCE(NULLIF(TRIM(r.room_code), ''), NULLIF(TRIM(r.room_name), ''), 'Selected room') AS room_label
+        FROM tbl_class_schedule cs
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        WHERE o.ay_id = ?
+          AND o.semester = ?
+          AND cs.offering_id <> ?
+          AND cs.time_start < ?
+          AND cs.time_end > ?
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [
+            'section_conflicts' => [],
+            'room_conflicts' => []
+        ];
+    }
+
+    $stmt->bind_param(
+        "iiiss",
+        $ctx['ay_id'],
+        $ctx['semester'],
+        $offering_id,
+        $time_end,
+        $time_start
+    );
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $sectionConflicts = [];
+    $roomConflicts = [];
+    while ($row = $res->fetch_assoc()) {
+        $existingDays = normalize_days_array(json_decode((string)($row['days_json'] ?? '[]'), true));
+        if (!days_overlap($days, $existingDays)) {
+            continue;
+        }
+
+        $entry = [
+            'schedule_id' => (int)($row['schedule_id'] ?? 0),
+            'section_name' => (string)($row['section_name'] ?? ''),
+            'subject_code' => (string)($row['sub_code'] ?? ''),
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'room_label' => (string)($row['room_label'] ?? 'Selected room'),
+            'days' => $existingDays,
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? '')
+        ];
+
+        if ((int)($row['section_id'] ?? 0) > 0 && (int)$row['section_id'] === (int)($ctx['section_id'] ?? 0)) {
+            $sectionConflicts[] = $entry;
+        }
+
+        if ((int)($row['room_id'] ?? 0) > 0 && (int)$row['room_id'] === (int)$room_id) {
+            $roomConflicts[] = $entry;
+        }
+    }
+
+    $stmt->close();
+
+    return [
+        'section_conflicts' => $sectionConflicts,
+        'room_conflicts' => $roomConflicts
+    ];
+}
+
+function load_faculty_conflicts_for_schedule_block($conn, $faculty_id, $ay_id, $semester, $offering_id, $days, $time_start, $time_end) {
+    $conflicts = [];
+    if ($faculty_id <= 0) {
+        return $conflicts;
+    }
+
+    $otherSchedules = load_other_faculty_workload_rows($conn, $faculty_id, $ay_id, $semester, $offering_id);
+    foreach ($otherSchedules as $other) {
+        if (!days_overlap($days, $other['days'] ?? [])) {
+            continue;
+        }
+
+        if (!time_overlap($time_start, $time_end, (string)($other['time_start'] ?? ''), (string)($other['time_end'] ?? ''))) {
+            continue;
+        }
+
+        $conflicts[] = [
+            'schedule_id' => (int)($other['schedule_id'] ?? 0),
+            'subject_code' => (string)($other['sub_code'] ?? ''),
+            'section_name' => (string)($other['section_name'] ?? ''),
+            'schedule_type' => synk_normalize_schedule_type((string)($other['schedule_type'] ?? 'LEC')),
+            'days' => normalize_days_array($other['days'] ?? []),
+            'time_start' => (string)($other['time_start'] ?? ''),
+            'time_end' => (string)($other['time_end'] ?? '')
+        ];
+    }
+
+    return $conflicts;
+}
+
+function build_faculty_schedule_preview_payload($conn, array $ctx, $college_id, $offering_id, $faculty_id, $blocksRaw, array $policy) {
+    $payload = [
+        'draft_entries' => [],
+        'preview_issues' => [],
+        'draft_block_count' => 0,
+        'draft_conflict_count' => 0,
+        'draft_ready_count' => 0
+    ];
+
+    if (!is_array($blocksRaw) || empty($blocksRaw)) {
+        return $payload;
+    }
+
+    $allowedTypes = required_schedule_types_for_context($ctx);
+    $sequencePreview = ['LEC' => 0, 'LAB' => 0];
+    $normalized = [];
+    $sectionLabel = trim((string)($ctx['full_section'] ?? ''));
+    if ($sectionLabel === '') {
+        $sectionLabel = trim((string)($ctx['section_name'] ?? 'Section'));
+    }
+
+    foreach ($blocksRaw as $block) {
+        if (!is_array($block)) {
+            continue;
+        }
+
+        $rawType = strtoupper(trim((string)($block['type'] ?? '')));
+        if (!in_array($rawType, ['LEC', 'LAB'], true)) {
+            $payload['preview_issues'][] = "A draft block uses an invalid schedule type and was ignored.";
+            continue;
+        }
+
+        $sequencePreview[$rawType]++;
+        $label = block_label_for_response($rawType, $sequencePreview[$rawType]);
+
+        if (!in_array($rawType, $allowedTypes, true)) {
+            $payload['preview_issues'][] = "{$label} is not allowed for this subject.";
+            continue;
+        }
+
+        $roomId = (int)($block['room_id'] ?? 0);
+        $timeStart = normalize_time_input($block['time_start'] ?? '');
+        $timeEnd = normalize_time_input($block['time_end'] ?? '');
+        $days = normalize_days_array(json_decode((string)($block['days_json'] ?? ''), true));
+        if (empty($days) && isset($block['days']) && is_array($block['days'])) {
+            $days = normalize_days_array($block['days']);
+        }
+
+        if ($roomId <= 0 || !$timeStart || !$timeEnd || empty($days)) {
+            $payload['preview_issues'][] = "{$label} is incomplete and was not included in the preview.";
+            continue;
+        }
+
+        if ($timeEnd <= $timeStart) {
+            $payload['preview_issues'][] = "{$label} must end later than it starts.";
+            continue;
+        }
+
+        $policyIssue = schedule_policy_issue_message($days, $timeStart, $timeEnd, $label, $policy);
+        if ($policyIssue !== null) {
+            $payload['preview_issues'][] = $policyIssue;
+            continue;
+        }
+
+        $roomValidation = preview_room_validation_result(
+            $conn,
+            $roomId,
+            $college_id,
+            (int)($ctx['ay_id'] ?? 0),
+            (int)($ctx['semester'] ?? 0),
+            $rawType
+        );
+        if ($roomValidation['message'] !== null) {
+            $payload['preview_issues'][] = "{$label}: {$roomValidation['message']}";
+            continue;
+        }
+
+        $room = $roomValidation['room'] ?? [];
+        $roomLabel = trim((string)(($room['room_code'] ?? '') ?: ($room['room_name'] ?? '') ?: 'Selected room'));
+
+        $normalized[] = [
+            'schedule_id' => 0,
+            'offering_id' => (int)$offering_id,
+            'schedule_type' => $rawType,
+            'room_id' => $roomId,
+            'subject_code' => (string)($ctx['sub_code'] ?? ''),
+            'subject_description' => (string)($ctx['sub_description'] ?? ''),
+            'section_label' => $sectionLabel,
+            'room_label' => $roomLabel,
+            'days' => $days,
+            'time_start' => $timeStart,
+            'time_end' => $timeEnd,
+            'is_preview_block' => true,
+            'is_preview_conflict' => false,
+            'preview_label' => $label,
+            'preview_conflict_types' => [],
+            'preview_conflict_details' => [],
+            'preview_status_note' => 'Ready to save'
+        ];
+    }
+
+    for ($i = 0; $i < count($normalized); $i++) {
+        for ($j = $i + 1; $j < count($normalized); $j++) {
+            if (!days_overlap($normalized[$i]['days'], $normalized[$j]['days'])) {
+                continue;
+            }
+
+            if (!time_overlap($normalized[$i]['time_start'], $normalized[$i]['time_end'], $normalized[$j]['time_start'], $normalized[$j]['time_end'])) {
+                continue;
+            }
+
+            $leftLabel = (string)($normalized[$i]['preview_label'] ?? 'Draft block');
+            $rightLabel = (string)($normalized[$j]['preview_label'] ?? 'Draft block');
+            $leftMessage = "Internal conflict with {$rightLabel}.";
+            $rightMessage = "Internal conflict with {$leftLabel}.";
+
+            if (!in_array('Internal Conflict', $normalized[$i]['preview_conflict_types'], true)) {
+                $normalized[$i]['preview_conflict_types'][] = 'Internal Conflict';
+            }
+            if (!in_array($leftMessage, $normalized[$i]['preview_conflict_details'], true)) {
+                $normalized[$i]['preview_conflict_details'][] = $leftMessage;
+            }
+
+            if (!in_array('Internal Conflict', $normalized[$j]['preview_conflict_types'], true)) {
+                $normalized[$j]['preview_conflict_types'][] = 'Internal Conflict';
+            }
+            if (!in_array($rightMessage, $normalized[$j]['preview_conflict_details'], true)) {
+                $normalized[$j]['preview_conflict_details'][] = $rightMessage;
+            }
+        }
+    }
+
+    foreach ($normalized as &$entry) {
+        $sectionRoomConflicts = load_live_conflicts_for_schedule_block(
+            $conn,
+            $ctx,
+            $offering_id,
+            (int)($entry['room_id'] ?? 0),
+            $entry['days'],
+            (string)$entry['time_start'],
+            (string)$entry['time_end']
+        );
+
+        if (!empty($sectionRoomConflicts['section_conflicts'])) {
+            if (!in_array('Section Conflict', $entry['preview_conflict_types'], true)) {
+                $entry['preview_conflict_types'][] = 'Section Conflict';
+            }
+
+            $sectionItem = $sectionRoomConflicts['section_conflicts'][0];
+            $entry['preview_conflict_details'][] = "Section already has a class at " .
+                days_fmt($sectionItem['days']) . " " .
+                time_fmt($sectionItem['time_start']) . " - " .
+                time_fmt($sectionItem['time_end']) . ".";
+        }
+
+        if (!empty($sectionRoomConflicts['room_conflicts'])) {
+            if (!in_array('Room Conflict', $entry['preview_conflict_types'], true)) {
+                $entry['preview_conflict_types'][] = 'Room Conflict';
+            }
+
+            $roomItem = $sectionRoomConflicts['room_conflicts'][0];
+            $entry['preview_conflict_details'][] = trim((string)($entry['room_label'] ?? 'Selected room')) .
+                " is already used by " .
+                trim((string)($roomItem['section_name'] ?? 'another section')) .
+                " at " .
+                days_fmt($roomItem['days']) . " " .
+                time_fmt($roomItem['time_start']) . " - " .
+                time_fmt($roomItem['time_end']) . ".";
+        }
+
+        $facultyConflicts = load_faculty_conflicts_for_schedule_block(
+            $conn,
+            (int)$faculty_id,
+            (int)($ctx['ay_id'] ?? 0),
+            (int)($ctx['semester'] ?? 0),
+            $offering_id,
+            $entry['days'],
+            (string)$entry['time_start'],
+            (string)$entry['time_end']
+        );
+        if (!empty($facultyConflicts)) {
+            if (!in_array('Faculty Conflict', $entry['preview_conflict_types'], true)) {
+                $entry['preview_conflict_types'][] = 'Faculty Conflict';
+            }
+
+            $facultyItem = $facultyConflicts[0];
+            $entry['preview_conflict_details'][] = "Faculty already handles " .
+                trim((string)($facultyItem['subject_code'] ?? 'another class')) .
+                " (" . trim((string)($facultyItem['section_name'] ?? 'Section')) .
+                ", " . trim((string)($facultyItem['schedule_type'] ?? 'LEC')) .
+                ") at " .
+                days_fmt($facultyItem['days']) . " " .
+                time_fmt($facultyItem['time_start']) . " - " .
+                time_fmt($facultyItem['time_end']) . ".";
+        }
+
+        $entry['preview_conflict_details'] = array_values(array_unique($entry['preview_conflict_details']));
+        $entry['is_preview_conflict'] = !empty($entry['preview_conflict_types']);
+        $entry['preview_status_note'] = $entry['is_preview_conflict']
+            ? 'Not ready to save'
+            : 'Ready to save';
+    }
+    unset($entry);
+
+    $payload['draft_entries'] = $normalized;
+    $payload['draft_block_count'] = count($normalized);
+    $payload['draft_conflict_count'] = count(array_filter($normalized, static function ($entry) {
+        return !empty($entry['is_preview_conflict']);
+    }));
+    $payload['draft_ready_count'] = count($normalized) - $payload['draft_conflict_count'];
+
+    return $payload;
+}
+
 function check_assigned_faculty_conflicts($conn, $ctx, $offering_id, $draftSchedules) {
     $assignedFaculties = load_workload_faculties_for_offering(
         $conn,
@@ -2234,6 +2739,7 @@ if (isset($_POST['load_schedule_faculty_options'])) {
 if (isset($_POST['load_faculty_schedule_overview'])) {
     $offering_id = (int)($_POST['offering_id'] ?? 0);
     $faculty_id = (int)($_POST['faculty_id'] ?? 0);
+    $blocksRaw = $_POST['blocks'] ?? [];
 
     if ($offering_id <= 0 || $faculty_id <= 0) {
         respond("error", "Missing faculty schedule context.");
@@ -2290,7 +2796,23 @@ if (isset($_POST['load_faculty_schedule_overview'])) {
         $college_id,
         $offering_id
     );
-
+    $otherAssignedEntries = load_other_faculty_schedule_entries_for_term(
+        $conn,
+        $faculty_id,
+        (int)$ctx['ay_id'],
+        (int)$ctx['semester'],
+        $college_id,
+        $offering_id
+    );
+    $previewPayload = build_faculty_schedule_preview_payload(
+        $conn,
+        $ctx,
+        $college_id,
+        $offering_id,
+        $faculty_id,
+        $blocksRaw,
+        $schedulePolicy
+    );
     respond("ok", "Loaded faculty schedule overview.", [
         'faculty' => [
             'faculty_id' => $faculty_id,
@@ -2299,7 +2821,13 @@ if (isset($_POST['load_faculty_schedule_overview'])) {
             'scheduled_class_count' => (int)($counts['scheduled_class_count'] ?? 0),
             'is_assigned' => $isAssigned
         ],
-        'entries' => $entries
+        'entries' => $entries,
+        'other_assigned_entries' => $otherAssignedEntries,
+        'draft_entries' => $previewPayload['draft_entries'],
+        'preview_issues' => $previewPayload['preview_issues'],
+        'draft_block_count' => (int)($previewPayload['draft_block_count'] ?? 0),
+        'draft_conflict_count' => (int)($previewPayload['draft_conflict_count'] ?? 0),
+        'draft_ready_count' => (int)($previewPayload['draft_ready_count'] ?? 0)
     ]);
 }
 
