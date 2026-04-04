@@ -170,6 +170,31 @@ if (empty($rooms)) {
 $roomIds = array_keys($rooms);
 $roomIdList = implode(',', array_map('intval', $roomIds));
 $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$facultyAssignmentSql = "
+    SELECT
+        fws.schedule_id,
+        fws.ay_id,
+        fws.semester,
+        GROUP_CONCAT(
+            DISTINCT TRIM(
+                CONCAT(
+                    COALESCE(f.last_name, ''),
+                    ', ',
+                    COALESCE(f.first_name, ''),
+                    CASE
+                        WHEN TRIM(COALESCE(f.ext_name, '')) <> '' THEN CONCAT(' ', TRIM(f.ext_name))
+                        ELSE ''
+                    END
+                )
+            )
+            ORDER BY f.last_name ASC, f.first_name ASC, f.ext_name ASC
+            SEPARATOR ' | '
+        ) AS faculty_names
+    FROM tbl_faculty_workload_sched fws
+    INNER JOIN tbl_faculty f
+        ON f.faculty_id = fws.faculty_id
+    GROUP BY fws.schedule_id, fws.ay_id, fws.semester
+";
 
 $schedSql = "
     SELECT
@@ -183,13 +208,18 @@ $schedSql = "
         sm.sub_code,
         sec.section_name,
         c.college_code,
-        p.college_id AS offering_college_id
+        p.college_id AS offering_college_id,
+        COALESCE(fwa.faculty_names, '') AS faculty_names
     FROM tbl_class_schedule cs
     INNER JOIN tbl_prospectus_offering o ON o.offering_id = cs.offering_id
     {$liveOfferingJoins}
     INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
     INNER JOIN tbl_program p ON p.program_id = o.program_id
     INNER JOIN tbl_college c ON c.college_id = p.college_id
+    LEFT JOIN ({$facultyAssignmentSql}) fwa
+        ON fwa.schedule_id = cs.schedule_id
+       AND fwa.ay_id = o.ay_id
+       AND fwa.semester = o.semester
     WHERE cs.room_id IN ({$roomIdList})
       AND o.ay_id = ?
       AND o.semester = ?
@@ -248,6 +278,7 @@ foreach ($rawScheduleRows as $row) {
         'sub_code' => (string)$row['sub_code'],
         'section_name' => $sectionLabel,
         'college_code' => (string)($row['college_code'] ?? ''),
+        'faculty_names' => trim((string)($row['faculty_names'] ?? '')),
         'subject_class' => subject_color_class($row['sub_code'] ?? ''),
         'can_remove' => $role === 'scheduler'
             && (int)($row['offering_college_id'] ?? 0) === $college_id
@@ -377,6 +408,12 @@ foreach ($rooms as $roomId => $roomLabel) {
                 $collegeSuffix = $item['college_code'] !== '' ? " | " . $item['college_code'] : '';
                 $entryClass = 'matrix-entry ' . $item['subject_class'] . ($item['can_remove'] ? ' matrix-entry-actionable' : ' matrix-entry-readonly');
                 $entryTitle = trim($item['sub_code'] . ' - ' . $item['section_name']);
+                $facultyNames = trim((string)($item['faculty_names'] ?? ''));
+                if ($facultyNames === '') {
+                    $facultyNames = 'TBA';
+                }
+                $facultyHtml = "<small class='matrix-entry-faculty' title='" . h($facultyNames) . "'>" . h($facultyNames) . "</small>";
+                $entryAriaLabel = trim($entryTitle . ' ' . $typeLabel . ($facultyNames !== '' ? ' Faculty ' . $facultyNames : ''));
 
                 $entriesHtml[] = "
                     <div
@@ -390,9 +427,10 @@ foreach ($rooms as $roomId => $roomLabel) {
                         title='" . h($item['can_remove'] ? "Click to remove this offering schedule" : "View-only entry") . "'
                         role='button'
                         tabindex='0'
-                        aria-label='" . h($entryTitle . ' ' . $typeLabel) . "'>
+                        aria-label='" . h($entryAriaLabel) . "'>
                         <strong>" . h($item['sub_code']) . "</strong><br>
                         <small>" . h($item['section_name']) . " | " . h($typeLabel) . h($collegeSuffix) . "</small>
+                        {$facultyHtml}
                     </div>
                 ";
             }

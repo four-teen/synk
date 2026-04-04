@@ -1024,6 +1024,17 @@ body.swal2-shown .modal {
     font-size: 0.58rem;
 }
 
+.matrix-entry-faculty {
+    display: block;
+    color: rgba(255, 255, 255, 0.94);
+    font-size: 0.54rem;
+    line-height: 1.05;
+    margin-top: 1px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
 .matrix-conflict {
     background: #fff5f5;
     border: 1px solid #ffc9c9;
@@ -1123,6 +1134,10 @@ body.swal2-shown .modal {
 #matrixModal .matrix-cell small {
     font-size: 0.56rem;
     opacity: 0.94;
+}
+
+#matrixModal .matrix-entry-faculty {
+    font-size: 0.5rem;
 }
 
 #matrixModal .matrix-time-slot {
