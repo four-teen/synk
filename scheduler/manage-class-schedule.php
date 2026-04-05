@@ -2092,6 +2092,10 @@ body.swal2-shown .modal {
     background: #fff1f1 !important;
 }
 
+.faculty-schedule-class-cell.is-conflict {
+    background: #fff1f1 !important;
+}
+
 .faculty-schedule-class-block {
     min-height: 100%;
 }
@@ -2212,6 +2216,42 @@ body.swal2-shown .modal {
 .faculty-schedule-block-chip.is-occupied {
     background: #fde7ea;
     color: #b42318;
+}
+
+#currentSectionScheduleMatrixModal .modal-dialog {
+    max-width: 1240px;
+}
+
+.current-section-board-stack {
+    display: grid;
+    gap: 0.5rem;
+}
+
+.current-section-board-conflict-note {
+    font-size: 0.68rem;
+    line-height: 1.25;
+    font-weight: 700;
+    letter-spacing: 0.05em;
+    text-transform: uppercase;
+    color: #b42318;
+}
+
+.current-section-board-entry {
+    padding: 0.12rem 0;
+}
+
+.current-section-board-entry + .current-section-board-entry {
+    margin-top: 0.15rem;
+    padding-top: 0.7rem;
+    border-top: 1px dashed #d9e2ec;
+}
+
+.current-section-board-entry.is-current {
+    margin: -0.05rem;
+    padding: 0.45rem 0.5rem;
+    border-radius: 10px;
+    border: 1px solid #c9e6d6;
+    background: rgba(232, 248, 239, 0.88);
 }
 
 .faculty-schedule-warning {
@@ -2539,6 +2579,12 @@ body.swal2-shown .modal {
     gap: 0.3rem;
 }
 
+.block-context-shell {
+    display: flex;
+    flex-direction: column;
+    gap: 0.45rem;
+}
+
 .modal-context-inline {
     display: flex;
     flex-wrap: wrap;
@@ -2556,9 +2602,27 @@ body.swal2-shown .modal {
     font-weight: 500;
 }
 
+.block-context-toolbar {
+    display: flex;
+    flex-wrap: wrap;
+    align-items: center;
+    justify-content: space-between;
+    gap: 0.6rem 0.9rem;
+}
+
+.block-context-meta {
+    font-size: 0.8rem;
+    line-height: 1.35;
+    color: #60718b;
+}
+
 @media (max-width: 991.98px) {
     .block-schedule-overview {
         grid-template-columns: 1fr;
+    }
+
+    .block-context-toolbar {
+        align-items: flex-start;
     }
 }
 
@@ -3578,10 +3642,18 @@ while ($ay = $ayQ->fetch_assoc()) {
       <div class="modal-header">
         <div class="modal-header-copy">
           <h5 class="modal-title mb-0">Define Class Schedule Blocks</h5>
-          <div class="modal-context-inline d-none" id="block_sched_context_line">
-            <span id="block_sched_subject_label"></span>
-            <span class="modal-context-separator">-</span>
-            <span class="modal-context-section" id="block_sched_section_label"></span>
+          <div class="block-context-shell d-none" id="block_sched_context_shell">
+            <div class="modal-context-inline" id="block_sched_context_line">
+              <span id="block_sched_subject_label"></span>
+              <span class="modal-context-separator">-</span>
+              <span class="modal-context-section" id="block_sched_section_label"></span>
+            </div>
+            <div class="block-context-toolbar">
+              <div class="block-context-meta" id="block_sched_course_context_label"></div>
+              <button type="button" class="btn btn-outline-info btn-sm btn-open-current-section-matrix" id="btnOpenCurrentSectionMatrix" disabled>
+                <i class="bx bx-layout me-1"></i> View Section Schedule
+              </button>
+            </div>
           </div>
         </div>
       </div>
@@ -3846,6 +3918,30 @@ while ($ay = $ayQ->fetch_assoc()) {
       <div class="modal-body">
         <div id="sectionScheduleMatrixContainer">
           <div class="section-matrix-empty">Loading section matrix...</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="currentSectionScheduleMatrixModal" tabindex="-1" data-bs-backdrop="false">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0">
+            <i class="bx bx-calendar-week me-1"></i> Section Schedule Matrix
+          </h5>
+          <div class="small text-muted mt-1" id="currentSectionScheduleMatrixHeaderNote">
+            View the current section's full weekly class board without leaving the block editor.
+          </div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div id="currentSectionScheduleMatrixContainer">
+          <div class="faculty-matrix-empty">Loading section schedule...</div>
         </div>
       </div>
     </div>
@@ -4186,6 +4282,9 @@ while ($ay = $ayQ->fetch_assoc()) {
     let sectionScheduleMatrixModalInstance = null;
     let sectionScheduleMatrixRequest = null;
     let sectionScheduleMatrixState = null;
+    let currentSectionScheduleMatrixModalInstance = null;
+    let currentSectionScheduleMatrixRequest = null;
+    let currentSectionScheduleMatrixState = null;
     let facultyScheduleMatrixModalInstance = null;
     let schedulerFacultyWorkloadModalInstance = null;
     let schedulerFacultyWorkloadRequest = null;
@@ -5114,6 +5213,357 @@ while ($ay = $ayQ->fetch_assoc()) {
             },
             complete: function () {
                 sectionScheduleMatrixRequest = null;
+            }
+        });
+    }
+
+    function abortCurrentSectionScheduleMatrixRequest() {
+        if (currentSectionScheduleMatrixRequest && currentSectionScheduleMatrixRequest.readyState !== 4) {
+            currentSectionScheduleMatrixRequest.abort();
+        }
+
+        currentSectionScheduleMatrixRequest = null;
+    }
+
+    function buildCurrentSectionScheduleBoard(entries, baseSlots = []) {
+        const startMinutes = matrixTimeToMinutes(SUPPORTED_TIME_START);
+        const endMinutes = matrixTimeToMinutes(SUPPORTED_TIME_END);
+        const slots = Array.isArray(baseSlots) && baseSlots.length > 0
+            ? baseSlots.slice()
+            : [];
+        const slotOccupancy = {};
+        const occupancy = {};
+
+        if (slots.length === 0 && startMinutes !== null && endMinutes !== null && endMinutes > startMinutes) {
+            for (let minutes = startMinutes; minutes < endMinutes; minutes += FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES) {
+                slots.push(minutes);
+            }
+        }
+
+        FACULTY_SCHEDULE_DAY_COLUMNS.forEach(day => {
+            slotOccupancy[day.key] = {};
+            occupancy[day.key] = {};
+        });
+
+        (Array.isArray(entries) ? entries : []).forEach(entry => {
+            let entryStart = matrixTimeToMinutes(entry?.time_start);
+            let entryEnd = matrixTimeToMinutes(entry?.time_end);
+            const days = normalizeScheduleDays(Array.isArray(entry?.days) ? entry.days : []);
+
+            if (entryStart === null || entryEnd === null) {
+                return;
+            }
+
+            entryStart = Math.max(startMinutes ?? entryStart, entryStart);
+            entryEnd = Math.min(endMinutes ?? entryEnd, entryEnd);
+            if (!days.length || entryEnd <= entryStart) {
+                return;
+            }
+
+            days.forEach(dayKey => {
+                for (let cursor = entryStart; cursor < entryEnd; cursor += FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES) {
+                    if (!slotOccupancy[dayKey][cursor]) {
+                        slotOccupancy[dayKey][cursor] = [];
+                    }
+                    slotOccupancy[dayKey][cursor].push(entry);
+                }
+            });
+        });
+
+        FACULTY_SCHEDULE_DAY_COLUMNS.forEach(day => {
+            let slotIndex = 0;
+            while (slotIndex < slots.length) {
+                const slotStart = slots[slotIndex];
+                const rawEntries = Array.isArray(slotOccupancy[day.key][slotStart]) ? slotOccupancy[day.key][slotStart] : [];
+                const entriesAtSlot = [];
+                const seenKeys = new Set();
+
+                rawEntries.forEach(item => {
+                    const key = buildFacultyScheduleEntryKey(item);
+                    if (!seenKeys.has(key)) {
+                        seenKeys.add(key);
+                        entriesAtSlot.push(item);
+                    }
+                });
+
+                const signature = entriesAtSlot
+                    .map(item => buildFacultyScheduleEntryKey(item))
+                    .sort()
+                    .join("||");
+
+                if (!signature) {
+                    slotIndex += 1;
+                    continue;
+                }
+
+                let span = 1;
+                while ((slotIndex + span) < slots.length) {
+                    const nextRawEntries = Array.isArray(slotOccupancy[day.key][slots[slotIndex + span]])
+                        ? slotOccupancy[day.key][slots[slotIndex + span]]
+                        : [];
+                    const nextEntries = [];
+                    const nextSeenKeys = new Set();
+
+                    nextRawEntries.forEach(item => {
+                        const key = buildFacultyScheduleEntryKey(item);
+                        if (!nextSeenKeys.has(key)) {
+                            nextSeenKeys.add(key);
+                            nextEntries.push(item);
+                        }
+                    });
+
+                    const nextSignature = nextEntries
+                        .map(item => buildFacultyScheduleEntryKey(item))
+                        .sort()
+                        .join("||");
+
+                    if (nextSignature !== signature) {
+                        break;
+                    }
+
+                    span += 1;
+                }
+
+                occupancy[day.key][slotStart] = {
+                    type: "start",
+                    block: {
+                        entries: sortFacultyScheduleBoardEntries(entriesAtSlot.slice()),
+                        is_conflict: entriesAtSlot.length > 1,
+                        is_current_offering: entriesAtSlot.some(item => item?.is_current_offering),
+                        _slotSpan: span
+                    }
+                };
+
+                for (let offset = 1; offset < span; offset += 1) {
+                    occupancy[day.key][slots[slotIndex + offset]] = {
+                        type: "covered",
+                        start: slotStart
+                    };
+                }
+
+                slotIndex += span;
+            }
+        });
+
+        return {
+            slots,
+            occupancy
+        };
+    }
+
+    function buildCurrentSectionScheduleBoardCell(block) {
+        const entries = sortFacultyScheduleBoardEntries(Array.isArray(block?.entries) ? block.entries : []);
+        if (entries.length === 0) {
+            return "";
+        }
+
+        const entryHtml = entries.map(entry => {
+            const subjectCode = String(entry?.subject_code || "").trim();
+            const subjectDescription = String(entry?.subject_description || "").trim();
+            const roomLabel = String(entry?.room_label || "TBA").trim() || "TBA";
+            const scheduleType = String(entry?.schedule_type || "LEC").trim().toUpperCase() === "LAB" ? "LAB" : "LEC";
+            const chips = [
+                `<span class="faculty-schedule-block-chip">${escapeHtml(scheduleType)}</span>`
+            ];
+
+            if (entry?.is_current_offering) {
+                chips.push('<span class="faculty-schedule-block-chip is-current">Current Subject</span>');
+            }
+
+            return `
+                <div class="current-section-board-entry ${entry?.is_current_offering ? "is-current" : ""}">
+                    ${subjectCode ? `<div class="faculty-schedule-subject-code">${escapeHtml(subjectCode)}</div>` : ""}
+                    ${subjectDescription ? `<div class="faculty-schedule-subject-description">${escapeHtml(subjectDescription)}</div>` : ""}
+                    <div class="faculty-schedule-block-line">${escapeHtml(roomLabel)}</div>
+                    ${chips.join("")}
+                </div>
+            `;
+        }).join("");
+
+        return `
+            <div class="current-section-board-stack">
+                ${block?.is_conflict ? '<div class="current-section-board-conflict-note">Conflict in this slot</div>' : ""}
+                ${entryHtml}
+            </div>
+        `;
+    }
+
+    function renderCurrentSectionScheduleMatrix() {
+        const container = $("#currentSectionScheduleMatrixContainer");
+        if (!currentSectionScheduleMatrixState || container.length === 0) {
+            return;
+        }
+
+        const entries = Array.isArray(currentSectionScheduleMatrixState.entries)
+            ? currentSectionScheduleMatrixState.entries
+            : [];
+        const board = buildCurrentSectionScheduleBoard(entries);
+        const slots = Array.isArray(board.slots) ? board.slots : [];
+        const sectionLabel = String(currentSectionScheduleMatrixState.fullSection || currentSectionScheduleMatrixState.sectionName || "Section").trim() || "Section";
+        const contextParts = [
+            String(currentSectionScheduleMatrixState.programCode || "").trim(),
+            String(currentSectionScheduleMatrixState.yearLabel || "").trim(),
+            sectionLabel
+        ].filter(Boolean);
+        const contextLabel = contextParts.join(" | ") || sectionLabel;
+        const currentEntryCount = entries.filter(entry => entry?.is_current_offering).length;
+        const scheduledSubjectCount = parseInt(currentSectionScheduleMatrixState.scheduledSubjectCount, 10) || 0;
+        const scheduledBlockCount = parseInt(currentSectionScheduleMatrixState.scheduledBlockCount, 10) || entries.length;
+
+        $("#currentSectionScheduleMatrixHeaderNote").text(
+            entries.length > 0
+                ? `${contextLabel} weekly class board for the selected term. The current subject is highlighted.`
+                : `${contextLabel} has no saved class blocks yet in the selected term.`
+        );
+
+        let html = `
+            <div class="faculty-schedule-summary">
+                <div>
+                    <div class="fw-semibold">${escapeHtml(contextLabel)}</div>
+                    <div class="text-muted small">${escapeHtml(String(currentSectionScheduleMatrixState.subjectLabel || "Current subject"))} stays highlighted so you can place blocks with the full section schedule in view.</div>
+                </div>
+                <div class="faculty-helper-metrics">
+                    <span class="faculty-helper-metric">${escapeHtml(String(scheduledBlockCount))} block(s)</span>
+                    <span class="faculty-helper-metric">${escapeHtml(String(scheduledSubjectCount))} subject(s)</span>
+                    <span class="faculty-helper-metric">${escapeHtml(String(currentEntryCount))} current subject block(s)</span>
+                </div>
+            </div>
+            <div class="faculty-schedule-legend">
+                <span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch"></span>Scheduled class</span>
+                <span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-current"></span>Current subject</span>
+                <span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-occupied"></span>Conflict block</span>
+            </div>
+        `;
+
+        if (slots.length === 0) {
+            container.html(`${html}<div class="faculty-matrix-empty">No scheduled class blocks are available for this section yet.</div>`);
+            return;
+        }
+
+        html += `
+            <div class="faculty-schedule-sheet">
+                <div class="table-responsive">
+                    <table class="table table-bordered faculty-schedule-table">
+                        <thead>
+                            <tr>
+                                <th>Time</th>
+                                ${FACULTY_SCHEDULE_DAY_COLUMNS.map(day => `<th>${escapeHtml(day.label)}</th>`).join("")}
+                            </tr>
+                        </thead>
+                        <tbody>
+        `;
+
+        slots.forEach(slotStart => {
+            const slotEnd = slotStart + FACULTY_SCHEDULE_SLOT_INTERVAL_MINUTES;
+            html += `
+                <tr>
+                    <td class="faculty-schedule-time-cell">${escapeHtml(formatFacultyScheduleTimeRange(slotStart, slotEnd))}</td>
+            `;
+
+            FACULTY_SCHEDULE_DAY_COLUMNS.forEach(day => {
+                const sectionEntry = board.occupancy[day.key]?.[slotStart];
+                if (sectionEntry && sectionEntry.type === "covered") {
+                    return;
+                }
+
+                if (sectionEntry && sectionEntry.type === "start") {
+                    const cellClasses = ["faculty-schedule-class-cell"];
+                    if (sectionEntry.block.is_conflict) {
+                        cellClasses.push("is-conflict");
+                    } else if (sectionEntry.block.is_current_offering) {
+                        cellClasses.push("is-current");
+                    }
+
+                    html += `
+                        <td rowspan="${sectionEntry.block._slotSpan}" class="${cellClasses.join(" ")}">
+                            ${buildCurrentSectionScheduleBoardCell(sectionEntry.block)}
+                        </td>
+                    `;
+                    return;
+                }
+
+                html += '<td class="faculty-schedule-empty-cell"></td>';
+            });
+
+            html += "</tr>";
+        });
+
+        html += `
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        `;
+
+        container.html(html);
+    }
+
+    function openCurrentSectionScheduleMatrixHelper() {
+        if (!scheduleBlockState || !scheduleBlockState.offeringId) {
+            Swal.fire("Unavailable", "Open a class schedule block first.", "info");
+            return;
+        }
+
+        currentSectionScheduleMatrixState = {
+            offeringId: Number(scheduleBlockState.offeringId || 0),
+            currentOfferingId: Number(scheduleBlockState.offeringId || 0),
+            subjectLabel: String(scheduleBlockState.subjectLabel || "Current subject"),
+            sectionName: String(scheduleBlockState.sectionName || "").trim(),
+            fullSection: String(scheduleBlockState.fullSection || "").trim(),
+            programCode: String(scheduleBlockState.programCode || "").trim(),
+            yearLabel: String(scheduleBlockState.yearLabel || "").trim(),
+            scheduledBlockCount: 0,
+            scheduledSubjectCount: 0,
+            entries: []
+        };
+
+        $("#currentSectionScheduleMatrixHeaderNote").text("Loading the current section schedule...");
+        $("#currentSectionScheduleMatrixContainer").html('<div class="faculty-matrix-empty">Loading section schedule...</div>');
+
+        if (currentSectionScheduleMatrixModalInstance) {
+            currentSectionScheduleMatrixModalInstance.show();
+        } else {
+            $("#currentSectionScheduleMatrixModal").modal("show");
+        }
+
+        abortCurrentSectionScheduleMatrixRequest();
+        currentSectionScheduleMatrixRequest = $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                load_current_section_schedule_matrix: 1,
+                offering_id: currentSectionScheduleMatrixState.offeringId
+            },
+            success: function (res) {
+                if (!res || res.status !== "ok") {
+                    $("#currentSectionScheduleMatrixHeaderNote").text("Unable to load the current section schedule.");
+                    $("#currentSectionScheduleMatrixContainer").html(`<div class="faculty-matrix-empty">${escapeHtml((res && res.message) ? res.message : "Failed to load section schedule.")}</div>`);
+                    return;
+                }
+
+                currentSectionScheduleMatrixState.currentOfferingId = parseInt(res.current_offering_id, 10) || currentSectionScheduleMatrixState.currentOfferingId;
+                currentSectionScheduleMatrixState.sectionName = String(res.section_name || currentSectionScheduleMatrixState.sectionName || "").trim();
+                currentSectionScheduleMatrixState.fullSection = String(res.full_section || currentSectionScheduleMatrixState.fullSection || "").trim();
+                currentSectionScheduleMatrixState.programCode = String(res.program_code || currentSectionScheduleMatrixState.programCode || "").trim();
+                currentSectionScheduleMatrixState.yearLabel = String(res.year_label || currentSectionScheduleMatrixState.yearLabel || "").trim();
+                currentSectionScheduleMatrixState.scheduledBlockCount = parseInt(res.scheduled_block_count, 10) || 0;
+                currentSectionScheduleMatrixState.scheduledSubjectCount = parseInt(res.scheduled_subject_count, 10) || 0;
+                currentSectionScheduleMatrixState.entries = Array.isArray(res.entries)
+                    ? res.entries.map(normalizeFacultyScheduleEntry)
+                    : [];
+                renderCurrentSectionScheduleMatrix();
+            },
+            error: function (xhr) {
+                if (xhr.statusText === "abort") {
+                    return;
+                }
+
+                $("#currentSectionScheduleMatrixHeaderNote").text("Unable to load the current section schedule.");
+                $("#currentSectionScheduleMatrixContainer").html('<div class="faculty-matrix-empty">Failed to load section schedule.</div>');
+            },
+            complete: function () {
+                currentSectionScheduleMatrixRequest = null;
             }
         });
     }
@@ -7376,6 +7826,49 @@ while ($ay = $ayQ->fetch_assoc()) {
         refreshFacultyAwarenessModalIfOpen();
     }
 
+    function formatYearLevelLabel(yearLevel) {
+        const normalized = parseInt(yearLevel, 10) || 0;
+        if (!normalized) {
+            return "";
+        }
+
+        if (normalized === 1) {
+            return "1st Year";
+        }
+
+        if (normalized === 2) {
+            return "2nd Year";
+        }
+
+        if (normalized === 3) {
+            return "3rd Year";
+        }
+
+        return `${normalized}th Year`;
+    }
+
+    function buildScheduleBlockContextMeta(state) {
+        if (!state) {
+            return "";
+        }
+
+        const sectionDisplay = String(state.fullSection || state.sectionName || "").trim();
+        return [
+            String(state.programCode || "").trim(),
+            String(state.yearLabel || formatYearLevelLabel(state.yearLevel)).trim(),
+            sectionDisplay
+        ].filter(Boolean).join(" | ");
+    }
+
+    function renderScheduleBlockContext() {
+        const hasState = Boolean(scheduleBlockState && scheduleBlockState.offeringId);
+        $("#block_sched_subject_label").text(hasState ? String(scheduleBlockState.subjectLabel || "") : "");
+        $("#block_sched_section_label").text(hasState ? String(scheduleBlockState.sectionLabel || "") : "");
+        $("#block_sched_course_context_label").text(hasState ? buildScheduleBlockContextMeta(scheduleBlockState) : "");
+        $("#btnOpenCurrentSectionMatrix").prop("disabled", !hasState);
+        $("#block_sched_context_shell").toggleClass("d-none", !hasState);
+    }
+
     function openScheduleBlockModal(button) {
         const offeringId = parseInt(button.data("offeringId"), 10) || 0;
         const labUnits = Number(button.data("labUnits")) || 0;
@@ -7425,14 +7918,17 @@ while ($ay = $ayQ->fetch_assoc()) {
                         offeringId,
                         subjectLabel,
                         sectionLabel,
+                        sectionName: String(res.section_name || button.data("section") || "").trim(),
+                        fullSection: String(res.full_section || button.data("section") || "").trim(),
+                        programCode: String(res.program_code || "").trim(),
+                        yearLevel: parseInt(res.year_level, 10) || 0,
+                        yearLabel: String(res.year_label || formatYearLevelLabel(res.year_level)).trim(),
                         blocks,
                         facultyHelper: createScheduleBlockFacultyHelperState()
                     };
 
                     $("#block_sched_offering_id").val(String(offeringId));
-                    $("#block_sched_subject_label").text(subjectLabel);
-                    $("#block_sched_section_label").text(sectionLabel);
-                    $("#block_sched_context_line").removeClass("d-none");
+                    renderScheduleBlockContext();
                     $("#block_sched_lec_units").val(String(lecUnits));
                     $("#block_sched_lab_units").val(String(labUnits));
                     $("#block_sched_total_units").val(String(totalUnits));
@@ -9684,6 +10180,10 @@ const sectionScheduleMatrixModalElement = document.getElementById("sectionSchedu
 if (sectionScheduleMatrixModalElement) {
   sectionScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(sectionScheduleMatrixModalElement);
 }
+const currentSectionScheduleMatrixModalElement = document.getElementById("currentSectionScheduleMatrixModal");
+if (currentSectionScheduleMatrixModalElement) {
+  currentSectionScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(currentSectionScheduleMatrixModalElement);
+}
 const facultyScheduleMatrixModalElement = document.getElementById("facultyScheduleMatrixModal");
 if (facultyScheduleMatrixModalElement) {
   facultyScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(facultyScheduleMatrixModalElement);
@@ -9825,6 +10325,10 @@ $(document).on("click", "#blockScheduleModal .btn-open-section-matrix", function
   openSectionScheduleMatrixHelper();
 });
 
+$(document).on("click", "#blockScheduleModal .btn-open-current-section-matrix", function () {
+  openCurrentSectionScheduleMatrixHelper();
+});
+
 $("#btnToggleSingleSuggestions").on("click", function () {
   const shouldShow = !panelIsVisible("#singleSuggestionPanel");
   setSuggestionPanelVisibility(
@@ -9902,6 +10406,18 @@ $("#sectionScheduleMatrixModal").on("hidden.bs.modal", function () {
   sectionScheduleMatrixState = null;
   $("#sectionScheduleMatrixContainer").html('<div class="section-matrix-empty">Loading section matrix...</div>');
   $("#sectionScheduleMatrixHeaderNote").text("Compare scheduled subjects across peer sections without leaving the block editor.");
+  restoreBodyModalStateForScheduling();
+});
+
+$("#currentSectionScheduleMatrixModal").on("show.bs.modal", function () {
+  $(this).appendTo("body").css("z-index", 1112);
+});
+
+$("#currentSectionScheduleMatrixModal").on("hidden.bs.modal", function () {
+  abortCurrentSectionScheduleMatrixRequest();
+  currentSectionScheduleMatrixState = null;
+  $("#currentSectionScheduleMatrixContainer").html('<div class="faculty-matrix-empty">Loading section schedule...</div>');
+  $("#currentSectionScheduleMatrixHeaderNote").text("View the current section's full weekly class board without leaving the block editor.");
   restoreBodyModalStateForScheduling();
 });
 
@@ -10531,6 +11047,14 @@ $("#blockScheduleModal").on("hidden.bs.modal", function () {
         }
     }
 
+    if ($("#currentSectionScheduleMatrixModal").hasClass("show")) {
+        if (currentSectionScheduleMatrixModalInstance) {
+            currentSectionScheduleMatrixModalInstance.hide();
+        } else {
+            $("#currentSectionScheduleMatrixModal").modal("hide");
+        }
+    }
+
     if ($("#facultyScheduleMatrixModal").hasClass("show")) {
         if (facultyScheduleMatrixModalInstance) {
             facultyScheduleMatrixModalInstance.hide();
@@ -10542,14 +11066,15 @@ $("#blockScheduleModal").on("hidden.bs.modal", function () {
     abortScheduleBlockFacultyRequests();
 
     scheduleBlockState = null;
-    $("#block_sched_subject_label, #block_sched_section_label").text("");
-    $("#block_sched_context_line").addClass("d-none");
+    $("#block_sched_subject_label, #block_sched_section_label, #block_sched_course_context_label").text("");
+    $("#block_sched_context_shell").addClass("d-none");
     $("#scheduleBlockList").empty();
     $("#scheduleBlockCoverageSummary").html("<strong>Schedule coverage will appear here.</strong>");
     $("#blockScheduleFacultySelect").html('<option value="">Select faculty...</option>').prop("disabled", true);
     $("#blockScheduleFacultyHint").text("Faculty from the selected college term will load here.");
     $("#blockScheduleFacultySummary").html('<div class="faculty-helper-empty">Select a faculty to preview scheduled subjects for this term.</div>');
     $("#btnOpenFacultyScheduleMatrix").prop("disabled", true);
+    $("#btnOpenCurrentSectionMatrix").prop("disabled", true);
 });
 
 $("#btnAddLectureBlock").on("click", function () {
