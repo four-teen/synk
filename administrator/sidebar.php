@@ -56,6 +56,15 @@ $sidebarSections = [
                         'description' => 'Clear scoped scheduling data for a college term',
                         'pages' => ['manage-term-data.php'],
                     ],
+                    [
+                        'key' => 'database_backup',
+                        'href' => 'database-backup.php',
+                        'icon_bg' => 'bg-label-success',
+                        'icon' => 'bx-data',
+                        'title' => 'Database Backup',
+                        'description' => 'Download a full SQL backup from the application',
+                        'pages' => ['database-backup.php'],
+                    ],
                 ],
             ],
             [

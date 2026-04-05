@@ -230,6 +230,224 @@ body.swal2-shown .modal {
     word-break: break-word;
 }
 
+.schedule-status-faculty-list {
+    display: flex;
+    flex-direction: column;
+    gap: 0.2rem;
+    align-items: center;
+    max-width: 132px;
+}
+
+.schedule-status-faculty-link {
+    border: 0;
+    background: transparent;
+    padding: 0;
+    color: #696cff;
+    font-size: 0.74rem;
+    line-height: 1.3;
+    text-align: center;
+    text-decoration: underline;
+    cursor: pointer;
+}
+
+.schedule-status-faculty-link:hover,
+.schedule-status-faculty-link:focus-visible {
+    color: #4f46e5;
+}
+
+#schedulerFacultyWorkloadModal .modal-dialog {
+    max-width: 1220px;
+}
+
+#schedulerFacultyWorkloadModal .workload-table thead th {
+    font-size: 0.72rem;
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+    color: #5f728b;
+    border-bottom: 1px solid #dbe4ef;
+    border-top: 1px solid #dbe4ef;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(204, 216, 229, 0.9);
+    white-space: nowrap;
+}
+
+#schedulerFacultyWorkloadModal .workload-table tbody td {
+    color: #5c6f88;
+    border-color: #e7edf5;
+    vertical-align: middle;
+}
+
+#schedulerFacultyWorkloadModal .workload-table tfoot th,
+#schedulerFacultyWorkloadModal .workload-table tfoot td {
+    color: #5f728b;
+    border-top: 2px solid #d7e1ec;
+    background: #f9fbfd;
+    vertical-align: middle;
+}
+
+#schedulerFacultyWorkloadModal .workload-code {
+    font-weight: 700;
+    color: #5b6f86;
+    white-space: nowrap;
+}
+
+#schedulerFacultyWorkloadModal .workload-desc {
+    color: #5f728b;
+}
+
+#schedulerFacultyWorkloadModal .workload-days,
+#schedulerFacultyWorkloadModal .workload-room {
+    white-space: nowrap;
+}
+
+#schedulerFacultyWorkloadModal .workload-time {
+    white-space: normal;
+    line-height: 1.08;
+    min-width: 88px;
+}
+
+#schedulerFacultyWorkloadModal .time-line {
+    display: block;
+    white-space: nowrap;
+}
+
+#schedulerFacultyWorkloadModal .merged-metric {
+    vertical-align: middle !important;
+    background: #fbfcfe;
+    font-weight: 600;
+}
+
+#schedulerFacultyWorkloadModal .workload-summary-row th,
+#schedulerFacultyWorkloadModal .workload-summary-row td {
+    background: #f9fbfd;
+    font-size: inherit;
+    border-top: 1px solid #d7e1ec;
+    border-bottom: 1px solid #d7e1ec;
+}
+
+#schedulerFacultyWorkloadModal .workload-summary-label {
+    color: #52657d;
+    font-weight: 700;
+    white-space: nowrap;
+}
+
+#schedulerFacultyWorkloadModal .workload-summary-value {
+    color: #4f6279;
+    font-weight: 600;
+}
+
+#schedulerFacultyWorkloadModal .screen-only {
+    white-space: nowrap;
+}
+
+#schedulerFacultyWorkloadModal .summary-separator th,
+#schedulerFacultyWorkloadModal .summary-separator td {
+    border-top: 2px solid #b9c8d9 !important;
+}
+
+#schedulerFacultyWorkloadModal .workload-total-row th,
+#schedulerFacultyWorkloadModal .workload-total-row td {
+    border-top: 2px solid #b7c6d8 !important;
+    font-size: inherit;
+    background: #f6f9fc;
+}
+
+#schedulerFacultyWorkloadModal .total-label {
+    text-transform: uppercase;
+    letter-spacing: 0.08em;
+}
+
+#schedulerFacultyWorkloadModal .load-status-inline {
+    display: inline-block;
+    margin-left: 0.45rem;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 0.76rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    vertical-align: middle;
+}
+
+#schedulerFacultyWorkloadModal .load-status-inline.underload {
+    background: #fff3cd;
+    color: #7a5a00;
+}
+
+#schedulerFacultyWorkloadModal .load-status-inline.overload {
+    background: #fde8ea;
+    color: #a61c2d;
+}
+
+#schedulerFacultyWorkloadModal .total-load-value {
+    font-size: inherit;
+    font-weight: 700;
+}
+
+#schedulerFacultyWorkloadModal .btn-delete-workload {
+    border-color: #ff5f4d;
+    color: #ff5f4d;
+    line-height: 1;
+}
+
+#schedulerFacultyWorkloadModal .btn-delete-workload:hover {
+    background: #ff5f4d;
+    color: #fff;
+}
+
+.scheduler-workload-context {
+    margin-top: 0.5rem;
+    padding: 0.65rem 0.85rem;
+    border-radius: 0.75rem;
+    background: #f3f6ff;
+    color: #55657c;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.scheduler-workload-current-row td {
+    background: #fff8df;
+}
+
+.scheduler-workload-current-row .merged-metric {
+    background: #fff3c7 !important;
+}
+
+.scheduler-workload-inline-note {
+    display: inline-flex;
+    flex-wrap: wrap;
+    gap: 0.35rem;
+    align-items: center;
+    margin-left: 0.4rem;
+}
+
+.scheduler-workload-type-pill,
+.scheduler-workload-current-marker {
+    display: inline-flex;
+    align-items: center;
+    padding: 0.16rem 0.48rem;
+    border-radius: 999px;
+    font-size: 0.68rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.scheduler-workload-type-pill.lec {
+    background: #eef2ff;
+    color: #4f46e5;
+}
+
+.scheduler-workload-type-pill.lab {
+    background: #e7f8ef;
+    color: #0c7a43;
+}
+
+.scheduler-workload-current-marker {
+    background: #fff0bf;
+    color: #946200;
+}
+
 .schedule-section-name {
     display: block;
     font-weight: 600;
@@ -3658,6 +3876,91 @@ while ($ay = $ayQ->fetch_assoc()) {
   </div>
 </div>
 
+<div class="modal fade" id="schedulerFacultyWorkloadModal" tabindex="-1" data-bs-backdrop="static" data-bs-keyboard="false">
+  <div class="modal-dialog modal-xl modal-dialog-scrollable modal-dialog-centered">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0">
+            <i class="bx bx-briefcase-alt-2 me-1"></i> Faculty Workload
+          </h5>
+          <div class="small text-muted mt-1" id="schedulerFacultyWorkloadHeaderNote">
+            Classes already assigned for the selected term.
+          </div>
+          <div class="scheduler-workload-context d-none" id="schedulerFacultyWorkloadContext"></div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="table-responsive">
+          <table class="table table-hover table-sm mb-0 workload-table">
+            <thead class="table-light">
+              <tr>
+                <th rowspan="2">Course No.</th>
+                <th rowspan="2">Course Description</th>
+                <th rowspan="2" class="course-head">Course</th>
+                <th rowspan="2" class="day-head">Day</th>
+                <th rowspan="2" class="time-head">Time</th>
+                <th rowspan="2" class="room-head">Room</th>
+                <th rowspan="2" class="text-center unit-head">Unit</th>
+                <th colspan="2" class="text-center hours-group-head">No. of Hours</th>
+                <th rowspan="2" class="text-center load-head">Load</th>
+                <th rowspan="2" class="text-center students-head"># of<br>Students</th>
+                <th rowspan="2" class="text-end screen-only">Action</th>
+              </tr>
+              <tr>
+                <th class="text-center hours-subhead">Lab</th>
+                <th class="text-center hours-subhead">Lec</th>
+              </tr>
+            </thead>
+            <tbody id="schedulerFacultyWorkloadTbody">
+              <tr>
+                <td colspan="12" class="text-center text-muted py-4">Select a faculty workload to view.</td>
+              </tr>
+            </tbody>
+            <tfoot class="table-light">
+              <tr class="workload-summary-row">
+                <th colspan="2" class="text-start workload-summary-label">Designation:</th>
+                <td colspan="4" class="workload-summary-value" id="schedulerFacultyWorkloadDesignationText"></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="text-center fw-semibold" id="schedulerFacultyWorkloadDesignationLoad"></td>
+                <td></td>
+                <td class="screen-only"></td>
+              </tr>
+              <tr class="workload-summary-row summary-separator">
+                <th colspan="2" class="text-start workload-summary-label">No. of Prep:</th>
+                <td colspan="4" class="workload-summary-value" id="schedulerFacultyWorkloadPreparations">0</td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td></td>
+                <td class="screen-only"></td>
+              </tr>
+              <tr class="workload-summary-row workload-total-row">
+                <th colspan="6" class="text-end fw-semibold total-label">Total Load</th>
+                <th class="text-center" id="schedulerFacultyWorkloadTotalUnit">0</th>
+                <th class="text-center" id="schedulerFacultyWorkloadTotalLab">0</th>
+                <th class="text-center" id="schedulerFacultyWorkloadTotalLec">0</th>
+                <th class="text-center fw-semibold" id="schedulerFacultyWorkloadTotalLoad">0</th>
+                <th class="text-center" id="schedulerFacultyWorkloadTotalStudents"></th>
+                <th class="screen-only"></th>
+              </tr>
+            </tfoot>
+          </table>
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
 
     <script src="../assets/vendor/libs/jquery/jquery.js"></script>
     <script src="../assets/vendor/libs/popper/popper.js"></script>
@@ -3884,6 +4187,9 @@ while ($ay = $ayQ->fetch_assoc()) {
     let sectionScheduleMatrixRequest = null;
     let sectionScheduleMatrixState = null;
     let facultyScheduleMatrixModalInstance = null;
+    let schedulerFacultyWorkloadModalInstance = null;
+    let schedulerFacultyWorkloadRequest = null;
+    let schedulerFacultyWorkloadState = null;
     let scheduleBlockFacultyOptionsRequest = null;
     let scheduleBlockFacultyDetailRequest = null;
     let scheduleBlockFacultyPreviewTimer = null;
@@ -3921,8 +4227,479 @@ while ($ay = $ayQ->fetch_assoc()) {
         return ["lecture", "laboratory", "lec_lab"].includes(value) ? value : "lecture";
     }
 
+    function schedulerWorkloadToNumber(value) {
+        const parsed = Number(value);
+        return Number.isFinite(parsed) ? parsed : 0;
+    }
+
+    function schedulerWorkloadFormatNumber(value) {
+        const numericValue = schedulerWorkloadToNumber(value);
+        return Number.isInteger(numericValue)
+            ? String(numericValue)
+            : String(parseFloat(numericValue.toFixed(2)));
+    }
+
+    function schedulerWorkloadFormatStudentCount(value) {
+        const numericValue = Math.round(schedulerWorkloadToNumber(value));
+        return numericValue > 0 ? String(numericValue) : "";
+    }
+
+    function schedulerWorkloadGetLoadStatus(loadValue) {
+        const numericLoad = schedulerWorkloadToNumber(loadValue);
+
+        if (numericLoad > 21) {
+            return { label: "Overload", className: "overload" };
+        }
+
+        if (numericLoad >= 18) {
+            return { label: "", className: "normal" };
+        }
+
+        return { label: "Underload", className: "underload" };
+    }
+
+    function schedulerWorkloadFormatCompactTime(value) {
+        const raw = String(value ?? "").trim();
+        if (raw === "") {
+            return "";
+        }
+
+        const parts = raw.split("-");
+        if (parts.length !== 2) {
+            return escapeHtml(raw);
+        }
+
+        return `
+            <span class="time-line">${escapeHtml(parts[0].trim())}</span>
+            <span class="time-line">${escapeHtml(parts[1].trim())}</span>
+        `;
+    }
+
+    function schedulerWorkloadNormalizeResponse(payload) {
+        if (Array.isArray(payload)) {
+            return {
+                rows: payload,
+                meta: {
+                    designation_name: "",
+                    designation_label: "",
+                    designation_units: 0,
+                    total_preparations: 0
+                }
+            };
+        }
+
+        if (!payload || !Array.isArray(payload.rows)) {
+            return null;
+        }
+
+        return {
+            rows: payload.rows,
+            meta: payload.meta || {}
+        };
+    }
+
+    function schedulerWorkloadFormatDesignationDisplay(meta) {
+        return String(meta?.designation_label || meta?.designation_name || "").trim();
+    }
+
+    function schedulerWorkloadGroupKey(row) {
+        const groupId = Number(row?.group_id) || 0;
+        if (groupId > 0) {
+            return `group:${groupId}`;
+        }
+
+        const offeringId = Number(row?.offering_id) || 0;
+        if (offeringId > 0) {
+            return `offering:${offeringId}`;
+        }
+
+        return `workload:${Number(row?.workload_id) || 0}`;
+    }
+
+    function schedulerWorkloadDescriptionHtml(row, options = {}) {
+        const description = escapeHtml(row?.desc || "");
+        const inlineNotes = [];
+
+        if (options.isPaired) {
+            const type = String(row?.type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC";
+            inlineNotes.push(`<span class="scheduler-workload-type-pill ${type.toLowerCase()}">${escapeHtml(type)}</span>`);
+        }
+
+        if (options.isCurrent) {
+            inlineNotes.push('<span class="scheduler-workload-current-marker">Current subject</span>');
+        }
+
+        if (inlineNotes.length === 0) {
+            return description;
+        }
+
+        return `${description}<span class="scheduler-workload-inline-note">${inlineNotes.join("")}</span>`;
+    }
+
+    function resetSchedulerFacultyWorkloadTotals() {
+        $("#schedulerFacultyWorkloadDesignationText").text("");
+        $("#schedulerFacultyWorkloadDesignationLoad").text("");
+        $("#schedulerFacultyWorkloadPreparations").text("0");
+        $("#schedulerFacultyWorkloadTotalUnit").text("0");
+        $("#schedulerFacultyWorkloadTotalLab").text("0");
+        $("#schedulerFacultyWorkloadTotalLec").text("0");
+        $("#schedulerFacultyWorkloadTotalLoad").text("0");
+        $("#schedulerFacultyWorkloadTotalStudents").text("");
+    }
+
+    function getSchedulerFacultyWorkloadFilters() {
+        const ayId = Number($("#ay_id").val()) || 0;
+        const semester = Number($("#semester").val()) || 0;
+        const ayLabel = String($("#ay_id option:selected").text() || "").trim();
+        const semesterLabel = String($("#semester option:selected").text() || "").trim();
+
+        if (!ayId || !semester) {
+            return null;
+        }
+
+        return {
+            ayId,
+            semester,
+            ayLabel,
+            semesterLabel,
+            termLabel: [semesterLabel, ayLabel ? `AY ${ayLabel}` : ""].filter(Boolean).join(" | ")
+        };
+    }
+
+    function schedulerWorkloadSetContextMessage(message = "") {
+        const context = $("#schedulerFacultyWorkloadContext");
+        const text = String(message || "").trim();
+
+        if (!text) {
+            context.addClass("d-none").text("");
+            return;
+        }
+
+        context.removeClass("d-none").text(text);
+    }
+
+    function setSchedulerFacultyWorkloadHeader() {
+        const state = schedulerFacultyWorkloadState;
+        const facultyName = String(state?.facultyName || "Faculty").trim() || "Faculty";
+        const termLabel = String(state?.termLabel || "").trim();
+
+        $("#schedulerFacultyWorkloadHeaderNote").text(
+            termLabel ? `${facultyName} | ${termLabel}` : `${facultyName} workload`
+        );
+
+        if (state?.contextLabel) {
+            schedulerWorkloadSetContextMessage(
+                `Opened from ${state.contextLabel}. Matching rows are highlighted below so the current subject can be removed quickly.`
+            );
+            return;
+        }
+
+        schedulerWorkloadSetContextMessage("Use Remove on any row to unassign that class from this faculty.");
+    }
+
+    function abortSchedulerFacultyWorkloadRequest() {
+        if (schedulerFacultyWorkloadRequest && schedulerFacultyWorkloadRequest.readyState !== 4) {
+            schedulerFacultyWorkloadRequest.abort();
+        }
+
+        schedulerFacultyWorkloadRequest = null;
+    }
+
+    function resetSchedulerFacultyWorkloadState() {
+        abortSchedulerFacultyWorkloadRequest();
+        schedulerFacultyWorkloadState = null;
+        $("#schedulerFacultyWorkloadHeaderNote").text("Classes already assigned for the selected term.");
+        schedulerWorkloadSetContextMessage("");
+        $("#schedulerFacultyWorkloadTbody").html(`
+            <tr>
+                <td colspan="12" class="text-center text-muted py-4">Select a faculty workload to view.</td>
+            </tr>
+        `);
+        resetSchedulerFacultyWorkloadTotals();
+    }
+
+    function setSchedulerFacultyWorkloadLoadingState(message = "Loading faculty workload...") {
+        setSchedulerFacultyWorkloadHeader();
+        $("#schedulerFacultyWorkloadTbody").html(`
+            <tr>
+                <td colspan="12" class="text-center py-4">
+                    <div class="d-inline-flex align-items-center gap-2 text-muted fw-semibold">
+                        <span class="spinner-border spinner-border-sm text-primary" role="status" aria-hidden="true"></span>
+                        ${escapeHtml(message)}
+                    </div>
+                </td>
+            </tr>
+        `);
+        resetSchedulerFacultyWorkloadTotals();
+    }
+
+    function renderSchedulerFacultyWorkload(payload) {
+        const rowsData = Array.isArray(payload?.rows) ? payload.rows : [];
+        const meta = payload?.meta || {};
+        const highlightOfferingId = Number(schedulerFacultyWorkloadState?.highlightOfferingId) || 0;
+        const preparationSet = new Set();
+        const countedGroups = new Set();
+        let totalLec = 0;
+        let totalLab = 0;
+        let totalUnit = 0;
+        let totalLoad = 0;
+        let rowsHtml = "";
+        let hasHighlightedRows = false;
+
+        for (let index = 0; index < rowsData.length; index++) {
+            const row = rowsData[index];
+            const groupKey = schedulerWorkloadGroupKey(row);
+            const groupRows = [row];
+
+            while ((index + groupRows.length) < rowsData.length) {
+                const candidateRow = rowsData[index + groupRows.length];
+                if (schedulerWorkloadGroupKey(candidateRow) !== groupKey) {
+                    break;
+                }
+                groupRows.push(candidateRow);
+            }
+
+            const displayUnits = schedulerWorkloadToNumber(row.units);
+            const displayLabUnits = schedulerWorkloadToNumber(row.lab);
+            const displayLecUnits = schedulerWorkloadToNumber(row.lec);
+            const isCurrentGroup = highlightOfferingId > 0 && groupRows.some(function (groupRow) {
+                return (Number(groupRow?.offering_id) || 0) === highlightOfferingId;
+            });
+            const rowClass = isCurrentGroup ? "scheduler-workload-current-row" : "";
+
+            if (isCurrentGroup) {
+                hasHighlightedRows = true;
+            }
+
+            if (!countedGroups.has(groupKey)) {
+                countedGroups.add(groupKey);
+                totalUnit += displayUnits;
+                totalLab += displayLabUnits;
+                totalLec += displayLecUnits;
+                totalLoad += schedulerWorkloadToNumber(row.faculty_load);
+            }
+
+            const preparationKey = String(row.sub_code || "").trim();
+            if (preparationKey !== "") {
+                preparationSet.add(preparationKey);
+            }
+
+            if (groupRows.length > 1) {
+                const mergedStudents = groupRows.reduce(function (maxValue, groupRow) {
+                    return Math.max(maxValue, schedulerWorkloadToNumber(groupRow.student_count));
+                }, 0);
+                const groupedWorkloadIds = groupRows
+                    .map(function (groupRow) {
+                        return Number(groupRow?.workload_id) || 0;
+                    })
+                    .filter(function (value) {
+                        return value > 0;
+                    });
+
+                groupRows.forEach(function (groupRow, groupIndex) {
+                    rowsHtml += `
+                        <tr class="${rowClass}">
+                            <td class="workload-code">${escapeHtml(groupRow.sub_code)}</td>
+                            <td class="workload-desc">${schedulerWorkloadDescriptionHtml(groupRow, {
+                                isPaired: true,
+                                isCurrent: isCurrentGroup && groupIndex === 0
+                            })}</td>
+                            <td>${escapeHtml(groupRow.course || groupRow.section)}</td>
+                            <td class="workload-days">${escapeHtml(groupRow.days)}</td>
+                            <td class="workload-time">${schedulerWorkloadFormatCompactTime(groupRow.time)}</td>
+                            <td class="workload-room">${escapeHtml(groupRow.room)}</td>
+                            ${groupIndex === 0 ? `
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${schedulerWorkloadFormatNumber(displayUnits)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${schedulerWorkloadFormatNumber(displayLabUnits)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${schedulerWorkloadFormatNumber(displayLecUnits)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${schedulerWorkloadFormatNumber(row.faculty_load)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${schedulerWorkloadFormatStudentCount(mergedStudents)}</td>
+                                <td class="text-end screen-only" rowspan="${groupRows.length}">
+                                    <button
+                                        type="button"
+                                        class="btn btn-sm btn-delete-workload btn-scheduler-remove-workload"
+                                        data-ids="${escapeHtml(groupedWorkloadIds.join(","))}"
+                                        data-subject="${escapeHtml(groupRow.sub_code || "")}"
+                                        data-delete-count="${escapeHtml(String(groupedWorkloadIds.length))}"
+                                        title="Remove linked workload rows"
+                                    >
+                                        <i class="bx bx-trash"></i>
+                                    </button>
+                                </td>
+                            ` : ""}
+                        </tr>
+                    `;
+                });
+
+                index += groupRows.length - 1;
+                continue;
+            }
+
+            rowsHtml += `
+                <tr class="${rowClass}">
+                    <td class="workload-code">${escapeHtml(row.sub_code)}</td>
+                    <td class="workload-desc">${schedulerWorkloadDescriptionHtml(row, {
+                        isCurrent: isCurrentGroup
+                    })}</td>
+                    <td>${escapeHtml(row.course || row.section)}</td>
+                    <td class="workload-days">${escapeHtml(row.days)}</td>
+                    <td class="workload-time">${schedulerWorkloadFormatCompactTime(row.time)}</td>
+                    <td class="workload-room">${escapeHtml(row.room)}</td>
+                    <td class="text-center">${schedulerWorkloadFormatNumber(displayUnits)}</td>
+                    <td class="text-center">${schedulerWorkloadFormatNumber(displayLabUnits)}</td>
+                    <td class="text-center">${schedulerWorkloadFormatNumber(displayLecUnits)}</td>
+                    <td class="text-center fw-semibold">${schedulerWorkloadFormatNumber(row.faculty_load)}</td>
+                    <td class="text-center">${schedulerWorkloadFormatStudentCount(row.student_count)}</td>
+                    <td class="text-end screen-only">
+                        <button
+                            type="button"
+                            class="btn btn-sm btn-delete-workload btn-scheduler-remove-workload"
+                            data-ids="${escapeHtml(String(row.workload_id || ""))}"
+                            data-subject="${escapeHtml(row.sub_code || "")}"
+                            data-delete-count="1"
+                        >
+                            <i class="bx bx-trash"></i>
+                        </button>
+                    </td>
+                </tr>
+            `;
+        }
+
+        if (!rowsHtml) {
+            rowsHtml = `
+                <tr>
+                    <td colspan="12" class="text-center text-muted py-4">No workload assigned yet.</td>
+                </tr>
+            `;
+        }
+
+        const designationUnits = schedulerWorkloadToNumber(meta.designation_units);
+        const totalPreparations = Math.max(
+            Number(meta.total_preparations) || 0,
+            preparationSet.size
+        );
+        const grandTotalLoad = totalLoad + designationUnits;
+        const loadStatus = schedulerWorkloadGetLoadStatus(grandTotalLoad);
+
+        $("#schedulerFacultyWorkloadTbody").html(rowsHtml);
+        $("#schedulerFacultyWorkloadDesignationText").text(schedulerWorkloadFormatDesignationDisplay(meta));
+        $("#schedulerFacultyWorkloadDesignationLoad").text(
+            designationUnits > 0 ? schedulerWorkloadFormatNumber(designationUnits) : ""
+        );
+        $("#schedulerFacultyWorkloadPreparations").text(schedulerWorkloadFormatNumber(totalPreparations));
+        $("#schedulerFacultyWorkloadTotalUnit").text(schedulerWorkloadFormatNumber(totalUnit));
+        $("#schedulerFacultyWorkloadTotalLab").text(schedulerWorkloadFormatNumber(totalLab));
+        $("#schedulerFacultyWorkloadTotalLec").text(schedulerWorkloadFormatNumber(totalLec));
+        $("#schedulerFacultyWorkloadTotalLoad").html(`
+            <span class="total-load-value">${escapeHtml(schedulerWorkloadFormatNumber(grandTotalLoad))}</span>
+            ${loadStatus.label ? `<span class="load-status-inline ${escapeHtml(loadStatus.className)}">${escapeHtml(loadStatus.label)}</span>` : ""}
+        `);
+        $("#schedulerFacultyWorkloadTotalStudents").text("");
+
+        if (schedulerFacultyWorkloadState?.contextLabel) {
+            schedulerWorkloadSetContextMessage(
+                hasHighlightedRows
+                    ? `Opened from ${schedulerFacultyWorkloadState.contextLabel}. Highlighted rows belong to the current subject, so you can remove them here without leaving this page.`
+                    : `Opened from ${schedulerFacultyWorkloadState.contextLabel}. This faculty currently has no saved workload row for that subject in the selected term.`
+            );
+        }
+    }
+
+    function loadSchedulerFacultyWorkloadModal() {
+        const state = schedulerFacultyWorkloadState;
+        if (!state?.facultyId || !state?.ayId || !state?.semester) {
+            return;
+        }
+
+        abortSchedulerFacultyWorkloadRequest();
+        setSchedulerFacultyWorkloadLoadingState();
+
+        schedulerFacultyWorkloadRequest = $.ajax({
+            url: "../backend/query_load_faculty_workload.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                faculty_id: state.facultyId,
+                ay_id: state.ayId,
+                semester: state.semester
+            }
+        }).done(function (data) {
+            if (
+                !schedulerFacultyWorkloadState ||
+                schedulerFacultyWorkloadState.facultyId !== state.facultyId ||
+                schedulerFacultyWorkloadState.ayId !== state.ayId ||
+                schedulerFacultyWorkloadState.semester !== state.semester
+            ) {
+                return;
+            }
+
+            const payload = schedulerWorkloadNormalizeResponse(data);
+            if (!payload) {
+                $("#schedulerFacultyWorkloadTbody").html(`
+                    <tr>
+                        <td colspan="12" class="text-center text-danger py-4">Invalid workload response from server.</td>
+                    </tr>
+                `);
+                resetSchedulerFacultyWorkloadTotals();
+                return;
+            }
+
+            renderSchedulerFacultyWorkload(payload);
+        }).fail(function (xhr, status) {
+            if (status === "abort") {
+                return;
+            }
+
+            $("#schedulerFacultyWorkloadTbody").html(`
+                <tr>
+                    <td colspan="12" class="text-center text-danger py-4">Failed to load faculty workload.</td>
+                </tr>
+            `);
+            resetSchedulerFacultyWorkloadTotals();
+            schedulerWorkloadSetContextMessage(xhr.responseText || "Unable to load the selected faculty workload.");
+        }).always(function () {
+            schedulerFacultyWorkloadRequest = null;
+        });
+    }
+
+    function openSchedulerFacultyWorkloadModal(button) {
+        const filters = getSchedulerFacultyWorkloadFilters();
+        const facultyId = parseInt(button.data("facultyId"), 10) || 0;
+        const facultyName = String(button.data("facultyName") || "").trim();
+
+        if (!filters) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        if (!facultyId || !facultyName) {
+            Swal.fire("Unavailable", "Faculty workload details are not available for this row.", "info");
+            return;
+        }
+
+        schedulerFacultyWorkloadState = {
+            facultyId,
+            facultyName,
+            ayId: filters.ayId,
+            semester: filters.semester,
+            termLabel: filters.termLabel,
+            highlightOfferingId: parseInt(button.data("offeringId"), 10) || 0,
+            contextLabel: String(button.data("contextLabel") || "").trim()
+        };
+
+        setSchedulerFacultyWorkloadLoadingState();
+
+        if (schedulerFacultyWorkloadModalInstance) {
+            schedulerFacultyWorkloadModalInstance.show();
+        } else {
+            $("#schedulerFacultyWorkloadModal").modal("show");
+        }
+
+        loadSchedulerFacultyWorkloadModal();
+    }
+
     function hasSchedulingModalOpen() {
-        return $("#scheduleModal, #dualScheduleModal, #blockScheduleModal, #scheduleMergeModal, #autoDraftModal").filter(".show").length > 0;
+        return $("#scheduleModal, #dualScheduleModal, #blockScheduleModal, #scheduleMergeModal, #autoDraftModal, #schedulerFacultyWorkloadModal").filter(".show").length > 0;
     }
 
     function restoreBodyModalStateForScheduling() {
@@ -8911,11 +9688,22 @@ const facultyScheduleMatrixModalElement = document.getElementById("facultySchedu
 if (facultyScheduleMatrixModalElement) {
   facultyScheduleMatrixModalInstance = bootstrap.Modal.getOrCreateInstance(facultyScheduleMatrixModalElement);
 }
+const schedulerFacultyWorkloadModalElement = document.getElementById("schedulerFacultyWorkloadModal");
+if (schedulerFacultyWorkloadModalElement) {
+  schedulerFacultyWorkloadModalInstance = bootstrap.Modal.getOrCreateInstance(schedulerFacultyWorkloadModalElement);
+}
 renderRoomBrowser();
 
 $("#prospectus_id, #ay_id, #semester").on("change", function () {
   if (this.id === "ay_id" || this.id === "semester") {
     clearTermRoomOptions();
+  }
+  if ($("#schedulerFacultyWorkloadModal").hasClass("show")) {
+    if (schedulerFacultyWorkloadModalInstance) {
+      schedulerFacultyWorkloadModalInstance.hide();
+    } else {
+      $("#schedulerFacultyWorkloadModal").modal("hide");
+    }
   }
   resetAutoDraftPreview();
   loadScheduleSets();
@@ -8973,6 +9761,64 @@ $("#btnOpenRoomBrowser").on("click", function () {
 
 $(document).on("click", ".btn-open-modal-matrix", function () {
   openMatrixHelper();
+});
+
+$(document).on("click", ".schedule-status-faculty-link", function () {
+  openSchedulerFacultyWorkloadModal($(this));
+});
+
+$(document).on("click", ".btn-scheduler-remove-workload", function () {
+  const button = $(this);
+  const workloadIds = String(button.data("ids") || "")
+    .split(",")
+    .map(function (value) {
+      return parseInt(String(value).trim(), 10) || 0;
+    })
+    .filter(function (value, index, list) {
+      return value > 0 && list.indexOf(value) === index;
+    });
+  const workloadId = workloadIds[0] || 0;
+  const deleteCount = parseInt(button.data("deleteCount"), 10) || workloadIds.length || 1;
+  const subjectCode = String(button.data("subject") || "this class").trim() || "this class";
+  const facultyName = String(schedulerFacultyWorkloadState?.facultyName || "this faculty").trim() || "this faculty";
+
+  if (!workloadId) {
+    Swal.fire("Unavailable", "The selected workload row cannot be removed right now.", "info");
+    return;
+  }
+
+  Swal.fire({
+    title: deleteCount > 1 ? "Remove linked classes?" : "Remove this class?",
+    html: deleteCount > 1
+      ? `Remove the linked workload rows for <b>${escapeHtml(subjectCode)}</b> from <b>${escapeHtml(facultyName)}</b>? This will remove the paired lecture/laboratory assignment together.`
+      : `Remove <b>${escapeHtml(subjectCode)}</b> from <b>${escapeHtml(facultyName)}</b> workload?`,
+    icon: "warning",
+    showCancelButton: true,
+    confirmButtonColor: "#d33",
+    confirmButtonText: "Remove",
+    cancelButtonText: "Cancel",
+    customClass: { popup: "swal-top" }
+  }).then(function (result) {
+    if (!result.isConfirmed) {
+      return;
+    }
+
+    button.prop("disabled", true);
+
+    $.post(
+      "../backend/query_remove_workload.php",
+      deleteCount > 1
+        ? { workload_ids: workloadIds }
+        : { workload_id: workloadId }
+    ).done(function () {
+      loadSchedulerFacultyWorkloadModal();
+      loadScheduleTable(false);
+    }).fail(function (xhr) {
+      Swal.fire("Error", xhr.responseText || "Failed to remove workload.", "error");
+    }).always(function () {
+      button.prop("disabled", false);
+    });
+  });
 });
 
 $(document).on("click", "#blockScheduleModal .btn-open-section-matrix", function () {
@@ -9067,6 +9913,15 @@ $("#facultyScheduleMatrixModal").on("show.bs.modal", function () {
 $("#facultyScheduleMatrixModal").on("hidden.bs.modal", function () {
   $("#facultyScheduleMatrixContainer").html('<div class="faculty-matrix-empty">Select a faculty and click Show Workload.</div>');
   $("#facultyScheduleMatrixHeaderNote").text("View the selected faculty schedule in the same day-by-time board layout.");
+  restoreBodyModalStateForScheduling();
+});
+
+$("#schedulerFacultyWorkloadModal").on("show.bs.modal", function () {
+  $(this).appendTo("body").css("z-index", 1116);
+});
+
+$("#schedulerFacultyWorkloadModal").on("hidden.bs.modal", function () {
+  resetSchedulerFacultyWorkloadState();
   restoreBodyModalStateForScheduling();
 });
 

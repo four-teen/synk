@@ -222,11 +222,34 @@ function render_offering_status_cell_html(array $row, array $status): string
         $html[] = "<div class='schedule-status-item'>{$badge}</div>";
     }
 
-    $facultyNames = array_values(array_filter(array_map('trim', (array)($row['workload_faculty_names'] ?? []))));
-    if (!empty($facultyNames)) {
-        $html[] = "<div class='schedule-status-faculty'>" .
-            htmlspecialchars(implode(', ', $facultyNames), ENT_QUOTES, 'UTF-8') .
-            "</div>";
+    $facultyAssignments = array_values(array_filter(
+        (array)($row['workload_faculty_assignments'] ?? []),
+        static function ($assignment): bool {
+            return is_array($assignment)
+                && (int)($assignment['faculty_id'] ?? 0) > 0
+                && trim((string)($assignment['faculty_name'] ?? '')) !== '';
+        }
+    ));
+
+    if (!empty($facultyAssignments)) {
+        $contextParts = array_filter([
+            trim((string)($row['sub_code'] ?? '')),
+            trim((string)($row['section_name'] ?? ''))
+        ]);
+        $contextLabel = implode(' | ', $contextParts);
+        $ownerOfferingId = (int)($row['schedule_owner_offering_id'] ?? ($row['offering_id'] ?? 0));
+        $facultyButtons = array_map(static function (array $assignment) use ($ownerOfferingId, $contextLabel): string {
+            return
+                "<button type='button' class='schedule-status-faculty-link'" .
+                " data-faculty-id='" . (int)($assignment['faculty_id'] ?? 0) . "'" .
+                " data-faculty-name='" . htmlspecialchars((string)($assignment['faculty_name'] ?? ''), ENT_QUOTES, 'UTF-8') . "'" .
+                " data-offering-id='" . $ownerOfferingId . "'" .
+                " data-context-label='" . htmlspecialchars($contextLabel, ENT_QUOTES, 'UTF-8') . "'>" .
+                htmlspecialchars((string)($assignment['faculty_name'] ?? ''), ENT_QUOTES, 'UTF-8') .
+                "</button>";
+        }, $facultyAssignments);
+
+        $html[] = "<div class='schedule-status-faculty-list'>" . implode('', $facultyButtons) . "</div>";
     }
 
     return "<div class='schedule-status-stack'>" . implode('', $html) . "</div>";
@@ -384,7 +407,7 @@ function workload_faculty_short_name(array $row): string
     return $lastName !== '' ? $lastName : $firstName;
 }
 
-function load_workload_faculty_names_for_offerings(mysqli $conn, array $offeringIds, int $ay_id, int $semester): array
+function load_workload_faculty_assignments_for_offerings(mysqli $conn, array $offeringIds, int $ay_id, int $semester): array
 {
     $map = [];
     $safeIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
@@ -395,6 +418,7 @@ function load_workload_faculty_names_for_offerings(mysqli $conn, array $offering
     $sql = "
         SELECT
             cs.offering_id,
+            fw.faculty_id,
             f.last_name,
             f.first_name
         FROM tbl_faculty_workload_sched fw
@@ -420,12 +444,13 @@ function load_workload_faculty_names_for_offerings(mysqli $conn, array $offering
 
     while ($row = $res->fetch_assoc()) {
         $offeringId = (int)($row['offering_id'] ?? 0);
+        $facultyId = (int)($row['faculty_id'] ?? 0);
         if ($offeringId <= 0) {
             continue;
         }
 
         $name = workload_faculty_short_name($row);
-        if ($name === '') {
+        if ($facultyId <= 0 || $name === '') {
             continue;
         }
 
@@ -433,8 +458,19 @@ function load_workload_faculty_names_for_offerings(mysqli $conn, array $offering
             $map[$offeringId] = [];
         }
 
-        if (!in_array($name, $map[$offeringId], true)) {
-            $map[$offeringId][] = $name;
+        $alreadyAdded = false;
+        foreach ($map[$offeringId] as $existingAssignment) {
+            if ((int)($existingAssignment['faculty_id'] ?? 0) === $facultyId) {
+                $alreadyAdded = true;
+                break;
+            }
+        }
+
+        if (!$alreadyAdded) {
+            $map[$offeringId][] = [
+                'faculty_id' => $facultyId,
+                'faculty_name' => $name
+            ];
         }
     }
 
@@ -534,7 +570,7 @@ foreach ($offeringOrder as $offeringId) {
 
 $ownerIds = synk_schedule_merge_normalize_offering_ids($ownerIds);
 $scheduleRowsByOffering = load_schedule_rows_by_offering($conn, $ownerIds);
-$workloadFacultyMap = load_workload_faculty_names_for_offerings($conn, $ownerIds, (int)$ay_id, (int)$semester);
+$workloadFacultyMap = load_workload_faculty_assignments_for_offerings($conn, $ownerIds, (int)$ay_id, (int)$semester);
 $ownerSectionRows = synk_schedule_merge_load_section_rows_by_offering($conn, $ownerIds);
 
 foreach ($offeringOrder as $offeringId) {
@@ -548,7 +584,13 @@ foreach ($offeringOrder as $offeringId) {
     $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
 
     $row['entries'] = $scheduleRowsByOffering[$ownerOfferingId] ?? [];
-    $row['workload_faculty_names'] = $workloadFacultyMap[$ownerOfferingId] ?? [];
+    $row['workload_faculty_assignments'] = $workloadFacultyMap[$ownerOfferingId] ?? [];
+    $row['workload_faculty_names'] = array_values(array_filter(array_map(
+        static function ($assignment): string {
+            return trim((string)($assignment['faculty_name'] ?? ''));
+        },
+        (array)($row['workload_faculty_assignments'] ?? [])
+    )));
     $row['schedule_owner_offering_id'] = $ownerOfferingId;
     $row['schedule_modal_section_label'] = ((int)($mergeInfo['group_size'] ?? 1) > 1 && $groupLabel !== '')
         ? ('Merged Group: ' . $groupLabel)

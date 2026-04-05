@@ -2362,10 +2362,28 @@ $(document).ready(function () {
         return "linked-schedule-middle";
     }
 
-    function buildRemoveWorkloadButton(row) {
+    function buildRemoveWorkloadButton(options = {}) {
+        const workloadIds = Array.isArray(options.workloadIds)
+            ? options.workloadIds
+                .map(value => Number(value) || 0)
+                .filter((value, index, list) => value > 0 && list.indexOf(value) === index)
+            : [];
+        const workloadId = workloadIds[0] || Number(options?.row?.workload_id) || 0;
+        const ids = workloadIds.length > 0 ? workloadIds : (workloadId > 0 ? [workloadId] : []);
+        if (ids.length === 0) {
+            return "";
+        }
+
+        const subjectCode = String(options.subjectCode || options?.row?.sub_code || "").trim();
+        const deleteCount = ids.length;
+        const title = deleteCount > 1 ? "Remove linked lecture/laboratory workload" : "Remove workload";
+
         return `
             <button class="btn btn-sm btn-delete-workload btnRemoveWL"
-                    data-id="${escapeHtml(row.workload_id)}">
+                    data-ids="${escapeHtml(ids.join(","))}"
+                    data-subject="${escapeHtml(subjectCode)}"
+                    data-delete-count="${escapeHtml(String(deleteCount))}"
+                    title="${escapeHtml(title)}">
                 <i class="bx bx-trash"></i>
             </button>
         `;
@@ -2686,6 +2704,13 @@ $(document).ready(function () {
                     const mergedStudents = groupRows.reduce(function (maxValue, groupRow) {
                         return Math.max(maxValue, toNumber(groupRow.student_count));
                     }, 0);
+                    const groupedWorkloadIds = groupRows
+                        .map(function (groupRow) {
+                            return Number(groupRow?.workload_id) || 0;
+                        })
+                        .filter(function (value, index, list) {
+                            return value > 0 && list.indexOf(value) === index;
+                        });
 
                     groupRows.forEach(function (groupRow, groupIndex) {
                         rows += `
@@ -2702,10 +2727,13 @@ $(document).ready(function () {
                                     <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayLecUnits)}</td>
                                     <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(row.faculty_load)}</td>
                                     <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatStudentCount(mergedStudents)}</td>
+                                    <td class="text-end screen-only" rowspan="${groupRows.length}">
+                                        ${buildRemoveWorkloadButton({
+                                            workloadIds: groupedWorkloadIds,
+                                            subjectCode: groupRow.sub_code
+                                        })}
+                                    </td>
                                 ` : ""}
-                                <td class="text-end screen-only">
-                                    ${buildRemoveWorkloadButton(groupRow)}
-                                </td>
                             </tr>
                         `;
                     });
@@ -2728,7 +2756,7 @@ $(document).ready(function () {
                         <td class="text-center fw-semibold">${formatNumber(row.faculty_load)}</td>
                         <td class="text-center">${formatStudentCount(row.student_count)}</td>
                         <td class="text-end screen-only">
-                            ${buildRemoveWorkloadButton(row)}
+                            ${buildRemoveWorkloadButton({ row })}
                         </td>
                     </tr>
                 `;
@@ -2798,11 +2826,29 @@ $(document).ready(function () {
        REMOVE WORKLOAD
     ========================================================= */
     $(document).on("click", ".btnRemoveWL", function () {
+        const button = $(this);
+        const workloadIds = String(button.data("ids") || "")
+            .split(",")
+            .map(function (value) {
+                return parseInt(String(value).trim(), 10) || 0;
+            })
+            .filter(function (value, index, list) {
+                return value > 0 && list.indexOf(value) === index;
+            });
+        const workloadId = workloadIds[0] || 0;
+        const deleteCount = parseInt(button.data("deleteCount"), 10) || workloadIds.length || 1;
+        const subjectCode = String(button.data("subject") || "this class").trim() || "this class";
 
-        let id = $(this).data("id");
+        if (!workloadId) {
+            Swal.fire("Unavailable", "The selected workload row cannot be removed right now.", "info");
+            return;
+        }
 
         Swal.fire({
-            title: "Remove this class?",
+            title: deleteCount > 1 ? "Remove linked classes?" : "Remove this class?",
+            html: deleteCount > 1
+                ? `Remove the linked workload rows for <b>${escapeHtml(subjectCode)}</b>? This will remove the paired lecture/laboratory assignment together.`
+                : `Remove <b>${escapeHtml(subjectCode)}</b> from the selected faculty workload?`,
             icon: "warning",
             showCancelButton: true,
             confirmButtonColor: "#d33",
@@ -2811,14 +2857,22 @@ $(document).ready(function () {
 
             if (!res.isConfirmed) return;
 
+            button.prop("disabled", true);
+
             $.post(
                 "../backend/query_remove_workload.php",
-                { workload_id: id },
+                deleteCount > 1
+                    ? { workload_ids: workloadIds }
+                    : { workload_id: workloadId },
                 function () {
                     refreshWorkloadPanels();
                     loadFacultyOverview(true);
                 }
-            );
+            ).fail(function (xhr) {
+                Swal.fire("Error", xhr.responseText || "Failed to remove workload.", "error");
+            }).always(function () {
+                button.prop("disabled", false);
+            });
         });
     });
 
