@@ -174,7 +174,7 @@ $candidateJoinParts = [
     'FROM tbl_class_schedule cs',
     'INNER JOIN tbl_prospectus_offering o',
     '    ON o.offering_id = cs.offering_id',
-    trim(synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph')),
+    trim(synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph')),
     'INNER JOIN tbl_program p',
     '    ON p.program_id = o.program_id',
     'INNER JOIN tbl_subject_masterlist sm',
@@ -240,7 +240,7 @@ $existingSql = "
         ON cs.schedule_id = fw.schedule_id
     INNER JOIN tbl_prospectus_offering o
         ON o.offering_id = cs.offering_id
-    " . synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph') . "
+    " . synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph') . "
     INNER JOIN tbl_subject_masterlist sm
         ON sm.sub_id = ps.sub_id
     WHERE fw.faculty_id = ?

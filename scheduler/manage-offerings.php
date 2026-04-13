@@ -3,18 +3,14 @@ session_start();
 ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/schema_helper.php';
 
-if (!isset($_SESSION['user_id'])) {
+if (!isset($_SESSION['user_id']) || !isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
     exit;
 }
 
-if (!isset($_SESSION['role']) || $_SESSION['role'] !== 'scheduler') {
-    header("Location: ../index.php");
-    exit;
-}
-
-if (!isset($_SESSION['college_id']) || intval($_SESSION['college_id']) <= 0) {
+if (!isset($_SESSION['college_id']) || (int)($_SESSION['college_id'] ?? 0) <= 0) {
     echo "Scheduler error: missing college assignment.";
     exit;
 }
@@ -22,12 +18,16 @@ if (!isset($_SESSION['college_id']) || intval($_SESSION['college_id']) <= 0) {
 if (empty($_SESSION['csrf_token'])) {
     $_SESSION['csrf_token'] = bin2hex(random_bytes(32));
 }
+
 $csrf_token = $_SESSION['csrf_token'];
 $currentTerm = synk_fetch_current_academic_term($conn);
-$default_ay_id = (int)$currentTerm['ay_id'];
-$default_semester = (int)$currentTerm['semester'];
+$default_ay_id = (int)($currentTerm['ay_id'] ?? 0);
+$default_semester = (int)($currentTerm['semester'] ?? 0);
+$collegeId = (int)($_SESSION['college_id'] ?? 0);
+$sectionCurriculumEnabled = synk_table_exists($conn, 'tbl_section_curriculum');
 
-function synk_title_case_display($value) {
+function synk_title_case_display($value): string
+{
     $value = trim((string)$value);
     if ($value === '') {
         return '';
@@ -35,25 +35,54 @@ function synk_title_case_display($value) {
 
     $value = preg_replace('/\s+/', ' ', $value);
     $value = ucwords(strtolower($value));
-
     $smallWords = ['And', 'Of', 'In', 'On', 'To', 'For', 'The', 'A', 'An', 'At', 'By', 'From'];
     $parts = explode(' ', $value);
 
     foreach ($parts as $index => $part) {
-        if ($index === 0) {
-            continue;
-        }
-        if (in_array($part, $smallWords, true)) {
+        if ($index > 0 && in_array($part, $smallWords, true)) {
             $parts[$index] = strtolower($part);
         }
     }
 
     return implode(' ', $parts);
 }
+
+$programOptions = [];
+$programStmt = $conn->prepare("
+    SELECT
+        program_id,
+        program_code,
+        program_name,
+        COALESCE(major, '') AS major
+    FROM tbl_program
+    WHERE college_id = ?
+    ORDER BY program_code ASC, program_name ASC, major ASC
+");
+
+if ($programStmt instanceof mysqli_stmt) {
+    $programStmt->bind_param("i", $collegeId);
+    $programStmt->execute();
+    $programRes = $programStmt->get_result();
+
+    while ($programRes && ($row = $programRes->fetch_assoc())) {
+        $programCode = strtoupper(trim((string)($row['program_code'] ?? '')));
+        $programName = synk_title_case_display($row['program_name'] ?? '');
+        $major = synk_title_case_display($row['major'] ?? '');
+        if ($major !== '') {
+            $programName .= ' (Major in ' . $major . ')';
+        }
+
+        $programOptions[] = [
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'label' => trim($programCode . ' - ' . $programName)
+        ];
+    }
+
+    $programStmt->close();
+}
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
-
 <head>
     <meta charset="utf-8" />
     <title>Generate Offerings | Synk</title>
@@ -64,12 +93,10 @@ function synk_title_case_display($value) {
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
     <link rel="stylesheet" href="../assets/css/demo.css" />
     <link rel="stylesheet" href="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.css" />
-    <link rel="stylesheet"
-          href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
+    <link rel="stylesheet" href="https://cdn.jsdelivr.net/npm/select2@4.1.0-rc.0/dist/css/select2.min.css" />
     <link rel="stylesheet" type="text/css" href="custom_css.css">
     <script src="../assets/vendor/js/helpers.js"></script>
     <script src="../assets/js/config.js"></script>
-
     <style>
         .select2-selection--single {
             height: 40px !important;
@@ -77,13 +104,6 @@ function synk_title_case_display($value) {
         }
         .select2-container--default .select2-selection--single .select2-selection__arrow {
             height: 38px !important;
-        }
-        .select2-container--default .select2-selection--single .select2-selection__rendered,
-        .select2-results__option {
-            font-family: inherit !important;
-            font-size: 0.95rem !important;
-            font-weight: 400;
-            line-height: 1.45 !important;
         }
         .page-loader-inline {
             display: inline-flex;
@@ -98,11 +118,9 @@ function synk_title_case_display($value) {
         }
     </style>
 </head>
-
 <body>
 <div class="layout-wrapper layout-content-navbar">
   <div class="layout-container">
-
     <?php include 'sidebar.php'; ?>
 
     <div class="layout-page">
@@ -112,124 +130,83 @@ function synk_title_case_display($value) {
         <div class="container-xxl flex-grow-1 container-p-y">
 
           <h4 class="fw-bold mb-4">
-            <i class="bx bx-layer-plus me-2"></i> Generate Prospectus Offerings
+            <i class="bx bx-layer-plus me-2"></i> Generate Unified Term Offerings
           </h4>
 
-          <!-- ========================= -->
-          <!-- FILTERS / GENERATE FORM   -->
-          <!-- ========================= -->
+          <?php if (!$sectionCurriculumEnabled): ?>
+            <div class="alert alert-warning">
+              Create <code>tbl_section_curriculum</code> first before generating mixed-curriculum term offerings.
+            </div>
+          <?php endif; ?>
+
           <div class="card mb-4">
             <div class="card-body">
-
               <div class="row g-3">
-
-                <!-- Prospectus -->
                 <div class="col-md-4">
-                  <label class="form-label">Select Prospectus</label>
-                  <select id="prospectus_id" class="form-select">
-                    <option value="">Select...</option>
-                    <?php
-                    $collegeId = $_SESSION['college_id'] ?? 0;
-
-                    $stmtProg = $conn->prepare("
-                        SELECT h.prospectus_id,
-                               h.effective_sy,
-                               p.program_code,
-                               p.program_name,
-                               COALESCE(p.major, '') AS major
-                        FROM tbl_prospectus_header h
-                        JOIN tbl_program p ON p.program_id = h.program_id
-                        WHERE p.college_id = ?
-                        ORDER BY p.program_name, p.major, h.effective_sy DESC
-                    ");
-                    $stmtProg->bind_param("i", $collegeId);
-                    $stmtProg->execute();
-                    $q = $stmtProg->get_result();
-
-                    while ($r = $q->fetch_assoc()) {
-                        $programCode = strtoupper(trim((string)($r['program_code'] ?? '')));
-                        $programName = synk_title_case_display($r['program_name'] ?? '');
-                        $major = synk_title_case_display($r['major'] ?? '');
-                        if ($major !== '') {
-                            $programName .= ' (Major in ' . $major . ')';
-                        }
-                        $label = $programCode . ' - ' . $programName . ' (SY ' . $r['effective_sy'] . ')';
-                        echo "<option value='{$r['prospectus_id']}'>".htmlspecialchars($label)."</option>";
-                    }
-                    ?>
+                  <label class="form-label">Program</label>
+                  <select id="program_id" class="form-select" <?= $sectionCurriculumEnabled ? '' : 'disabled' ?>>
+                    <option value="">Select Program...</option>
+                    <?php foreach ($programOptions as $programOption): ?>
+                      <option value="<?= (int)$programOption['program_id'] ?>">
+                        <?= htmlspecialchars((string)$programOption['label']) ?>
+                      </option>
+                    <?php endforeach; ?>
                   </select>
                 </div>
 
-                <!-- Academic Year -->
                 <div class="col-md-3">
                   <label class="form-label">Academic Year</label>
-                  <select id="ay_id" class="form-select">
+                  <select id="ay_id" class="form-select" <?= $sectionCurriculumEnabled ? '' : 'disabled' ?>>
                     <option value="">Select Academic Year...</option>
                     <?php
-                    $ayQuery = $conn->query("
-                        SELECT ay_id, ay 
-                        FROM tbl_academic_years
-                        ORDER BY ay DESC
-                    ");
-
+                    $ayQuery = $conn->query("SELECT ay_id, ay FROM tbl_academic_years ORDER BY ay DESC");
                     while ($ayRow = $ayQuery->fetch_assoc()) {
                         $selected = ((int)$ayRow['ay_id'] === $default_ay_id) ? ' selected' : '';
-                        echo '<option value="'.$ayRow['ay_id'].'"'.$selected.'>'.htmlspecialchars($ayRow['ay']).'</option>';
+                        echo '<option value="' . (int)$ayRow['ay_id'] . '"' . $selected . '>' . htmlspecialchars((string)$ayRow['ay']) . '</option>';
                     }
                     ?>
                   </select>
                 </div>
 
-                <!-- Semester -->
                 <div class="col-md-3">
                   <label class="form-label">Semester</label>
-                  <select id="semester" class="form-select">
+                  <select id="semester" class="form-select" <?= $sectionCurriculumEnabled ? '' : 'disabled' ?>>
                     <option value="">Select...</option>
-                    <!-- IMPORTANT: values are 1 / 2 / 3 matching tbl_prospectus_year_sem.semester -->
                     <option value="1"<?= $default_semester === 1 ? ' selected' : '' ?>>First Semester</option>
                     <option value="2"<?= $default_semester === 2 ? ' selected' : '' ?>>Second Semester</option>
                     <option value="3"<?= $default_semester === 3 ? ' selected' : '' ?>>Midyear</option>
                   </select>
                 </div>
 
-                <!-- Button -->
                 <div class="col-md-2 d-grid">
                   <label class="form-label">&nbsp;</label>
-                  <button class="btn btn-primary" id="btnGenerateOfferings">
+                  <button class="btn btn-primary" id="btnGenerateOfferings" <?= $sectionCurriculumEnabled ? '' : 'disabled' ?>>
                     <i class="bx bx-refresh me-1"></i> Generate
                   </button>
                 </div>
-
               </div>
             </div>
           </div>
 
-          <!-- ========================= -->
-          <!-- GENERATED OFFERINGS TABLE -->
-          <!-- ========================= -->
           <div class="card">
             <div class="card-header">
-              <h5 class="m-0">Generated Offerings</h5>
+              <h5 class="m-0">Unified Program Offerings</h5>
               <small class="text-muted">
-                List of offerings for selected prospectus, AY, and semester.
+                One term list for the selected program, academic year, and semester. Each section follows its assigned curriculum.
               </small>
             </div>
 
-<div class="d-flex justify-content-end align-items-center gap-2 px-3 pb-2">
-  <button class="btn btn-outline-primary btn-sm" id="btnViewProspectus">
-    <i class="bx bx-book-content me-1"></i> View Prospectus
-  </button>
-  <span id="totalOfferingsBadge" class="badge bg-primary">
-    Total Offerings: 0
-  </span>
-</div>
-
+            <div class="d-flex justify-content-end align-items-center gap-2 px-3 pb-2">
+              <span id="totalOfferingsBadge" class="badge bg-primary">Total Offerings: 0</span>
+            </div>
 
             <div class="table-responsive p-3">
               <table class="table table-bordered table-hover" id="offeringsTable">
                 <thead>
                   <tr>
+                    <th>Year</th>
                     <th>Section</th>
+                    <th>Curriculum</th>
                     <th>Subject Code</th>
                     <th>Description</th>
                     <th>LEC</th>
@@ -240,8 +217,8 @@ function synk_title_case_display($value) {
                 </thead>
                 <tbody>
                   <tr>
-                    <td colspan="7" class="text-center text-muted">
-                      Select filters and generate.
+                    <td colspan="9" class="text-center text-muted">
+                      Select program, academic year, and semester to load offerings.
                     </td>
                   </tr>
                 </tbody>
@@ -253,30 +230,10 @@ function synk_title_case_display($value) {
 
         <?php include '../footer.php'; ?>
       </div>
-
     </div>
   </div>
 </div>
 
-<!-- Prospectus Preview Modal -->
-<div class="modal fade" id="prospectusPreviewModal" tabindex="-1" aria-hidden="true">
-  <div class="modal-dialog modal-xl modal-dialog-scrollable">
-    <div class="modal-content">
-      <div class="modal-header">
-        <h5 class="modal-title">Program Prospectus</h5>
-        <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
-      </div>
-      <div class="modal-body" id="prospectusPreviewBody">
-        <div class="text-muted">Select a prospectus to view details.</div>
-      </div>
-      <div class="modal-footer">
-        <button class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-      </div>
-    </div>
-  </div>
-</div>
-
-<!-- Core JS -->
 <script src="../assets/vendor/libs/jquery/jquery.js"></script>
 <script src="../assets/vendor/libs/popper/popper.js"></script>
 <script src="../assets/vendor/js/bootstrap.js"></script>
@@ -290,8 +247,8 @@ function synk_title_case_display($value) {
 
 <script>
 $(document).ready(function () {
-
   const CSRF_TOKEN = <?= json_encode($csrf_token) ?>;
+  const SECTION_CURRICULUM_ENABLED = <?= $sectionCurriculumEnabled ? 'true' : 'false' ?>;
 
   $.ajaxPrefilter(function (options) {
     const method = (options.type || options.method || "GET").toUpperCase();
@@ -318,76 +275,23 @@ $(document).ready(function () {
     }
   });
 
-  // ---------------------
-  // Initialize Select2
-  // ---------------------
-  $('#prospectus_id').select2({
-    placeholder: "Select Prospectus",
-    width: '100%'
-  });
+  $('#program_id').select2({ placeholder: "Select Program", width: '100%' });
+  $('#ay_id').select2({ placeholder: "Select Academic Year", width: '100%' });
+  $('#semester').select2({ placeholder: "Select Semester", width: '100%' });
 
-  $('#ay_id').select2({
-    placeholder: "Select Academic Year",
-    width: '100%'
-  });
-
-  $('#semester').select2({
-    placeholder: "Select Semester",
-    width: '100%'
-  });
-
-// ---------------------
-// AUTO-LOAD OFFERINGS WHEN FILTERS ARE COMPLETE
-// ---------------------
-function buildLoaderRow(colspan, message) {
-  return `
-    <tr>
-      <td colspan="${colspan}" class="text-center text-muted py-4">
-        <div class="page-loader-inline">
-          <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-          <span>${message}</span>
-        </div>
-      </td>
-    </tr>
-  `;
-}
-
-function buildLoaderBlock(message) {
-  return `
-    <div class="d-flex justify-content-center py-4">
-      <div class="page-loader-inline">
-        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
-        <span>${message}</span>
-      </div>
-    </div>
-  `;
-}
-
-function tryAutoLoadOfferings() {
-
-  let pid = $('#prospectus_id').val();
-  let ay  = $('#ay_id').val();
-  let sem = $('#semester').val();
-
-  $('#totalOfferingsBadge').text('Total Offerings: 0');
-
-
-  if (pid && ay && sem) {
-    $('#offeringsTable tbody').html(buildLoaderRow(7, "Loading offerings..."));
-
-    loadOfferings(pid, ay, sem);
+  function buildLoaderRow(colspan, message) {
+    return `
+      <tr>
+        <td colspan="${colspan}" class="text-center text-muted py-4">
+          <div class="page-loader-inline">
+            <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+            <span>${message}</span>
+          </div>
+        </td>
+      </tr>
+    `;
   }
-}
 
-// Bind change events
-$('#prospectus_id').on('change', tryAutoLoadOfferings);
-$('#ay_id').on('change', tryAutoLoadOfferings);
-$('#semester').on('change', tryAutoLoadOfferings);
-
-
-  // ---------------------
-  // Generate Offerings
-  // ---------------------
   function extractAjaxError(xhr, fallbackMsg) {
     if (xhr && xhr.responseJSON && xhr.responseJSON.message) {
       return xhr.responseJSON.message;
@@ -399,17 +303,55 @@ $('#semester').on('change', tryAutoLoadOfferings);
     try {
       const parsed = JSON.parse(text);
       if (parsed && parsed.message) return parsed.message;
-    } catch (e) {
-      // Non-JSON response; use compact plain-text fallback below.
-    }
+    } catch (e) {}
 
     return text.length > 300 ? fallbackMsg : text;
+  }
+
+  function semLabel(sem) {
+    if (String(sem) === "1") return "First Semester";
+    if (String(sem) === "2") return "Second Semester";
+    if (String(sem) === "3") return "Midyear";
+    return `Semester ${sem}`;
+  }
+
+  function toDisplayCase(value) {
+    const text = String(value || "").trim().replace(/\s+/g, " ");
+    if (!text) return "";
+
+    const lower = text.toLowerCase();
+    const titled = lower.replace(/\b([a-z])/g, function (_, letter) {
+      return letter.toUpperCase();
+    });
+    const words = titled.split(" ");
+    const smallWords = new Set(["and", "of", "in", "on", "to", "for", "the", "a", "an", "at", "by", "from"]);
+
+    return words.map(function (word, index) {
+      if (index > 0 && smallWords.has(word.toLowerCase())) {
+        return word.toLowerCase();
+      }
+      return word;
+    }).join(" ");
+  }
+
+  function formatProgramDisplayLabel(programCode, programName, major) {
+    const code = String(programCode || "").trim().toUpperCase();
+    const name = toDisplayCase(programName);
+    const majorLabel = toDisplayCase(major);
+    let label = [code, name].filter(Boolean).join(" - ");
+
+    if (majorLabel) {
+      label += `${label ? " " : ""}(Major in ${majorLabel})`;
+    }
+
+    return label;
   }
 
   function buildValidationHtml(v) {
     const summary = v.summary || {};
     const blockers = Array.isArray(v.blockers) ? v.blockers : [];
     const warnings = Array.isArray(v.warnings) ? v.warnings : [];
+    const curriculumLabels = Array.isArray(v.curriculum_labels) ? v.curriculum_labels : [];
     const fullProgramLabel = formatProgramDisplayLabel(v.program_code, v.program_name, v.major);
 
     let html = `
@@ -418,28 +360,34 @@ $('#semester').on('change', tryAutoLoadOfferings);
         <div><strong>AY:</strong> ${v.ay_label || "-"}</div>
         <div><strong>Semester:</strong> ${semLabel(v.semester || "")}</div>
         <hr class="my-2">
-        <div><strong>Subject Rows:</strong> ${summary.total_subject_rows ?? 0}</div>
         <div><strong>Active Sections:</strong> ${summary.total_active_sections ?? 0}</div>
+        <div><strong>Sections with Curriculum:</strong> ${summary.sections_with_curriculum ?? 0}</div>
+        <div><strong>Sections Missing Curriculum:</strong> ${summary.sections_missing_curriculum ?? 0}</div>
+        <div><strong>Sections without Subject Rows:</strong> ${summary.sections_without_subject_rows ?? 0}</div>
+        <div><strong>Curriculum Versions in Use:</strong> ${summary.curriculum_versions_in_use ?? 0}</div>
         <div><strong>Potential Offerings:</strong> ${summary.potential_offerings ?? 0}</div>
         <div><strong>Existing Rows:</strong> ${summary.total_existing_rows ?? 0}</div>
         <div><strong>Live Synced Rows:</strong> ${summary.current_synced_rows ?? 0}</div>
         <div><strong>Out-of-Scope Retained:</strong> ${summary.out_of_scope_existing ?? 0}</div>
-        <div><strong>Out-of-Scope with Schedule:</strong> ${summary.out_of_scope_scheduled ?? 0}</div>
-    `;
+      `;
 
-    if ((summary.duplicate_pairs ?? 0) > 0) {
-      html += `<div><strong>Duplicate Pairs:</strong> ${summary.duplicate_pairs}</div>`;
+    if (curriculumLabels.length) {
+      html += `<hr class="my-2"><div><strong>Curricula in Use:</strong><ul class="mb-0">`;
+      curriculumLabels.forEach(function (label) {
+        html += `<li>${label}</li>`;
+      });
+      html += `</ul></div>`;
     }
 
     if (blockers.length) {
       html += `<hr class="my-2"><div class="text-danger"><strong>Blockers:</strong><ul class="mb-0">`;
-      blockers.forEach(x => { html += `<li>${x}</li>`; });
+      blockers.forEach(function (item) { html += `<li>${item}</li>`; });
       html += `</ul></div>`;
     }
 
     if (warnings.length) {
       html += `<hr class="my-2"><div class="text-warning"><strong>Warnings:</strong><ul class="mb-0">`;
-      warnings.forEach(x => { html += `<li>${x}</li>`; });
+      warnings.forEach(function (item) { html += `<li>${item}</li>`; });
       html += `</ul></div>`;
     }
 
@@ -447,7 +395,20 @@ $('#semester').on('change', tryAutoLoadOfferings);
     return html;
   }
 
-  function executeGenerate(pid, ay, sem) {
+  function tryAutoLoadOfferings() {
+    const programId = $('#program_id').val();
+    const ay = $('#ay_id').val();
+    const sem = $('#semester').val();
+
+    $('#totalOfferingsBadge').text('Total Offerings: 0');
+
+    if (SECTION_CURRICULUM_ENABLED && programId && ay && sem) {
+      $('#offeringsTable tbody').html(buildLoaderRow(9, "Loading unified offerings..."));
+      loadOfferings(programId, ay, sem);
+    }
+  }
+
+  function executeGenerate(programId, ay, sem) {
     $('#btnGenerateOfferings').prop('disabled', true);
     Swal.fire({
       title: "Generating...",
@@ -461,7 +422,7 @@ $('#semester').on('change', tryAutoLoadOfferings);
       dataType: "json",
       data: {
         generate_offerings: 1,
-        prospectus_id: pid,
+        program_id: programId,
         ay_id: ay,
         semester: sem
       },
@@ -476,8 +437,8 @@ $('#semester').on('change', tryAutoLoadOfferings);
           title: "Sync Complete",
           text: `Added: ${out.inserted}, Synced Existing: ${out.synced_existing || 0}, Retained Hidden: ${out.retained_out_of_scope || 0}`,
           confirmButtonText: "Done"
-        }).then(() => {
-          loadOfferings(pid, ay, sem);
+        }).then(function () {
+          loadOfferings(programId, ay, sem);
         });
       },
       error: function (xhr) {
@@ -489,13 +450,37 @@ $('#semester').on('change', tryAutoLoadOfferings);
     });
   }
 
+  function loadOfferings(programId, ay, sem) {
+    $('#offeringsTable tbody').html(buildLoaderRow(9, "Loading unified offerings..."));
+
+    $.post("../backend/load_offerings.php", {
+      program_id: programId,
+      ay_id: ay,
+      semester: sem
+    }, function (rows) {
+      $('#offeringsTable tbody').html(rows);
+      const count = $('#offeringsTable tbody tr').not(':has(td[colspan])').length;
+      $('#totalOfferingsBadge').text('Total Offerings: ' + count);
+    }).fail(function (xhr) {
+      $('#offeringsTable tbody').html("<tr><td colspan='9' class='text-danger text-center'>Error loading offerings.</td></tr>");
+      $('#totalOfferingsBadge').text('Total Offerings: 0');
+      console.error(xhr.responseText);
+    });
+  }
+
+  $('#program_id, #ay_id, #semester').on('change', tryAutoLoadOfferings);
+
   $('#btnGenerateOfferings').on('click', function () {
+    const programId = $('#program_id').val();
+    const ay = $('#ay_id').val();
+    const sem = $('#semester').val();
 
-    let pid = $('#prospectus_id').val();
-    let ay  = $('#ay_id').val();
-    let sem = $('#semester').val();
+    if (!SECTION_CURRICULUM_ENABLED) {
+      Swal.fire("Missing Table", "Create tbl_section_curriculum first before generating offerings.", "warning");
+      return;
+    }
 
-    if (!pid || !ay || !sem) {
+    if (!programId || !ay || !sem) {
       Swal.fire("Missing Data", "Fill all fields.", "warning");
       return;
     }
@@ -513,7 +498,7 @@ $('#semester').on('change', tryAutoLoadOfferings);
       dataType: "json",
       data: {
         validate_offerings_context: 1,
-        prospectus_id: pid,
+        program_id: programId,
         ay_id: ay,
         semester: sem
       },
@@ -530,17 +515,18 @@ $('#semester').on('change', tryAutoLoadOfferings);
         }
 
         Swal.fire({
-          title: "Sync Offerings?",
+          title: "Sync Unified Offerings?",
           html: buildValidationHtml(v),
           icon: "question",
           showCancelButton: true,
           confirmButtonText: "Proceed"
-        }).then((res) => {
+        }).then(function (res) {
           if (!res.isConfirmed) {
             $('#btnGenerateOfferings').prop('disabled', false);
             return;
           }
-          executeGenerate(pid, ay, sem);
+
+          executeGenerate(programId, ay, sem);
         });
       },
       error: function (xhr) {
@@ -549,202 +535,7 @@ $('#semester').on('change', tryAutoLoadOfferings);
       }
     });
   });
-
-  // ---------------------
-  // Load Offerings Table
-  // ---------------------
-function loadOfferings(pid, ay, sem) {
-  $('#offeringsTable tbody').html(buildLoaderRow(7, "Loading offerings..."));
-  $.post(
-    "../backend/load_offerings.php",
-    { prospectus_id: pid, ay_id: ay, semester: sem },
-    function (rows) {
-
-      $('#offeringsTable tbody').html(rows);
-
-      // Count actual offerings rows
-      let count = $('#offeringsTable tbody tr')
-        .not(':has(td[colspan])') // exclude "No data" rows
-        .length;
-
-      $('#totalOfferingsBadge').text('Total Offerings: ' + count);
-    }
-  ).fail(function (xhr) {
-    $('#offeringsTable tbody').html(
-      "<tr><td colspan='7' class='text-danger text-center'>Error loading offerings.</td></tr>"
-    );
-    $('#totalOfferingsBadge').text('Total Offerings: 0');
-    console.error(xhr.responseText);
-  });
-}
-
-function semLabel(sem) {
-  if (String(sem) === "1") return "First Semester";
-  if (String(sem) === "2") return "Second Semester";
-  if (String(sem) === "3") return "Midyear";
-  return `Semester ${sem}`;
-}
-
-function yearLabel(year) {
-  if (String(year) === "1") return "First Year";
-  if (String(year) === "2") return "Second Year";
-  if (String(year) === "3") return "Third Year";
-  if (String(year) === "4") return "Fourth Year";
-  return `Year ${year}`;
-}
-
-function toDisplayCase(value) {
-  const text = String(value || "").trim().replace(/\s+/g, " ");
-  if (!text) return "";
-
-  const lower = text.toLowerCase();
-  const titled = lower.replace(/\b([a-z])/g, function (_, letter) {
-    return letter.toUpperCase();
-  });
-  const words = titled.split(" ");
-  const smallWords = new Set(["and", "of", "in", "on", "to", "for", "the", "a", "an", "at", "by", "from"]);
-
-  return words.map(function (word, index) {
-    if (index > 0 && smallWords.has(word.toLowerCase())) {
-      return word.toLowerCase();
-    }
-    return word;
-  }).join(" ");
-}
-
-function formatProgramDisplayLabel(programCode, programName, major) {
-  const code = String(programCode || "").trim().toUpperCase();
-  const name = toDisplayCase(programName);
-  const majorLabel = toDisplayCase(major);
-  let label = [code, name].filter(Boolean).join(" - ");
-
-  if (majorLabel) {
-    label += `${label ? " " : ""}(Major in ${majorLabel})`;
-  }
-
-  return label;
-}
-
-function renderProspectusPreview(data) {
-  const header = data.header || {};
-  const structure = data.structure || {};
-  const subjects = data.subjects || {};
-
-  const programName = toDisplayCase(header.program_name || "");
-  const programCode = String(header.program_code || "").trim().toUpperCase();
-  const major = toDisplayCase(header.major || "");
-  const cmo = header.cmo_no || "-";
-  const sy = header.effective_sy || "-";
-
-  const title = formatProgramDisplayLabel(programCode, programName, major);
-
-  let html = `
-    <div class="mb-3">
-      <h6 class="mb-1">${title}</h6>
-      <div class="small text-muted">CMO: ${cmo} | Effectivity SY: ${sy}</div>
-    </div>
-  `;
-
-  const years = Object.keys(structure).sort((a, b) => Number(a) - Number(b));
-
-  if (!years.length) {
-    html += `<div class="text-muted">No year/semester structure found.</div>`;
-    return html;
-  }
-
-  years.forEach(year => {
-    const semsObj = structure[year] || {};
-    const sems = Object.keys(semsObj).sort((a, b) => Number(a) - Number(b));
-
-    sems.forEach(sem => {
-      const rows = (subjects[year] && subjects[year][sem]) ? subjects[year][sem] : [];
-
-      html += `
-        <div class="card mb-3">
-          <div class="card-header d-flex justify-content-between align-items-center">
-            <strong>${yearLabel(year)} - ${semLabel(sem)}</strong>
-            <span class="badge bg-label-primary">Subjects: ${rows.length}</span>
-          </div>
-          <div class="table-responsive">
-            <table class="table table-sm table-bordered mb-0">
-              <thead>
-                <tr>
-                  <th>Code</th>
-                  <th>Description</th>
-                  <th class="text-center">LEC</th>
-                  <th class="text-center">LAB</th>
-                  <th class="text-center">Units</th>
-                  <th>Prerequisites</th>
-                </tr>
-              </thead>
-              <tbody>
-      `;
-
-      if (!rows.length) {
-        html += `<tr><td colspan="6" class="text-center text-muted">No subjects.</td></tr>`;
-      } else {
-        rows.forEach(r => {
-          html += `
-            <tr>
-              <td>${r.sub_code || ""}</td>
-              <td>${r.sub_description || ""}</td>
-              <td class="text-center">${r.lec_units ?? 0}</td>
-              <td class="text-center">${r.lab_units ?? 0}</td>
-              <td class="text-center">${r.total_units ?? 0}</td>
-              <td>${r.prerequisites || "None"}</td>
-            </tr>
-          `;
-        });
-      }
-
-      html += `
-              </tbody>
-            </table>
-          </div>
-        </div>
-      `;
-    });
-  });
-
-  return html;
-}
-
-$('#btnViewProspectus').on('click', function () {
-  const pid = $('#prospectus_id').val();
-  if (!pid) {
-    Swal.fire("Missing Data", "Select a prospectus first.", "warning");
-    return;
-  }
-
-  const modalEl = document.getElementById('prospectusPreviewModal');
-  const modal = new bootstrap.Modal(modalEl);
-  $('#prospectusPreviewBody').html(buildLoaderBlock('Loading prospectus...'));
-  modal.show();
-
-  $.ajax({
-    url: "../backend/query_view_prospectus.php",
-    type: "GET",
-    dataType: "json",
-    data: { prospectus_id: pid },
-    success: function (res) {
-      if (res.error) {
-        $('#prospectusPreviewBody').html(`<div class="text-danger">${res.error}</div>`);
-        return;
-      }
-      $('#prospectusPreviewBody').html(renderProspectusPreview(res));
-    },
-    error: function (xhr) {
-      $('#prospectusPreviewBody').html(
-        `<div class="text-danger">Failed to load prospectus preview.</div>`
-      );
-      console.error(xhr.responseText);
-    }
-  });
-});
-
-
 });
 </script>
-
 </body>
 </html>

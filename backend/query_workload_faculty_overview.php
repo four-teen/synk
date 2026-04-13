@@ -58,7 +58,7 @@ function workload_overview_context_key(int $groupId, int $scheduleId, int $offer
     return 'offering:' . $offeringId;
 }
 
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 $facultyHasDesignationId = synk_table_has_column($conn, 'tbl_faculty', 'designation_id');

@@ -114,13 +114,24 @@ if (($user['status'] ?? '') !== 'active') {
     synk_auth_status_redirect('account_inactive', $redirectTarget);
 }
 
-$role = (string)($user['role'] ?? '');
-if (!in_array($role, synk_supported_module_roles(), true)) {
-    synk_auth_status_redirect('role_not_supported', $redirectTarget);
-}
+$configuredRoleRows = synk_fetch_useraccount_role_rows(
+    $conn,
+    (int)($user['user_id'] ?? 0),
+    (string)($user['role'] ?? '')
+);
+$loginableRoleRows = synk_filter_loginable_role_rows($conn, $user, $configuredRoleRows);
 
-if ($role === 'scheduler' && !synk_scheduler_account_has_access($conn, $user)) {
-    synk_auth_status_redirect('account_incomplete', $redirectTarget);
+if (empty($loginableRoleRows)) {
+    $status = 'role_not_supported';
+
+    foreach ($configuredRoleRows as $roleRow) {
+        if ((string)($roleRow['role'] ?? '') === 'scheduler') {
+            $status = 'account_incomplete';
+            break;
+        }
+    }
+
+    synk_auth_status_redirect($status, $redirectTarget);
 }
 
 $existingGoogleSub = trim((string)($user['google_sub'] ?? ''));
@@ -129,13 +140,19 @@ if ($existingGoogleSub !== '' && !hash_equals($existingGoogleSub, $googleSub)) {
 }
 
 synk_record_google_login($conn, (int)$user['user_id'], $googleSub, $emailVerified, $displayName);
-synk_complete_user_login($user, $conn);
+
+if (count($loginableRoleRows) > 1) {
+    synk_store_pending_role_login($user, $loginableRoleRows, ['avatar_url' => $pictureUrl]);
+    synk_auth_status_redirect('choose_role', $redirectTarget);
+}
+
+$activeRole = synk_complete_user_login($user, $conn, null, $loginableRoleRows);
 
 if ($pictureUrl !== '') {
     $_SESSION['user_avatar_url'] = $pictureUrl;
 }
 
-$redirectPath = synk_role_redirect_path($role);
+$redirectPath = synk_role_redirect_path($activeRole);
 if ($redirectPath === null) {
     synk_auth_status_redirect('role_not_supported', $redirectTarget);
 }

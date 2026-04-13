@@ -784,7 +784,7 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                         <strong>pending</strong> so the scheduler can start that term again.
                       </p>
                       <div class="alert alert-warning mb-0">
-                        Master data is preserved: campuses, colleges, programs, prospectus structures, sections, rooms,
+                        Master data is preserved: campuses, colleges, programs, curriculum structures, sections, rooms,
                         and faculty records are not deleted here.
                       </div>
                     </div>
@@ -953,8 +953,8 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                       <ul class="warning-list text-muted">
                         <li>Deletes faculty workload assignments connected to the selected college and term.</li>
                         <li>Deletes class schedule rows for that same college and term.</li>
-                        <li>Sets scoped prospectus offerings back to <strong>pending</strong> so they can be scheduled again.</li>
-                        <li>Does not delete the campus, college, program, faculty, section, room, or prospectus setup records.</li>
+                        <li>Sets scoped generated class offerings back to <strong>pending</strong> so they can be scheduled again.</li>
+                        <li>Does not delete the campus, college, program, faculty, section, room, or curriculum setup records.</li>
                       </ul>
                     </div>
                   </div>
@@ -1137,7 +1137,7 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                             <input class="form-check-input" type="checkbox" value="1" id="acknowledgeReset" name="acknowledge_reset" />
                             <label class="form-check-label" for="acknowledgeReset">
                               I understand that this removes class schedules and faculty workload assignments for the selected term,
-                              while keeping the college setup and prospectus records.
+                              while keeping the college setup and curriculum records.
                             </label>
                           </div>
 

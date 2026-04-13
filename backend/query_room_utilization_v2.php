@@ -24,7 +24,7 @@ function mapSemester($s) {
    SINGLE ROOM SCHEDULE
 ========================================================== */
 if (isset($_POST['load_room_schedule'])) {
-    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
 
     $ay       = trim($_POST['ay']);
     $semester = mapSemester($_POST['semester']);
@@ -87,7 +87,7 @@ if (isset($_POST['load_room_schedule'])) {
    ALL ROOMS OVERVIEW
 ========================================================== */
 if (isset($_POST['load_all_rooms'])) {
-    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
 
     $ay       = trim($_POST['ay']);
     $semester = mapSemester($_POST['semester']);

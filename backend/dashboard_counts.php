@@ -16,7 +16,7 @@ function empty_dashboard_count_payload(): array
         'scope_label' => '',
         'programs' => 0,
         'faculty' => 0,
-        'prospectus_items' => 0,
+        'offering_items' => 0,
         'unscheduled_classes' => 0
     ];
 }
@@ -50,7 +50,7 @@ if ($collegeId <= 0 || $currentAyId <= 0 || $currentSemester <= 0) {
 
 $filterValue = $scope === 'campus' ? $campusId : $collegeId;
 $filterSql = $scope === 'campus' ? 'c.campus_id = ?' : 'p.college_id = ?';
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
 
 $sql = "
@@ -92,7 +92,7 @@ $sql = "
            AND c.status = 'active'
            AND p.status = 'active'
            AND o.ay_id = ?
-           AND o.semester = ?) AS prospectus_items,
+           AND o.semester = ?) AS offering_items,
 
         (SELECT COUNT(*)
          FROM tbl_prospectus_offering o
@@ -140,7 +140,7 @@ echo json_encode([
     'scope_label' => $scopeLabel,
     'programs' => (int)($row['programs'] ?? 0),
     'faculty' => (int)($row['faculty'] ?? 0),
-    'prospectus_items' => (int)($row['prospectus_items'] ?? 0),
+    'offering_items' => (int)($row['offering_items'] ?? 0),
     'unscheduled_classes' => (int)($row['unscheduled_classes'] ?? 0)
 ]);
 exit;

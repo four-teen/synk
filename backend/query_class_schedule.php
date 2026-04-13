@@ -203,7 +203,7 @@ function load_context_any($conn, $offering_id, $college_id) {
 }
 
 function load_context_live($conn, $offering_id, $college_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -237,8 +237,8 @@ function load_context_live($conn, $offering_id, $college_id) {
     return $stmt->get_result()->fetch_assoc();
 }
 
-function load_scoped_offerings_for_term($conn, $prospectus_id, $ay_id, $semester, $college_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+function load_scoped_offerings_for_term($conn, $program_id, $ay_id, $semester, $college_id) {
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -254,7 +254,7 @@ function load_scoped_offerings_for_term($conn, $prospectus_id, $ay_id, $semester
             ON p.program_id = o.program_id
         INNER JOIN tbl_subject_masterlist sm
             ON sm.sub_id = ps.sub_id
-        WHERE o.prospectus_id = ?
+        WHERE o.program_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
           AND p.college_id = ?
@@ -266,7 +266,7 @@ function load_scoped_offerings_for_term($conn, $prospectus_id, $ay_id, $semester
         return [];
     }
 
-    $stmt->bind_param("iiii", $prospectus_id, $ay_id, $semester, $college_id);
+    $stmt->bind_param("iiii", $program_id, $ay_id, $semester, $college_id);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -288,7 +288,7 @@ function load_scoped_offerings_for_term($conn, $prospectus_id, $ay_id, $semester
 }
 
 function load_scoped_offerings_for_college_term($conn, $ay_id, $semester, $college_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -348,7 +348,7 @@ function saved_schedule_tables_exist($conn) {
         return $exists;
     }
 
-    foreach (['tbl_class_schedule_set', 'tbl_class_schedule_set_row'] as $table) {
+    foreach (['tbl_program_schedule_set', 'tbl_program_schedule_set_row'] as $table) {
         $q = $conn->query("SHOW TABLES LIKE '{$table}'");
         if (!($q && $q->num_rows > 0)) {
             $exists = false;
@@ -362,11 +362,65 @@ function saved_schedule_tables_exist($conn) {
 
 function ensure_saved_schedule_tables_exist($conn) {
     if (!saved_schedule_tables_exist($conn)) {
-        respond("error", "Saved schedule set tables are not available yet.");
+        respond("error", "Create tbl_program_schedule_set and tbl_program_schedule_set_row first.");
     }
 }
 
-function load_saved_schedule_sets_for_scope($conn, $college_id, $prospectus_id, $ay_id, $semester) {
+function saved_schedule_program_term_has_merge_rows($conn, $college_id, $program_id, $ay_id, $semester) {
+    $mergeTable = synk_schedule_merge_table_name();
+    if (!synk_table_exists($conn, $mergeTable)) {
+        return false;
+    }
+
+    $sql = "
+        SELECT 1
+        FROM `{$mergeTable}` merge_map
+        INNER JOIN tbl_prospectus_offering owner_offer
+            ON owner_offer.offering_id = merge_map.owner_offering_id
+        INNER JOIN tbl_program owner_program
+            ON owner_program.program_id = owner_offer.program_id
+        INNER JOIN tbl_prospectus_offering member_offer
+            ON member_offer.offering_id = merge_map.member_offering_id
+        INNER JOIN tbl_program member_program
+            ON member_program.program_id = member_offer.program_id
+        WHERE (
+                owner_program.college_id = ?
+            AND owner_offer.program_id = ?
+            AND owner_offer.ay_id = ?
+            AND owner_offer.semester = ?
+        ) OR (
+                member_program.college_id = ?
+            AND member_offer.program_id = ?
+            AND member_offer.ay_id = ?
+            AND member_offer.semester = ?
+        )
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param(
+        "iiiiiiii",
+        $college_id,
+        $program_id,
+        $ay_id,
+        $semester,
+        $college_id,
+        $program_id,
+        $ay_id,
+        $semester
+    );
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_row();
+    $stmt->close();
+
+    return $row !== null;
+}
+
+function load_saved_schedule_sets_for_scope($conn, $college_id, $program_id, $ay_id, $semester) {
     $sql = "
         SELECT
             s.schedule_set_id,
@@ -376,11 +430,11 @@ function load_saved_schedule_sets_for_scope($conn, $college_id, $prospectus_id, 
             s.date_updated,
             COUNT(r.schedule_set_row_id) AS row_count,
             COUNT(DISTINCT r.offering_id) AS offering_count
-        FROM tbl_class_schedule_set s
-        LEFT JOIN tbl_class_schedule_set_row r
+        FROM tbl_program_schedule_set s
+        LEFT JOIN tbl_program_schedule_set_row r
             ON r.schedule_set_id = s.schedule_set_id
         WHERE s.college_id = ?
-          AND s.prospectus_id = ?
+          AND s.program_id = ?
           AND s.ay_id = ?
           AND s.semester = ?
         GROUP BY
@@ -397,7 +451,7 @@ function load_saved_schedule_sets_for_scope($conn, $college_id, $prospectus_id, 
         return [];
     }
 
-    $stmt->bind_param("iiii", $college_id, $prospectus_id, $ay_id, $semester);
+    $stmt->bind_param("iiii", $college_id, $program_id, $ay_id, $semester);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -418,21 +472,22 @@ function load_saved_schedule_sets_for_scope($conn, $college_id, $prospectus_id, 
     return $rows;
 }
 
-function load_saved_schedule_set_record($conn, $schedule_set_id, $college_id) {
+function load_saved_schedule_set_record($conn, $schedule_set_id, $college_id, $program_id) {
     $sql = "
         SELECT
             schedule_set_id,
             college_id,
-            prospectus_id,
+            program_id,
             ay_id,
             semester,
             set_name,
             remarks,
             date_created,
             date_updated
-        FROM tbl_class_schedule_set
+        FROM tbl_program_schedule_set
         WHERE schedule_set_id = ?
           AND college_id = ?
+          AND program_id = ?
         LIMIT 1
     ";
 
@@ -441,7 +496,7 @@ function load_saved_schedule_set_record($conn, $schedule_set_id, $college_id) {
         return null;
     }
 
-    $stmt->bind_param("ii", $schedule_set_id, $college_id);
+    $stmt->bind_param("iii", $schedule_set_id, $college_id, $program_id);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -449,7 +504,7 @@ function load_saved_schedule_set_record($conn, $schedule_set_id, $college_id) {
     return $row ?: null;
 }
 
-function load_saved_schedule_set_by_name($conn, $college_id, $prospectus_id, $ay_id, $semester, $set_name) {
+function load_saved_schedule_set_by_name($conn, $college_id, $program_id, $ay_id, $semester, $set_name) {
     $sql = "
         SELECT
             schedule_set_id,
@@ -457,9 +512,9 @@ function load_saved_schedule_set_by_name($conn, $college_id, $prospectus_id, $ay
             remarks,
             date_created,
             date_updated
-        FROM tbl_class_schedule_set
+        FROM tbl_program_schedule_set
         WHERE college_id = ?
-          AND prospectus_id = ?
+          AND program_id = ?
           AND ay_id = ?
           AND semester = ?
           AND set_name = ?
@@ -471,7 +526,7 @@ function load_saved_schedule_set_by_name($conn, $college_id, $prospectus_id, $ay
         return null;
     }
 
-    $stmt->bind_param("iiiis", $college_id, $prospectus_id, $ay_id, $semester, $set_name);
+    $stmt->bind_param("iiiis", $college_id, $program_id, $ay_id, $semester, $set_name);
     $stmt->execute();
     $row = $stmt->get_result()->fetch_assoc();
     $stmt->close();
@@ -479,7 +534,7 @@ function load_saved_schedule_set_by_name($conn, $college_id, $prospectus_id, $ay
     return $row ?: null;
 }
 
-function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id) {
+function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id, $program_id) {
     $sql = "
         SELECT
             r.schedule_set_row_id,
@@ -498,11 +553,12 @@ function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id) {
             r.subject_description_snapshot,
             r.section_name_snapshot,
             r.room_label_snapshot
-        FROM tbl_class_schedule_set_row r
-        INNER JOIN tbl_class_schedule_set s
+        FROM tbl_program_schedule_set_row r
+        INNER JOIN tbl_program_schedule_set s
             ON s.schedule_set_id = r.schedule_set_id
         WHERE r.schedule_set_id = ?
           AND s.college_id = ?
+          AND s.program_id = ?
         ORDER BY
             r.offering_id ASC,
             r.block_order ASC,
@@ -515,7 +571,7 @@ function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id) {
         return [];
     }
 
-    $stmt->bind_param("ii", $schedule_set_id, $college_id);
+    $stmt->bind_param("iii", $schedule_set_id, $college_id, $program_id);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -528,8 +584,8 @@ function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id) {
     return $rows;
 }
 
-function load_live_schedule_snapshot_rows_for_scope($conn, $prospectus_id, $ay_id, $semester, $college_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+function load_live_schedule_snapshot_rows_for_scope($conn, $program_id, $ay_id, $semester, $college_id) {
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -555,7 +611,7 @@ function load_live_schedule_snapshot_rows_for_scope($conn, $prospectus_id, $ay_i
             ON sm.sub_id = ps.sub_id
         LEFT JOIN tbl_rooms r
             ON r.room_id = cs.room_id
-        WHERE o.prospectus_id = ?
+        WHERE o.program_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
           AND p.college_id = ?
@@ -574,7 +630,7 @@ function load_live_schedule_snapshot_rows_for_scope($conn, $prospectus_id, $ay_i
         return [];
     }
 
-    $stmt->bind_param("iiii", $prospectus_id, $ay_id, $semester, $college_id);
+    $stmt->bind_param("iiii", $program_id, $ay_id, $semester, $college_id);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -589,7 +645,7 @@ function load_live_schedule_snapshot_rows_for_scope($conn, $prospectus_id, $ay_i
 }
 
 function load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semester, $college_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -648,7 +704,7 @@ function load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semes
     return $rows;
 }
 
-function load_live_scheduled_offering_ids_for_scope($conn, $prospectus_id, $ay_id, $semester, $college_id) {
+function load_live_scheduled_offering_ids_for_scope($conn, $program_id, $ay_id, $semester, $college_id) {
     $sql = "
         SELECT DISTINCT cs.offering_id
         FROM tbl_class_schedule cs
@@ -656,7 +712,7 @@ function load_live_scheduled_offering_ids_for_scope($conn, $prospectus_id, $ay_i
             ON o.offering_id = cs.offering_id
         INNER JOIN tbl_program p
             ON p.program_id = o.program_id
-        WHERE o.prospectus_id = ?
+        WHERE o.program_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
           AND p.college_id = ?
@@ -667,7 +723,7 @@ function load_live_scheduled_offering_ids_for_scope($conn, $prospectus_id, $ay_i
         return [];
     }
 
-    $stmt->bind_param("iiii", $prospectus_id, $ay_id, $semester, $college_id);
+    $stmt->bind_param("iiii", $program_id, $ay_id, $semester, $college_id);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -790,7 +846,7 @@ function validate_saved_schedule_set_internal_conflicts($rows) {
 }
 
 function find_conflict_excluding_offerings($conn, $ay_id, $semester, $excludedOfferingIds, $section_id, $section_name, $room_id, $days, $time_start, $time_end, $label) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $excludedOfferingIds = array_values(array_unique(array_map('intval', (array)$excludedOfferingIds)));
 
     $sql = "
@@ -1324,7 +1380,7 @@ function load_college_term_faculty_record($conn, $college_id, $ay_id, $semester,
 }
 
 function load_faculty_schedule_entries_for_term($conn, $faculty_id, $ay_id, $semester, $college_id, $currentOfferingId = 0) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
     $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 
@@ -1408,7 +1464,7 @@ function load_other_faculty_schedule_entries_for_term($conn, $selected_faculty_i
         return [];
     }
 
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
     $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 
@@ -1563,7 +1619,7 @@ function load_merge_context_rows_for_offerings($conn, array $offeringIds, $colle
         return [];
     }
 
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $idList = implode(',', array_map('intval', $normalizedIds));
     $sql = "
         SELECT
@@ -1645,7 +1701,7 @@ function load_peer_section_rows_for_subject($conn, array $ctx, int $college_id):
         return [];
     }
 
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -1752,7 +1808,7 @@ function load_schedule_matrix_rows_by_offering($conn, array $offeringIds, int $a
         return $rowsByOffering;
     }
 
-    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             cs.offering_id,
@@ -2051,7 +2107,7 @@ function ensure_offering_not_merged_member($conn, $offering_id, $college_id) {
 }
 
 function load_other_faculty_workload_rows($conn, $faculty_id, $ay_id, $semester, $offering_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             cs.schedule_id,
@@ -2117,7 +2173,7 @@ function preview_room_validation_result($conn, $room_id, $college_id, $ay_id, $s
 }
 
 function load_live_conflicts_for_schedule_block($conn, $ctx, $offering_id, $room_id, $days, $time_start, $time_end) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             cs.schedule_id,
@@ -2624,7 +2680,7 @@ function insert_schedule_block_row($conn, $offering_id, $schedule_type, $group_i
    - only checks live synced offerings
 ===================================================== */
 function check_conflict($conn, $ctx, $offering_id, $room_id, $time_start, $time_end, $days, $label) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 
     $sql = "
         SELECT cs.room_id, cs.days_json, cs.time_start, cs.time_end,
@@ -3520,7 +3576,7 @@ if (isset($_POST['load_schedule_merge_candidates'])) {
     $ownerMemberMap = synk_schedule_merge_load_owner_to_members_map($conn, [$ownerOfferingId]);
     $currentMemberIds = $ownerMemberMap[$ownerOfferingId] ?? [];
 
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id
@@ -3880,19 +3936,20 @@ if (isset($_POST['save_schedule_merge'])) {
 }
 
 /* =====================================================
-   LOAD SAVED SCHEDULE SETS FOR CURRENT COLLEGE TERM
+   LOAD SAVED SCHEDULE SETS FOR CURRENT PROGRAM TERM
 ===================================================== */
 if (isset($_POST['load_schedule_sets'])) {
     ensure_saved_schedule_tables_exist($conn);
 
+    $program_id = (int)($_POST['program_id'] ?? 0);
     $ay_id = (int)($_POST['ay_id'] ?? 0);
     $semester = (int)($_POST['semester'] ?? 0);
 
-    if (!$ay_id || !in_array($semester, [1, 2, 3], true)) {
-        respond("error", "Select Academic Year and Semester first.");
+    if ($program_id <= 0 || !$ay_id || !in_array($semester, [1, 2, 3], true)) {
+        respond("error", "Select Program, Academic Year, and Semester first.");
     }
 
-    $sets = load_saved_schedule_sets_for_scope($conn, $college_id, 0, $ay_id, $semester);
+    $sets = load_saved_schedule_sets_for_scope($conn, $college_id, $program_id, $ay_id, $semester);
     respond("ok", "Loaded saved schedule sets.", [
         "sets" => $sets
     ]);
@@ -3904,35 +3961,35 @@ if (isset($_POST['load_schedule_sets'])) {
 if (isset($_POST['save_schedule_set'])) {
     ensure_saved_schedule_tables_exist($conn);
 
+    $program_id = (int)($_POST['program_id'] ?? 0);
     $ay_id = (int)($_POST['ay_id'] ?? 0);
     $semester = (int)($_POST['semester'] ?? 0);
     $set_name = trim((string)($_POST['set_name'] ?? ''));
     $remarks = trim((string)($_POST['remarks'] ?? ''));
     $overwriteExisting = (int)($_POST['overwrite_existing_set'] ?? 0) === 1;
-    $scopeProspectusId = 0;
 
     $set_name = preg_replace('/\s+/', ' ', $set_name);
     $set_name = substr($set_name, 0, 120);
     $remarks = substr($remarks, 0, 255);
 
-    if (!$ay_id || !in_array($semester, [1, 2, 3], true)) {
-        respond("error", "Select Academic Year and Semester first.");
+    if ($program_id <= 0 || !$ay_id || !in_array($semester, [1, 2, 3], true)) {
+        respond("error", "Select Program, Academic Year, and Semester first.");
     }
 
     if ($set_name === '') {
         respond("error", "Provide a name for this saved schedule set.");
     }
 
-    if (synk_schedule_merge_term_has_rows($conn, $college_id, $ay_id, $semester)) {
-        respond("error", "Saved schedule sets are disabled while merged schedule groups exist in this college term. Unmerge the affected offerings first.");
+    if (saved_schedule_program_term_has_merge_rows($conn, $college_id, $program_id, $ay_id, $semester)) {
+        respond("error", "Saved schedule sets are disabled while merged schedule groups exist in this program term. Unmerge the affected offerings first.");
     }
 
-    $snapshotRows = load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semester, $college_id);
+    $snapshotRows = load_live_schedule_snapshot_rows_for_scope($conn, $program_id, $ay_id, $semester, $college_id);
     if (empty($snapshotRows)) {
-        respond("error", "No live schedules were found in the current college term to save.");
+        respond("error", "No live schedules were found in the current program term to save.");
     }
 
-    $existingSet = load_saved_schedule_set_by_name($conn, $college_id, $scopeProspectusId, $ay_id, $semester, $set_name);
+    $existingSet = load_saved_schedule_set_by_name($conn, $college_id, $program_id, $ay_id, $semester, $set_name);
     if ($existingSet && !$overwriteExisting) {
         respond("exists", "A saved schedule set with this name already exists.", [
             "existing_set_id" => (int)($existingSet['schedule_set_id'] ?? 0),
@@ -3951,7 +4008,7 @@ if (isset($_POST['save_schedule_set'])) {
             $scheduleSetId = (int)($existingSet['schedule_set_id'] ?? 0);
 
             $updateSet = $conn->prepare("
-                UPDATE tbl_class_schedule_set
+                UPDATE tbl_program_schedule_set
                 SET remarks = ?,
                     date_updated = CURRENT_TIMESTAMP
                 WHERE schedule_set_id = ?
@@ -3968,7 +4025,7 @@ if (isset($_POST['save_schedule_set'])) {
             $updateSet->close();
 
             $deleteRows = $conn->prepare("
-                DELETE FROM tbl_class_schedule_set_row
+                DELETE FROM tbl_program_schedule_set_row
                 WHERE schedule_set_id = ?
             ");
             if (!$deleteRows) {
@@ -3983,8 +4040,8 @@ if (isset($_POST['save_schedule_set'])) {
             $deleteRows->close();
         } else {
             $insertSet = $conn->prepare("
-                INSERT INTO tbl_class_schedule_set
-                (college_id, prospectus_id, ay_id, semester, set_name, remarks, created_by)
+                INSERT INTO tbl_program_schedule_set
+                (college_id, program_id, ay_id, semester, set_name, remarks, created_by)
                 VALUES (?, ?, ?, ?, ?, ?, ?)
             ");
             if (!$insertSet) {
@@ -3995,7 +4052,7 @@ if (isset($_POST['save_schedule_set'])) {
             $insertSet->bind_param(
                 "iiiissi",
                 $college_id,
-                $scopeProspectusId,
+                $program_id,
                 $ay_id,
                 $semester,
                 $set_name,
@@ -4011,7 +4068,7 @@ if (isset($_POST['save_schedule_set'])) {
         }
 
         $insertRow = $conn->prepare("
-            INSERT INTO tbl_class_schedule_set_row
+            INSERT INTO tbl_program_schedule_set_row
             (
                 schedule_set_id,
                 offering_id,
@@ -4104,34 +4161,36 @@ if (isset($_POST['save_schedule_set'])) {
 if (isset($_POST['load_schedule_set_into_live'])) {
     ensure_saved_schedule_tables_exist($conn);
 
+    $program_id = (int)($_POST['program_id'] ?? 0);
     $schedule_set_id = (int)($_POST['schedule_set_id'] ?? 0);
-    if ($schedule_set_id <= 0) {
+    if ($program_id <= 0 || $schedule_set_id <= 0) {
         respond("error", "Select a saved schedule set first.");
     }
 
-    $setRecord = load_saved_schedule_set_record($conn, $schedule_set_id, $college_id);
+    $setRecord = load_saved_schedule_set_record($conn, $schedule_set_id, $college_id, $program_id);
     if (!$setRecord) {
-        respond("error", "Saved schedule set not found in your college scheduler.");
+        respond("error", "Saved schedule set not found in your program scheduler.");
     }
 
-    if (synk_schedule_merge_term_has_rows($conn, $college_id, (int)($setRecord['ay_id'] ?? 0), (int)($setRecord['semester'] ?? 0))) {
-        respond("error", "Loading a saved schedule set is disabled while merged schedule groups exist in this college term. Clear or unmerge the active merge groups first.");
+    if (saved_schedule_program_term_has_merge_rows($conn, $college_id, (int)($setRecord['program_id'] ?? 0), (int)($setRecord['ay_id'] ?? 0), (int)($setRecord['semester'] ?? 0))) {
+        respond("error", "Loading a saved schedule set is disabled while merged schedule groups exist in this program term. Clear or unmerge the active merge groups first.");
     }
 
-    $setRows = load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id);
+    $setRows = load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id, $program_id);
     if (empty($setRows)) {
         respond("error", "This saved schedule set does not contain any rows.");
     }
 
-    $scopeOfferings = load_scoped_offerings_for_college_term(
+    $scopeOfferings = load_scoped_offerings_for_term(
         $conn,
+        (int)($setRecord['program_id'] ?? 0),
         (int)$setRecord['ay_id'],
         (int)$setRecord['semester'],
         $college_id
     );
 
     if (empty($scopeOfferings)) {
-        respond("error", "The saved set college term is no longer available. Re-run Generate Offerings first.");
+        respond("error", "The saved set program term is no longer available. Re-run Generate Offerings first.");
     }
 
     $scopeMap = [];
@@ -4157,8 +4216,9 @@ if (isset($_POST['load_schedule_set_into_live'])) {
         }
     }
 
-    $currentLiveOfferingIds = load_live_scheduled_offering_ids_for_college_term(
+    $currentLiveOfferingIds = load_live_scheduled_offering_ids_for_scope(
         $conn,
+        (int)($setRecord['program_id'] ?? 0),
         (int)$setRecord['ay_id'],
         (int)$setRecord['semester'],
         $college_id
@@ -4186,7 +4246,7 @@ if (isset($_POST['load_schedule_set_into_live'])) {
             : ($setLabelsByOffering[$offeringId] ?? ('Offering #' . $offeringId));
 
         if (!$scopeOffering) {
-            $outdatedLines[] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . ': offering no longer exists in this college term.';
+            $outdatedLines[] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . ': offering no longer exists in this program term.';
             continue;
         }
 

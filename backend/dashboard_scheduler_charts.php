@@ -203,7 +203,7 @@ if ($collegeId <= 0 || $currentAyId <= 0 || $currentSemester <= 0) {
 
 $filterValue = $scope === 'campus' ? $campusId : $collegeId;
 $filterSql = $scope === 'campus' ? 'c.campus_id = ?' : 'p.college_id = ?';
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $scheduledOfferingJoin = synk_schedule_merge_scheduled_offering_join_sql($conn, 'sched', 'o');
 
 $programProgress = [];

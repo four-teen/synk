@@ -28,7 +28,7 @@ if ($currentAyId <= 0 || $currentSemester <= 0) {
  - Scoped to the global academic settings term
 */
 
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 
 $sql = "
 SELECT

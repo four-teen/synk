@@ -93,7 +93,7 @@ function synk_fetch_workload_simulation_catalog(mysqli $conn, int $collegeId, in
         return [];
     }
 
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
     $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 

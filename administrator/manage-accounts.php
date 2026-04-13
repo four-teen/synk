@@ -2,6 +2,7 @@
     session_start();
     ob_start();
     include '../backend/db.php';
+    require_once '../backend/professor_portal_helper.php';
 
     if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
         header('Location: ../index.php');
@@ -39,6 +40,66 @@
         $collegeOptionsHtml .= "<option value='" . (int)$collegeRow['college_id'] . "'>" .
             htmlspecialchars($label, ENT_QUOTES, 'UTF-8') .
             "</option>";
+    }
+
+    $campusOptionsHtml = '';
+    if (synk_table_exists($conn, 'tbl_campus')) {
+        $campusQuery = $conn->query("
+            SELECT
+                campus_id,
+                COALESCE(campus_code, '') AS campus_code,
+                COALESCE(campus_name, '') AS campus_name
+            FROM tbl_campus
+            ORDER BY campus_name ASC, campus_code ASC, campus_id ASC
+        ");
+
+        while ($campusQuery instanceof mysqli_result && ($campusRow = $campusQuery->fetch_assoc())) {
+            $label = trim((string)$campusRow['campus_code']);
+            $campusName = trim((string)($campusRow['campus_name'] ?? ''));
+
+            if ($label !== '' && $campusName !== '') {
+                $label .= ' - ' . $campusName;
+            } elseif ($campusName !== '') {
+                $label = $campusName;
+            }
+
+            $campusOptionsHtml .= "<option value='" . (int)$campusRow['campus_id'] . "'>" .
+                htmlspecialchars($label !== '' ? $label : ('Campus #' . (int)$campusRow['campus_id']), ENT_QUOTES, 'UTF-8') .
+                "</option>";
+        }
+
+        if ($campusQuery instanceof mysqli_result) {
+            $campusQuery->close();
+        }
+    }
+
+    $facultyOptionsHtml = '';
+    if (synk_table_exists($conn, 'tbl_faculty')) {
+        $facultyQuery = $conn->query("
+            SELECT
+                faculty_id,
+                first_name,
+                COALESCE(middle_name, '') AS middle_name,
+                last_name,
+                COALESCE(ext_name, '') AS ext_name,
+                COALESCE(status, 'active') AS status
+            FROM tbl_faculty
+            WHERE COALESCE(status, 'active') = 'active'
+            ORDER BY last_name ASC, first_name ASC, middle_name ASC, ext_name ASC
+        ");
+
+        while ($facultyQuery instanceof mysqli_result && ($facultyRow = $facultyQuery->fetch_assoc())) {
+            $facultyName = synk_professor_full_name_from_row($facultyRow);
+            $facultyLabel = trim($facultyName . ' (Faculty ID: ' . (int)($facultyRow['faculty_id'] ?? 0) . ')');
+
+            $facultyOptionsHtml .= "<option value='" . (int)$facultyRow['faculty_id'] . "' data-faculty-name='" . htmlspecialchars($facultyName, ENT_QUOTES, 'UTF-8') . "'>" .
+                htmlspecialchars($facultyLabel, ENT_QUOTES, 'UTF-8') .
+                "</option>";
+        }
+
+        if ($facultyQuery instanceof mysqli_result) {
+            $facultyQuery->close();
+        }
     }
 ?>
 <!DOCTYPE html>
@@ -255,23 +316,85 @@
         padding: 0.35rem 0.5rem;
       }
 
+      .select2-container--default .select2-selection--single {
+        min-height: 3rem;
+        border: 1px solid #d9dee3;
+        border-radius: 0.5rem;
+        padding: 0.5rem 2.35rem 0.5rem 0.75rem;
+        display: flex;
+        align-items: center;
+      }
+
       .select2-container--default.select2-container--focus .select2-selection--multiple {
         border-color: #696cff;
         box-shadow: 0 0 0 0.2rem rgba(105, 108, 255, 0.16);
       }
 
+      .select2-container--default.select2-container--focus .select2-selection--single,
+      .select2-container--default.select2-container--open .select2-selection--single {
+        border-color: #696cff;
+        box-shadow: 0 0 0 0.2rem rgba(105, 108, 255, 0.16);
+      }
+
+      .select2-container--default .select2-selection--single .select2-selection__rendered {
+        color: #435971;
+        line-height: 1.5rem;
+        padding-left: 0;
+        padding-right: 0;
+      }
+
+      .select2-container--default .select2-selection--single .select2-selection__placeholder {
+        color: #8592a3;
+      }
+
+      .select2-container--default .select2-selection--single .select2-selection__arrow {
+        height: 100%;
+        right: 0.75rem;
+      }
+
       .select2-container--default .select2-selection--multiple .select2-selection__choice {
-        margin-top: 0.3rem;
+        display: inline-flex;
+        align-items: center;
+        gap: 0.35rem;
+        margin-top: 0;
+        margin-right: 0;
         background: rgba(105, 108, 255, 0.1);
         border: 0;
         border-radius: 999px;
         color: #435971;
-        padding: 0.2rem 0.65rem;
+        padding: 0.3rem 0.75rem;
+      }
+
+      .select2-container--default .select2-selection--multiple .select2-selection__rendered {
+        display: flex;
+        flex-wrap: wrap;
+        align-items: center;
+        gap: 0.35rem;
+        padding: 0;
+      }
+
+      .select2-container--default .select2-selection--multiple .select2-selection__choice__display {
+        padding: 0;
+      }
+
+      .select2-container--default .select2-selection--multiple .select2-search--inline {
+        margin: 0;
       }
 
       .select2-container--default .select2-selection--multiple .select2-selection__choice__remove {
+        position: static;
+        border: 0;
+        background: transparent;
         color: #696cff;
-        margin-right: 0.35rem;
+        margin: 0;
+        padding: 0;
+        font-size: 1rem;
+        line-height: 1;
+      }
+
+      .select2-container--default .select2-selection--multiple .select2-selection__choice__remove:hover {
+        color: #5f61e6;
+        background: transparent;
       }
 
       .select2-dropdown {
@@ -285,7 +408,8 @@
         min-width: 0 !important;
       }
 
-      .college-access-dropdown .select2-results {
+      .college-access-dropdown .select2-results,
+      .faculty-record-dropdown .select2-results {
         max-height: 18rem;
         overflow-y: auto;
       }
@@ -298,6 +422,52 @@
 
       .select2-results__option {
         padding: 0.55rem 0.75rem;
+      }
+
+      .account-role-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+        gap: 0.75rem;
+      }
+
+      .account-role-card {
+        display: block;
+        padding: 0.85rem 0.95rem;
+        border: 1px solid rgba(67, 89, 113, 0.16);
+        border-radius: 0.85rem;
+        background: rgba(245, 247, 255, 0.8);
+        cursor: pointer;
+        transition: border-color 0.18s ease, box-shadow 0.18s ease, transform 0.18s ease;
+      }
+
+      .account-role-card:hover {
+        border-color: rgba(105, 108, 255, 0.44);
+        box-shadow: 0 10px 20px rgba(67, 89, 113, 0.08);
+        transform: translateY(-1px);
+      }
+
+      .account-role-card .form-check-input {
+        margin-top: 0.1rem;
+      }
+
+      .account-role-card .form-check-label {
+        display: block;
+        cursor: pointer;
+      }
+
+      .account-role-title {
+        display: block;
+        color: #435971;
+        font-size: 0.94rem;
+        font-weight: 700;
+      }
+
+      .account-role-note {
+        display: block;
+        margin-top: 0.2rem;
+        color: #697a8d;
+        font-size: 0.82rem;
+        line-height: 1.45;
       }
 
       @media (max-width: 767.98px) {
@@ -373,7 +543,7 @@
               <div class="accounts-card-top d-flex flex-column flex-xl-row justify-content-between align-items-xl-center">
                 <div class="accounts-card-copy">
                   <h5 class="m-0">Accounts List</h5>
-                  <small class="text-muted">Search and manage administrator and scheduler access accounts</small>
+                  <small class="text-muted">Search and manage shared administrator, scheduler, professor, program chair, and registrar accounts</small>
                 </div>
                 <div class="accounts-toolbar align-items-stretch">
                   <div class="input-group accounts-search-group">
@@ -384,7 +554,7 @@
                       type="search"
                       id="accountSearch"
                       class="form-control"
-                      placeholder="Search name, email, role, college access"
+                      placeholder="Search name, email, role, faculty, or assigned scope"
                       autocomplete="off"
                     >
                   </div>
@@ -409,8 +579,9 @@
                         <th>Display Name</th>
                         <th>Email</th>
                         <th>Access</th>
-                        <th>Role</th>
-                        <th>College Access</th>
+                        <th>Roles</th>
+                        <th>Faculty Link</th>
+                        <th>Assigned Scope</th>
                         <th style="width:120px;">Status</th>
                         <th class="text-end" style="width:140px;">Actions</th>
                       </tr>
@@ -461,6 +632,7 @@
             <div class="col-md-6">
               <label class="form-label">Display Name <span class="text-danger">*</span></label>
               <input type="text" name="username" id="add_username" class="form-control" required>
+              <small class="text-muted d-block mt-1" id="add_username_help">Type the display name shown in account lists and the shared login.</small>
             </div>
 
             <div class="col-md-6">
@@ -468,13 +640,91 @@
               <input type="email" name="email" id="add_email" class="form-control" placeholder="name@sksu.edu.ph" required>
             </div>
 
+            <div class="col-md-12">
+              <label class="form-label">Module Roles <span class="text-danger">*</span></label>
+              <div class="account-role-grid">
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_admin" value="admin">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Administrator</span>
+                      <span class="account-role-note">Manage system setup, accounts, and academic configuration.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_scheduler" value="scheduler">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Scheduler</span>
+                      <span class="account-role-note">Manage schedules and workload inside assigned college scopes.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_professor" value="professor">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Professor</span>
+                      <span class="account-role-note">Use the shared login as a faculty account under the same email.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_program_chair" value="program_chair">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Program Chair</span>
+                      <span class="account-role-note">Open the shared login for program-chair enrollment and curriculum workflows.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_registrar" value="registrar">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Registrar</span>
+                      <span class="account-role-note">Review submitted enrollment drafts inside the assigned campus queue.</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+              <small class="text-muted">One SKSU email can carry multiple Synk roles.</small>
+            </div>
+
             <div class="col-md-6">
-              <label class="form-label">Role <span class="text-danger">*</span></label>
-              <select name="role" id="add_role" class="form-select" required>
-                <option value="">Select Role</option>
-                <option value="admin">Administrator</option>
-                <option value="scheduler">Scheduler</option>
+              <label class="form-label">Default Role on Login <span class="text-danger">*</span></label>
+              <select name="primary_role" id="add_primary_role" class="form-select" required>
+                <option value="">Select Default Role</option>
               </select>
+              <small class="text-muted">This role appears first when the user signs in with one email and multiple roles.</small>
+            </div>
+
+            <div class="col-md-6" id="add_faculty_wrapper" style="display:none;">
+              <label class="form-label">Faculty Record <span class="text-danger">*</span></label>
+              <select name="faculty_id" id="add_faculty_id" class="form-select">
+                <option value="">Select Faculty Record</option>
+                <?= $facultyOptionsHtml ?>
+              </select>
+              <small class="text-muted">Selecting a faculty record will auto-fill the professor display name and link the workload correctly.</small>
+            </div>
+
+            <div class="col-md-6" id="add_program_chair_college_wrapper" style="display:none;">
+              <label class="form-label">Assigned College <span class="text-danger">*</span></label>
+              <select name="program_chair_college_id" id="add_program_chair_college_id" class="form-select">
+                <option value="">Select Assigned College</option>
+                <?= $collegeOptionsHtml ?>
+              </select>
+              <small class="text-muted">Program Chair will see all programs under this college and use it as the enrollment workspace base.</small>
+            </div>
+
+            <div class="col-md-6" id="add_registrar_campus_wrapper" style="display:none;">
+              <label class="form-label">Registrar Campus <span class="text-danger">*</span></label>
+              <select name="registrar_campus_id" id="add_registrar_campus_id" class="form-select">
+                <option value="">Select Registrar Campus</option>
+                <?= $campusOptionsHtml ?>
+              </select>
+              <small class="text-muted">Registrar queue access is campus-based for now, so choose the campus this registrar account will review.</small>
             </div>
 
             <div class="col-md-12" id="add_college_wrapper" style="display:none;">
@@ -535,6 +785,7 @@
             <div class="col-md-6">
               <label class="form-label">Display Name <span class="text-danger">*</span></label>
               <input type="text" name="username" id="edit_username" class="form-control" required>
+              <small class="text-muted d-block mt-1" id="edit_username_help">Type the display name shown in account lists and the shared login.</small>
             </div>
 
             <div class="col-md-6">
@@ -542,13 +793,91 @@
               <input type="email" name="email" id="edit_email" class="form-control" required>
             </div>
 
+            <div class="col-md-12">
+              <label class="form-label">Module Roles <span class="text-danger">*</span></label>
+              <div class="account-role-grid">
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_admin" value="admin">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Administrator</span>
+                      <span class="account-role-note">Manage system setup, accounts, and academic configuration.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_scheduler" value="scheduler">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Scheduler</span>
+                      <span class="account-role-note">Manage schedules and workload inside assigned college scopes.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_professor" value="professor">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Professor</span>
+                      <span class="account-role-note">Use the shared login as a faculty account under the same email.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_program_chair" value="program_chair">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Program Chair</span>
+                      <span class="account-role-note">Open the shared login for program-chair enrollment and curriculum workflows.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_registrar" value="registrar">
+                    <div class="form-check-label">
+                      <span class="account-role-title">Registrar</span>
+                      <span class="account-role-note">Review submitted enrollment drafts inside the assigned campus queue.</span>
+                    </div>
+                  </div>
+                </label>
+              </div>
+              <small class="text-muted">Assign every role this email should be able to open.</small>
+            </div>
+
             <div class="col-md-6">
-              <label class="form-label">Role <span class="text-danger">*</span></label>
-              <select name="role" id="edit_role" class="form-select" required>
-                <option value="">Select Role</option>
-                <option value="admin">Administrator</option>
-                <option value="scheduler">Scheduler</option>
+              <label class="form-label">Default Role on Login <span class="text-danger">*</span></label>
+              <select name="primary_role" id="edit_primary_role" class="form-select" required>
+                <option value="">Select Default Role</option>
               </select>
+              <small class="text-muted">This role becomes the default session choice when the user signs in.</small>
+            </div>
+
+            <div class="col-md-6" id="edit_faculty_wrapper" style="display:none;">
+              <label class="form-label">Faculty Record <span class="text-danger">*</span></label>
+              <select name="faculty_id" id="edit_faculty_id" class="form-select">
+                <option value="">Select Faculty Record</option>
+                <?= $facultyOptionsHtml ?>
+              </select>
+              <small class="text-muted">Selecting a faculty record will auto-fill the professor display name and keep the account-to-faculty link accurate.</small>
+            </div>
+
+            <div class="col-md-6" id="edit_program_chair_college_wrapper" style="display:none;">
+              <label class="form-label">Assigned College <span class="text-danger">*</span></label>
+              <select name="program_chair_college_id" id="edit_program_chair_college_id" class="form-select">
+                <option value="">Select Assigned College</option>
+                <?= $collegeOptionsHtml ?>
+              </select>
+              <small class="text-muted">Program Chair will see all programs under this college and use it as the enrollment workspace base.</small>
+            </div>
+
+            <div class="col-md-6" id="edit_registrar_campus_wrapper" style="display:none;">
+              <label class="form-label">Registrar Campus <span class="text-danger">*</span></label>
+              <select name="registrar_campus_id" id="edit_registrar_campus_id" class="form-select">
+                <option value="">Select Registrar Campus</option>
+                <?= $campusOptionsHtml ?>
+              </select>
+              <small class="text-muted">Registrar queue access is campus-based for now, so choose the campus this registrar account will review.</small>
             </div>
 
             <div class="col-md-12" id="edit_college_wrapper" style="display:none;">
@@ -641,9 +970,43 @@ function initializeCollegeAccessSelect2(mode) {
   });
 }
 
+function initializeFacultyRecordSelect2(mode) {
+  const $select = $("#" + mode + "_faculty_id");
+  const $modal = $select.closest(".modal");
+
+  if ($select.data("select2")) {
+    $select.select2("destroy");
+  }
+
+  $select.select2({
+    width: "100%",
+    placeholder: "Search and select faculty record",
+    dropdownParent: $modal,
+    dropdownAutoWidth: false,
+    dropdownCssClass: "faculty-record-dropdown"
+  });
+
+  $select.off("select2:open.facultyWidth").on("select2:open.facultyWidth", function() {
+    const dropdownWidth = $select.next(".select2-container").outerWidth();
+    const $dropdown = $(".select2-container--open .select2-dropdown");
+
+    if (dropdownWidth && $dropdown.length) {
+      $dropdown.css({
+        width: dropdownWidth + "px",
+        minWidth: dropdownWidth + "px",
+        maxWidth: dropdownWidth + "px"
+      });
+    }
+  });
+}
+
 // INITIAL LOAD
 initializeCollegeAccessSelect2("add");
 initializeCollegeAccessSelect2("edit");
+initializeFacultyRecordSelect2("add");
+initializeFacultyRecordSelect2("edit");
+resetRoleFields("add");
+resetRoleFields("edit");
 loadAccounts();
 
 $(window).on("scroll", function() {
@@ -697,27 +1060,165 @@ function buildCollegeAccessHtml(accessRows) {
   }).join("");
 }
 
-function buildCollegeAccessText(accessRows) {
-  if (!Array.isArray(accessRows) || accessRows.length === 0) {
+function buildAssignedCollegeHtml(label) {
+  const safeLabel = $.trim(String(label || ""));
+  if (safeLabel === "") {
+    return "<span class='text-muted'>N/A</span>";
+  }
+
+  return "<div class='small text-wrap mb-1'>" + escapeHtml(safeLabel) + " <span class='badge bg-label-info ms-1'>Assigned</span></div>";
+}
+
+function buildCollegeAccessText(accessRows, fallbackLabel) {
+  if (Array.isArray(accessRows) && accessRows.length > 0) {
+    return accessRows.map(function(row) {
+      const label = row && row.display_label ? String(row.display_label) : "College";
+      return row && row.is_default ? label + " Default" : label;
+    }).join(" ");
+  }
+
+  const safeFallback = $.trim(String(fallbackLabel || ""));
+  return safeFallback !== "" ? safeFallback + " Assigned" : "N/A";
+}
+
+function buildFacultyLinkHtml(facultyText, hasProfessorRole) {
+  if (!hasProfessorRole) {
+    return "<span class='text-muted'>N/A</span>";
+  }
+
+  if (facultyText === "") {
+    return "<span class='text-warning'>Not linked</span>";
+  }
+
+  return "<span class='small text-wrap'>" + escapeHtml(facultyText) + "</span>";
+}
+
+function roleLabel(role) {
+  const value = String(role || "").toLowerCase();
+
+  if (value === "admin") {
+    return "Administrator";
+  }
+
+  if (value === "scheduler") {
+    return "Scheduler";
+  }
+
+  if (value === "professor") {
+    return "Professor";
+  }
+
+  if (value === "program_chair") {
+    return "Program Chair";
+  }
+
+  if (value === "registrar") {
+    return "Registrar";
+  }
+
+  return value ? value.toUpperCase() : "Role";
+}
+
+function normalizeRolePayload(rawAccount) {
+  const rawPayload = Array.isArray(rawAccount && rawAccount.role_payload) ? rawAccount.role_payload : [];
+
+  if (rawPayload.length > 0) {
+    return rawPayload.map(function(item) {
+      const role = String(item && item.role ? item.role : "").toLowerCase();
+
+      return {
+        role: role,
+        label: String(item && item.label ? item.label : roleLabel(role)),
+        is_primary: Boolean(item && item.is_primary)
+      };
+    }).filter(function(item) {
+      return item.role !== "";
+    });
+  }
+
+  const roleValue = String(rawAccount && rawAccount.role ? rawAccount.role : "").toLowerCase();
+  if (roleValue === "") {
+    return [];
+  }
+
+  return [{
+    role: roleValue,
+    label: roleLabel(roleValue),
+    is_primary: true
+  }];
+}
+
+function buildRoleHtml(rolePayload) {
+  if (!Array.isArray(rolePayload) || rolePayload.length === 0) {
+    return "<span class='text-muted'>N/A</span>";
+  }
+
+  return rolePayload.map(function(item) {
+    const label = escapeHtml(item && item.label ? item.label : roleLabel(item && item.role ? item.role : ""));
+    const defaultBadge = item && item.is_primary
+      ? " <span class='badge bg-label-info ms-1'>Default</span>"
+      : "";
+
+    return "<div class='small text-wrap mb-1'><span class='badge bg-label-secondary'>" + label + "</span>" + defaultBadge + "</div>";
+  }).join("");
+}
+
+function buildRoleText(rolePayload) {
+  if (!Array.isArray(rolePayload) || rolePayload.length === 0) {
     return "N/A";
   }
 
-  return accessRows.map(function(row) {
-    const label = row && row.display_label ? String(row.display_label) : "College";
-    return row && row.is_default ? label + " Default" : label;
-  }).join(" ");
+  return rolePayload.map(function(item) {
+    const label = item && item.label ? String(item.label) : roleLabel(item && item.role ? item.role : "");
+    return item && item.is_primary ? label + " Default" : label;
+  }).join(" + ");
 }
 
 function normalizeAccountRecord(rawAccount) {
   const accessRows = Array.isArray(rawAccount && rawAccount.college_access) ? rawAccount.college_access : [];
+  const registrarScopeRows = Array.isArray(rawAccount && rawAccount.registrar_scope) ? rawAccount.registrar_scope : [];
   const provider = String(rawAccount && rawAccount.provider ? rawAccount.provider : "legacy");
-  const roleValue = String(rawAccount && rawAccount.role ? rawAccount.role : "");
-  const roleText = String(rawAccount && rawAccount.role_label ? rawAccount.role_label : roleValue);
+  const rolePayload = normalizeRolePayload(rawAccount);
+  const roles = rolePayload.map(function(item) {
+    return String(item && item.role ? item.role : "");
+  }).filter(Boolean);
+  const roleText = buildRoleText(rolePayload);
   const statusValue = String(rawAccount && rawAccount.status ? rawAccount.status : "inactive").toLowerCase();
   const collegeIds = Array.isArray(rawAccount && rawAccount.college_ids)
     ? rawAccount.college_ids.map(function(value) { return String(value); })
     : [];
-  const collegeText = buildCollegeAccessText(accessRows);
+  const programChairCollegeId = String(rawAccount && rawAccount.program_chair_college_id ? rawAccount.program_chair_college_id : "");
+  const programChairCollegeLabel = String(rawAccount && rawAccount.program_chair_college_label ? rawAccount.program_chair_college_label : "");
+  const hasProgramChairRole = roles.indexOf("program_chair") !== -1;
+  const registrarCampusId = String(rawAccount && rawAccount.registrar_campus_id ? rawAccount.registrar_campus_id : "");
+  const registrarCampusLabel = String(rawAccount && rawAccount.registrar_campus_label ? rawAccount.registrar_campus_label : "");
+  const hasRegistrarRole = roles.indexOf("registrar") !== -1;
+  const scopeTextParts = [];
+  if (accessRows.length > 0) {
+    scopeTextParts.push(buildCollegeAccessText(accessRows, ""));
+  }
+  if (hasProgramChairRole && programChairCollegeLabel !== "") {
+    scopeTextParts.push(programChairCollegeLabel + " Assigned");
+  }
+  if (hasRegistrarRole && registrarCampusLabel !== "") {
+    scopeTextParts.push(registrarCampusLabel + " Registrar");
+  }
+  const collegeText = scopeTextParts.length ? scopeTextParts.join(" | ") : "N/A";
+  const facultyId = String(rawAccount && rawAccount.faculty_id ? rawAccount.faculty_id : "");
+  const facultyText = String(rawAccount && rawAccount.faculty_label ? rawAccount.faculty_label : "");
+  const hasProfessorRole = roles.indexOf("professor") !== -1;
+  let scopeHtml = "<span class='text-muted'>N/A</span>";
+
+  if (accessRows.length > 0) {
+    scopeHtml = buildCollegeAccessHtml(accessRows);
+  } else if (hasProgramChairRole) {
+    scopeHtml = buildAssignedCollegeHtml(programChairCollegeLabel);
+  }
+
+  if (hasRegistrarRole && registrarCampusLabel !== "") {
+    const registrarBadge = `<div class='small text-wrap mb-1'>${escapeHtml(registrarCampusLabel)} <span class='badge bg-label-danger ms-1'>Registrar</span></div>`;
+    scopeHtml = scopeHtml === "<span class='text-muted'>N/A</span>" ? registrarBadge : scopeHtml + registrarBadge;
+  }
 
   return {
     id: String(rawAccount && rawAccount.id ? rawAccount.id : ""),
@@ -725,13 +1226,21 @@ function normalizeAccountRecord(rawAccount) {
     email: String(rawAccount && rawAccount.email ? rawAccount.email : ""),
     accessHtml: buildProviderBadgeHtml(provider),
     accessText: providerLabelText(provider),
+    roleHtml: buildRoleHtml(rolePayload),
     roleText: roleText,
-    roleValue: roleValue,
-    collegeHtml: buildCollegeAccessHtml(accessRows),
+    roles: roles,
+    rolesAttr: JSON.stringify(roles),
+    primaryRoleValue: String(rawAccount && rawAccount.primary_role ? rawAccount.primary_role : (roles[0] || "")),
+    facultyHtml: buildFacultyLinkHtml(facultyText, hasProfessorRole),
+    facultyText: hasProfessorRole ? (facultyText || "Not linked") : "N/A",
+    facultyIdValue: facultyId,
+    collegeHtml: scopeHtml,
     collegeText: collegeText,
     collegeIds: collegeIds,
     collegeIdsAttr: JSON.stringify(collegeIds),
     defaultCollegeValue: String(rawAccount && rawAccount.default_college_id ? rawAccount.default_college_id : ""),
+    programChairCollegeValue: programChairCollegeId,
+    registrarCampusValue: registrarCampusId,
     statusHtml: buildStatusBadgeHtml(statusValue),
     statusText: statusValue.toUpperCase(),
     statusValue: statusValue,
@@ -740,6 +1249,7 @@ function normalizeAccountRecord(rawAccount) {
       rawAccount && rawAccount.email ? rawAccount.email : "",
       providerLabelText(provider),
       roleText,
+      facultyText,
       collegeText,
       statusValue.toUpperCase()
     ].join(" ").toLowerCase()
@@ -846,7 +1356,8 @@ function buildDesktopRowHtml(account, rowNumber) {
       <td>${escapeHtml(account.username)}</td>
       <td>${escapeHtml(account.email)}</td>
       <td>${account.accessHtml}</td>
-      <td>${escapeHtml(account.roleText)}</td>
+      <td>${account.roleHtml}</td>
+      <td>${account.facultyHtml}</td>
       <td>${account.collegeHtml || "<span class='text-muted'>N/A</span>"}</td>
       <td>${account.statusHtml}</td>
       <td class="text-end text-nowrap">${buildActionButtonsHtml(account, false)}</td>
@@ -871,11 +1382,15 @@ function buildMobileCardHtml(account, rowNumber) {
         </div>
         <div class="account-mobile-grid">
           <div>
-            <span class="account-mobile-meta-label">Role</span>
+            <span class="account-mobile-meta-label">Roles</span>
             <span class="account-mobile-meta-value">${escapeHtml(account.roleText)}</span>
           </div>
           <div>
-            <span class="account-mobile-meta-label">College Access</span>
+            <span class="account-mobile-meta-label">Faculty Link</span>
+            <span class="account-mobile-meta-value">${escapeHtml(account.facultyText)}</span>
+          </div>
+          <div>
+            <span class="account-mobile-meta-label">Assigned Scope</span>
             <span class="account-mobile-meta-value">${escapeHtml(account.collegeText)}</span>
           </div>
         </div>
@@ -907,7 +1422,11 @@ function buildActionButtonsHtml(account, mobileView) {
       data-id="${escapeHtml(account.id)}"
       data-username="${escapeHtml(account.username)}"
       data-email="${escapeHtml(account.email)}"
-      data-role="${escapeHtml(account.roleValue)}"
+      data-roles="${escapeHtml(account.rolesAttr)}"
+      data-primary-role="${escapeHtml(account.primaryRoleValue)}"
+      data-faculty-id="${escapeHtml(account.facultyIdValue)}"
+      data-program-chair-college="${escapeHtml(account.programChairCollegeValue)}"
+      data-registrar-campus="${escapeHtml(account.registrarCampusValue)}"
       data-college-ids="${escapeHtml(account.collegeIdsAttr)}"
       data-default-college="${escapeHtml(account.defaultCollegeValue)}"
       data-status="${escapeHtml(account.statusValue)}"
@@ -978,7 +1497,7 @@ function renderAccountsLoadError() {
 
   $("#accountsTable tbody").html(`
     <tr>
-      <td colspan="8" class="text-center py-4 text-danger">
+      <td colspan="9" class="text-center py-4 text-danger">
         Unable to load the account list right now.
       </td>
     </tr>
@@ -997,7 +1516,7 @@ function renderAccountsLoadError() {
 function renderAccountsEmptyState() {
   $("#accountsTable tbody").html(`
     <tr>
-      <td colspan="8" class="text-center py-4 text-muted">
+      <td colspan="9" class="text-center py-4 text-muted">
         No accounts found.
       </td>
     </tr>
@@ -1059,8 +1578,118 @@ function resetCollegeAccessFields(mode) {
     .val("");
 }
 
-function toggleCollegeAccessFields(mode, role, preferredDefaultValue) {
-  const isScheduler = role === "scheduler";
+function getSelectedRoles(mode) {
+  return $("#" + mode + "AccountForm .account-role-checkbox:checked").map(function() {
+    return String($(this).val() || "").toLowerCase();
+  }).get();
+}
+
+function setSelectedRoles(mode, roles) {
+  const normalized = Array.isArray(roles)
+    ? roles.map(function(role) { return String(role || "").toLowerCase(); }).filter(Boolean)
+    : [];
+
+  $("#" + mode + "AccountForm .account-role-checkbox").prop("checked", false);
+
+  normalized.forEach(function(role) {
+    $("#" + mode + "_role_" + role).prop("checked", true);
+  });
+}
+
+function buildPrimaryRoleOptions(mode, preferredValue) {
+  const selectedRoles = getSelectedRoles(mode);
+  const $primarySelect = $("#" + mode + "_primary_role");
+
+  $primarySelect.empty().append('<option value="">Select Default Role</option>');
+
+  selectedRoles.forEach(function(role) {
+    $primarySelect.append(
+      $("<option>", {
+        value: role,
+        text: roleLabel(role)
+      })
+    );
+  });
+
+  if (selectedRoles.length === 0) {
+    $primarySelect.val("");
+    return;
+  }
+
+  const desiredValue = selectedRoles.indexOf(String(preferredValue || "")) !== -1
+    ? String(preferredValue)
+    : selectedRoles[0];
+
+  $primarySelect.val(desiredValue);
+}
+
+function resetRoleFields(mode) {
+  $("#" + mode + "AccountForm .account-role-checkbox").prop("checked", false);
+  $("#" + mode + "_primary_role")
+    .empty()
+    .append('<option value="">Select Default Role</option>')
+    .val("");
+}
+
+function rolesIncludeScheduler(roles) {
+  return Array.isArray(roles) && roles.indexOf("scheduler") !== -1;
+}
+
+function rolesIncludeProfessor(roles) {
+  return Array.isArray(roles) && roles.indexOf("professor") !== -1;
+}
+
+function rolesIncludeProgramChair(roles) {
+  return Array.isArray(roles) && roles.indexOf("program_chair") !== -1;
+}
+
+function rolesIncludeRegistrar(roles) {
+  return Array.isArray(roles) && roles.indexOf("registrar") !== -1;
+}
+
+function getSelectedFacultyName(mode) {
+  const $selectedOption = $("#" + mode + "_faculty_id").find("option:selected");
+  return $.trim(String($selectedOption.data("facultyName") || ""));
+}
+
+function resetProgramChairCollegeField(mode) {
+  $("#" + mode + "_program_chair_college_id").val("");
+}
+
+function toggleProgramChairCollegeField(mode, roles, preferredCollegeId) {
+  const $collegeSelect = $("#" + mode + "_program_chair_college_id");
+  const isProgramChair = rolesIncludeProgramChair(Array.isArray(roles) ? roles : [roles]);
+  $("#" + mode + "_program_chair_college_wrapper").toggle(isProgramChair);
+  $collegeSelect.prop("required", isProgramChair);
+
+  if (!isProgramChair) {
+    resetProgramChairCollegeField(mode);
+    return;
+  }
+
+  $collegeSelect.val(String(preferredCollegeId || ""));
+}
+
+function resetRegistrarCampusField(mode) {
+  $("#" + mode + "_registrar_campus_id").val("");
+}
+
+function toggleRegistrarCampusField(mode, roles, preferredCampusId) {
+  const $campusSelect = $("#" + mode + "_registrar_campus_id");
+  const isRegistrar = rolesIncludeRegistrar(Array.isArray(roles) ? roles : [roles]);
+  $("#" + mode + "_registrar_campus_wrapper").toggle(isRegistrar);
+  $campusSelect.prop("required", isRegistrar);
+
+  if (!isRegistrar) {
+    resetRegistrarCampusField(mode);
+    return;
+  }
+
+  $campusSelect.val(String(preferredCampusId || ""));
+}
+
+function toggleCollegeAccessFields(mode, roles, preferredDefaultValue) {
+  const isScheduler = rolesIncludeScheduler(Array.isArray(roles) ? roles : [roles]);
   $("#" + mode + "_college_wrapper").toggle(isScheduler);
   $("#" + mode + "_default_college_wrapper").toggle(isScheduler);
 
@@ -1073,11 +1702,76 @@ function toggleCollegeAccessFields(mode, role, preferredDefaultValue) {
   $("#" + mode + "_college_ids").trigger("change.select2");
 }
 
+function resetFacultyField(mode) {
+  $("#" + mode + "_faculty_id").val("").trigger("change.select2");
+}
+
+function toggleFacultyLinkField(mode, roles, preferredFacultyId) {
+  const $facultySelect = $("#" + mode + "_faculty_id");
+  const isProfessor = rolesIncludeProfessor(Array.isArray(roles) ? roles : [roles]);
+  $("#" + mode + "_faculty_wrapper").toggle(isProfessor);
+  $facultySelect.prop("required", isProfessor);
+
+  if (!isProfessor) {
+    resetFacultyField(mode);
+    syncProfessorDisplayName(mode);
+    return;
+  }
+
+  $facultySelect.val(String(preferredFacultyId || "")).trigger("change.select2");
+  syncProfessorDisplayName(mode);
+}
+
+function syncProfessorDisplayName(mode) {
+  const $username = $("#" + mode + "_username");
+  const $help = $("#" + mode + "_username_help");
+  const isProfessor = rolesIncludeProfessor(getSelectedRoles(mode));
+
+  if (!isProfessor) {
+    $username.prop("readonly", false).removeClass("bg-light");
+
+    if ($username.data("professorLocked")) {
+      const manualValue = String($username.data("manualValue") || "");
+      if (manualValue !== "") {
+        $username.val(manualValue);
+      }
+    }
+
+    $username.removeData("professorLocked");
+    $username.removeData("manualValue");
+
+    if ($help.length) {
+      $help.text("Type the display name shown in account lists and the shared login.");
+    }
+
+    return;
+  }
+
+  if (!$username.data("professorLocked")) {
+    $username.data("manualValue", $.trim($username.val()));
+  }
+
+  const facultyName = getSelectedFacultyName(mode);
+  $username.val(facultyName);
+  $username.prop("readonly", true).addClass("bg-light");
+  $username.data("professorLocked", "1");
+
+  if ($help.length) {
+    $help.text(
+      facultyName !== ""
+        ? "Display name is synced from the selected faculty record."
+        : "Select a faculty record to fill the professor display name automatically."
+    );
+  }
+}
+
 function buildAccountPayload(mode) {
+  const roles = getSelectedRoles(mode);
   const payload = {
     username: $.trim($("#" + mode + "_username").val()),
     email: $.trim($("#" + mode + "_email").val()),
-    role: $("#" + mode + "_role").val(),
+    roles: roles,
+    primary_role: $("#" + mode + "_primary_role").val(),
     status: $("#" + mode + "_status").val() || "active"
   };
 
@@ -1085,9 +1779,21 @@ function buildAccountPayload(mode) {
     payload.user_id = $("#" + mode + "_user_id").val();
   }
 
-  if (payload.role === "scheduler") {
+  if (rolesIncludeScheduler(roles)) {
     payload.college_ids = ($("#" + mode + "_college_ids").val() || []).map(String);
     payload.default_college_id = $("#" + mode + "_default_college_id").val();
+  }
+
+  if (rolesIncludeProgramChair(roles)) {
+    payload.program_chair_college_id = $("#" + mode + "_program_chair_college_id").val();
+  }
+
+  if (rolesIncludeRegistrar(roles)) {
+    payload.registrar_campus_id = $("#" + mode + "_registrar_campus_id").val();
+  }
+
+  if (rolesIncludeProfessor(roles)) {
+    payload.faculty_id = $("#" + mode + "_faculty_id").val();
   }
 
   return payload;
@@ -1132,7 +1838,11 @@ function handleAccountMutationResponse(mode, responseText) {
     return;
   }
   if (res === "invalid_role") {
-    Swal.fire("Invalid Role", "Only Administrator and Scheduler roles are supported in Synk.", "warning");
+    Swal.fire("Invalid Roles", "Select at least one supported role for this account.", "warning");
+    return;
+  }
+  if (res === "invalid_primary_role") {
+    Swal.fire("Default Role Required", "Choose which assigned role should be the default login role.", "warning");
     return;
   }
   if (res === "invalid_status") {
@@ -1141,6 +1851,26 @@ function handleAccountMutationResponse(mode, responseText) {
   }
   if (res === "need_college") {
     Swal.fire("Missing College Access", "Select at least one college for the scheduler.", "warning");
+    return;
+  }
+  if (res === "need_program_chair_college") {
+    Swal.fire("Missing Assigned College", "Select the college this Program Chair account belongs to.", "warning");
+    return;
+  }
+  if (res === "need_registrar_campus") {
+    Swal.fire("Missing Registrar Campus", "Select the campus this registrar account should review.", "warning");
+    return;
+  }
+  if (res === "need_faculty") {
+    Swal.fire("Missing Faculty Link", "Select the faculty record that should use this professor login.", "warning");
+    return;
+  }
+  if (res === "invalid_faculty") {
+    Swal.fire("Invalid Faculty", "Choose a valid active faculty record for the professor role.", "warning");
+    return;
+  }
+  if (res === "faculty_in_use") {
+    Swal.fire("Faculty Already Linked", "That faculty record is already assigned to another professor account.", "warning");
     return;
   }
   if (res === "dup_email") {
@@ -1170,7 +1900,15 @@ function handleAccountMutationResponse(mode, responseText) {
 
   if (mode === "add") {
     $("#addAccountForm")[0].reset();
+    resetRoleFields("add");
+    resetFacultyField("add");
+    resetProgramChairCollegeField("add");
+    resetRegistrarCampusField("add");
     resetCollegeAccessFields("add");
+    syncProfessorDisplayName("add");
+    $("#add_faculty_wrapper").hide();
+    $("#add_program_chair_college_wrapper").hide();
+    $("#add_registrar_campus_wrapper").hide();
     $("#add_college_wrapper").hide();
     $("#add_default_college_wrapper").hide();
     hideAccountModal("addAccountModal");
@@ -1192,12 +1930,17 @@ function submitAccountForm(mode) {
   });
 }
 
-$("#add_role").on("change", function() {
-  toggleCollegeAccessFields("add", $(this).val(), $("#add_default_college_id").val());
-});
+$(document).on("change", ".account-role-checkbox", function() {
+  const mode = String($(this).data("mode") || "");
+  if (mode === "") {
+    return;
+  }
 
-$("#edit_role").on("change", function() {
-  toggleCollegeAccessFields("edit", $(this).val(), $("#edit_default_college_id").val());
+  buildPrimaryRoleOptions(mode, $("#" + mode + "_primary_role").val());
+  toggleFacultyLinkField(mode, getSelectedRoles(mode), $("#" + mode + "_faculty_id").val());
+  toggleProgramChairCollegeField(mode, getSelectedRoles(mode), $("#" + mode + "_program_chair_college_id").val());
+  toggleRegistrarCampusField(mode, getSelectedRoles(mode), $("#" + mode + "_registrar_campus_id").val());
+  toggleCollegeAccessFields(mode, getSelectedRoles(mode), $("#" + mode + "_default_college_id").val());
 });
 
 $("#add_college_ids").on("change", function() {
@@ -1206,6 +1949,14 @@ $("#add_college_ids").on("change", function() {
 
 $("#edit_college_ids").on("change", function() {
   buildDefaultCollegeOptions("edit", $("#edit_default_college_id").val());
+});
+
+$("#add_faculty_id").on("change", function() {
+  syncProfessorDisplayName("add");
+});
+
+$("#edit_faculty_id").on("change", function() {
+  syncProfessorDisplayName("edit");
 });
 
 // ------------------------------------
@@ -1224,13 +1975,23 @@ $(document).on("click", ".btnEditAccount", function () {
   $("#edit_user_id").val($(this).data("id"));
   $("#edit_username").val($(this).data("username"));
   $("#edit_email").val($(this).data("email"));
-  $("#edit_role").val($(this).data("role"));
   $("#edit_status").val($(this).data("status"));
 
-  const role = String($(this).data("role") || "");
+  const rolesAttr = String($(this).attr("data-roles") || "[]");
+  const primaryRole = String($(this).attr("data-primary-role") || "");
+  const facultyId = String($(this).attr("data-faculty-id") || "");
+  const programChairCollegeId = String($(this).attr("data-program-chair-college") || "");
+  const registrarCampusId = String($(this).attr("data-registrar-campus") || "");
   const collegeIdsAttr = String($(this).attr("data-college-ids") || "[]");
   const defaultCollegeId = String($(this).attr("data-default-college") || "");
+  let roles = [];
   let collegeIds = [];
+
+  try {
+    roles = JSON.parse(rolesAttr);
+  } catch (error) {
+    roles = [];
+  }
 
   try {
     collegeIds = JSON.parse(collegeIdsAttr);
@@ -1238,22 +1999,66 @@ $(document).on("click", ".btnEditAccount", function () {
     collegeIds = [];
   }
 
-  if (role === "scheduler") {
+  setSelectedRoles("edit", Array.isArray(roles) ? roles : []);
+  buildPrimaryRoleOptions("edit", primaryRole);
+  toggleFacultyLinkField("edit", roles, facultyId);
+  toggleProgramChairCollegeField("edit", roles, programChairCollegeId);
+  toggleRegistrarCampusField("edit", roles, registrarCampusId);
+
+  if (rolesIncludeScheduler(Array.isArray(roles) ? roles : [])) {
     $("#edit_college_ids").val((Array.isArray(collegeIds) ? collegeIds : []).map(String)).trigger("change");
-    toggleCollegeAccessFields("edit", role, defaultCollegeId);
+    toggleCollegeAccessFields("edit", roles, defaultCollegeId);
   } else {
-    toggleCollegeAccessFields("edit", role, "");
+    toggleCollegeAccessFields("edit", roles, "");
   }
 
   showAccountModal("editAccountModal");
 });
 
 $("#addAccountModal").on("shown.bs.modal", function() {
-  $("#add_college_ids").trigger("focus");
+  if (rolesIncludeProfessor(getSelectedRoles("add"))) {
+    if ($("#add_faculty_id").data("select2")) {
+      $("#add_faculty_id").select2("open");
+    } else {
+      $("#add_faculty_id").trigger("focus");
+    }
+    return;
+  }
+
+  if (rolesIncludeProgramChair(getSelectedRoles("add"))) {
+    $("#add_program_chair_college_id").trigger("focus");
+    return;
+  }
+
+  if (rolesIncludeRegistrar(getSelectedRoles("add"))) {
+    $("#add_registrar_campus_id").trigger("focus");
+    return;
+  }
+
+  $("#add_username").trigger("focus");
 });
 
 $("#editAccountModal").on("shown.bs.modal", function() {
-  $("#edit_college_ids").trigger("focus");
+  if (rolesIncludeProfessor(getSelectedRoles("edit"))) {
+    if ($("#edit_faculty_id").data("select2")) {
+      $("#edit_faculty_id").select2("open");
+    } else {
+      $("#edit_faculty_id").trigger("focus");
+    }
+    return;
+  }
+
+  if (rolesIncludeProgramChair(getSelectedRoles("edit"))) {
+    $("#edit_program_chair_college_id").trigger("focus");
+    return;
+  }
+
+  if (rolesIncludeRegistrar(getSelectedRoles("edit"))) {
+    $("#edit_registrar_campus_id").trigger("focus");
+    return;
+  }
+
+  $("#edit_username").trigger("focus");
 });
 
 // ------------------------------------

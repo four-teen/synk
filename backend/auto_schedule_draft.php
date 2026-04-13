@@ -41,11 +41,11 @@ if (!$previewRequested && !$applyRequested) {
     respond('error', 'Invalid request.');
 }
 
-$prospectus_id = (int)($_POST['prospectus_id'] ?? 0);
+$program_id = (int)($_POST['program_id'] ?? 0);
 $ay_id = (int)($_POST['ay_id'] ?? 0);
 $semester = (int)($_POST['semester'] ?? 0);
 
-if ($prospectus_id <= 0 || $ay_id <= 0 || !in_array($semester, [1, 2, 3], true)) {
+if ($program_id <= 0 || $ay_id <= 0 || !in_array($semester, [1, 2, 3], true)) {
     respond('error', 'Missing or invalid scheduling filters.');
 }
 
@@ -178,6 +178,19 @@ function room_access_table_exists(mysqli $conn): bool
     return $exists;
 }
 
+function section_curriculum_table_exists(mysqli $conn): bool
+{
+    static $exists = null;
+
+    if ($exists !== null) {
+        return $exists;
+    }
+
+    $q = $conn->query("SHOW TABLES LIKE 'tbl_section_curriculum'");
+    $exists = $q && $q->num_rows > 0;
+    return $exists;
+}
+
 function normalize_room_type($type): string
 {
     $value = strtolower(trim((string)$type));
@@ -261,9 +274,9 @@ function load_accessible_rooms(mysqli $conn, int $collegeId, int $ayId, int $sem
     return $rooms;
 }
 
-function load_target_offerings(mysqli $conn, int $prospectusId, int $ayId, int $semester, int $collegeId): array
+function load_target_offerings(mysqli $conn, int $programId, int $ayId, int $semester, int $collegeId): array
 {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -282,7 +295,7 @@ function load_target_offerings(mysqli $conn, int $prospectusId, int $ayId, int $
         {$liveOfferingJoins}
         INNER JOIN tbl_program p ON p.program_id = o.program_id
         INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-        WHERE o.prospectus_id = ?
+        WHERE o.program_id = ?
           AND o.ay_id = ?
           AND o.semester = ?
           AND p.college_id = ?
@@ -294,7 +307,7 @@ function load_target_offerings(mysqli $conn, int $prospectusId, int $ayId, int $
         return [];
     }
 
-    $stmt->bind_param('iiii', $prospectusId, $ayId, $semester, $collegeId);
+    $stmt->bind_param('iiii', $programId, $ayId, $semester, $collegeId);
     $stmt->execute();
     $res = $stmt->get_result();
 
@@ -500,7 +513,7 @@ function load_workload_faculty_map(mysqli $conn, array $offeringIds, int $ayId, 
 
 function load_term_schedule_snapshot_by_day(mysqli $conn, int $ayId, int $semester, array $excludeOfferingIds = []): array
 {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             cs.offering_id,
@@ -1021,9 +1034,9 @@ function build_preview_item(array $offering, array $statusInfo, array $blocks): 
     ];
 }
 
-function load_offering_map_for_apply(mysqli $conn, int $prospectusId, int $ayId, int $semester, int $collegeId): array
+function load_offering_map_for_apply(mysqli $conn, int $programId, int $ayId, int $semester, int $collegeId): array
 {
-    $rows = load_target_offerings($conn, $prospectusId, $ayId, $semester, $collegeId);
+    $rows = load_target_offerings($conn, $programId, $ayId, $semester, $collegeId);
     $map = [];
     foreach ($rows as $row) {
         $map[(int)$row['offering_id']] = $row;
@@ -1314,8 +1327,12 @@ if ($previewRequested) {
         respond('error', 'Room access table is missing.');
     }
 
+    if (!section_curriculum_table_exists($conn)) {
+        respond('error', 'Create tbl_section_curriculum first before running auto draft.');
+    }
+
     $rooms = load_accessible_rooms($conn, $college_id, $ay_id, $semester);
-    $offerings = load_target_offerings($conn, $prospectus_id, $ay_id, $semester, $college_id);
+    $offerings = load_target_offerings($conn, $program_id, $ay_id, $semester, $college_id);
     $offeringIds = array_map(function (array $offering): int {
         return (int)$offering['offering_id'];
     }, $offerings);
@@ -1490,7 +1507,11 @@ if (!room_access_table_exists($conn)) {
     respond('error', 'Room access table is missing.');
 }
 
-$offeringMap = load_offering_map_for_apply($conn, $prospectus_id, $ay_id, $semester, $college_id);
+if (!section_curriculum_table_exists($conn)) {
+    respond('error', 'Create tbl_section_curriculum first before applying auto draft.');
+}
+
+$offeringMap = load_offering_map_for_apply($conn, $program_id, $ay_id, $semester, $college_id);
 $rooms = load_accessible_rooms($conn, $college_id, $ay_id, $semester);
 $roomMap = [];
 foreach ($rooms as $room) {
@@ -1510,7 +1531,7 @@ foreach ($applyOrder as $item) {
     if (!isset($offeringMap[$offeringId])) {
         $failed[] = [
             'offering_id' => $offeringId,
-            'reason' => 'This offering is no longer available in the selected prospectus and term.'
+            'reason' => 'This offering is no longer available in the selected program term.'
         ];
         continue;
     }

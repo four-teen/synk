@@ -180,7 +180,7 @@ function build_room_label(array $row) {
 }
 
 function load_offering_context($conn, $offeringId, $collegeId) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             o.offering_id,
@@ -261,7 +261,7 @@ function load_accessible_rooms($conn, $collegeId, $ayId, $semester) {
 }
 
 function load_term_schedule_snapshot_by_day($conn, $ayId, $semester, $excludeOfferingId) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             cs.schedule_id,
@@ -369,7 +369,7 @@ function load_workload_faculties_for_offering_suggestions($conn, $offering_id, $
 }
 
 function load_other_faculty_workload_rows_suggestions($conn, $faculty_id, $ay_id, $semester, $offering_id) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             cs.schedule_id,

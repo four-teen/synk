@@ -13,6 +13,36 @@ $legacyLoginEnabled = synk_legacy_login_enabled($authSettings);
 $authStatus = trim((string)($_GET['auth_status'] ?? ''));
 $showGoogleConfigNotice = $googleLoginEnabled && !$googleReady;
 $showLegacyLogin = $legacyLoginEnabled && (!$googleLoginEnabled || !$googleReady);
+$pendingRoleLogin = synk_get_pending_role_login();
+
+function synk_login_json_response(array $payload): void
+{
+    header('Content-Type: application/json; charset=utf-8');
+    echo json_encode($payload);
+    exit;
+}
+
+function synk_login_success_payload(string $role): array
+{
+    return [
+        'status' => 'success',
+        'role' => $role,
+        'role_label' => synk_role_label($role),
+        'redirect' => synk_role_redirect_path($role),
+    ];
+}
+
+function synk_login_empty_role_error(array $configuredRoleRows): string
+{
+    foreach ($configuredRoleRows as $roleRow) {
+        $role = (string)($roleRow['role'] ?? '');
+        if ($role === 'scheduler' || $role === 'registrar') {
+            return 'account_incomplete';
+        }
+    }
+
+    return 'unsupported_role';
+}
 
 if (isset($_SESSION['user_id'], $_SESSION['role'])) {
     $redirectPath = synk_role_redirect_path((string)$_SESSION['role']);
@@ -22,54 +52,110 @@ if (isset($_SESSION['user_id'], $_SESSION['role'])) {
     }
 }
 
+if (isset($_POST['complete_role_login'])) {
+    $pendingLogin = synk_get_pending_role_login();
+    if (!$pendingLogin) {
+        synk_login_json_response(['status' => 'role_selection_missing']);
+    }
+
+    $selectedRole = strtolower(trim((string)($_POST['selected_role'] ?? '')));
+    $userId = (int)($pendingLogin['user_id'] ?? 0);
+    $row = synk_find_useraccount_by_id($conn, $userId);
+
+    if (!$row) {
+        synk_clear_pending_role_login();
+        synk_login_json_response(['status' => 'invalid']);
+    }
+
+    if (($row['status'] ?? '') !== 'active') {
+        synk_clear_pending_role_login();
+        synk_login_json_response(['status' => 'inactive']);
+    }
+
+    $configuredRoleRows = synk_fetch_useraccount_role_rows(
+        $conn,
+        (int)($row['user_id'] ?? 0),
+        (string)($row['role'] ?? '')
+    );
+    $loginableRoleRows = synk_filter_loginable_role_rows($conn, $row, $configuredRoleRows);
+
+    if (empty($loginableRoleRows)) {
+        synk_clear_pending_role_login();
+        synk_login_json_response(['status' => synk_login_empty_role_error($configuredRoleRows)]);
+    }
+
+    $allowedRoles = array_values(array_map(static function (array $roleRow): string {
+        return (string)($roleRow['role'] ?? '');
+    }, $loginableRoleRows));
+
+    if ($selectedRole === '' || !in_array($selectedRole, $allowedRoles, true)) {
+        synk_login_json_response(['status' => 'invalid_primary_role']);
+    }
+
+    $avatarUrl = trim((string)($pendingLogin['avatar_url'] ?? ''));
+    $activeRole = synk_complete_user_login($row, $conn, $selectedRole, $loginableRoleRows);
+
+    if ($avatarUrl !== '') {
+        $_SESSION['user_avatar_url'] = $avatarUrl;
+    }
+
+    synk_login_json_response(synk_login_success_payload($activeRole));
+}
+
 if (isset($_POST['login'])) {
     if (!$legacyLoginEnabled) {
-        echo 'google_only';
-        exit;
+        synk_login_json_response(['status' => 'google_only']);
     }
 
     $email = synk_normalize_email((string)($_POST['email'] ?? ''));
     $password = trim((string)($_POST['password'] ?? ''));
+    synk_clear_pending_role_login();
 
     if ($email === '' || $password === '') {
-        echo 'invalid';
-        exit;
+        synk_login_json_response(['status' => 'invalid']);
     }
 
     if (!synk_is_allowed_email_domain($email, (string)($authSettings['allowed_domain'] ?? 'sksu.edu.ph'))) {
-        echo 'invalid';
-        exit;
+        synk_login_json_response(['status' => 'invalid']);
     }
 
     $row = synk_find_useraccount_by_email($conn, $email);
     if (!$row) {
-        echo 'invalid';
-        exit;
+        synk_login_json_response(['status' => 'invalid']);
     }
 
     if (($row['status'] ?? '') !== 'active') {
-        echo 'inactive';
-        exit;
-    }
-
-    if (!in_array((string)$row['role'], synk_supported_module_roles(), true)) {
-        echo 'unsupported_role';
-        exit;
-    }
-
-    if ((string)$row['role'] === 'scheduler' && !synk_scheduler_account_has_access($conn, $row)) {
-        echo 'account_incomplete';
-        exit;
+        synk_login_json_response(['status' => 'inactive']);
     }
 
     $storedPassword = (string)($row['password'] ?? '');
     if ($storedPassword === '' || !password_verify($password, $storedPassword)) {
-        echo 'invalid';
-        exit;
+        synk_login_json_response(['status' => 'invalid']);
     }
 
-    echo synk_complete_user_login($row, $conn);
-    exit;
+    $configuredRoleRows = synk_fetch_useraccount_role_rows(
+        $conn,
+        (int)($row['user_id'] ?? 0),
+        (string)($row['role'] ?? '')
+    );
+    $loginableRoleRows = synk_filter_loginable_role_rows($conn, $row, $configuredRoleRows);
+
+    if (empty($loginableRoleRows)) {
+        synk_login_json_response(['status' => synk_login_empty_role_error($configuredRoleRows)]);
+    }
+
+    if (count($loginableRoleRows) === 1) {
+        $activeRole = synk_complete_user_login($row, $conn, null, $loginableRoleRows);
+        synk_login_json_response(synk_login_success_payload($activeRole));
+    }
+
+    synk_store_pending_role_login($row, $loginableRoleRows);
+    synk_login_json_response([
+        'status' => 'choose_role',
+        'email' => (string)($row['email'] ?? ''),
+        'primary_role' => synk_useraccount_primary_role($loginableRoleRows, (string)($row['role'] ?? '')),
+        'roles' => synk_role_rows_to_payload($loginableRoleRows),
+    ]);
 }
 ?>
 
@@ -464,6 +550,132 @@ if (isset($_POST['login'])) {
         border-radius: 10px;
       }
 
+      .swal2-popup.role-choice-swal {
+        padding: 1.45rem 1.35rem 1.35rem;
+        border-radius: 22px;
+      }
+
+      .role-choice-lead {
+        margin: 0 auto 1rem;
+        max-width: 420px;
+        color: #5d7086;
+        line-height: 1.55;
+        font-size: 0.96rem;
+      }
+
+      .role-choice-email {
+        display: inline-flex;
+        align-items: center;
+        gap: 0.4rem;
+        margin-top: 0.45rem;
+        padding: 0.35rem 0.7rem;
+        border-radius: 999px;
+        background: #eef4ff;
+        color: #48627d;
+        font-size: 0.8rem;
+        font-weight: 700;
+        word-break: break-word;
+      }
+
+      .role-choice-grid {
+        display: grid;
+        grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+        gap: 0.85rem;
+        margin-top: 1rem;
+        text-align: left;
+      }
+
+      .role-choice-card {
+        position: relative;
+        display: block;
+        border: 1px solid #dce5f1;
+        border-radius: 18px;
+        padding: 1rem 0.95rem;
+        background: #fbfdff;
+        cursor: pointer;
+        transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease, background 0.18s ease;
+      }
+
+      .role-choice-card:hover {
+        transform: translateY(-1px);
+        border-color: #cfdaf4;
+        box-shadow: 0 14px 28px rgba(67, 89, 113, 0.1);
+      }
+
+      .role-choice-card.is-selected {
+        border-color: #696cff;
+        background: #f6f7ff;
+        box-shadow: 0 14px 28px rgba(105, 108, 255, 0.14);
+      }
+
+      .role-choice-input {
+        position: absolute;
+        inset: 0;
+        opacity: 0;
+        pointer-events: none;
+      }
+
+      .role-choice-top {
+        display: flex;
+        align-items: flex-start;
+        justify-content: space-between;
+        gap: 0.75rem;
+      }
+
+      .role-choice-icon {
+        width: 42px;
+        height: 42px;
+        border-radius: 14px;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        font-size: 1.2rem;
+        flex: 0 0 42px;
+      }
+
+      .role-choice-state {
+        width: 1rem;
+        height: 1rem;
+        border-radius: 999px;
+        border: 2px solid #c4d0df;
+        margin-top: 0.15rem;
+        flex: 0 0 1rem;
+        transition: border-color 0.18s ease, background 0.18s ease, box-shadow 0.18s ease;
+      }
+
+      .role-choice-card.is-selected .role-choice-state {
+        border-color: #696cff;
+        background: #696cff;
+        box-shadow: inset 0 0 0 2px #ffffff;
+      }
+
+      .role-choice-title {
+        margin: 0.85rem 0 0;
+        color: #25364a;
+        font-size: 1rem;
+        font-weight: 800;
+      }
+
+      .role-choice-copy {
+        margin: 0.35rem 0 0;
+        color: #607389;
+        font-size: 0.88rem;
+        line-height: 1.5;
+        min-height: 2.65rem;
+      }
+
+      .role-choice-badges {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 0.45rem;
+        margin-top: 0.9rem;
+      }
+
+      .role-choice-badges .badge {
+        font-size: 0.72rem;
+        padding: 0.38rem 0.6rem;
+      }
+
       @keyframes login-border-orbit {
         to {
           offset-distance: 100%;
@@ -544,6 +756,20 @@ if (isset($_POST['login'])) {
 
         .login-plate-left {
           left: 8%;
+        }
+
+        .swal2-popup.role-choice-swal {
+          width: calc(100vw - 1.5rem) !important;
+          padding: 1.2rem 1rem 1rem;
+        }
+
+        .role-choice-grid {
+          grid-template-columns: 1fr;
+          gap: 0.7rem;
+        }
+
+        .role-choice-copy {
+          min-height: auto;
         }
       }
 
@@ -668,7 +894,7 @@ if (isset($_POST['login'])) {
                 <?php endif; ?>
 
                 <div class="login-footnote">
-                  Access is limited to approved Synk administrator and scheduler accounts.
+                  Access is limited to approved Synk administrator, scheduler, professor, program chair, and registrar accounts.
                 </div>
 
                 <div class="login-project-note">SAM + eSKALA project 2026</div>
@@ -692,6 +918,7 @@ if (isset($_POST['login'])) {
       $(document).ready(function () {
         const authStatus = <?php echo json_encode($authStatus, JSON_UNESCAPED_SLASHES); ?>;
         const googleReady = <?php echo $googleReady ? 'true' : 'false'; ?>;
+        const pendingRoleLogin = <?php echo json_encode($pendingRoleLogin, JSON_UNESCAPED_SLASHES); ?>;
 
         const authStatusMessages = {
           google_unavailable: {
@@ -783,11 +1010,35 @@ if (isset($_POST['login'])) {
             icon: "error",
             title: "Google Account Mismatch",
             text: "This email is already linked to a different Google account."
+          },
+          role_selection_missing: {
+            icon: "warning",
+            title: "Role Selection Expired",
+            text: "Please sign in again to choose your workspace role."
           }
         };
 
-        if (authStatus && authStatusMessages[authStatus]) {
-          const message = authStatusMessages[authStatus];
+        function clearAuthStatusFromUrl() {
+          if (window.history && window.history.replaceState) {
+            window.history.replaceState({}, document.title, window.location.pathname);
+          }
+        }
+
+        function escapeHtmlText(value) {
+          return String(value || "")
+            .replace(/&/g, "&amp;")
+            .replace(/</g, "&lt;")
+            .replace(/>/g, "&gt;")
+            .replace(/"/g, "&quot;")
+            .replace(/'/g, "&#039;");
+        }
+
+        function showStatusAlert(status) {
+          const message = authStatusMessages[status];
+          if (!message) {
+            return;
+          }
+
           Swal.fire({
             icon: message.icon,
             title: message.title,
@@ -795,10 +1046,311 @@ if (isset($_POST['login'])) {
             width: "360px",
             padding: "1.5rem"
           });
+        }
 
-          if (window.history && window.history.replaceState) {
-            window.history.replaceState({}, document.title, window.location.pathname);
+        function roleChoiceRows(roleRows) {
+          if (!Array.isArray(roleRows)) {
+            return [];
           }
+
+          return roleRows.map(function (roleRow) {
+            const role = String(roleRow && roleRow.role ? roleRow.role : "").toLowerCase();
+            const label = String(roleRow && roleRow.label ? roleRow.label : role);
+
+            if (role === "") {
+              return null;
+            }
+
+            const meta = {
+              admin: {
+                icon: "bx-shield-quarter",
+                iconClass: "bg-label-primary",
+                description: "System setup, academic configuration, and access control."
+              },
+              scheduler: {
+                icon: "bx-calendar-edit",
+                iconClass: "bg-label-info",
+                description: "Scheduling, workload, and college-scoped schedule operations."
+              },
+              professor: {
+                icon: "bx-user-voice",
+                iconClass: "bg-label-warning",
+                description: "Faculty portal, workload view, and subject teaching details."
+              },
+              program_chair: {
+                icon: "bx-briefcase-alt-2",
+                iconClass: "bg-label-success",
+                description: "Program oversight, curriculum-based enrollment, and submissions."
+              },
+              registrar: {
+                icon: "bx-clipboard-check",
+                iconClass: "bg-label-danger",
+                description: "Campus registrar queue, draft review, and enrollment approval tracking."
+              }
+            };
+
+            return {
+              role: role,
+              label: label,
+              isPrimary: Boolean(roleRow && roleRow.is_primary),
+              icon: meta[role] ? meta[role].icon : "bx-grid-alt",
+              iconClass: meta[role] ? meta[role].iconClass : "bg-label-secondary",
+              description: meta[role] ? meta[role].description : "Open this assigned Synk workspace."
+            };
+          }).filter(Boolean);
+        }
+
+        function roleChoiceHtml(roleRows, selectedRole) {
+          return roleRows.map(function (roleRow) {
+            const checked = roleRow.role === selectedRole ? " checked" : "";
+            const selectedClass = roleRow.role === selectedRole ? " is-selected" : "";
+            const defaultBadge = roleRow.isPrimary
+              ? '<span class="badge bg-label-primary">Default</span>'
+              : '<span class="badge bg-label-secondary">Assigned</span>';
+
+            return `
+              <label class="role-choice-card${selectedClass}" data-role-card="${roleRow.role}">
+                <input class="role-choice-input" type="radio" name="synk_role_choice" value="${roleRow.role}"${checked}>
+                <div class="role-choice-top">
+                  <span class="role-choice-icon ${roleRow.iconClass}">
+                    <i class="bx ${roleRow.icon}"></i>
+                  </span>
+                  <span class="role-choice-state" aria-hidden="true"></span>
+                </div>
+                <div class="role-choice-title">${escapeHtmlText(roleRow.label)}</div>
+                <div class="role-choice-copy">${escapeHtmlText(roleRow.description)}</div>
+                <div class="role-choice-badges">${defaultBadge}</div>
+              </label>
+            `;
+          }).join("");
+        }
+
+        function bindRoleChoiceCards() {
+          const cards = Array.from(document.querySelectorAll("[data-role-card]"));
+
+          cards.forEach(function (card) {
+            card.addEventListener("click", function () {
+              const input = card.querySelector('input[name="synk_role_choice"]');
+              if (!input) {
+                return;
+              }
+
+              input.checked = true;
+              cards.forEach(function (item) {
+                item.classList.toggle("is-selected", item === card);
+              });
+            });
+          });
+        }
+
+        function selectedRoleChoiceFromPopup() {
+          const checked = document.querySelector('input[name="synk_role_choice"]:checked');
+          return checked ? String(checked.value || "") : "";
+        }
+
+        function redirectAfterLogin(response) {
+          const roleLabel = String(response && response.role_label ? response.role_label : "User");
+          const redirectPath = String(response && response.redirect ? response.redirect : "");
+
+          Swal.fire({
+            icon: "success",
+            title: "Welcome " + roleLabel + "!",
+            text: "Redirecting...",
+            timer: 1500,
+            showConfirmButton: false,
+            width: "360px",
+            padding: "1.5rem"
+          });
+
+          window.setTimeout(function () {
+            window.location = redirectPath !== "" ? redirectPath : "index.php";
+          }, 1500);
+        }
+
+        function submitRoleSelection(selectedRole) {
+          $.ajax({
+            url: "index.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+              complete_role_login: 1,
+              selected_role: selectedRole
+            }
+          }).done(function (response) {
+            handleLoginResponse(response);
+          }).fail(function () {
+            Swal.fire({
+              icon: "error",
+              title: "Role Selection Failed",
+              text: "Please sign in again to continue.",
+              width: "360px",
+              padding: "1.5rem"
+            });
+          });
+        }
+
+        function promptRoleSelection(context) {
+          const roleRows = roleChoiceRows(context && context.roles);
+          const optionKeys = roleRows.map(function (item) {
+            return item.role;
+          }).filter(Boolean);
+          const defaultRole = String(context && context.primary_role ? context.primary_role : (optionKeys[0] || ""));
+
+          if (optionKeys.length === 0) {
+            showStatusAlert("role_selection_missing");
+            return;
+          }
+
+          Swal.fire({
+            title: "Choose Login Role",
+            html: `
+              <div class="role-choice-lead">
+                Select the workspace to open for this session.
+                <div class="role-choice-email">
+                  <i class="bx bx-envelope"></i>
+                  <span>${escapeHtmlText(String(context && context.email ? context.email : "This account"))}</span>
+                </div>
+              </div>
+              <div class="role-choice-grid">
+                ${roleChoiceHtml(roleRows, defaultRole)}
+              </div>
+            `,
+            confirmButtonText: "Continue",
+            allowOutsideClick: false,
+            allowEscapeKey: false,
+            width: "620px",
+            customClass: {
+              popup: "role-choice-swal"
+            },
+            didOpen: function () {
+              bindRoleChoiceCards();
+            },
+            preConfirm: function () {
+              const value = selectedRoleChoiceFromPopup();
+              if (!value) {
+                Swal.showValidationMessage("Select a role to continue.");
+                return false;
+              }
+
+              return value;
+            }
+          }).then(function (result) {
+            if (!result.isConfirmed || !result.value) {
+              return;
+            }
+
+            submitRoleSelection(result.value);
+          });
+        }
+
+        function handleLoginResponse(response) {
+          const status = String(response && response.status ? response.status : "");
+
+          if (status === "success") {
+            redirectAfterLogin(response);
+            return;
+          }
+
+          if (status === "choose_role") {
+            promptRoleSelection(response);
+            return;
+          }
+
+          if (status === "invalid") {
+            Swal.fire({
+              icon: "error",
+              title: "Login Failed",
+              text: "Incorrect email or password.",
+              width: "360px",
+              padding: "1.5rem"
+            });
+            return;
+          }
+
+          if (status === "inactive") {
+            Swal.fire({
+              icon: "warning",
+              title: "Account Inactive",
+              text: "Please contact the administrator.",
+              width: "360px",
+              padding: "1.5rem"
+            });
+            return;
+          }
+
+          if (status === "google_only") {
+            Swal.fire({
+              icon: "info",
+              title: "Use Google Sign-In",
+              text: "This system is configured for Google login only.",
+              width: "360px",
+              padding: "1.5rem"
+            });
+            return;
+          }
+
+          if (status === "unsupported_role") {
+            Swal.fire({
+              icon: "warning",
+              title: "Role Not Supported",
+              text: "This account does not have a supported Synk module role.",
+              width: "360px",
+              padding: "1.5rem"
+            });
+            return;
+          }
+
+          if (status === "account_incomplete") {
+            Swal.fire({
+              icon: "warning",
+              title: "Account Incomplete",
+              text: "Your account is missing required access details.",
+              width: "360px",
+              padding: "1.5rem"
+            });
+            return;
+          }
+
+          if (status === "role_selection_missing" || status === "invalid_primary_role") {
+            Swal.fire({
+              icon: "warning",
+              title: "Choose Login Role",
+              text: "Please choose one of your assigned roles to continue.",
+              width: "360px",
+              padding: "1.5rem"
+            }).then(function () {
+              if (pendingRoleLogin && Array.isArray(pendingRoleLogin.roles) && pendingRoleLogin.roles.length > 1) {
+                promptRoleSelection(pendingRoleLogin);
+              }
+            });
+            return;
+          }
+
+          Swal.fire({
+            icon: "error",
+            title: "Unexpected Error",
+            text: "Please try again later.",
+            width: "360px",
+            padding: "1.5rem"
+          });
+        }
+
+        if (authStatus && authStatus !== "choose_role" && authStatusMessages[authStatus]) {
+          showStatusAlert(authStatus);
+          clearAuthStatusFromUrl();
+        } else if (authStatus === "choose_role" && (!pendingRoleLogin || !Array.isArray(pendingRoleLogin.roles) || pendingRoleLogin.roles.length === 0)) {
+          showStatusAlert("role_selection_missing");
+          clearAuthStatusFromUrl();
+        }
+
+        if (pendingRoleLogin && Array.isArray(pendingRoleLogin.roles) && pendingRoleLogin.roles.length > 1) {
+          if (authStatus === "choose_role") {
+            clearAuthStatusFromUrl();
+          }
+
+          window.setTimeout(function () {
+            promptRoleSelection(pendingRoleLogin);
+          }, 80);
         }
 
         $("#btn_google_login").on("click", function (e) {
@@ -842,111 +1394,22 @@ if (isset($_POST['login'])) {
           $.ajax({
             url: "index.php",
             type: "POST",
+            dataType: "json",
             data: {
               login: 1,
               email: email,
               password: password
-            },
-            success: function (response) {
-              response = response.trim();
-
-              if (response === "invalid") {
-                Swal.fire({
-                  icon: "error",
-                  title: "Login Failed",
-                  text: "Incorrect email or password.",
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-                return;
-              }
-
-              if (response === "inactive") {
-                Swal.fire({
-                  icon: "warning",
-                  title: "Account Inactive",
-                  text: "Please contact the administrator.",
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-                return;
-              }
-
-              if (response === "google_only") {
-                Swal.fire({
-                  icon: "info",
-                  title: "Use Google Sign-In",
-                  text: "This system is configured for Google login only.",
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-                return;
-              }
-
-              if (response === "unsupported_role") {
-                Swal.fire({
-                  icon: "warning",
-                  title: "Role Not Supported",
-                  text: "This account does not have a supported Synk module role.",
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-                return;
-              }
-
-              if (response === "account_incomplete") {
-                Swal.fire({
-                  icon: "warning",
-                  title: "Account Incomplete",
-                  text: "Your account is missing required access details.",
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-                return;
-              }
-
-              if (response === "admin") {
-                Swal.fire({
-                  icon: "success",
-                  title: "Welcome Admin!",
-                  text: "Redirecting...",
-                  timer: 1500,
-                  showConfirmButton: false,
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-
-                setTimeout(() => {
-                  window.location = "administrator/";
-                }, 1500);
-                return;
-              }
-
-              if (response === "scheduler") {
-                Swal.fire({
-                  icon: "success",
-                  title: "Welcome Scheduler!",
-                  text: "Redirecting...",
-                  timer: 1500,
-                  showConfirmButton: false,
-                  width: "360px",
-                  padding: "1.5rem"
-                });
-
-                setTimeout(() => {
-                  window.location = "scheduler/";
-                }, 1500);
-                return;
-              }
-
-              Swal.fire({
-                icon: "error",
-                title: "Unexpected Error",
-                text: "Please try again later.",
-                width: "360px",
-                padding: "1.5rem"
-              });
             }
+          }).done(function (response) {
+            handleLoginResponse(response);
+          }).fail(function () {
+            Swal.fire({
+              icon: "error",
+              title: "Unexpected Error",
+              text: "Please try again later.",
+              width: "360px",
+              padding: "1.5rem"
+            });
           });
         });
       });

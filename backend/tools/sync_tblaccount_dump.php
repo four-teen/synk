@@ -55,7 +55,7 @@ function sync_map_role(string $sourceRole): ?string
     }
 
     if ($sourceRole === 'progchair') {
-        return 'scheduler';
+        return 'program_chair';
     }
 
     return null;

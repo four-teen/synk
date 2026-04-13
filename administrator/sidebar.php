@@ -163,7 +163,7 @@ $sidebarSections = [
                         'icon_bg' => 'bg-label-info',
                         'icon' => 'bx-search-alt-2',
                         'title' => 'Prospectus Viewer',
-                        'description' => 'Review published prospectus structures',
+                        'description' => 'Review published curriculum structures',
                         'pages' => ['manage-prospectus-browser.php', 'view-prospectus.php'],
                     ],
                     [

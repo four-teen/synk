@@ -444,9 +444,37 @@ function synk_parse_scheduler_college_ids($input): array
     return array_values($ids);
 }
 
-function synk_scheduler_normalize_access_payload(string $role, array $collegeIds, ?int $defaultCollegeId): array
+function synk_scheduler_role_values($roleOrRoles): array
 {
-    if ($role !== 'scheduler') {
+    if (!is_array($roleOrRoles)) {
+        if ($roleOrRoles === null || $roleOrRoles === '') {
+            $roleOrRoles = [];
+        } else {
+            $roleOrRoles = [$roleOrRoles];
+        }
+    }
+
+    $roles = [];
+    foreach ($roleOrRoles as $role) {
+        $safeRole = strtolower(trim((string)$role));
+        if ($safeRole === '') {
+            continue;
+        }
+
+        $roles[$safeRole] = $safeRole;
+    }
+
+    return array_values($roles);
+}
+
+function synk_scheduler_roles_include_scheduler($roleOrRoles): bool
+{
+    return in_array('scheduler', synk_scheduler_role_values($roleOrRoles), true);
+}
+
+function synk_scheduler_normalize_access_payload($roleOrRoles, array $collegeIds, ?int $defaultCollegeId): array
+{
+    if (!synk_scheduler_roles_include_scheduler($roleOrRoles)) {
         return [
             'college_ids' => [],
             'default_college_id' => null
@@ -471,17 +499,18 @@ function synk_scheduler_normalize_access_payload(string $role, array $collegeIds
     ];
 }
 
-function synk_persist_scheduler_college_access(mysqli $conn, int $userId, string $role, array $collegeIds, ?int $defaultCollegeId): ?string
+function synk_persist_scheduler_college_access(mysqli $conn, int $userId, $roleOrRoles, array $collegeIds, ?int $defaultCollegeId): ?string
 {
     if ($userId <= 0) {
         return 'missing';
     }
 
-    $normalized = synk_scheduler_normalize_access_payload($role, $collegeIds, $defaultCollegeId);
+    $normalized = synk_scheduler_normalize_access_payload($roleOrRoles, $collegeIds, $defaultCollegeId);
     $collegeIds = $normalized['college_ids'];
     $defaultCollegeId = $normalized['default_college_id'];
+    $hasSchedulerRole = synk_scheduler_roles_include_scheduler($roleOrRoles);
 
-    if ($role === 'scheduler' && empty($collegeIds)) {
+    if ($hasSchedulerRole && empty($collegeIds)) {
         return 'need_college';
     }
 
@@ -501,7 +530,7 @@ function synk_persist_scheduler_college_access(mysqli $conn, int $userId, string
     }
     $deleteStmt->close();
 
-    if ($role === 'scheduler') {
+    if ($hasSchedulerRole) {
         $insertStmt = $conn->prepare("
             INSERT INTO tbl_user_college_access (user_id, college_id, is_default, status)
             VALUES (?, ?, ?, 'active')
@@ -523,7 +552,7 @@ function synk_persist_scheduler_college_access(mysqli $conn, int $userId, string
         $insertStmt->close();
     }
 
-    if ($role === 'scheduler' && $defaultCollegeId !== null) {
+    if ($hasSchedulerRole && $defaultCollegeId !== null) {
         $updateStmt = $conn->prepare("UPDATE tbl_useraccount SET college_id = ? WHERE user_id = ?");
         if (!$updateStmt) {
             return 'save_failed';

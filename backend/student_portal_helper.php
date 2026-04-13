@@ -1780,7 +1780,7 @@ function synk_student_build_evaluation_qr_url(string $payload, int $size = 320):
         . '&margin=10&data=' . rawurlencode($payload);
 }
 
-function synk_student_fetch_subject_rows_by_academic_year(mysqli $conn, int $studentId, int $ayId): array
+function synk_student_fetch_subject_rows_by_academic_year(mysqli $conn, int $studentId, int $ayId, int $semester = 0): array
 {
     if (
         $studentId <= 0
@@ -1791,6 +1791,11 @@ function synk_student_fetch_subject_rows_by_academic_year(mysqli $conn, int $stu
     }
 
     $tableName = synk_student_portal_enrollment_table_name();
+    $semesterWhereSql = '';
+    if ($semester > 0) {
+        $semesterWhereSql = " AND es.semester = ?";
+    }
+
     $stmt = $conn->prepare("
         SELECT
             es.student_enrollment_id,
@@ -1818,6 +1823,7 @@ function synk_student_fetch_subject_rows_by_academic_year(mysqli $conn, int $stu
             ON r.room_id = es.room_id
         WHERE es.student_id = ?
           AND es.ay_id = ?
+          {$semesterWhereSql}
           AND es.is_active = 1
         ORDER BY
             es.semester ASC,
@@ -1830,7 +1836,11 @@ function synk_student_fetch_subject_rows_by_academic_year(mysqli $conn, int $stu
         return [];
     }
 
-    $stmt->bind_param('ii', $studentId, $ayId);
+    if ($semester > 0) {
+        $stmt->bind_param('iii', $studentId, $ayId, $semester);
+    } else {
+        $stmt->bind_param('ii', $studentId, $ayId);
+    }
     $stmt->execute();
     $result = $stmt->get_result();
     $rows = [];
@@ -3126,7 +3136,7 @@ function synk_student_fetch_section_schedule(mysqli $conn, int $sectionId, int $
         return $payload;
     }
 
-    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
     $scheduleSql = "
         SELECT
             cs.schedule_id,

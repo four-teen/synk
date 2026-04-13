@@ -19,6 +19,41 @@ $default_ay_id = (int)$currentTerm['ay_id'];
 $default_semester = (int)$currentTerm['semester'];
 $schedulerCollegeId = (int)($_SESSION['college_id'] ?? 0);
 $schedulePolicy = synk_fetch_effective_schedule_policy($conn, $schedulerCollegeId);
+$programOptions = [];
+$programStmt = $conn->prepare("
+    SELECT
+        program_id,
+        program_code,
+        program_name,
+        COALESCE(major, '') AS major
+    FROM tbl_program
+    WHERE college_id = ?
+    ORDER BY program_code ASC, program_name ASC, major ASC
+");
+
+if ($programStmt instanceof mysqli_stmt) {
+    $programStmt->bind_param("i", $schedulerCollegeId);
+    $programStmt->execute();
+    $programRes = $programStmt->get_result();
+
+    while ($programRes && ($row = $programRes->fetch_assoc())) {
+        $programCode = strtoupper(trim((string)($row['program_code'] ?? '')));
+        $programName = trim((string)($row['program_name'] ?? ''));
+        $major = trim((string)($row['major'] ?? ''));
+        $label = trim($programCode . ($programName !== '' ? ' - ' . $programName : ''));
+
+        if ($major !== '') {
+            $label .= ' (Major in ' . $major . ')';
+        }
+
+        $programOptions[] = [
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'label' => $label
+        ];
+    }
+
+    $programStmt->close();
+}
 
 /* ==============================
    BUILD ROOM OPTIONS (UI USE)
@@ -3100,45 +3135,14 @@ body.swal2-shown .modal {
 <div class="row g-3">
 
 <div class="col-md-4">
-<label class="form-label">Prospectus</label>
-<select id="prospectus_id" class="form-select">
+<label class="form-label">Program</label>
+<select id="program_id" class="form-select">
 <option value="">Select...</option>
-<?php
-  $prosStmt = $conn->prepare("
-    SELECT
-      h.prospectus_id,
-      h.effective_sy,
-      p.program_code,
-      p.program_name,
-      p.major
-    FROM tbl_prospectus_header h
-    JOIN tbl_program p ON p.program_id = h.program_id
-    WHERE p.college_id = ?
-    ORDER BY p.program_name, p.major
-  ");
-  $prosCollegeId = (int)$_SESSION['college_id'];
-  $prosStmt->bind_param("i", $prosCollegeId);
-  $prosStmt->execute();
-  $q = $prosStmt->get_result();
-  while ($r = $q->fetch_assoc()) {
-
-      $label = $r['program_code'] . " - " . $r['program_name'];
-
-      // Append major only if it exists
-      if (!empty($r['major'])) {
-          $label .= " major in " . $r['major'];
-      }
-
-      $label .= " (SY " . $r['effective_sy'] . ")";
-
-      echo "
-          <option value='{$r['prospectus_id']}'>
-              {$label}
-          </option>
-      ";
-  }
-
-?>
+<?php foreach ($programOptions as $programOption): ?>
+<option value="<?= (int)$programOption['program_id'] ?>">
+  <?= htmlspecialchars((string)$programOption['label']) ?>
+</option>
+<?php endforeach; ?>
 </select>
 </div>
 
@@ -3201,7 +3205,7 @@ while ($ay = $ayQ->fetch_assoc()) {
           <div class="schedule-set-shell">
             <div class="schedule-set-select">
               <select id="scheduleSetSelect" class="form-select" disabled>
-                <option value="">Select Academic Year and Semester first</option>
+                <option value="">Select Program, Academic Year, and Semester first</option>
               </select>
             </div>
             <div class="schedule-set-actions">
@@ -3217,7 +3221,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             </div>
           </div>
           <div class="schedule-set-meta mt-2" id="scheduleSetDetails">
-            Live schedules remain the active workspace. Save them as a reusable set, then clear or revise live schedules and load any saved set back later.
+            Live schedules remain the active workspace for the selected program term. Save them as a reusable set, then clear or revise live schedules and load any saved set back later.
           </div>
         </div>
 
@@ -3242,7 +3246,7 @@ while ($ay = $ayQ->fetch_assoc()) {
               placeholder="Search by subject code, description, or section within the current filters"
             >
             <div class="schedule-controls-note mt-2">
-              Search works inside the current prospectus, academic year, semester, and group view.
+              Search works inside the current program, academic year, semester, and group view.
             </div>
           </div>
         </div>
@@ -3292,7 +3296,7 @@ while ($ay = $ayQ->fetch_assoc()) {
   <div class="offcanvas-body">
     <div class="room-browser-summary" id="roomBrowserSummary"></div>
     <div class="room-browser-note">
-      Counts follow the current prospectus, academic term, semester, and subject search results shown on this page.
+      Counts follow the current program, academic term, semester, and subject search results shown on this page.
     </div>
     <div id="roomBrowserList">
       <div class="room-browser-empty">Select a term to load the room browser.</div>
@@ -3802,7 +3806,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         <div>
           <h5 class="modal-title mb-0">Auto Draft Schedule</h5>
           <div class="small text-muted mt-1">
-            Preview conflict-free drafts before applying them to the selected prospectus and term.
+            Preview conflict-free drafts before applying them to the selected program term.
           </div>
         </div>
       </div>
@@ -8757,18 +8761,18 @@ while ($ay = $ayQ->fetch_assoc()) {
         );
     }
 
-    function ensureDefaultProspectus() {
-        const prospectusSelect = $("#prospectus_id");
-        if (prospectusSelect.val()) {
+    function ensureDefaultProgram() {
+        const programSelect = $("#program_id");
+        if (programSelect.val()) {
             return;
         }
 
-        const firstProspectus = prospectusSelect.find("option").filter(function () {
+        const firstProgram = programSelect.find("option").filter(function () {
             return $(this).val() !== "";
         }).first().val();
 
-        if (firstProspectus) {
-            prospectusSelect.val(firstProspectus);
+        if (firstProgram) {
+            programSelect.val(firstProgram);
         }
     }
 
@@ -8867,13 +8871,13 @@ while ($ay = $ayQ->fetch_assoc()) {
         const preservePagePosition = options.preservePagePosition !== false;
         const pagePosition = preservePagePosition ? captureWindowScrollPosition() : null;
 
-        const pid = $("#prospectus_id").val();
+        const programId = $("#program_id").val();
         const ay  = $("#ay_id").val();
         const sem = $("#semester").val();
 
-        if (!pid || !ay || !sem) {
+        if (!programId || !ay || !sem) {
             abortScheduleListRequest();
-            renderScheduleListMessage("Select Prospectus, Academic Year, and Semester to view class offerings.");
+            renderScheduleListMessage("Select Program, Academic Year, and Semester to view class offerings.");
             return;
         }
 
@@ -8885,7 +8889,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                 scheduleListRequest = $.post(
                     "../backend/load_class_offerings.php",
                     {
-                        prospectus_id: pid,
+                        program_id: programId,
                         ay_id: ay,
                         semester: sem,
                         sort_by: getScheduleSortMode()
@@ -9187,7 +9191,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function getCurrentScheduleFilters() {
         return {
-            prospectus_id: $("#prospectus_id").val(),
+            program_id: $("#program_id").val(),
             ay_id: $("#ay_id").val(),
             semester: $("#semester").val(),
             sort_by: getScheduleSortMode()
@@ -9234,7 +9238,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function updateScheduleSetControls() {
         const filters = getCurrentScheduleFilters();
-        const hasFilters = Boolean(filters.ay_id && filters.semester);
+        const hasFilters = Boolean(filters.program_id && filters.ay_id && filters.semester);
         const hasSets = scheduleSetList.length > 0;
         const hasSelection = Boolean(getSelectedScheduleSet());
 
@@ -9245,20 +9249,20 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function updateScheduleSetDetails() {
         const filters = getCurrentScheduleFilters();
-        const hasFilters = Boolean(filters.ay_id && filters.semester);
+        const hasFilters = Boolean(filters.program_id && filters.ay_id && filters.semester);
         const selectedSet = getSelectedScheduleSet();
 
         if (!hasFilters) {
-            renderScheduleSetDetailText("Live schedules remain the active workspace. Select Academic Year and Semester first to manage saved sets for the whole college.");
+            renderScheduleSetDetailText("Live schedules remain the active workspace. Select Program, Academic Year, and Semester first to manage saved sets for this program term.");
             updateScheduleSetControls();
             return;
         }
 
         if (!selectedSet) {
             if (scheduleSetList.length === 0) {
-                renderScheduleSetDetailText("No saved schedule sets were found for this college term yet. Save the current live workspace to keep a reusable version for all programs in the college.");
+                renderScheduleSetDetailText("No saved schedule sets were found for this program term yet. Save the current live workspace to keep a reusable version for this program.");
             } else {
-                renderScheduleSetDetailText("Select a saved schedule set to review its snapshot details and load it back into the live workspace for the whole college term.");
+                renderScheduleSetDetailText("Select a saved schedule set to review its snapshot details and load it back into the live workspace for this program term.");
             }
             updateScheduleSetControls();
             return;
@@ -9271,21 +9275,21 @@ while ($ay = $ayQ->fetch_assoc()) {
             html += ` ${escapeHtml(String(selectedSet.remarks || "").trim())}`;
         }
 
-        html += " Loading this set will replace the current live schedules for the selected college term across all programs.";
+        html += " Loading this set will replace the current live schedules for the selected program term.";
         renderScheduleSetDetailHtml(html);
         updateScheduleSetControls();
     }
 
     function loadScheduleSets(selectedId = null) {
         const filters = getCurrentScheduleFilters();
-        const hasFilters = Boolean(filters.ay_id && filters.semester);
+        const hasFilters = Boolean(filters.program_id && filters.ay_id && filters.semester);
 
         abortScheduleSetListRequest();
 
         if (!hasFilters) {
             scheduleSetList = [];
             $("#scheduleSetSelect")
-                .html('<option value="">Select Academic Year and Semester first</option>')
+                .html('<option value="">Select Program, Academic Year, and Semester first</option>')
                 .val("");
             updateScheduleSetDetails();
             return;
@@ -9308,6 +9312,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 load_schedule_sets: 1,
+                program_id: filters.program_id,
                 ay_id: filters.ay_id,
                 semester: filters.semester
             },
@@ -9368,14 +9373,14 @@ while ($ay = $ayQ->fetch_assoc()) {
     function saveLiveScheduleAsSet(setName, overwriteExisting = false, options = {}) {
         const filters = getCurrentScheduleFilters();
         const afterSuccess = typeof options.afterSuccess === "function" ? options.afterSuccess : null;
-        if (!filters.ay_id || !filters.semester) {
-            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+        if (!filters.program_id || !filters.ay_id || !filters.semester) {
+            Swal.fire("Missing Filters", "Select Program, Academic Year, and Semester first.", "warning");
             return;
         }
 
         Swal.fire({
             title: overwriteExisting ? "Updating Saved Set..." : "Saving Set...",
-            html: "Please wait while the current live schedules for the selected college term are copied into the saved set.",
+            html: "Please wait while the current live schedules for the selected program term are copied into the saved set.",
             allowOutsideClick: false,
             allowEscapeKey: false,
             customClass: { popup: "swal-top" },
@@ -9390,6 +9395,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 save_schedule_set: 1,
+                program_id: filters.program_id,
                 ay_id: filters.ay_id,
                 semester: filters.semester,
                 set_name: setName,
@@ -9402,7 +9408,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     Swal.fire({
                         icon: "question",
                         title: "Overwrite Saved Set?",
-                        html: `<b>${escapeHtml(setName)}</b> already exists for this college term. Replace it with the current live schedules across all programs?`,
+                        html: `<b>${escapeHtml(setName)}</b> already exists for this program term. Replace it with the current live schedules for this program?`,
                         showCancelButton: true,
                         confirmButtonText: "Overwrite Set",
                         cancelButtonText: "Cancel",
@@ -9424,7 +9430,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     Swal.fire({
                         icon: "success",
                         title: overwriteExisting ? "Set Updated" : "Set Saved",
-                        html: `<b>${escapeHtml(res.set_name || setName)}</b> now stores <b>${escapeHtml(String(rowCount))}</b> schedule row(s) across <b>${escapeHtml(String(offeringCount))}</b> offering(s) for the selected college term.<br><br>Use <b>Clear All Schedules</b> when you want a blank live workspace for the next version.`,
+                        html: `<b>${escapeHtml(res.set_name || setName)}</b> now stores <b>${escapeHtml(String(rowCount))}</b> schedule row(s) across <b>${escapeHtml(String(offeringCount))}</b> offering(s) for the selected program term.`,
                         allowOutsideClick: false,
                         customClass: { popup: "swal-top" },
                         confirmButtonText: afterSuccess ? "Continue" : "OK"
@@ -9457,8 +9463,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         const inputPlaceholder = String(options.inputPlaceholder || "Enter a saved set name");
         const confirmButtonText = String(options.confirmButtonText || "Save Set");
         const afterSave = typeof options.afterSave === "function" ? options.afterSave : null;
-        if (!filters.ay_id || !filters.semester) {
-            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+        if (!filters.program_id || !filters.ay_id || !filters.semester) {
+            Swal.fire("Missing Filters", "Select Program, Academic Year, and Semester first.", "warning");
             return;
         }
 
@@ -9509,6 +9515,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 load_schedule_set_into_live: 1,
+                program_id: getCurrentScheduleFilters().program_id,
                 schedule_set_id: selectedSet.schedule_set_id
             },
             success: function (res) {
@@ -9573,7 +9580,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         Swal.fire({
             icon: "question",
             title: "Save Current Live Workspace First?",
-            html: `You are about to load <b>${escapeHtml(selectedSet.set_name || "the selected set")}</b>, which will replace the current live schedules for this college term across all programs.<br><br>Do you want to save the current live workspace as a set first?`,
+            html: `You are about to load <b>${escapeHtml(selectedSet.set_name || "the selected set")}</b>, which will replace the current live schedules for this selected program term.<br><br>Do you want to save the current live workspace as a set first?`,
             showDenyButton: true,
             showCancelButton: true,
             confirmButtonText: "Save First",
@@ -9816,8 +9823,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function loadAutoDraftPreview() {
         const filters = getCurrentScheduleFilters();
-        if (!filters.prospectus_id || !filters.ay_id || !filters.semester) {
-            Swal.fire("Missing Filters", "Select Prospectus, Academic Year, and Semester first.", "warning");
+        if (!filters.program_id || !filters.ay_id || !filters.semester) {
+            Swal.fire("Missing Filters", "Select Program, Academic Year, and Semester first.", "warning");
             return;
         }
 
@@ -9834,7 +9841,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 preview_auto_schedule_draft: 1,
-                prospectus_id: filters.prospectus_id,
+                program_id: filters.program_id,
                 ay_id: filters.ay_id,
                 semester: filters.semester
             },
@@ -9907,7 +9914,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                 dataType: "json",
                 data: {
                     apply_auto_schedule_draft: 1,
-                    prospectus_id: filters.prospectus_id,
+                    program_id: filters.program_id,
                     ay_id: filters.ay_id,
                     semester: filters.semester,
                     draft_items_json: JSON.stringify(draftPayload)
@@ -10163,7 +10170,7 @@ while ($ay = $ayQ->fetch_assoc()) {
     // ===============================================================
 $(document).ready(function () {
 
-ensureDefaultProspectus();
+ensureDefaultProgram();
 resetSingleSuggestionPanel();
 resetDualSuggestionPanels();
 resetAutoDraftPreview();
@@ -10194,7 +10201,7 @@ if (schedulerFacultyWorkloadModalElement) {
 }
 renderRoomBrowser();
 
-$("#prospectus_id, #ay_id, #semester").on("change", function () {
+$("#program_id, #ay_id, #semester").on("change", function () {
   if (this.id === "ay_id" || this.id === "semester") {
     clearTermRoomOptions();
   }

@@ -17,7 +17,7 @@ if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'scheduler') {
 $collegeId = (int)($_SESSION['college_id'] ?? 0);
 $currentTerm = synk_fetch_current_academic_term($conn);
 
-$prospectus_id = (string)($_GET['prospectus_id'] ?? '');
+$program_id = (string)($_GET['program_id'] ?? '');
 $ay_id = (string)($_GET['ay_id'] ?? ($currentTerm['ay_id'] ?? ''));
 $semester = (string)($_GET['semester'] ?? ($currentTerm['semester'] ?? ''));
 $doPrint = isset($_GET['print']) && $_GET['print'] === '1';
@@ -794,32 +794,30 @@ if ($ay_id !== '') {
     }
 }
 
-$prospectusOptions = [];
+$programOptions = [];
 if ($collegeId > 0) {
-    $prospectusQuery = "
+    $programQuery = "
         SELECT
-            h.prospectus_id,
+            p.program_id,
             p.program_code,
             p.program_name,
-            COALESCE(p.major, '') AS major,
-            h.effective_sy
-        FROM tbl_prospectus_header h
-        INNER JOIN tbl_program p ON p.program_id = h.program_id
+            COALESCE(p.major, '') AS major
+        FROM tbl_program p
         WHERE p.college_id = ?
-        ORDER BY p.program_code ASC, h.effective_sy DESC
+        ORDER BY p.program_code ASC, p.program_name ASC, p.major ASC
     ";
-    $prospectusStmt = $conn->prepare($prospectusQuery);
+    $programStmt = $conn->prepare($programQuery);
 
-    if ($prospectusStmt instanceof mysqli_stmt) {
-        $prospectusStmt->bind_param("i", $collegeId);
-        $prospectusStmt->execute();
-        $prospectusRes = $prospectusStmt->get_result();
+    if ($programStmt instanceof mysqli_stmt) {
+        $programStmt->bind_param("i", $collegeId);
+        $programStmt->execute();
+        $programRes = $programStmt->get_result();
 
-        while ($prospectusRes && ($row = $prospectusRes->fetch_assoc())) {
-            $prospectusOptions[] = $row;
+        while ($programRes && ($row = $programRes->fetch_assoc())) {
+            $programOptions[] = $row;
         }
 
-        $prospectusStmt->close();
+        $programStmt->close();
     }
 }
 
@@ -828,9 +826,9 @@ $selectedProgramLabel = '';
 $selectedReportLabel = '';
 if ($isCollegeScope) {
     $selectedReportLabel = $collegeReportLabel !== '' ? $collegeReportLabel : 'Selected college';
-} elseif ($prospectus_id !== '') {
-    foreach ($prospectusOptions as $option) {
-        if ((string)($option['prospectus_id'] ?? '') !== $prospectus_id) {
+} elseif ($program_id !== '') {
+    foreach ($programOptions as $option) {
+        if ((string)($option['program_id'] ?? '') !== $program_id) {
             continue;
         }
 
@@ -848,14 +846,14 @@ $reportScopeLabel = $isCollegeScope ? 'College' : 'Program';
 $groupTitle = $isCollegeScope ? 'College Offerings' : 'Program Offerings';
 $selectedFilterLabel = $selectedReportLabel !== ''
     ? $selectedReportLabel
-    : ($isCollegeScope ? 'Selected college' : 'Selected prospectus');
+    : ($isCollegeScope ? 'Selected college' : 'Selected program');
 
-$hasFilters = $ay_id !== '' && $semester !== '' && ($isCollegeScope || $prospectus_id !== '');
+$hasFilters = $ay_id !== '' && $semester !== '' && ($isCollegeScope || $program_id !== '');
 $courses = [];
 $courseRowSignatures = [];
 
 if ($hasFilters && $collegeId > 0) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $whereClauses = [
         'o.ay_id = ?',
         'o.semester = ?',
@@ -869,9 +867,9 @@ if ($hasFilters && $collegeId > 0) {
     ];
 
     if (!$isCollegeScope) {
-        $whereClauses[] = 'o.prospectus_id = ?';
+        $whereClauses[] = 'o.program_id = ?';
         $bindTypes .= 'i';
-        $bindParams[] = (int)$prospectus_id;
+        $bindParams[] = (int)$program_id;
     }
 
     $sql = "
@@ -980,7 +978,7 @@ $reportQuery = $hasFilters
         'scope' => $reportScope,
         'ay_id' => $ay_id,
         'semester' => $semester,
-        'prospectus_id' => $isCollegeScope ? null : $prospectus_id
+        'program_id' => $isCollegeScope ? null : $program_id
     ])
     : '';
 $totalCourseCount = count($courses);
@@ -1776,7 +1774,7 @@ if ($exportMode === 'excel' && $hasFilters) {
             <div class="no-print mb-4">
               <h4 class="fw-bold mb-2 report-page-title">Faculty Workload Report</h4>
               <p class="report-filter-note mb-0">
-                The report updates automatically when you change the scope, prospectus, academic year, or semester.
+                The report updates automatically when you change the scope, program, academic year, or semester.
               </p>
             </div>
 
@@ -1792,15 +1790,15 @@ if ($exportMode === 'excel' && $hasFilters) {
                   </div>
 
                   <div class="col-lg-5 col-md-6">
-                    <label class="form-label" for="prospectusSelect">Program Prospectus</label>
+                    <label class="form-label" for="programSelect">Program</label>
                     <select
-                      name="prospectus_id"
-                      id="prospectusSelect"
+                      name="program_id"
+                      id="programSelect"
                       class="form-select"
                       <?= $isCollegeScope ? 'disabled' : 'required' ?>
                     >
-                      <option value="">Select prospectus...</option>
-                      <?php foreach ($prospectusOptions as $option): ?>
+                      <option value="">Select program...</option>
+                      <?php foreach ($programOptions as $option): ?>
                         <?php
                         $optionProgramLabel = formatProgramDisplayLabel(
                             $option['program_code'] ?? '',
@@ -1809,10 +1807,10 @@ if ($exportMode === 'excel' && $hasFilters) {
                         );
                         ?>
                         <option
-                          value="<?= h($option['prospectus_id']) ?>"
-                          <?= $prospectus_id === (string)$option['prospectus_id'] ? 'selected' : '' ?>
+                          value="<?= h($option['program_id']) ?>"
+                          <?= $program_id === (string)$option['program_id'] ? 'selected' : '' ?>
                         >
-                          <?= h($optionProgramLabel) ?> (SY <?= h($option['effective_sy']) ?>)
+                          <?= h($optionProgramLabel) ?>
                         </option>
                       <?php endforeach; ?>
                     </select>
@@ -1865,7 +1863,7 @@ if ($exportMode === 'excel' && $hasFilters) {
                         <?php else: ?>
                           <div class="report-filter-chip">
                             <i class="bx bx-info-circle"></i>
-                            <span>Choose a program prospectus, or switch to whole college, to enable print and Excel export.</span>
+                            <span>Choose a program, or switch to whole college, to enable print and Excel export.</span>
                           </div>
                         <?php endif; ?>
                       </div>
@@ -1967,7 +1965,7 @@ if ($exportMode === 'excel' && $hasFilters) {
                     <i class="bx bx-filter-alt"></i>
                     <h5 class="mb-2">Select report filters to load the report</h5>
                     <p class="mb-0">
-                      Program scope uses a single prospectus. Whole college scope loads all programs in this college for the selected term.
+                      Program scope loads the full selected program term. Whole college scope loads all programs in this college for the selected term.
                     </p>
                   </div>
                 <?php else: ?>
@@ -2035,7 +2033,7 @@ if ($exportMode === 'excel' && $hasFilters) {
                         <i class="bx bx-folder-open"></i>
                         <h5 class="mb-2">No workload rows found for this filter</h5>
                         <p class="mb-0">
-                          Try another prospectus, academic year, or semester to view available schedule data.
+                          Try another program, academic year, or semester to view available schedule data.
                         </p>
                       </div>
                     <?php endif; ?>
@@ -2153,7 +2151,7 @@ if ($exportMode === 'excel' && $hasFilters) {
         if (progressValue < 20) {
           loadingStage.textContent = 'Checking selected filters...';
         } else if (progressValue < 45) {
-          loadingStage.textContent = 'Loading prospectus offerings...';
+          loadingStage.textContent = 'Loading program offerings...';
         } else if (progressValue < 70) {
           loadingStage.textContent = 'Collecting section schedules and rooms...';
         } else if (progressValue < 90) {
@@ -2215,11 +2213,11 @@ if ($exportMode === 'excel' && $hasFilters) {
         }
 
         var scope = form.elements['scope'] ? form.elements['scope'].value.trim() : 'program';
-        var prospectus = form.elements['prospectus_id'] ? form.elements['prospectus_id'].value.trim() : '';
+        var program = form.elements['program_id'] ? form.elements['program_id'].value.trim() : '';
         var ay = form.elements['ay_id'] ? form.elements['ay_id'].value.trim() : '';
         var sem = form.elements['semester'] ? form.elements['semester'].value.trim() : '';
 
-        return ay !== '' && sem !== '' && (scope === 'college' || prospectus !== '');
+        return ay !== '' && sem !== '' && (scope === 'college' || program !== '');
       }
 
       function syncScopeFieldState() {
@@ -2228,15 +2226,15 @@ if ($exportMode === 'excel' && $hasFilters) {
         }
 
         var scope = form.elements['scope'] ? form.elements['scope'].value.trim() : 'program';
-        var prospectusField = form.elements['prospectus_id'];
+        var programField = form.elements['program_id'];
 
-        if (!prospectusField) {
+        if (!programField) {
           return;
         }
 
-        var needsProspectus = scope !== 'college';
-        prospectusField.disabled = !needsProspectus;
-        prospectusField.required = needsProspectus;
+        var needsProgram = scope !== 'college';
+        programField.disabled = !needsProgram;
+        programField.required = needsProgram;
       }
 
       function navigateWithFilters() {
@@ -2249,7 +2247,7 @@ if ($exportMode === 'excel' && $hasFilters) {
         params.delete('export');
 
         if (form.elements['scope'] && form.elements['scope'].value.trim() === 'college') {
-          params.delete('prospectus_id');
+          params.delete('program_id');
         }
 
         var nextSearch = params.toString();

@@ -248,7 +248,7 @@ $hasFilters = $selectedCampus !== null && $ay_id !== '' && $semester !== '';
 $courses = [];
 
 if ($hasFilters) {
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
             sm.sub_code,

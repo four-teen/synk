@@ -483,10 +483,26 @@
 
   function renderActionButtons(item) {
     const returnTo = window.location.pathname + window.location.search;
-    const previewUrl =
-      previewBaseUrl +
-      "?preview_student_id=" + encodeURIComponent(String(Number(item.student_id || 0))) +
-      "&return_to=" + encodeURIComponent(returnTo);
+    const previewParams = new URLSearchParams();
+    previewParams.set("preview_student_id", String(Number(item.student_id || 0)));
+    previewParams.set("return_to", returnTo);
+
+    const previewAyId = academicYearFilterField && String(academicYearFilterField.value || "").trim() !== ""
+      ? String(academicYearFilterField.value || "").trim()
+      : String(config.defaultAyId || "").trim();
+    const previewSemester = semesterFilterField && String(semesterFilterField.value || "").trim() !== ""
+      ? String(semesterFilterField.value || "").trim()
+      : "";
+
+    if (previewAyId !== "" && previewAyId !== "0") {
+      previewParams.set("subject_ay_id", previewAyId);
+    }
+
+    if (previewSemester !== "" && previewSemester !== "0") {
+      previewParams.set("subject_semester", previewSemester);
+    }
+
+    const previewUrl = previewBaseUrl + "?" + previewParams.toString();
 
     return (
       '<div class="d-inline-flex gap-1">' +

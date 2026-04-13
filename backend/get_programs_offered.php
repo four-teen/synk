@@ -37,7 +37,7 @@ if (!$currentAyId || !$currentSem) {
 | PROGRAMS OFFERED QUERY (CANONICAL)
 |--------------------------------------------------------------------------
 */
-$liveOfferingJoins = synk_live_offering_join_sql('po', 's', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 's', 'sc', 'ps', 'pys', 'ph');
 
 $sql = "
     SELECT

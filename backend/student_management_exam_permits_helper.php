@@ -488,6 +488,78 @@ function synk_student_management_fetch_section_scope_record(mysqli $conn, int $s
     ] : null;
 }
 
+function synk_student_management_fetch_subject_record(mysqli $conn, int $subjectId): ?array
+{
+    if ($subjectId <= 0) {
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            sub_id,
+            sub_code,
+            sub_description
+        FROM tbl_subject_masterlist
+        WHERE sub_id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $subjectId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return is_array($row) ? [
+        'subject_id' => (int)($row['sub_id'] ?? 0),
+        'subject_code' => synk_student_management_normalize_space((string)($row['sub_code'] ?? '')),
+        'descriptive_title' => synk_student_management_normalize_space((string)($row['sub_description'] ?? '')),
+    ] : null;
+}
+
+function synk_student_management_fetch_faculty_record(mysqli $conn, int $facultyId): ?array
+{
+    if ($facultyId <= 0) {
+        return null;
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            faculty_id,
+            first_name,
+            middle_name,
+            last_name,
+            ext_name
+        FROM tbl_faculty
+        WHERE faculty_id = ?
+        LIMIT 1
+    ");
+
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param('i', $facultyId);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = $result ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return is_array($row) ? [
+        'faculty_id' => (int)($row['faculty_id'] ?? 0),
+        'faculty_name' => trim(implode(' ', array_filter([
+            (string)($row['first_name'] ?? ''),
+            (string)($row['middle_name'] ?? ''),
+            (string)($row['last_name'] ?? ''),
+            (string)($row['ext_name'] ?? ''),
+        ]))),
+    ] : null;
+}
+
 function synk_student_management_resolve_upload_scope(mysqli $conn, array $scope): array
 {
     $campusId = max(0, (int)($scope['campus_id'] ?? 0));
@@ -608,6 +680,179 @@ function synk_student_management_normalize_subject_code(string $value): string
     return str_replace(' ', '', synk_student_management_normalize_lookup_key($value));
 }
 
+function synk_student_management_subject_code_variants(string $value): array
+{
+    $variants = [];
+    $appendVariant = static function (string $candidate) use (&$variants): void {
+        $normalized = synk_student_management_normalize_subject_code($candidate);
+        if ($normalized === '' || in_array($normalized, $variants, true)) {
+            return;
+        }
+
+        $variants[] = $normalized;
+    };
+
+    $base = synk_student_management_normalize_subject_code($value);
+    $appendVariant($base);
+
+    if ($base !== '') {
+        $appendVariant(str_replace('ELECT', 'ELEC', $base));
+        $appendVariant(str_replace('ELEC', 'ELECT', $base));
+
+        if (preg_match('/^(.+?)(BSIS|BSIT|BSCS)$/', $base, $matches)) {
+            $appendVariant((string)($matches[1] ?? ''));
+        }
+
+        if (preg_match('/^(GEC[0-9]+)[A-Z]$/', $base, $matches)) {
+            $appendVariant((string)($matches[1] ?? ''));
+        }
+    }
+
+    return $variants;
+}
+
+function synk_student_management_parse_upload_filename_scope(string $filename): array
+{
+    $baseName = pathinfo($filename, PATHINFO_FILENAME);
+    $normalized = strtolower(synk_student_management_normalize_space((string)$baseName));
+
+    if ($normalized === '') {
+        return [
+            'subject_code_hint' => '',
+            'program_code_hint' => '',
+            'section_name_hint' => '',
+        ];
+    }
+
+    if (
+        preg_match('/^(.+?)(?:[-_ ]+)(bsis|bsit|bscs|is|it|cs)[-_ ]?([1-6i])([a-i])$/i', $normalized, $matches)
+        || preg_match('/^(.+?)(bsis|bsit|bscs|is|it|cs)([1-6i])([a-i])$/i', $normalized, $matches)
+    ) {
+        $rawYearLevel = strtolower(synk_student_management_normalize_space((string)($matches[3] ?? '')));
+        return [
+            'subject_code_hint' => synk_student_management_normalize_space((string)($matches[1] ?? '')),
+            'program_code_hint' => strtoupper(synk_student_management_normalize_space((string)($matches[2] ?? ''))),
+            'section_name_hint' => strtoupper(
+                synk_student_management_normalize_space(($rawYearLevel === 'i' ? '1' : $rawYearLevel) . (string)($matches[4] ?? ''))
+            ),
+        ];
+    }
+
+    if (preg_match('/^(.+?)(?:[-_ ]+)([1-6i])([a-i])$/i', $normalized, $matches)) {
+        $subjectCodeHint = synk_student_management_normalize_space((string)($matches[1] ?? ''));
+        $rawYearLevel = strtolower(synk_student_management_normalize_space((string)($matches[2] ?? '')));
+        $programCodeHint = synk_student_management_normalize_subject_code($subjectCodeHint);
+
+        foreach (['BSIS', 'BSIT', 'BSCS', 'IS', 'IT', 'CS'] as $candidate) {
+            if ($programCodeHint !== '' && strpos($programCodeHint, $candidate) === 0) {
+                return [
+                    'subject_code_hint' => $subjectCodeHint,
+                    'program_code_hint' => synk_student_management_canonical_program_code_hint($candidate),
+                    'section_name_hint' => strtoupper(
+                        synk_student_management_normalize_space(($rawYearLevel === 'i' ? '1' : $rawYearLevel) . (string)($matches[3] ?? ''))
+                    ),
+                ];
+            }
+        }
+    }
+
+    return [
+        'subject_code_hint' => '',
+        'program_code_hint' => '',
+        'section_name_hint' => '',
+    ];
+}
+
+function synk_student_management_canonical_program_code_hint(string $value): string
+{
+    $normalized = synk_student_management_normalize_subject_code($value);
+    $map = [
+        'IS' => 'BSIS',
+        'BSIS' => 'BSIS',
+        'IT' => 'BSIT',
+        'BSIT' => 'BSIT',
+        'CS' => 'BSCS',
+        'BSCS' => 'BSCS',
+    ];
+
+    return $map[$normalized] ?? $normalized;
+}
+
+function synk_student_management_resolve_upload_scope_from_filename(
+    mysqli $conn,
+    array $baseScope,
+    string $filename
+): array {
+    $filenameScope = synk_student_management_parse_upload_filename_scope($filename);
+    $programCodeHint = synk_student_management_canonical_program_code_hint((string)($filenameScope['program_code_hint'] ?? ''));
+    $sectionNameHint = synk_student_management_normalize_space((string)($filenameScope['section_name_hint'] ?? ''));
+    $yearLevel = synk_student_management_extract_year_level_from_section($sectionNameHint);
+    $sectionSuffix = synk_student_management_normalize_section_suffix($sectionNameHint);
+    $campusId = max(0, (int)($baseScope['campus_id'] ?? 0));
+    $collegeId = max(0, (int)($baseScope['college_id'] ?? 0));
+    $ayId = max(0, (int)($baseScope['ay_id'] ?? 0));
+    $semester = max(0, (int)($baseScope['semester'] ?? 0));
+
+    if ($programCodeHint === '' || $yearLevel <= 0 || $sectionSuffix === '') {
+        throw new RuntimeException(
+            'The filename must end with a recognizable program and section like -it-4a, -is-2c, or cs3a.'
+        );
+    }
+
+    $stmt = $conn->prepare("
+        SELECT
+            p.program_id
+        FROM tbl_program p
+        INNER JOIN tbl_college c
+            ON c.college_id = p.college_id
+        WHERE p.status = 'active'
+          AND c.status = 'active'
+          AND c.campus_id = ?
+          AND p.college_id = ?
+          AND UPPER(REPLACE(p.program_code, ' ', '')) = ?
+        ORDER BY p.program_id ASC
+    ");
+
+    if (!$stmt) {
+        throw new RuntimeException('Unable to prepare the filename program lookup query.');
+    }
+
+    $stmt->bind_param('iis', $campusId, $collegeId, $programCodeHint);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $programIds = [];
+    while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
+        $programIds[] = (int)($row['program_id'] ?? 0);
+    }
+    $stmt->close();
+
+    $programIds = array_values(array_filter($programIds, static function ($value): bool {
+        return (int)$value > 0;
+    }));
+
+    if (empty($programIds)) {
+        throw new RuntimeException(
+            'No active program matching ' . $programCodeHint . ' was found inside the selected campus and college.'
+        );
+    }
+
+    if (count($programIds) > 1) {
+        throw new RuntimeException(
+            'More than one active ' . $programCodeHint . ' program was found in the selected campus and college.'
+        );
+    }
+
+    return [
+        'campus_id' => $campusId,
+        'college_id' => $collegeId,
+        'program_id' => (int)$programIds[0],
+        'ay_id' => $ayId,
+        'semester' => $semester,
+        'year_level' => $yearLevel,
+        'section_suffix' => $sectionSuffix,
+    ];
+}
+
 function synk_student_management_normalize_section_suffix(string $value): string
 {
     $normalized = strtoupper(synk_student_management_normalize_space($value));
@@ -656,9 +901,17 @@ function synk_student_management_parse_subject_section_field(string $value): arr
     $sectionName = '';
 
     if ($normalized !== '') {
-        $parts = preg_split('/\s*-\s*/', $normalized, 2);
-        $subjectCode = synk_student_management_normalize_space((string)($parts[0] ?? ''));
-        $programSection = synk_student_management_normalize_space((string)($parts[1] ?? ''));
+        $programSection = '';
+        $lastDelimitedDashPosition = strrpos($normalized, ' - ');
+
+        if ($lastDelimitedDashPosition !== false) {
+            $subjectCode = synk_student_management_normalize_space(substr($normalized, 0, $lastDelimitedDashPosition));
+            $programSection = synk_student_management_normalize_space(substr($normalized, $lastDelimitedDashPosition + 3));
+        } else {
+            $parts = preg_split('/\s*-\s*/', $normalized, 2);
+            $subjectCode = synk_student_management_normalize_space((string)($parts[0] ?? ''));
+            $programSection = synk_student_management_normalize_space((string)($parts[1] ?? ''));
+        }
 
         if ($programSection !== '') {
             $lastDashPosition = strrpos($programSection, '-');
@@ -677,6 +930,49 @@ function synk_student_management_parse_subject_section_field(string $value): arr
         'program_code' => $programCode,
         'section_name' => $sectionName,
     ];
+}
+
+function synk_student_management_title_match_tokens(string $value): array
+{
+    $tokens = preg_split('/\s+/', synk_student_management_normalize_lookup_key($value)) ?: [];
+    $stopWords = [
+        'A',
+        'AN',
+        'AND',
+        'ANG',
+        'IN',
+        'NG',
+        'OF',
+        'SA',
+        'THE',
+        'TO',
+    ];
+
+    $filtered = [];
+    foreach ($tokens as $token) {
+        $token = trim((string)$token);
+        if ($token === '' || in_array($token, $stopWords, true)) {
+            continue;
+        }
+        $filtered[$token] = $token;
+    }
+
+    return array_values($filtered);
+}
+
+function synk_student_management_titles_loosely_match(string $leftTitle, string $rightTitle): bool
+{
+    $leftTokens = synk_student_management_title_match_tokens($leftTitle);
+    $rightTokens = synk_student_management_title_match_tokens($rightTitle);
+
+    if (empty($leftTokens) || empty($rightTokens)) {
+        return false;
+    }
+
+    $leftMissing = array_diff($leftTokens, $rightTokens);
+    $rightMissing = array_diff($rightTokens, $leftTokens);
+
+    return empty($leftMissing) || empty($rightMissing);
 }
 
 function synk_student_management_extract_year_level_from_section(string $sectionName): int
@@ -1048,7 +1344,12 @@ function synk_student_management_resolve_section(mysqli $conn, array $scope, str
     ];
 }
 
-function synk_student_management_pick_subject_match(array $rows, string $subjectCode, string $descriptiveTitle): ?array
+function synk_student_management_pick_subject_match(
+    array $rows,
+    string $subjectCode,
+    string $descriptiveTitle,
+    array $extraSubjectCodes = []
+): ?array
 {
     if (empty($rows)) {
         return null;
@@ -1064,14 +1365,193 @@ function synk_student_management_pick_subject_match(array $rows, string $subject
         }
     }
 
-    $normalizedCode = synk_student_management_normalize_subject_code($subjectCode);
+    $normalizedCodes = synk_student_management_subject_code_variants($subjectCode);
+    foreach ($extraSubjectCodes as $extraSubjectCode) {
+        foreach (synk_student_management_subject_code_variants((string)$extraSubjectCode) as $variant) {
+            if (!in_array($variant, $normalizedCodes, true)) {
+                $normalizedCodes[] = $variant;
+            }
+        }
+    }
+
     foreach ($rows as $row) {
-        if (synk_student_management_normalize_subject_code((string)($row['subject_code'] ?? '')) === $normalizedCode) {
+        if (in_array(synk_student_management_normalize_subject_code((string)($row['subject_code'] ?? '')), $normalizedCodes, true)) {
             return $row;
         }
     }
 
-    return $rows[0];
+    $looseTitleMatches = [];
+    foreach ($rows as $row) {
+        if (synk_student_management_titles_loosely_match($descriptiveTitle, (string)($row['descriptive_title'] ?? ''))) {
+            $looseTitleMatches[] = $row;
+        }
+    }
+
+    if (count($looseTitleMatches) === 1) {
+        return $looseTitleMatches[0];
+    }
+
+    return null;
+}
+
+function synk_student_management_subject_looks_like_capstone(string $subjectCode, string $descriptiveTitle): bool
+{
+    $normalizedCode = synk_student_management_normalize_subject_code($subjectCode);
+    $normalizedTitle = synk_student_management_normalize_lookup_key($descriptiveTitle);
+
+    return strncmp($normalizedCode, 'CAP', 3) === 0 || strpos($normalizedTitle, 'CAPSTONE') !== false;
+}
+
+function synk_student_management_program_subject_aliases(array $scope): array
+{
+    $aliases = [];
+
+    $appendAlias = static function (string $value) use (&$aliases): void {
+        $normalized = synk_student_management_normalize_subject_code($value);
+        if ($normalized === '' || in_array($normalized, $aliases, true)) {
+            return;
+        }
+
+        $aliases[] = $normalized;
+    };
+
+    $programCode = synk_student_management_normalize_subject_code((string)($scope['program_code'] ?? ''));
+    if ($programCode !== '') {
+        $appendAlias($programCode);
+        if (strncmp($programCode, 'BS', 2) === 0 && strlen($programCode) > 2) {
+            $appendAlias(substr($programCode, 2));
+        }
+    }
+
+    $programName = synk_student_management_normalize_lookup_key((string)($scope['program_name'] ?? ''));
+    $nameMap = [
+        'INFORMATION TECHNOLOGY' => 'IT',
+        'INFORMATION SYSTEMS' => 'IS',
+        'COMPUTER SCIENCE' => 'CS',
+        'ELECTRONICS ENGINEERING' => 'ECE',
+    ];
+
+    foreach ($nameMap as $needle => $alias) {
+        if (strpos($programName, $needle) !== false) {
+            $appendAlias($alias);
+        }
+    }
+
+    return $aliases;
+}
+
+function synk_student_management_row_matches_program_alias(array $row, array $aliases): bool
+{
+    if (empty($aliases)) {
+        return true;
+    }
+
+    $subjectCode = synk_student_management_normalize_subject_code((string)($row['subject_code'] ?? ''));
+    foreach ($aliases as $alias) {
+        if ($alias !== '' && strncmp($subjectCode, $alias, strlen($alias)) === 0) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function synk_student_management_find_capstone_subject_match(
+    mysqli $conn,
+    array $scope,
+    array $section,
+    string $subjectCode,
+    string $descriptiveTitle,
+    array $extraSubjectCodes = []
+): ?array {
+    if (!synk_student_management_subject_looks_like_capstone($subjectCode, $descriptiveTitle)) {
+        return null;
+    }
+
+    $aliases = synk_student_management_program_subject_aliases($scope);
+    $rows = [];
+
+    $stmt = $conn->prepare("
+        SELECT
+            po.offering_id,
+            sm.sub_id AS subject_id,
+            sm.sub_code AS subject_code,
+            sm.sub_description AS descriptive_title
+        FROM tbl_prospectus_offering po
+        INNER JOIN tbl_prospectus_subjects ps
+            ON ps.ps_id = po.ps_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        WHERE po.program_id = ?
+          AND po.ay_id = ?
+          AND po.semester = ?
+          AND po.section_id = ?
+          AND UPPER(sm.sub_description) LIKE '%CAPSTONE%'
+        ORDER BY po.offering_id ASC
+    ");
+
+    if ($stmt) {
+        $stmt->bind_param(
+            'iiii',
+            $scope['program_id'],
+            $scope['ay_id'],
+            $scope['semester'],
+            $section['section_id']
+        );
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
+            $candidate = [
+                'offering_id' => (int)($row['offering_id'] ?? 0),
+                'subject_id' => (int)($row['subject_id'] ?? 0),
+                'subject_code' => (string)($row['subject_code'] ?? ''),
+                'descriptive_title' => (string)($row['descriptive_title'] ?? ''),
+                'resolved_via' => 'tbl_prospectus_offering_capstone_alias',
+            ];
+
+            if (synk_student_management_row_matches_program_alias($candidate, $aliases)) {
+                $rows[] = $candidate;
+            }
+        }
+        $stmt->close();
+    }
+
+    $matched = synk_student_management_pick_subject_match($rows, $subjectCode, $descriptiveTitle, $extraSubjectCodes);
+    if (is_array($matched)) {
+        return $matched;
+    }
+
+    $rows = [];
+    $stmt = $conn->prepare("
+        SELECT
+            sub_id AS subject_id,
+            sub_code AS subject_code,
+            sub_description AS descriptive_title
+        FROM tbl_subject_masterlist
+        WHERE UPPER(sub_description) LIKE '%CAPSTONE%'
+        ORDER BY sub_id ASC
+    ");
+
+    if ($stmt) {
+        $stmt->execute();
+        $result = $stmt->get_result();
+        while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
+            $candidate = [
+                'offering_id' => 0,
+                'subject_id' => (int)($row['subject_id'] ?? 0),
+                'subject_code' => (string)($row['subject_code'] ?? ''),
+                'descriptive_title' => (string)($row['descriptive_title'] ?? ''),
+                'resolved_via' => 'tbl_subject_masterlist_capstone_alias',
+            ];
+
+            if (synk_student_management_row_matches_program_alias($candidate, $aliases)) {
+                $rows[] = $candidate;
+            }
+        }
+        $stmt->close();
+    }
+
+    return synk_student_management_pick_subject_match($rows, $subjectCode, $descriptiveTitle, $extraSubjectCodes);
 }
 
 function synk_student_management_resolve_subject_and_offering(
@@ -1079,7 +1559,8 @@ function synk_student_management_resolve_subject_and_offering(
     array $scope,
     array $section,
     string $subjectCode,
-    string $descriptiveTitle
+    string $descriptiveTitle,
+    array $extraSubjectCodes = []
 ): array {
     $rows = [];
     $stmt = $conn->prepare("
@@ -1097,7 +1578,6 @@ function synk_student_management_resolve_subject_and_offering(
           AND po.ay_id = ?
           AND po.semester = ?
           AND po.section_id = ?
-          AND REPLACE(UPPER(sm.sub_code), ' ', '') = REPLACE(UPPER(?), ' ', '')
         ORDER BY po.offering_id ASC
     ");
 
@@ -1105,14 +1585,7 @@ function synk_student_management_resolve_subject_and_offering(
         throw new RuntimeException('Unable to prepare the prospectus offering lookup query.');
     }
 
-    $stmt->bind_param(
-        'iiiis',
-        $scope['program_id'],
-        $scope['ay_id'],
-        $scope['semester'],
-        $section['section_id'],
-        $subjectCode
-    );
+    $stmt->bind_param('iiii', $scope['program_id'], $scope['ay_id'], $scope['semester'], $section['section_id']);
     $stmt->execute();
     $result = $stmt->get_result();
     while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
@@ -1126,9 +1599,21 @@ function synk_student_management_resolve_subject_and_offering(
     }
     $stmt->close();
 
-    $matched = synk_student_management_pick_subject_match($rows, $subjectCode, $descriptiveTitle);
+    $matched = synk_student_management_pick_subject_match($rows, $subjectCode, $descriptiveTitle, $extraSubjectCodes);
     if (is_array($matched)) {
         return $matched;
+    }
+
+    $capstoneAliasMatch = synk_student_management_find_capstone_subject_match(
+        $conn,
+        $scope,
+        $section,
+        $subjectCode,
+        $descriptiveTitle,
+        $extraSubjectCodes
+    );
+    if (is_array($capstoneAliasMatch)) {
+        return $capstoneAliasMatch;
     }
 
     $rows = [];
@@ -1138,7 +1623,7 @@ function synk_student_management_resolve_subject_and_offering(
             sub_code AS subject_code,
             sub_description AS descriptive_title
         FROM tbl_subject_masterlist
-        WHERE REPLACE(UPPER(sub_code), ' ', '') = REPLACE(UPPER(?), ' ', '')
+        WHERE status = 'active'
         ORDER BY sub_id ASC
     ");
 
@@ -1146,7 +1631,6 @@ function synk_student_management_resolve_subject_and_offering(
         throw new RuntimeException('Unable to prepare the subject masterlist lookup query.');
     }
 
-    $stmt->bind_param('s', $subjectCode);
     $stmt->execute();
     $result = $stmt->get_result();
     while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
@@ -1160,7 +1644,7 @@ function synk_student_management_resolve_subject_and_offering(
     }
     $stmt->close();
 
-    $matched = synk_student_management_pick_subject_match($rows, $subjectCode, $descriptiveTitle);
+    $matched = synk_student_management_pick_subject_match($rows, $subjectCode, $descriptiveTitle, $extraSubjectCodes);
     if (is_array($matched)) {
         return $matched;
     }
@@ -1269,6 +1753,101 @@ function synk_student_management_faculty_name_keys(array $row): array
     return array_values(array_unique(array_filter($keys)));
 }
 
+function synk_student_management_faculty_name_input_keys(string $value): array
+{
+    $keys = [];
+    $appendKey = static function (string $candidate) use (&$keys): void {
+        $normalized = synk_student_management_normalize_lookup_key($candidate);
+        if ($normalized === '' || in_array($normalized, $keys, true)) {
+            return;
+        }
+
+        $keys[] = $normalized;
+    };
+
+    $appendKey($value);
+
+    $parts = array_values(array_filter(array_map('trim', explode(',', (string)$value)), static function ($part): bool {
+        return $part !== '';
+    }));
+
+    if (count($parts) === 2) {
+        $left = (string)($parts[0] ?? '');
+        $right = (string)($parts[1] ?? '');
+
+        $collapsedRight = strtoupper((string)preg_replace('/[^A-Z0-9]+/', '', $right));
+        $credentialTokens = [
+            'CPA', 'CPAEL', 'DMD', 'DR', 'EDD', 'JD', 'LPT', 'MA', 'MAED', 'MAPEH',
+            'MAT', 'MBA', 'MD', 'MED', 'MIT', 'MS', 'MSCS', 'MSIT', 'PHD', 'PHD',
+            'RN', 'RMT', 'RST', 'RSW',
+        ];
+
+        if ($collapsedRight !== '' && in_array($collapsedRight, $credentialTokens, true)) {
+            $appendKey($left);
+        } else {
+            $appendKey($left . ' ' . $right);
+            $appendKey($right . ' ' . $left);
+        }
+    } elseif (count($parts) >= 3) {
+        $first = (string)($parts[0] ?? '');
+        $second = (string)($parts[1] ?? '');
+        $appendKey($first . ' ' . $second);
+        $appendKey($second . ' ' . $first);
+    }
+
+    return $keys;
+}
+
+function synk_student_management_parse_faculty_name_parts(string $value): array
+{
+    $tokens = preg_split('/\s+/', synk_student_management_normalize_lookup_key($value)) ?: [];
+    $tokens = array_values(array_filter($tokens, static function ($token): bool {
+        return trim((string)$token) !== '';
+    }));
+
+    return [
+        'full_name' => synk_student_management_normalize_lookup_key($value),
+        'first_name' => (string)($tokens[0] ?? ''),
+        'last_name' => !empty($tokens) ? (string)$tokens[count($tokens) - 1] : '',
+    ];
+}
+
+function synk_student_management_faculty_fuzzy_match_score(array $targetName, array $row): ?int
+{
+    $rowName = synk_student_management_parse_faculty_name_parts(
+        trim(implode(' ', array_filter([
+            (string)($row['first_name'] ?? ''),
+            (string)($row['last_name'] ?? ''),
+        ])))
+    );
+
+    $targetFirst = (string)($targetName['first_name'] ?? '');
+    $targetLast = (string)($targetName['last_name'] ?? '');
+    $rowFirst = (string)($rowName['first_name'] ?? '');
+    $rowLast = (string)($rowName['last_name'] ?? '');
+
+    if ($targetFirst === '' || $targetLast === '' || $rowFirst === '' || $rowLast === '') {
+        return null;
+    }
+
+    $firstDistance = levenshtein($targetFirst, $rowFirst);
+    $lastDistance = levenshtein($targetLast, $rowLast);
+
+    if ($targetLast === $rowLast && $firstDistance <= 2) {
+        return $firstDistance;
+    }
+
+    if ($targetFirst === $rowFirst && $lastDistance <= 2) {
+        return $lastDistance;
+    }
+
+    if ($firstDistance <= 1 && $lastDistance <= 1) {
+        return $firstDistance + $lastDistance;
+    }
+
+    return null;
+}
+
 function synk_student_management_resolve_faculty(mysqli $conn, array $scope, string $facultyName): array
 {
     $normalizedFacultyName = synk_student_management_normalize_lookup_key($facultyName);
@@ -1277,7 +1856,9 @@ function synk_student_management_resolve_faculty(mysqli $conn, array $scope, str
     }
 
     $catalog = [];
-    foreach (synk_student_management_fetch_scoped_faculty_rows($conn, $scope) as $row) {
+    $scopedFacultyRows = synk_student_management_fetch_scoped_faculty_rows($conn, $scope);
+
+    foreach ($scopedFacultyRows as $row) {
         $displayName = trim(implode(' ', array_filter([
             (string)($row['first_name'] ?? ''),
             (string)($row['middle_name'] ?? ''),
@@ -1298,13 +1879,68 @@ function synk_student_management_resolve_faculty(mysqli $conn, array $scope, str
         }
     }
 
-    $matches = $catalog[$normalizedFacultyName] ?? [];
+    $inputMatches = [];
+    foreach (synk_student_management_faculty_name_input_keys($facultyName) as $inputKey) {
+        foreach ($catalog[$inputKey] ?? [] as $match) {
+            $facultyId = (int)($match['faculty_id'] ?? 0);
+            if ($facultyId > 0) {
+                $inputMatches[$facultyId] = $match;
+            }
+        }
+    }
+
+    $matches = array_values($inputMatches);
     if (count($matches) === 1) {
         return $matches[0];
     }
 
     if (count($matches) > 1) {
         throw new RuntimeException('The instructor name matches multiple faculty records in the selected college scope.');
+    }
+
+    $targetName = synk_student_management_parse_faculty_name_parts($facultyName);
+    $fuzzyMatches = [];
+
+    foreach ($scopedFacultyRows as $row) {
+        $score = synk_student_management_faculty_fuzzy_match_score($targetName, $row);
+        if ($score === null) {
+            continue;
+        }
+
+        $displayName = trim(implode(' ', array_filter([
+            (string)($row['first_name'] ?? ''),
+            (string)($row['middle_name'] ?? ''),
+            (string)($row['last_name'] ?? ''),
+            (string)($row['ext_name'] ?? ''),
+        ])));
+
+        $fuzzyMatches[] = [
+            'score' => $score,
+            'faculty_id' => (int)($row['faculty_id'] ?? 0),
+            'faculty_name' => $displayName,
+        ];
+    }
+
+    if (!empty($fuzzyMatches)) {
+        usort($fuzzyMatches, static function (array $left, array $right): int {
+            if ($left['score'] === $right['score']) {
+                return ($left['faculty_id'] ?? 0) <=> ($right['faculty_id'] ?? 0);
+            }
+
+            return ($left['score'] ?? 0) <=> ($right['score'] ?? 0);
+        });
+
+        $bestScore = (int)($fuzzyMatches[0]['score'] ?? 0);
+        $bestMatches = array_values(array_filter($fuzzyMatches, static function (array $match) use ($bestScore): bool {
+            return (int)($match['score'] ?? -1) === $bestScore;
+        }));
+
+        if (count($bestMatches) === 1) {
+            return [
+                'faculty_id' => (int)($bestMatches[0]['faculty_id'] ?? 0),
+                'faculty_name' => (string)($bestMatches[0]['faculty_name'] ?? ''),
+            ];
+        }
     }
 
     throw new RuntimeException('The instructor could not be matched to tbl_faculty for the selected college and term.');
@@ -1851,6 +2487,209 @@ function synk_student_management_refresh_master_student_catalog(array &$catalog,
     }
 }
 
+function synk_student_management_build_import_student_signature(array $studentRow, ?array $matchedStudent = null): string
+{
+    $studentId = (int)($matchedStudent['student_id'] ?? 0);
+    if ($studentId > 0) {
+        return 'id:' . $studentId;
+    }
+
+    $studentNumber = max(
+        0,
+        (int)($matchedStudent['student_number'] ?? $studentRow['student_number'] ?? 0)
+    );
+    if ($studentNumber > 0) {
+        return 'num:' . $studentNumber;
+    }
+
+    return 'name:' . synk_student_management_build_student_name_key(
+        (string)($matchedStudent['last_name'] ?? $studentRow['last_name'] ?? ''),
+        (string)($matchedStudent['first_name'] ?? $studentRow['first_name'] ?? ''),
+        (string)($matchedStudent['middle_name'] ?? $studentRow['middle_name'] ?? ''),
+        (string)($matchedStudent['suffix_name'] ?? $studentRow['suffix_name'] ?? '')
+    );
+}
+
+function synk_student_management_fetch_active_batch_duplicate_snapshot(
+    mysqli $conn,
+    array $scope,
+    array $section,
+    array $subject
+): ?array {
+    $tableName = synk_student_management_enrollment_table_name();
+    $studentTable = synk_student_management_table_name();
+    $rows = [];
+
+    if ((int)($subject['subject_id'] ?? 0) <= 0) {
+        return null;
+    }
+
+    if ((int)($subject['offering_id'] ?? 0) > 0) {
+        $stmt = $conn->prepare("
+            SELECT
+                es.import_batch_key,
+                es.year_level,
+                es.faculty_id,
+                es.room_id,
+                es.room_text,
+                es.schedule_text,
+                es.student_id,
+                COALESCE(sm.student_number, 0) AS student_number,
+                COALESCE(sm.last_name, '') AS last_name,
+                COALESCE(sm.first_name, '') AS first_name,
+                COALESCE(sm.middle_name, '') AS middle_name,
+                COALESCE(sm.suffix_name, '') AS suffix_name
+            FROM `{$tableName}` es
+            LEFT JOIN `{$studentTable}` sm
+                ON sm.student_id = es.student_id
+            WHERE es.program_id = ?
+              AND es.ay_id = ?
+              AND es.semester = ?
+              AND es.section_id = ?
+              AND es.offering_id = ?
+              AND es.is_active = 1
+            ORDER BY es.student_enrollment_id ASC
+        ");
+
+        if (!$stmt) {
+            throw new RuntimeException('Unable to prepare the duplicate upload check query.');
+        }
+
+        $stmt->bind_param(
+            'iiiii',
+            $scope['program_id'],
+            $scope['ay_id'],
+            $scope['semester'],
+            $section['section_id'],
+            $subject['offering_id']
+        );
+    } else {
+        $stmt = $conn->prepare("
+            SELECT
+                es.import_batch_key,
+                es.year_level,
+                es.faculty_id,
+                es.room_id,
+                es.room_text,
+                es.schedule_text,
+                es.student_id,
+                COALESCE(sm.student_number, 0) AS student_number,
+                COALESCE(sm.last_name, '') AS last_name,
+                COALESCE(sm.first_name, '') AS first_name,
+                COALESCE(sm.middle_name, '') AS middle_name,
+                COALESCE(sm.suffix_name, '') AS suffix_name
+            FROM `{$tableName}` es
+            LEFT JOIN `{$studentTable}` sm
+                ON sm.student_id = es.student_id
+            WHERE es.program_id = ?
+              AND es.ay_id = ?
+              AND es.semester = ?
+              AND es.section_id = ?
+              AND es.subject_id = ?
+              AND es.is_active = 1
+            ORDER BY es.student_enrollment_id ASC
+        ");
+
+        if (!$stmt) {
+            throw new RuntimeException('Unable to prepare the duplicate upload check query.');
+        }
+
+        $stmt->bind_param(
+            'iiiii',
+            $scope['program_id'],
+            $scope['ay_id'],
+            $scope['semester'],
+            $section['section_id'],
+            $subject['subject_id']
+        );
+    }
+
+    $stmt->execute();
+    $result = $stmt->get_result();
+    while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
+        $rows[] = $row;
+    }
+    $stmt->close();
+
+    if (empty($rows)) {
+        return null;
+    }
+
+    $studentSignatures = [];
+    foreach ($rows as $row) {
+        $studentSignatures[] = synk_student_management_build_import_student_signature([], $row);
+    }
+    sort($studentSignatures, SORT_STRING);
+
+    $firstRow = $rows[0];
+    return [
+        'import_batch_key' => (string)($firstRow['import_batch_key'] ?? ''),
+        'year_level' => (int)($firstRow['year_level'] ?? 0),
+        'faculty_id' => (int)($firstRow['faculty_id'] ?? 0),
+        'room_id' => (int)($firstRow['room_id'] ?? 0),
+        'room_text' => synk_student_management_normalize_space((string)($firstRow['room_text'] ?? '')),
+        'schedule_text' => synk_student_management_normalize_space((string)($firstRow['schedule_text'] ?? '')),
+        'student_count' => count($studentSignatures),
+        'student_signatures' => $studentSignatures,
+    ];
+}
+
+function synk_student_management_assert_not_duplicate_batch_upload(
+    mysqli $conn,
+    array $scope,
+    array $section,
+    array $subject,
+    array $faculty,
+    array $room,
+    string $scheduleText,
+    int $yearLevel,
+    array $studentRows,
+    array $studentCatalog
+): void {
+    $activeSnapshot = synk_student_management_fetch_active_batch_duplicate_snapshot(
+        $conn,
+        $scope,
+        $section,
+        $subject
+    );
+
+    if (!is_array($activeSnapshot)) {
+        return;
+    }
+
+    $incomingStudentSignatures = [];
+    foreach ($studentRows as $studentRow) {
+        $matchedStudent = synk_student_management_find_existing_master_student($studentCatalog, $studentRow);
+        $incomingStudentSignatures[] = synk_student_management_build_import_student_signature(
+            $studentRow,
+            is_array($matchedStudent) ? $matchedStudent : null
+        );
+    }
+    sort($incomingStudentSignatures, SORT_STRING);
+
+    $incomingSnapshot = [
+        'year_level' => $yearLevel,
+        'faculty_id' => (int)($faculty['faculty_id'] ?? 0),
+        'room_id' => (int)($room['room_id'] ?? 0),
+        'room_text' => synk_student_management_normalize_space((string)($room['room_text'] ?? '')),
+        'schedule_text' => synk_student_management_normalize_space($scheduleText),
+        'student_count' => count($incomingStudentSignatures),
+        'student_signatures' => $incomingStudentSignatures,
+    ];
+
+    if (
+        $incomingSnapshot['year_level'] === $activeSnapshot['year_level']
+        && $incomingSnapshot['faculty_id'] === $activeSnapshot['faculty_id']
+        && $incomingSnapshot['room_id'] === $activeSnapshot['room_id']
+        && synk_student_management_normalize_lookup_key($incomingSnapshot['room_text']) === synk_student_management_normalize_lookup_key((string)$activeSnapshot['room_text'])
+        && synk_student_management_normalize_lookup_key($incomingSnapshot['schedule_text']) === synk_student_management_normalize_lookup_key((string)$activeSnapshot['schedule_text'])
+        && $incomingSnapshot['student_count'] === $activeSnapshot['student_count']
+        && $incomingSnapshot['student_signatures'] === $activeSnapshot['student_signatures']
+    ) {
+        throw new RuntimeException('This upload matches the current active batch exactly. Duplicate upload was blocked.');
+    }
+}
+
 function synk_student_management_delete_existing_enrollment_scope(
     mysqli $conn,
     array $scope,
@@ -1935,6 +2774,7 @@ function synk_student_management_import_exam_permits_csv(
 
     $resolvedScope = synk_student_management_resolve_upload_scope($conn, $scope);
     $parsed = synk_student_management_parse_exam_permits_csv($csvPath);
+    $filenameScope = synk_student_management_parse_upload_filename_scope($originalName);
     synk_student_management_validate_import_scope($parsed, $resolvedScope);
 
     $studentCatalog = synk_student_management_fetch_master_student_catalog($conn);
@@ -1988,13 +2828,36 @@ function synk_student_management_import_exam_permits_csv(
             $resolvedScope,
             $section,
             (string)($parsed['subject_code'] ?? ''),
-            (string)($parsed['descriptive_title'] ?? '')
+            (string)($parsed['descriptive_title'] ?? ''),
+            array_filter([
+                (string)($filenameScope['subject_code_hint'] ?? ''),
+            ], static function ($value): bool {
+                return trim((string)$value) !== '';
+            })
         );
         $faculty = synk_student_management_resolve_faculty(
             $conn,
             $resolvedScope,
             (string)($parsed['faculty_name'] ?? '')
         );
+
+        $canonicalSubject = synk_student_management_fetch_subject_record(
+            $conn,
+            (int)($subject['subject_id'] ?? 0)
+        );
+        if (is_array($canonicalSubject)) {
+            $subject['subject_code'] = (string)($canonicalSubject['subject_code'] ?? $subject['subject_code'] ?? '');
+            $subject['descriptive_title'] = (string)($canonicalSubject['descriptive_title'] ?? $subject['descriptive_title'] ?? '');
+        }
+
+        $canonicalFaculty = synk_student_management_fetch_faculty_record(
+            $conn,
+            (int)($faculty['faculty_id'] ?? 0)
+        );
+        if (is_array($canonicalFaculty)) {
+            $faculty['faculty_name'] = (string)($canonicalFaculty['faculty_name'] ?? $faculty['faculty_name'] ?? '');
+        }
+
         $room = synk_student_management_resolve_room(
             $conn,
             $resolvedScope,
@@ -2005,6 +2868,19 @@ function synk_student_management_import_exam_permits_csv(
             (int)($section['year_level'] ?? synk_student_management_extract_year_level_from_section((string)($parsed['section_name'] ?? '')))
         );
         $resolvedSectionText = synk_student_management_normalize_space((string)($section['full_section'] ?? $parsed['section_name'] ?? ''));
+
+        synk_student_management_assert_not_duplicate_batch_upload(
+            $conn,
+            $resolvedScope,
+            $section,
+            $subject,
+            $faculty,
+            $room,
+            (string)($parsed['class_schedule_text'] ?? ''),
+            $resolvedYearLevel,
+            $parsed['students'],
+            $studentCatalog
+        );
 
         $deletedRows = synk_student_management_delete_existing_enrollment_scope(
             $conn,
@@ -2262,6 +3138,7 @@ function synk_student_management_exam_permits_recent_batches(mysqli $conn, int $
             es.year_level,
             COALESCE(NULLIF(sec.full_section, ''), es.section_text) AS section_display,
             es.subject_code,
+            TRIM(CONCAT_WS(' ', f.first_name, f.middle_name, f.last_name, f.ext_name)) AS faculty_name,
             MIN(es.is_active) AS is_active,
             COUNT(*) AS student_count,
             MAX(es.created_at) AS imported_at
@@ -2276,6 +3153,8 @@ function synk_student_management_exam_permits_recent_batches(mysqli $conn, int $
             ON ay.ay_id = es.ay_id
         LEFT JOIN tbl_sections sec
             ON sec.section_id = es.section_id
+        LEFT JOIN tbl_faculty f
+            ON f.faculty_id = es.faculty_id
         GROUP BY
             es.import_batch_key,
             es.source_file_name,
@@ -2287,7 +3166,11 @@ function synk_student_management_exam_permits_recent_batches(mysqli $conn, int $
             es.year_level,
             sec.full_section,
             es.section_text,
-            es.subject_code
+            es.subject_code,
+            f.first_name,
+            f.middle_name,
+            f.last_name,
+            f.ext_name
         ORDER BY imported_at DESC
         LIMIT {$limit}
     ");
@@ -2310,6 +3193,7 @@ function synk_student_management_exam_permits_recent_batches(mysqli $conn, int $
             'year_level' => (int)($row['year_level'] ?? 0),
             'section_display' => (string)($row['section_display'] ?? ''),
             'subject_code' => (string)($row['subject_code'] ?? ''),
+            'faculty_name' => (string)($row['faculty_name'] ?? ''),
             'is_active' => (int)($row['is_active'] ?? 0),
             'student_count' => (int)($row['student_count'] ?? 0),
             'imported_at' => (string)($row['imported_at'] ?? ''),

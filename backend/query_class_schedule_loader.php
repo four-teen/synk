@@ -101,7 +101,7 @@ function class_schedule_loader_context_key_from_values(int $groupId, int $schedu
    - Load scheduled class entries from the live synced offering set
    - Exclude schedule rows that already exist in faculty workload
 ===================================================== */
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 

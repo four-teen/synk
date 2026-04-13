@@ -15,6 +15,7 @@ session_start();
 ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/schema_helper.php';
 
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
@@ -33,6 +34,86 @@ $college_name = $col['college_name'] ?? '';
 $currentTerm = synk_fetch_current_academic_term($conn);
 $default_ay_id = (int)$currentTerm['ay_id'];
 $default_semester = (int)$currentTerm['semester'];
+$sectionCurriculumEnabled = synk_table_exists($conn, 'tbl_section_curriculum');
+
+$programOptions = [];
+$programStmt = $conn->prepare("
+    SELECT
+        program_id,
+        program_code,
+        program_name,
+        COALESCE(major, '') AS major
+    FROM tbl_program
+    WHERE college_id = ?
+    ORDER BY program_code ASC, program_name ASC, major ASC
+");
+if ($programStmt instanceof mysqli_stmt) {
+    $programStmt->bind_param("i", $college_id);
+    $programStmt->execute();
+    $programRes = $programStmt->get_result();
+
+    while ($programRes && ($row = $programRes->fetch_assoc())) {
+        $programOptions[] = [
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'program_code' => (string)($row['program_code'] ?? ''),
+            'program_name' => (string)($row['program_name'] ?? ''),
+            'major' => (string)($row['major'] ?? '')
+        ];
+    }
+
+    $programStmt->close();
+}
+
+$prospectusVersionsByProgram = [];
+foreach ($programOptions as $programOption) {
+    $prospectusVersionsByProgram[(string)$programOption['program_id']] = [];
+}
+
+if ($sectionCurriculumEnabled) {
+    $versionStmt = $conn->prepare("
+        SELECT
+            h.prospectus_id,
+            h.program_id,
+            COALESCE(h.cmo_no, '') AS cmo_no,
+            COALESCE(h.effective_sy, '') AS effective_sy
+        FROM tbl_prospectus_header h
+        INNER JOIN tbl_program p
+            ON p.program_id = h.program_id
+        WHERE p.college_id = ?
+        ORDER BY h.program_id ASC, h.effective_sy DESC, h.prospectus_id DESC
+    ");
+
+    if ($versionStmt instanceof mysqli_stmt) {
+        $versionStmt->bind_param("i", $college_id);
+        $versionStmt->execute();
+        $versionRes = $versionStmt->get_result();
+
+        while ($versionRes && ($row = $versionRes->fetch_assoc())) {
+            $programKey = (string)((int)($row['program_id'] ?? 0));
+            if (!array_key_exists($programKey, $prospectusVersionsByProgram)) {
+                continue;
+            }
+
+            $effectiveSy = trim((string)($row['effective_sy'] ?? ''));
+            $cmoNo = trim((string)($row['cmo_no'] ?? ''));
+            $label = $effectiveSy !== '' && $cmoNo !== ''
+                ? ('SY ' . $effectiveSy . ' - ' . $cmoNo)
+                : ($effectiveSy !== '' ? ('SY ' . $effectiveSy) : ($cmoNo !== '' ? $cmoNo : ('Prospectus #' . (int)$row['prospectus_id'])));
+
+            $prospectusVersionsByProgram[$programKey][] = [
+                'prospectus_id' => (int)($row['prospectus_id'] ?? 0),
+                'label' => $label,
+                'effective_sy' => (string)($row['effective_sy'] ?? ''),
+                'cmo_no' => (string)($row['cmo_no'] ?? '')
+            ];
+        }
+
+        $versionStmt->close();
+    }
+}
+
+$programOptionsJson = json_encode($programOptions, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
+$prospectusVersionsJson = json_encode($prospectusVersionsByProgram, JSON_UNESCAPED_SLASHES | JSON_UNESCAPED_UNICODE);
 ?>
 <!DOCTYPE html>
 <html lang="en" class="light-style layout-menu-fixed">
@@ -276,6 +357,25 @@ $default_semester = (int)$currentTerm['semester'];
             background: linear-gradient(135deg, #f8faff 0%, #eef4ff 100%);
         }
 
+        .program-card-header-actions {
+            display: flex;
+            align-items: flex-start;
+            gap: .8rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .program-curriculum-btn {
+            min-height: 2.2rem;
+            padding: .45rem .95rem;
+            border-radius: 999px;
+            font-size: .72rem;
+            font-weight: 700;
+            letter-spacing: .05em;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
         .program-card-identity {
             display: flex;
             align-items: flex-start;
@@ -368,6 +468,24 @@ $default_semester = (int)$currentTerm['semester'];
             border-bottom: 1px solid #e8eef7;
             background: linear-gradient(90deg, #f5f8ff 0%, #edf4ff 100%);
             color: #223053;
+        }
+
+        .year-header-actions {
+            display: flex;
+            align-items: center;
+            gap: .65rem;
+            flex-wrap: wrap;
+            justify-content: flex-end;
+        }
+
+        .year-curriculum-btn {
+            min-height: 2rem;
+            padding: .38rem .8rem;
+            border-radius: 999px;
+            font-size: .72rem;
+            font-weight: 700;
+            letter-spacing: .05em;
+            text-transform: uppercase;
         }
 
         .year-title-wrap {
@@ -800,6 +918,22 @@ $default_semester = (int)$currentTerm['semester'];
                     <input type="number" id="section_count" class="form-control" value="1" min="1">
                 </div>
 
+                <div class="col-md-12">
+                    <?php if ($sectionCurriculumEnabled): ?>
+                        <label class="form-label">Assigned Curriculum</label>
+                        <select id="prospectus_id" class="form-select" disabled>
+                            <option value="">Select Program First</option>
+                        </select>
+                        <div class="generator-hint mt-2" id="curriculumHint">
+                            First-year sections can start on the newest prospectus automatically. Higher years should be reviewed before saving.
+                        </div>
+                    <?php else: ?>
+                        <div class="alert alert-warning mb-0">
+                            Section curriculum assignment is not available yet on this database. Create <code>tbl_section_curriculum</code> first before generating mixed-curriculum sections.
+                        </div>
+                    <?php endif; ?>
+                </div>
+
             </div>
 
             <div class="generator-actions">
@@ -828,6 +962,39 @@ $default_semester = (int)$currentTerm['semester'];
     <!-- GROUPED SECTION LIST -->
     <div id="groupedSections"></div>
 
+    <div class="modal fade" id="sectionCurriculumModal" tabindex="-1" aria-hidden="true">
+        <div class="modal-dialog">
+            <div class="modal-content">
+                <div class="modal-header">
+                    <h5 class="modal-title" id="sectionCurriculumModalTitle">Assign Curriculum</h5>
+                    <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+                </div>
+                <div class="modal-body">
+                    <input type="hidden" id="sectionCurriculumMode" value="single">
+                    <input type="hidden" id="sectionCurriculumSectionId">
+                    <input type="hidden" id="sectionCurriculumProgramId">
+                    <input type="hidden" id="sectionCurriculumYearLevel">
+                    <input type="hidden" id="sectionCurriculumAyId">
+                    <input type="hidden" id="sectionCurriculumSemester">
+                    <div class="mb-3">
+                        <label class="form-label" id="sectionCurriculumTargetLabel">Section</label>
+                        <div class="fw-semibold text-dark" id="sectionCurriculumSectionLabel">-</div>
+                    </div>
+                    <div class="mb-0">
+                        <label class="form-label" for="sectionCurriculumProspectus">Curriculum</label>
+                        <select id="sectionCurriculumProspectus" class="form-select">
+                            <option value="">Select Curriculum</option>
+                        </select>
+                    </div>
+                </div>
+                <div class="modal-footer">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Cancel</button>
+                    <button type="button" class="btn btn-primary" id="btnSaveSectionCurriculum">Save Curriculum</button>
+                </div>
+            </div>
+        </div>
+    </div>
+
 </div>
 
 <?php include '../footer.php'; ?>
@@ -849,11 +1016,13 @@ $default_semester = (int)$currentTerm['semester'];
 <script src="../assets/js/dashboards-analytics.js"></script>
 
 <script>
+const SECTION_CURRICULUM_ENABLED = <?= $sectionCurriculumEnabled ? 'true' : 'false' ?>;
+const PROSPECTUS_VERSIONS_BY_PROGRAM = <?= $prospectusVersionsJson ?: '{}' ?>;
 let sectionStartIndex = 0;
+let sectionCurriculumModalInstance = null;
 
 function saveSectionsRequest(ctx, program_id, program_code, year, count) {
-    $.post("../backend/query_sections.php",
-    {
+    const payload = {
         save_sections: 1,
         program_id: program_id,
         program_code: program_code,
@@ -862,7 +1031,14 @@ function saveSectionsRequest(ctx, program_id, program_code, year, count) {
         year_level: year,
         count: count,
         start_index: sectionStartIndex
-    },
+    };
+
+    if (SECTION_CURRICULUM_ENABLED) {
+        payload.prospectus_id = $("#prospectus_id").val();
+    }
+
+    $.post("../backend/query_sections.php",
+    payload,
     function(response){
 
         if (response.trim() === "success") {
@@ -960,6 +1136,129 @@ $("#program_id option").each(function () {
     $(this).text(normalizeProgramText($(this).text()));
 });
 
+function getProgramProspectusOptions(programId) {
+    return PROSPECTUS_VERSIONS_BY_PROGRAM[String(programId || "")] || [];
+}
+
+function buildProspectusOptionsHtml(options, selectedId, placeholder) {
+    let html = `<option value="">${escapeHtml(placeholder || "Select Curriculum")}</option>`;
+
+    (Array.isArray(options) ? options : []).forEach(function (option) {
+        const optionId = String(option.prospectus_id || "");
+        const selected = optionId !== "" && optionId === String(selectedId || "") ? " selected" : "";
+        html += `<option value="${escapeHtml(optionId)}"${selected}>${escapeHtml(option.label || "")}</option>`;
+    });
+
+    return html;
+}
+
+function syncCurriculumSelect() {
+    if (!SECTION_CURRICULUM_ENABLED) {
+        return;
+    }
+
+    const programId = $("#program_id").val();
+    const yearLevel = $("#year_level").val();
+    const select = $("#prospectus_id");
+    const hint = $("#curriculumHint");
+
+    if (!programId) {
+        select.prop("disabled", true).html('<option value="">Select Program First</option>');
+        hint.text("Select a program first, then choose the curriculum that owns these sections.");
+        return;
+    }
+
+    const options = getProgramProspectusOptions(programId);
+    const previousValue = select.val();
+
+    if (!options.length) {
+        select.prop("disabled", true).html('<option value="">No Curriculum Found</option>');
+        hint.text("No prospectus version is available for the selected program yet.");
+        return;
+    }
+
+    let nextValue = previousValue;
+    const hasPrevious = options.some(function (option) {
+        return String(option.prospectus_id) === String(previousValue || "");
+    });
+
+    if (!hasPrevious) {
+        nextValue = yearLevel === "1" ? String(options[0].prospectus_id || "") : "";
+    }
+
+    select.prop("disabled", false).html(buildProspectusOptionsHtml(options, nextValue, "Select Curriculum"));
+
+    if (yearLevel === "1") {
+        hint.text("Newest prospectus is preselected for first-year sections. Change it only if this cohort should stay on an older curriculum.");
+    } else {
+        hint.text("Review the curriculum carefully for upper-year sections before saving.");
+    }
+}
+
+function getSelectedProspectusLabel() {
+    if (!SECTION_CURRICULUM_ENABLED) {
+        return "";
+    }
+
+    const select = document.getElementById("prospectus_id");
+    if (!select || select.selectedIndex < 0) {
+        return "";
+    }
+
+    return (select.options[select.selectedIndex] || {}).text || "";
+}
+
+function resolveBulkSelectedProspectusId(rows) {
+    const values = Array.from(new Set((Array.isArray(rows) ? rows : [])
+        .map(function (row) {
+            return Number(row && row.prospectus_id ? row.prospectus_id : 0);
+        })
+        .filter(function (value) {
+            return value > 0;
+        })));
+
+    return values.length === 1 ? values[0] : 0;
+}
+
+function openSectionCurriculumModal(config) {
+    if (!SECTION_CURRICULUM_ENABLED) {
+        Swal.fire("Unavailable", "Section curriculum assignment is not enabled on this database yet.", "info");
+        return;
+    }
+
+    const mode = String((config && config.mode) || "single");
+    const programId = Number((config && config.programId) || 0);
+    const options = getProgramProspectusOptions(programId);
+    if (!options.length) {
+        Swal.fire("Missing Curriculum", "No prospectus version is available for this program yet.", "warning");
+        return;
+    }
+
+    $("#sectionCurriculumMode").val(mode);
+    $("#sectionCurriculumSectionId").val(Number((config && config.sectionId) || 0));
+    $("#sectionCurriculumProgramId").val(programId);
+    $("#sectionCurriculumYearLevel").val(Number((config && config.yearLevel) || 0));
+    $("#sectionCurriculumAyId").val(Number((config && config.ayId) || 0));
+    $("#sectionCurriculumSemester").val(Number((config && config.semester) || 0));
+    const title = mode === "program"
+        ? "Assign Program Curriculum"
+        : (mode === "bulk" ? "Assign Year-Level Curriculum" : "Assign Curriculum");
+    const targetLabel = mode === "program"
+        ? "Program Scope"
+        : (mode === "bulk" ? "Year Level Scope" : "Section");
+
+    $("#sectionCurriculumModalTitle").text(title);
+    $("#sectionCurriculumTargetLabel").text(targetLabel);
+    $("#sectionCurriculumSectionLabel").text((config && config.label) || "-");
+    $("#sectionCurriculumProspectus").html(
+        buildProspectusOptionsHtml(options, Number((config && config.selectedProspectusId) || 0), "Select Curriculum")
+    );
+
+    const modalEl = document.getElementById("sectionCurriculumModal");
+    sectionCurriculumModalInstance = sectionCurriculumModalInstance || new bootstrap.Modal(modalEl);
+    sectionCurriculumModalInstance.show();
+}
+
 /* =========================
    DELETE SECTION
 ========================= */
@@ -1001,6 +1300,127 @@ $(document).on("click", ".btnDeleteSection", function () {
         }
     });
 
+});
+
+$(document).on("click", ".btnSectionCurriculum", function () {
+    openSectionCurriculumModal(
+        {
+            mode: "single",
+            sectionId: Number($(this).data("id") || 0),
+            programId: Number($(this).data("programId") || 0),
+            label: $(this).data("sectionLabel") || "",
+            selectedProspectusId: Number($(this).data("prospectusId") || 0)
+        }
+    );
+});
+
+$(document).on("click", ".btnYearCurriculum", function () {
+    const ctx = getContextOrWarn();
+    if (!ctx) return;
+
+    openSectionCurriculumModal({
+        mode: "bulk",
+        programId: Number($(this).data("programId") || 0),
+        yearLevel: Number($(this).data("yearLevel") || 0),
+        ayId: Number(ctx.ay_id || 0),
+        semester: Number(ctx.semester || 0),
+        label: $(this).data("scopeLabel") || "",
+        selectedProspectusId: Number($(this).data("prospectusId") || 0)
+    });
+});
+
+$(document).on("click", ".btnProgramCurriculum", function () {
+    const ctx = getContextOrWarn();
+    if (!ctx) return;
+
+    openSectionCurriculumModal({
+        mode: "program",
+        programId: Number($(this).data("programId") || 0),
+        ayId: Number(ctx.ay_id || 0),
+        semester: Number(ctx.semester || 0),
+        label: $(this).data("scopeLabel") || "",
+        selectedProspectusId: Number($(this).data("prospectusId") || 0)
+    });
+});
+
+$("#btnSaveSectionCurriculum").on("click", function () {
+    const mode = String($("#sectionCurriculumMode").val() || "single");
+    const sectionId = Number($("#sectionCurriculumSectionId").val() || 0);
+    const programId = Number($("#sectionCurriculumProgramId").val() || 0);
+    const yearLevel = Number($("#sectionCurriculumYearLevel").val() || 0);
+    const ayId = Number($("#sectionCurriculumAyId").val() || 0);
+    const semester = Number($("#sectionCurriculumSemester").val() || 0);
+    const prospectusId = Number($("#sectionCurriculumProspectus").val() || 0);
+
+    if (!prospectusId) {
+        Swal.fire("Missing Data", "Select a curriculum before saving.", "warning");
+        return;
+    }
+
+    let payload = null;
+    let successMessage = "Section curriculum updated successfully.";
+
+    if (mode === "bulk") {
+        if (!programId || !yearLevel || !ayId || !semester) {
+            Swal.fire("Missing Data", "The selected year-level scope is incomplete.", "warning");
+            return;
+        }
+
+        payload = {
+            update_year_level_prospectus: 1,
+            program_id: programId,
+            year_level: yearLevel,
+            ay_id: ayId,
+            semester: semester,
+            prospectus_id: prospectusId
+        };
+        successMessage = "Year-level curriculum updated successfully.";
+    } else if (mode === "program") {
+        if (!programId || !ayId || !semester) {
+            Swal.fire("Missing Data", "The selected program scope is incomplete.", "warning");
+            return;
+        }
+
+        payload = {
+            update_program_prospectus: 1,
+            program_id: programId,
+            ay_id: ayId,
+            semester: semester,
+            prospectus_id: prospectusId
+        };
+        successMessage = "Program curriculum updated successfully.";
+    } else {
+        if (!sectionId) {
+            Swal.fire("Missing Data", "Select a section before saving.", "warning");
+            return;
+        }
+
+        payload = {
+            update_section_prospectus: 1,
+            section_id: sectionId,
+            prospectus_id: prospectusId
+        };
+    }
+
+    $.post("../backend/query_sections.php", payload, function (response) {
+        const trimmed = String(response || "").trim();
+
+        if (trimmed === "success") {
+            if (sectionCurriculumModalInstance) {
+                sectionCurriculumModalInstance.hide();
+            }
+            Swal.fire("Saved!", successMessage, "success");
+            loadGroupedSections();
+            return;
+        }
+
+        if (trimmed === "forbidden") {
+            Swal.fire("Access Denied", "You cannot update this section.", "error");
+            return;
+        }
+
+        Swal.fire("Error", trimmed || "Unable to update this section right now.", "error");
+    });
 });
 
 /* =========================
@@ -1062,8 +1482,12 @@ function loadGroupedSections() {
                 const programSubtitle = programMeta.title === programMeta.code
                     ? "Program sections grouped by year level."
                     : `${programMeta.code} program sections grouped by year level.`;
+                const programRows = data[program];
+                const programId = programRows.length ? Number(programRows[0].program_id || 0) : 0;
+                const programScopeLabel = `${programMeta.code} - all sections in this term`;
+                const programSelectedProspectusId = resolveBulkSelectedProspectusId(programRows);
                 const byYear = {};
-                data[program].forEach((s) => {
+                programRows.forEach((s) => {
                     const y = String(s.year_level || "");
                     if (!byYear[y]) byYear[y] = [];
                     byYear[y].push(s);
@@ -1082,9 +1506,22 @@ function loadGroupedSections() {
                                     </div>
                                 </div>
                             </div>
-                            <div class="program-card-metric">
-                                <span class="program-card-metric-label">Total Sections</span>
-                                <span class="program-card-metric-value">${data[program].length}</span>
+                            <div class="program-card-header-actions">
+                                ${SECTION_CURRICULUM_ENABLED ? `
+                                    <button
+                                        class="btn btn-sm btn-outline-primary program-curriculum-btn btnProgramCurriculum"
+                                        data-program-id="${programId}"
+                                        data-scope-label="${escapeHtml(programScopeLabel)}"
+                                        data-prospectus-id="${programSelectedProspectusId}"
+                                        type="button"
+                                    >
+                                        Set Program Curriculum
+                                    </button>
+                                ` : ''}
+                                <div class="program-card-metric">
+                                    <span class="program-card-metric-label">Total Sections</span>
+                                    <span class="program-card-metric-value">${programRows.length}</span>
+                                </div>
                             </div>
                         </div>
                         <div class="program-card-body">
@@ -1094,6 +1531,8 @@ function loadGroupedSections() {
                 yearKeys.forEach((year) => {
                     const rows = byYear[year];
                     const sectionCountLabel = `${rows.length} ${rows.length === 1 ? 'section' : 'sections'}`;
+                    const bulkScopeLabel = `${programMeta.code} ${yearLevelLabel(year)} - ${sectionCountLabel}`;
+                    const bulkSelectedProspectusId = resolveBulkSelectedProspectusId(rows);
                     html += `
                         <div class="year-level-card">
                             <div class="year-header">
@@ -1101,7 +1540,21 @@ function loadGroupedSections() {
                                     <span class="year-title-kicker">Year Level</span>
                                     <span class="year-title-text">${yearLevelLabel(year)}</span>
                                 </div>
-                                <span class="year-count">${sectionCountLabel}</span>
+                                <div class="year-header-actions">
+                                    ${SECTION_CURRICULUM_ENABLED ? `
+                                        <button
+                                            class="btn btn-sm btn-outline-primary year-curriculum-btn btnYearCurriculum"
+                                            data-program-id="${Number(rows[0].program_id || 0)}"
+                                            data-year-level="${Number(year || 0)}"
+                                            data-scope-label="${escapeHtml(bulkScopeLabel)}"
+                                            data-prospectus-id="${bulkSelectedProspectusId}"
+                                            type="button"
+                                        >
+                                            Set Curriculum
+                                        </button>
+                                    ` : ''}
+                                    <span class="year-count">${sectionCountLabel}</span>
+                                </div>
                             </div>
                             <div class="year-sections-grid">
                     `;
@@ -1112,6 +1565,13 @@ function loadGroupedSections() {
                         const sectionName = String(s.section_name || '');
                         const shortCode = sectionName.replace(new RegExp(`^${String(year)}`), "") || sectionName;
                         const fullSection = String(s.full_section || sectionName || '');
+                        const curriculumLabel = String(s.prospectus_label || '').trim();
+                        const hasCurriculum = Boolean(s.has_curriculum);
+                        const curriculumMeta = SECTION_CURRICULUM_ENABLED
+                            ? (hasCurriculum
+                                ? `Curriculum: ${curriculumLabel}`
+                                : 'Curriculum not assigned yet')
+                            : `Ready for ${yearLevelLabel(year)}`;
                         html += `
                                 <div class="section-tile">
                                     <div class="section-tile-main">
@@ -1119,11 +1579,23 @@ function loadGroupedSections() {
                                         <div class="min-w-0">
                                             <div class="section-code">${escapeHtml(sectionName || fullSection)}</div>
                                             <div class="section-fullcode">${escapeHtml(fullSection)}</div>
-                                            <div class="section-meta">Ready for ${escapeHtml(yearLevelLabel(year))}</div>
+                                            <div class="section-meta">${escapeHtml(curriculumMeta)}</div>
                                         </div>
                                     </div>
                                     <div class="section-tile-actions">
                                         <span class="section-status-badge ${statusClass}">${escapeHtml(normalizedStatus)}</span>
+                                        ${SECTION_CURRICULUM_ENABLED ? `
+                                            <button
+                                                class="btn btn-sm btn-outline-primary btnSectionCurriculum"
+                                                data-id="${Number(s.section_id)}"
+                                                data-program-id="${Number(s.program_id || 0)}"
+                                                data-section-label="${escapeHtml(fullSection)}"
+                                                data-prospectus-id="${Number(s.prospectus_id || 0)}"
+                                                type="button"
+                                            >
+                                                Curriculum
+                                            </button>
+                                        ` : ''}
                                         <button class="section-delete-btn btnDeleteSection" data-id="${Number(s.section_id)}" title="Delete section" type="button">
                                             <i class="bx bx-trash"></i>
                                         </button>
@@ -1168,6 +1640,13 @@ $("#btnGenerate").click(function () {
 
     if (!program_id || !year || !count || count <= 0) {
         Swal.fire("Missing Data", "Please fill Program, Year Level, and Number of Sections.", "warning");
+        return;
+    }
+
+    const selectedProspectusId = SECTION_CURRICULUM_ENABLED ? $("#prospectus_id").val() : "";
+    const selectedProspectusLabel = getSelectedProspectusLabel();
+    if (SECTION_CURRICULUM_ENABLED && !selectedProspectusId) {
+        Swal.fire("Missing Curriculum", "Select the curriculum that should own these sections before generating the preview.", "warning");
         return;
     }
 
@@ -1219,7 +1698,7 @@ $("#btnGenerate").click(function () {
                 <div class="sections-preview-item">
                     <div>
                         <div class="sections-preview-name">${escapeHtml(r.full_section)}</div>
-                        <div class="sections-preview-sub">${escapeHtml(yearLevelLabel(year))}</div>
+                        <div class="sections-preview-sub">${escapeHtml(yearLevelLabel(year))}${SECTION_CURRICULUM_ENABLED ? ` • ${escapeHtml(selectedProspectusLabel)}` : ''}</div>
                     </div>
                     <span class="sections-preview-chip">${escapeHtml(r.section_name)}</span>
                 </div>
@@ -1261,6 +1740,11 @@ $("#btnSaveSections").click(function () {
         return;
     }
 
+    if (SECTION_CURRICULUM_ENABLED && !$("#prospectus_id").val()) {
+        Swal.fire("Missing Curriculum", "Select the curriculum that should own these sections before saving.", "warning");
+        return;
+    }
+
     saveSectionsRequest(ctx, program_id, program_code, year, count);
 });
 
@@ -1280,6 +1764,14 @@ $("#ay_id, #semester").on("change", function () {
         `);
     }
 });
+
+if (SECTION_CURRICULUM_ENABLED) {
+    $("#program_id, #year_level").on("change", function () {
+        syncCurriculumSelect();
+    });
+
+    syncCurriculumSelect();
+}
 
 // Initial auto-load if defaults are already selected
 if ($("#ay_id").val() && $("#semester").val()) {

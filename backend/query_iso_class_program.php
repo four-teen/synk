@@ -264,7 +264,7 @@ if (isset($_POST['load_iso_class_program'])) {
 
     $sectionsStmt->close();
 
-    $liveOfferingJoins = synk_live_offering_join_sql('po', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
     $scheduleSql = "
         SELECT
             cs.schedule_id,

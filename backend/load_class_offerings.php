@@ -16,13 +16,13 @@ if (empty($_SESSION['csrf_token']) || !hash_equals($_SESSION['csrf_token'], $csr
     exit;
 }
 
-$prospectus_id = $_POST['prospectus_id'] ?? '';
+$program_id = $_POST['program_id'] ?? '';
 $ay_id = $_POST['ay_id'] ?? '';
 $semester = $_POST['semester'] ?? '';
 $sortBy = trim((string)($_POST['sort_by'] ?? 'year_level'));
 $sortBy = in_array($sortBy, ['year_level', 'subject'], true) ? $sortBy : 'year_level';
 
-if ($prospectus_id === '' || $ay_id === '' || $semester === '') {
+if ($program_id === '' || $ay_id === '' || $semester === '') {
     echo "<div class='text-center text-danger py-4'>Missing filters.</div>";
     exit;
 }
@@ -42,6 +42,29 @@ function year_label($year) {
     if ($year === '5') return '5th Year';
     if ($year === '6') return '6th Year';
     return 'Year ' . $year;
+}
+
+function section_curriculum_table_exists(mysqli $conn): bool
+{
+    static $exists = null;
+
+    if ($exists !== null) {
+        return $exists;
+    }
+
+    $q = $conn->query("SHOW TABLES LIKE 'tbl_section_curriculum'");
+    $exists = $q && $q->num_rows > 0;
+    return $exists;
+}
+
+function curriculum_label(array $row): string
+{
+    $effectiveSy = trim((string)($row['effective_sy'] ?? ''));
+    if ($effectiveSy === '') {
+        return 'Curriculum';
+    }
+
+    return 'SY ' . $effectiveSy;
 }
 
 function schedule_group_count_label(string $sortBy): string
@@ -70,6 +93,11 @@ function schedule_section_cell_html(array $row, string $sortBy): string
     if ($sortBy === 'subject') {
         $yearMeta = htmlspecialchars(year_label((string)($row['year_level'] ?? '')), ENT_QUOTES, 'UTF-8');
         $html .= "<span class='schedule-section-meta'>{$yearMeta}</span>";
+    }
+
+    $curriculumMeta = trim((string)($row['curriculum_label'] ?? ''));
+    if ($curriculumMeta !== '') {
+        $html .= "<span class='schedule-section-meta'>" . htmlspecialchars($curriculumMeta, ENT_QUOTES, 'UTF-8') . "</span>";
     }
 
     $merge = is_array($row['merge'] ?? null) ? $row['merge'] : [];
@@ -478,7 +506,12 @@ function load_workload_faculty_assignments_for_offerings(mysqli $conn, array $of
     return $map;
 }
 
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+if (!section_curriculum_table_exists($conn)) {
+    echo "<div class='text-center text-danger py-4'>Create tbl_section_curriculum first before loading the scheduling list.</div>";
+    exit;
+}
+
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $orderByClause = $sortBy === 'subject'
     ? "
 ORDER BY
@@ -504,6 +537,7 @@ SELECT
     sec.full_section,
     sec.year_level,
     p.program_code,
+    ph.effective_sy,
     sm.sub_code,
     sm.sub_description,
     ps.lab_units,
@@ -513,7 +547,7 @@ FROM tbl_prospectus_offering o
 {$liveOfferingJoins}
 INNER JOIN tbl_program p ON p.program_id = o.program_id
 INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-WHERE o.prospectus_id = ?
+WHERE o.program_id = ?
   AND o.ay_id = ?
   AND o.semester = ?
   AND p.college_id = ?
@@ -521,7 +555,7 @@ WHERE o.prospectus_id = ?
 ";
 
 $stmt = $conn->prepare($sql);
-$stmt->bind_param("iiii", $prospectus_id, $ay_id, $semester, $college_id);
+$stmt->bind_param("iiii", $program_id, $ay_id, $semester, $college_id);
 $stmt->execute();
 $res = $stmt->get_result();
 
@@ -547,6 +581,7 @@ while ($row = $res->fetch_assoc()) {
         'section_name' => (string)($row['section_name'] ?? ''),
         'full_section' => (string)($row['full_section'] ?? ''),
         'program_code' => (string)($row['program_code'] ?? ''),
+        'curriculum_label' => curriculum_label($row),
         'sub_code' => (string)($row['sub_code'] ?? ''),
         'sub_description' => (string)($row['sub_description'] ?? ''),
         'lab_units' => (float)$row['lab_units'],

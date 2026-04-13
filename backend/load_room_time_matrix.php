@@ -169,7 +169,7 @@ if (empty($rooms)) {
 
 $roomIds = array_keys($rooms);
 $roomIdList = implode(',', array_map('intval', $roomIds));
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $facultyAssignmentSql = "
     SELECT
         fws.schedule_id,

@@ -437,7 +437,7 @@ $windowLabCount = 0;
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 $scheduleTypeSql = $classScheduleHasType ? 'cs.schedule_type' : "'LEC'";
 $scheduleTypeGroupSql = $classScheduleHasType ? ', cs.schedule_type' : '';
-$liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+$liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 
 $scheduleSql = "
     SELECT

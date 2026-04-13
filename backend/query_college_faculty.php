@@ -364,7 +364,6 @@ if (isset($_POST['load_college_faculty'])) {
     }
 
     query_college_faculty_require_college_scope($allowedCollegeIds, $college_id);
-
     $schema = query_college_faculty_schema_info($conn);
     $termReady = query_college_faculty_term_ready($schema);
 
@@ -471,7 +470,7 @@ if (isset($_POST['load_college_faculty'])) {
     $assignedTypes = '';
 
     if ($currentAyId > 0 && $currentSemester > 0) {
-        $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+        $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
         $assignedSelect = 'COALESCE(term_assignments.assigned_count, 0) AS assigned_count';
         $assignedJoinSql = "
         LEFT JOIN (

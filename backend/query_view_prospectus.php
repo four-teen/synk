@@ -14,7 +14,7 @@ if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
 $role = $_SESSION['role'];
 $myCollege = (int)($_SESSION['college_id'] ?? 0);
 
-if (!in_array($role, ['admin', 'scheduler'], true)) {
+if (!in_array($role, ['admin', 'scheduler', 'program_chair'], true)) {
     http_response_code(403);
     echo json_encode(["error" => "Unauthorized"]);
     exit;
@@ -41,7 +41,7 @@ function normalize_prospectus_subject_values(float $lecHours, float $labValue, ?
     ];
 }
 
-if ($role === 'scheduler') {
+if (in_array($role, ['scheduler', 'program_chair'], true)) {
     $headerSql = "
         SELECT h.prospectus_id, h.program_id, h.cmo_no, h.effective_sy,
                p.program_name, p.program_code, p.major
@@ -70,9 +70,9 @@ $header = $headerStmt->get_result()->fetch_assoc();
 $headerStmt->close();
 
 if (!$header) {
-    http_response_code($role === 'scheduler' ? 403 : 404);
+    http_response_code(in_array($role, ['scheduler', 'program_chair'], true) ? 403 : 404);
     echo json_encode([
-        "error" => $role === 'scheduler'
+        "error" => in_array($role, ['scheduler', 'program_chair'], true)
             ? "Unauthorized prospectus access"
             : "Prospectus not found"
     ]);

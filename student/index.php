@@ -46,6 +46,7 @@ $availableSubjectAyIds = array_map(static function (array $row): int {
     return (int)($row['ay_id'] ?? 0);
 }, $subjectYearOptions);
 $requestedSubjectAyId = max(0, (int)($_GET['subject_ay_id'] ?? 0));
+$requestedSubjectSemester = max(0, (int)($_GET['subject_semester'] ?? 0));
 $selectedSubjectAyId = 0;
 
 if ($requestedSubjectAyId > 0 && in_array($requestedSubjectAyId, $availableSubjectAyIds, true)) {
@@ -57,7 +58,7 @@ if ($requestedSubjectAyId > 0 && in_array($requestedSubjectAyId, $availableSubje
 }
 
 $subjectRows = $selectedSubjectAyId > 0
-    ? synk_student_fetch_subject_rows_by_academic_year($conn, $studentId, $selectedSubjectAyId)
+    ? synk_student_fetch_subject_rows_by_academic_year($conn, $studentId, $selectedSubjectAyId, $requestedSubjectSemester)
     : [];
 $subjectSemesterGroups = synk_student_group_subject_rows_by_semester($subjectRows);
 $selectedSubjectYearLabel = '';
@@ -472,6 +473,9 @@ $studentPortalBackUrl = $isAdminPreview
                       <?php if ($isAdminPreview): ?>
                         <input type="hidden" name="preview_student_id" value="<?php echo (int)$previewStudentId; ?>" />
                         <input type="hidden" name="return_to" value="<?php echo synk_student_h($studentPortalBackUrl); ?>" />
+                      <?php endif; ?>
+                      <?php if ($requestedSubjectSemester > 0): ?>
+                        <input type="hidden" name="subject_semester" value="<?php echo (int)$requestedSubjectSemester; ?>" />
                       <?php endif; ?>
                       <label class="form-label fw-semibold mb-0" for="subject_ay_id">Academic Year</label>
                       <select

@@ -1,5 +1,6 @@
 <?php
 require_once __DIR__ . '/bootstrap.php';
+require_once '../../backend/academic_term_helper.php';
 
 function student_management_directory_api_response(array $payload, int $statusCode = 200): void
 {
@@ -21,12 +22,22 @@ try {
 
     if ($action === 'list') {
         $isDataTableRequest = isset($_GET['draw']);
+        $currentTerm = synk_fetch_current_academic_term($conn);
+        $defaultCountAyId = max(0, (int)($currentTerm['ay_id'] ?? 0));
         $filters = [
             'search' => trim((string)($_GET['search'] ?? '')),
             'year_level' => max(0, (int)($_GET['year_level'] ?? 0)),
             'program_id' => max(0, (int)($_GET['program_id'] ?? 0)),
             'ay_id' => max(0, (int)($_GET['ay_id'] ?? 0)),
             'semester' => max(0, (int)($_GET['semester'] ?? 0)),
+            'count_ay_id' => max(
+                0,
+                (int)(
+                    $_GET['count_ay_id']
+                    ?? ($_GET['ay_id'] ?? $defaultCountAyId)
+                )
+            ),
+            'count_semester' => max(0, (int)($_GET['semester'] ?? 0)),
         ];
         $sort = [];
 

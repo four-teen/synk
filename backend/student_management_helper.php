@@ -1179,15 +1179,27 @@ function synk_student_management_fetch_records(mysqli $conn, array $filters, int
     $enrollmentTableName = 'tbl_student_management_enrolled_subjects';
     $subjectCountJoinSql = '';
     $subjectCountSelectSql = '0 AS subject_count';
+    $countAyId = max(0, (int)($filters['count_ay_id'] ?? 0));
+    $countSemester = max(0, (int)($filters['count_semester'] ?? 0));
 
     if (synk_table_exists($conn, $enrollmentTableName)) {
+        $subjectCountWhereParts = ['es.is_active = 1'];
+
+        if ($countAyId > 0) {
+            $subjectCountWhereParts[] = 'es.ay_id = ' . $countAyId;
+        }
+
+        if ($countSemester > 0) {
+            $subjectCountWhereParts[] = 'es.semester = ' . $countSemester;
+        }
+
         $subjectCountJoinSql = "
         LEFT JOIN (
             SELECT
                 es.student_id,
                 COUNT(*) AS subject_count
             FROM `{$enrollmentTableName}` es
-            WHERE es.is_active = 1
+            WHERE " . implode(' AND ', $subjectCountWhereParts) . "
             GROUP BY es.student_id
         ) esc
             ON esc.student_id = sm.student_id";

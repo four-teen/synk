@@ -195,7 +195,7 @@ function synk_admin_enrollee_fetch_scope_offerings(mysqli $conn, array $scope): 
         ],
     ];
 
-    $liveOfferingJoins = synk_live_offering_join_sql('o', 'sec', 'ps', 'pys', 'ph');
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $types = 'iii';
     $params = [
         (int)$scope['ay_id'],

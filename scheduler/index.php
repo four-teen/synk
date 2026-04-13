@@ -2177,19 +2177,19 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
         function updateDashboardCounts(data) {
           const programs = Number(data.programs) || 0;
           const faculty = Number(data.faculty) || 0;
-          const prospectus = Number(data.prospectus_items) || 0;
+          const offerings = Number(data.offering_items) || 0;
           const unscheduled = Number(data.unscheduled_classes) || 0;
           const scopeType = data && data.scope === "campus" && campusViewEnabled ? "campus" : "college";
           const scopeLabel = data && data.scope_label ? data.scope_label : (scopeType === "campus" ? <?php echo json_encode($_SESSION['campus_name'] ?? 'Current Campus'); ?> : <?php echo json_encode($_SESSION['college_name'] ?? 'Assigned College'); ?>);
 
           animateCount("countPrograms", programs);
           animateCount("countFaculty", faculty);
-          animateCount("countProspectus", prospectus);
+          animateCount("countProspectus", offerings);
           animateCount("countUnscheduled", unscheduled);
 
           document.getElementById("summaryPrograms").textContent = programs;
           document.getElementById("summaryFaculty").textContent = faculty;
-          document.getElementById("summaryProspectus").textContent = prospectus;
+          document.getElementById("summaryProspectus").textContent = offerings;
           document.getElementById("summaryUnscheduled").textContent = unscheduled;
 
           const unscheduledCard = document.getElementById("cardUnscheduled");
