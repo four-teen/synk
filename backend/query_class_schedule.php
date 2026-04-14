@@ -3925,6 +3925,8 @@ if (isset($_POST['load_schedule_merge_candidates'])) {
             continue;
         }
 
+        $isSameSubject = (int)($candidate['sub_id'] ?? 0) === (int)($target['sub_id'] ?? 0);
+
         $candidateLabel = schedule_merge_offering_label($candidate);
         $candidateSubject = trim(
             (string)($candidate['sub_code'] ?? '') .
@@ -3932,7 +3934,7 @@ if (isset($_POST['load_schedule_merge_candidates'])) {
         );
         $candidateEffectiveRows = (array)($effectiveRowsByOffering[$candidateId] ?? []);
 
-        if ((int)($candidate['sub_id'] ?? 0) === (int)($target['sub_id'] ?? 0)) {
+        if ($isSameSubject) {
             $canSelect = true;
             $reason = '';
 
@@ -3963,6 +3965,10 @@ if (isset($_POST['load_schedule_merge_candidates'])) {
 
         foreach (['LEC', 'LAB'] as $scope) {
             if (!in_array($scope, $requiredTypes, true)) {
+                continue;
+            }
+
+            if (!$isSameSubject) {
                 continue;
             }
 

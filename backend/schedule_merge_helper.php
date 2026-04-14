@@ -23,6 +23,17 @@ function synk_schedule_merge_normalize_scope($scope): string
     return in_array($value, ['LEC', 'LAB'], true) ? $value : 'FULL';
 }
 
+function synk_schedule_merge_scope_match_sql(
+    string $scheduleTypeExpr,
+    string $mergeScopeExpr,
+    string $collation = 'utf8mb4_unicode_ci'
+): string {
+    return "
+                    CAST({$scheduleTypeExpr} AS CHAR CHARACTER SET utf8mb4) COLLATE {$collation} =
+                    CONVERT({$mergeScopeExpr} USING utf8mb4) COLLATE {$collation}
+               ";
+}
+
 function synk_schedule_merge_normalize_offering_ids(array $offeringIds): array
 {
     $normalized = [];
@@ -74,7 +85,7 @@ function synk_schedule_merge_ensure_table(mysqli $conn): void
                 PRIMARY KEY (`schedule_merge_id`),
                 UNIQUE KEY `uniq_schedule_merge_member_scope` (`member_offering_id`, `merge_scope`),
                 KEY `idx_schedule_merge_owner_scope` (`owner_offering_id`, `merge_scope`)
-            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+            ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci
         ");
     }
 
@@ -143,6 +154,11 @@ function synk_schedule_merge_scheduled_offering_join_sql(
         ";
     }
 
+    $scopeMatchSql = synk_schedule_merge_scope_match_sql(
+        'owner_sched.schedule_type',
+        'merge_map.merge_scope'
+    );
+
     return "
         LEFT JOIN (
             SELECT DISTINCT offering_id
@@ -154,7 +170,7 @@ function synk_schedule_merge_scheduled_offering_join_sql(
                 ON owner_sched.offering_id = merge_map.owner_offering_id
                AND (
                     merge_map.merge_scope = 'FULL'
-                    OR owner_sched.schedule_type = merge_map.merge_scope
+                    OR {$scopeMatchSql}
                )
         ) {$scheduleAlias}
             ON {$scheduleAlias}.offering_id = {$offeringAlias}.offering_id
@@ -585,6 +601,74 @@ function synk_schedule_merge_compose_group_label(array $groupRows): string
     $sections = array_keys($fullSections);
     natcasesort($sections);
     return implode('/', $sections);
+}
+
+function synk_schedule_merge_scope_display_context(
+    array $mergeInfo,
+    string $scope,
+    int $offeringId,
+    array $sectionRowsByOffering
+): array {
+    $normalizedScope = synk_schedule_merge_normalize_scope($scope);
+    $groupOfferingIds = [];
+    $memberOfferingIds = [];
+    $mode = 'local';
+
+    $fullGroupOfferingIds = synk_schedule_merge_normalize_offering_ids((array)($mergeInfo['group_offering_ids'] ?? []));
+    if (count($fullGroupOfferingIds) > 1) {
+        $groupOfferingIds = $fullGroupOfferingIds;
+        $mode = 'full';
+    } else {
+        $ownedMemberIdsByScope = (array)($mergeInfo['owned_member_ids_by_scope'] ?? []);
+        $scopeMemberOfferingIds = synk_schedule_merge_normalize_offering_ids((array)($ownedMemberIdsByScope[$normalizedScope] ?? []));
+
+        if (!empty($scopeMemberOfferingIds)) {
+            $groupOfferingIds = synk_schedule_merge_normalize_offering_ids(array_merge([$offeringId], $scopeMemberOfferingIds));
+            $mode = 'scope';
+        }
+    }
+
+    if (empty($groupOfferingIds)) {
+        $groupOfferingIds = synk_schedule_merge_normalize_offering_ids([$offeringId]);
+    }
+
+    foreach ($groupOfferingIds as $groupOfferingId) {
+        if ((int)$groupOfferingId !== $offeringId) {
+            $memberOfferingIds[] = (int)$groupOfferingId;
+        }
+    }
+    $memberOfferingIds = synk_schedule_merge_normalize_offering_ids($memberOfferingIds);
+
+    $groupRows = [];
+    foreach ($groupOfferingIds as $groupOfferingId) {
+        if (isset($sectionRowsByOffering[$groupOfferingId]) && is_array($sectionRowsByOffering[$groupOfferingId])) {
+            $groupRows[$groupOfferingId] = $sectionRowsByOffering[$groupOfferingId];
+        }
+    }
+
+    $memberRows = [];
+    foreach ($memberOfferingIds as $memberOfferingId) {
+        if (isset($sectionRowsByOffering[$memberOfferingId]) && is_array($sectionRowsByOffering[$memberOfferingId])) {
+            $memberRows[$memberOfferingId] = $sectionRowsByOffering[$memberOfferingId];
+        }
+    }
+
+    $groupLabel = synk_schedule_merge_compose_group_label($groupRows);
+    if ($groupLabel === '') {
+        $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+    }
+
+    $memberLabel = synk_schedule_merge_compose_group_label($memberRows);
+
+    return [
+        'scope' => $normalizedScope,
+        'mode' => $mode,
+        'is_merged' => count($groupOfferingIds) > 1,
+        'group_offering_ids' => $groupOfferingIds,
+        'member_offering_ids' => $memberOfferingIds,
+        'group_label' => $groupLabel,
+        'member_label' => $memberLabel
+    ];
 }
 
 function synk_schedule_merge_load_display_context(mysqli $conn, array $offeringIds): array

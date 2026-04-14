@@ -258,6 +258,14 @@ body.swal2-shown .modal {
     justify-content: center;
 }
 
+.schedule-status-note {
+    max-width: 150px;
+    font-size: 0.72rem;
+    line-height: 1.3;
+    color: #5b6f86;
+    text-align: center;
+}
+
 .schedule-status-faculty {
     max-width: 132px;
     font-size: 0.74rem;
@@ -486,6 +494,15 @@ body.swal2-shown .modal {
     color: #946200;
 }
 
+.scheduler-workload-merge-note {
+    display: block;
+    margin-top: 0.28rem;
+    font-size: 0.72rem;
+    font-weight: 600;
+    color: #5b6f86;
+    line-height: 1.25;
+}
+
 .schedule-section-name {
     display: block;
     font-weight: 600;
@@ -656,6 +673,10 @@ body.swal2-shown .modal {
     border-radius: 12px;
     background: #fff;
     padding: 0.95rem 1rem;
+}
+
+.schedule-merge-select-card.is-hidden {
+    display: none;
 }
 
 .schedule-merge-select-title {
@@ -2686,6 +2707,12 @@ body.swal2-shown .modal {
     color: #60718b;
 }
 
+.block-context-merge-note {
+    font-size: 0.76rem;
+    line-height: 1.35;
+    color: #516784;
+}
+
 @media (max-width: 991.98px) {
     .block-schedule-overview {
         grid-template-columns: 1fr;
@@ -3674,7 +3701,10 @@ while ($ay = $ayQ->fetch_assoc()) {
               <span class="modal-context-section" id="block_sched_section_label"></span>
             </div>
             <div class="block-context-toolbar">
-              <div class="block-context-meta" id="block_sched_course_context_label"></div>
+              <div>
+                <div class="block-context-meta" id="block_sched_course_context_label"></div>
+                <div class="block-context-merge-note" id="block_sched_merge_context_label"></div>
+              </div>
               <button type="button" class="btn btn-outline-info btn-sm btn-open-current-section-matrix" id="btnOpenCurrentSectionMatrix" disabled>
                 <i class="bx bx-layout me-1"></i> View Section Schedule
               </button>
@@ -3798,14 +3828,14 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         <div class="schedule-merge-toolbar mb-3">
           <div class="schedule-hint mb-0">
-            Keep the current offering local, inherit the whole subject, or inherit only lecture/laboratory blocks from another saved schedule.
+            Keep the current offering local or inherit lecture/laboratory blocks from another saved section of the same subject. Existing whole-subject merges still appear here so they can be reviewed or cleared.
           </div>
         </div>
 
         <div class="schedule-merge-select-grid" id="scheduleMergeSelectGrid">
-          <div class="schedule-merge-select-card">
+          <div class="schedule-merge-select-card" id="scheduleMergeFullCard">
             <div class="schedule-merge-select-title">Whole Subject</div>
-            <div class="schedule-merge-select-note">Use this when the full class offering should inherit lecture and laboratory together from the same subject offering.</div>
+            <div class="schedule-merge-select-note">Shown only when this offering already has a saved whole-subject merge, so you can review or clear it carefully.</div>
             <select class="form-select mt-3" id="scheduleMergeFullSelect" disabled>
               <option value="">Keep this offering local</option>
             </select>
@@ -3814,7 +3844,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
           <div class="schedule-merge-select-card">
             <div class="schedule-merge-select-title">Lecture Only</div>
-            <div class="schedule-merge-select-note">Use this when only the lecture schedule should be inherited while laboratory remains local or uses another source.</div>
+            <div class="schedule-merge-select-note">Choose a lecture source from another saved section of the same subject while laboratory stays local or uses another source.</div>
             <select class="form-select mt-3" id="scheduleMergeLecSelect" disabled>
               <option value="">Keep lecture local</option>
             </select>
@@ -3823,7 +3853,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
           <div class="schedule-merge-select-card">
             <div class="schedule-merge-select-title">Laboratory Only</div>
-            <div class="schedule-merge-select-note">Use this when only the laboratory schedule should be inherited while lecture remains local or uses another source.</div>
+            <div class="schedule-merge-select-note">Choose a laboratory source from another saved section of the same subject while lecture remains local or uses another source.</div>
             <select class="form-select mt-3" id="scheduleMergeLabSelect" disabled>
               <option value="">Keep laboratory local</option>
             </select>
@@ -4467,6 +4497,7 @@ while ($ay = $ayQ->fetch_assoc()) {
     function schedulerWorkloadDescriptionHtml(row, options = {}) {
         const description = escapeHtml(row?.desc || "");
         const inlineNotes = [];
+        const mergeNote = String(row?.merge_note || "").trim();
 
         if (options.isPaired) {
             const type = String(row?.type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC";
@@ -4478,10 +4509,17 @@ while ($ay = $ayQ->fetch_assoc()) {
         }
 
         if (inlineNotes.length === 0) {
-            return description;
+            return mergeNote !== ""
+                ? `${description}<span class="scheduler-workload-merge-note">${escapeHtml(mergeNote)}</span>`
+                : description;
         }
 
-        return `${description}<span class="scheduler-workload-inline-note">${inlineNotes.join("")}</span>`;
+        let html = `${description}<span class="scheduler-workload-inline-note">${inlineNotes.join("")}</span>`;
+        if (mergeNote !== "") {
+            html += `<span class="scheduler-workload-merge-note">${escapeHtml(mergeNote)}</span>`;
+        }
+
+        return html;
     }
 
     function resetSchedulerFacultyWorkloadTotals() {
@@ -7935,11 +7973,47 @@ while ($ay = $ayQ->fetch_assoc()) {
         ].filter(Boolean).join(" | ");
     }
 
+    function buildScheduleBlockMergeContext(state) {
+        if (!state) {
+            return "";
+        }
+
+        const requiredTypes = Array.isArray(state.requiredTypes) && state.requiredTypes.length > 0
+            ? state.requiredTypes.map(type => normalizeScheduleBlockType(type))
+            : (Number($("#block_sched_lab_units").val() || 0) > 0 ? ["LEC", "LAB"] : ["LEC"]);
+        const sourceByType = {};
+
+        (state.blocks || []).forEach(block => {
+            const type = normalizeScheduleBlockType(block.type);
+            if (!block.is_inherited || sourceByType[type]) {
+                return;
+            }
+
+            sourceByType[type] = String(block.source_label || "").trim();
+        });
+
+        const hasInheritedType = requiredTypes.some(type => Boolean(sourceByType[type]));
+        if (!hasInheritedType) {
+            return "";
+        }
+
+        return requiredTypes.map(type => {
+            const scopeLabel = type === "LAB" ? "Laboratory" : "Lecture";
+            const sourceLabel = String(sourceByType[type] || "").trim();
+            if (sourceLabel) {
+                return `${scopeLabel} inherited from ${sourceLabel}`;
+            }
+
+            return `${scopeLabel} stays local`;
+        }).filter(Boolean).join(". ") + ".";
+    }
+
     function renderScheduleBlockContext() {
         const hasState = Boolean(scheduleBlockState && scheduleBlockState.offeringId);
         $("#block_sched_subject_label").text(hasState ? String(scheduleBlockState.subjectLabel || "") : "");
         $("#block_sched_section_label").text(hasState ? String(scheduleBlockState.sectionLabel || "") : "");
         $("#block_sched_course_context_label").text(hasState ? buildScheduleBlockContextMeta(scheduleBlockState) : "");
+        $("#block_sched_merge_context_label").text(hasState ? buildScheduleBlockMergeContext(scheduleBlockState) : "");
         $("#btnOpenCurrentSectionMatrix").prop("disabled", !hasState);
         $("#block_sched_context_shell").toggleClass("d-none", !hasState);
     }
@@ -8007,6 +8081,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         programCode: String(res.program_code || "").trim(),
                         yearLevel: parseInt(res.year_level, 10) || 0,
                         yearLabel: String(res.year_label || formatYearLevelLabel(res.year_level)).trim(),
+                        requiredTypes,
                         editableTypes,
                         inheritedTypes: Array.isArray(res.inherited_types) ? res.inherited_types : [],
                         blocks,
@@ -8053,6 +8128,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         $("#scheduleMergeOwnerMeta").text("");
         $("#scheduleMergeOwnerHint").text("");
         $("#scheduleMergeBlockingNotice").addClass("d-none").html("");
+        $("#scheduleMergeFullCard").addClass("is-hidden");
         $("#scheduleMergeFullSelect").html('<option value="">Keep this offering local</option>').prop("disabled", true);
         $("#scheduleMergeLecSelect").html('<option value="">Keep lecture local</option>').prop("disabled", true);
         $("#scheduleMergeLabSelect").html('<option value="">Keep laboratory local</option>').prop("disabled", true);
@@ -8100,6 +8176,12 @@ while ($ay = $ayQ->fetch_assoc()) {
         $(selector).prop("disabled", options.length === 0);
     }
 
+    function syncScheduleMergeScopeVisibility() {
+        const hadFullSelection = Number(scheduleMergeState?.current?.FULL || 0) > 0;
+        const hasFullSelection = Number($("#scheduleMergeFullSelect").val() || 0) > 0;
+        $("#scheduleMergeFullCard").toggleClass("is-hidden", !(hadFullSelection || hasFullSelection));
+    }
+
     function updateScheduleMergeScopeStatus(scope, selector, statusSelector, emptyMessage) {
         const selectedId = Number($(selector).val() || 0);
         const option = findScheduleMergeOption(scope, selectedId);
@@ -8126,6 +8208,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         const requiredTypes = Array.isArray(scheduleMergeState?.target?.required_types) ? scheduleMergeState.target.required_types : ["LEC"];
         const isBlocked = blockingMessages.length > 0;
 
+        syncScheduleMergeScopeVisibility();
         $("#scheduleMergeFullSelect").prop("disabled", isBlocked || $("#scheduleMergeFullSelect option").length <= 1);
         $("#scheduleMergeLecSelect").prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LEC") || $("#scheduleMergeLecSelect option").length <= 1);
         $("#scheduleMergeLabSelect").prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LAB") || $("#scheduleMergeLabSelect option").length <= 1);
@@ -8191,7 +8274,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                 $("#scheduleMergeOwnerTitle").text(ownerTitle || "Current offering");
                 $("#scheduleMergeOwnerMeta").text(metaParts.join(" | "));
-                $("#scheduleMergeOwnerHint").text("Choose whether this offering stays local, inherits a whole same-subject schedule, or inherits only lecture/laboratory blocks.");
+                $("#scheduleMergeOwnerHint").text("Choose lecture or laboratory sources from matching sections of the same subject. Inherited blocks stay view-only in the schedule editor.");
 
                 const blockingMessages = getScheduleMergeBlockingMessages(res);
                 if (blockingMessages.length > 0) {
@@ -11037,7 +11120,7 @@ $("#blockScheduleModal").on("hidden.bs.modal", function () {
     abortScheduleBlockFacultyRequests();
 
     scheduleBlockState = null;
-    $("#block_sched_subject_label, #block_sched_section_label, #block_sched_course_context_label").text("");
+    $("#block_sched_subject_label, #block_sched_section_label, #block_sched_course_context_label, #block_sched_merge_context_label").text("");
     $("#block_sched_context_shell").addClass("d-none");
     $("#scheduleBlockList").empty();
     $("#scheduleBlockCoverageSummary").html("<strong>Schedule coverage will appear here.</strong>");

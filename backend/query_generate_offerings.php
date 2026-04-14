@@ -51,6 +51,16 @@ function build_curriculum_label(array $row): string
     return $prospectusId > 0 ? ('Prospectus #' . $prospectusId) : '';
 }
 
+function generator_db_error_message(mysqli $conn, string $message): string
+{
+    $dbError = trim((string)$conn->error);
+    if ($dbError === '') {
+        return $message;
+    }
+
+    return $message . ' Database error: ' . $dbError;
+}
+
 function load_program_term_context(mysqli $conn, int $programId, int $ayId, int $semester, int $collegeId): array
 {
     $ctx = [
@@ -475,7 +485,7 @@ try {
     ");
 
     if (!$existingStmt) {
-        throw new RuntimeException('Unable to inspect existing offerings.');
+        throw new RuntimeException(generator_db_error_message($conn, 'Unable to inspect existing offerings.'));
     }
 
     $existingStmt->bind_param('iii', $programId, $ayId, $semester);
@@ -506,7 +516,7 @@ try {
     ");
 
     if (!$insertStmt || !$syncStmt) {
-        throw new RuntimeException('Unable to prepare offering sync statements.');
+        throw new RuntimeException(generator_db_error_message($conn, 'Unable to prepare offering sync statements.'));
     }
 
     $inserted = 0;
@@ -611,7 +621,7 @@ try {
     ");
 
     if (!$toActive) {
-        throw new RuntimeException('Unable to update active offering statuses.');
+        throw new RuntimeException(generator_db_error_message($conn, 'Unable to update active offering statuses.'));
     }
 
     $toActive->bind_param('iii', $programId, $ayId, $semester);
@@ -632,7 +642,7 @@ try {
     ");
 
     if (!$toPending) {
-        throw new RuntimeException('Unable to update pending offering statuses.');
+        throw new RuntimeException(generator_db_error_message($conn, 'Unable to update pending offering statuses.'));
     }
 
     $toPending->bind_param('iii', $programId, $ayId, $semester);

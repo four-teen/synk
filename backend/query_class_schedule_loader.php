@@ -95,6 +95,28 @@ function class_schedule_loader_context_key_from_values(int $groupId, int $schedu
     return 'offering:' . $offeringId;
 }
 
+function class_schedule_loader_merge_note(array $scopeDisplay): string
+{
+    if (empty($scopeDisplay['is_merged'])) {
+        return '';
+    }
+
+    $targetLabel = trim((string)($scopeDisplay['member_label'] ?? ''));
+    if ($targetLabel === '') {
+        $targetLabel = trim((string)($scopeDisplay['group_label'] ?? ''));
+    }
+
+    if (($scopeDisplay['mode'] ?? 'local') === 'full') {
+        return $targetLabel !== '' ? ('Merged subject with ' . $targetLabel) : 'Merged subject';
+    }
+
+    $scopeLabel = strtoupper(trim((string)($scopeDisplay['scope'] ?? 'LEC'))) === 'LAB'
+        ? 'Merged laboratory'
+        : 'Merged lecture';
+
+    return $targetLabel !== '' ? ($scopeLabel . ' with ' . $targetLabel) : $scopeLabel;
+}
+
 /* =====================================================
    MAIN QUERY
    PURPOSE:
@@ -203,6 +225,21 @@ while ($row = $res->fetch_assoc()) {
 }
 
 $mergeContext = synk_schedule_merge_load_display_context($conn, array_keys($offeringIds));
+$mergeSectionLookupIds = array_keys($offeringIds);
+foreach ($mergeContext as $info) {
+    foreach ((array)($info['group_offering_ids'] ?? []) as $groupOfferingId) {
+        $mergeSectionLookupIds[] = (int)$groupOfferingId;
+    }
+
+    $ownedMemberIdsByScope = (array)($info['owned_member_ids_by_scope'] ?? []);
+    foreach (['LEC', 'LAB'] as $scope) {
+        foreach ((array)($ownedMemberIdsByScope[$scope] ?? []) as $groupOfferingId) {
+            $mergeSectionLookupIds[] = (int)$groupOfferingId;
+        }
+    }
+}
+$mergeSectionLookupIds = synk_schedule_merge_normalize_offering_ids($mergeSectionLookupIds);
+$sectionRowsByOffering = synk_schedule_merge_load_section_rows_by_offering($conn, $mergeSectionLookupIds);
 
 $data = [];
 $contextTotals = [];
@@ -269,14 +306,42 @@ foreach ($rawRows as $row) {
         $contextTotals[$contextKey] ?? []
     );
     $mergeInfo = $mergeContext[(int)($row['offering_id'] ?? 0)] ?? null;
-    $sectionDisplay = (string)($row['section_name'] ?? '');
+    $scopeDisplay = synk_schedule_merge_scope_display_context(
+        (array)$mergeInfo,
+        (string)($row['schedule_type'] ?? 'LEC'),
+        (int)($row['offering_id'] ?? 0),
+        $sectionRowsByOffering
+    );
+    $sectionDisplay = trim((string)($row['full_section'] ?? ''));
+    if ($sectionDisplay === '') {
+        $sectionDisplay = trim((string)($row['section_name'] ?? ''));
+    }
     $mergedCourseLabel = '';
+    $mergeNote = class_schedule_loader_merge_note($scopeDisplay);
 
-    if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
-        $mergedCourseLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+    if (!empty($scopeDisplay['is_merged'])) {
+        $mergedCourseLabel = trim((string)($scopeDisplay['group_label'] ?? ''));
         if ($mergedCourseLabel !== '') {
             $sectionDisplay = $mergedCourseLabel;
         }
+    }
+
+    if ($sectionDisplay === '') {
+        $sectionDisplay = trim((string)($row['section_name'] ?? ''));
+    }
+
+    if ($sectionDisplay === '' && isset($sectionRowsByOffering[(int)($row['offering_id'] ?? 0)])) {
+        $sectionDisplay = trim((string)($sectionRowsByOffering[(int)($row['offering_id'] ?? 0)]['full_section'] ?? ''));
+    }
+
+    if ($sectionDisplay === '') {
+        $sectionDisplay = 'Section ' . (int)($row['offering_id'] ?? 0);
+    }
+
+    if ($mergeNote === '' && !empty($scopeDisplay['is_merged'])) {
+        $mergeNote = ($scopeDisplay['mode'] ?? 'local') === 'full'
+            ? 'Merged subject'
+            : (strtoupper(trim((string)($scopeDisplay['scope'] ?? 'LEC'))) === 'LAB' ? 'Merged laboratory' : 'Merged lecture');
     }
 
     $data[] = [
@@ -286,9 +351,13 @@ foreach ($rawRows as $row) {
         'schedule_type' => (string)($row['schedule_type'] ?? 'LEC'),
         'subject_code' => (string)($row['subject_code'] ?? ''),
         'subject_description' => (string)($row['subject_description'] ?? ''),
-        'section_name' => $sectionDisplay,
+        'section_name' => (string)($row['section_name'] ?? ''),
+        'section_label' => $sectionDisplay,
         'full_section' => (string)($row['full_section'] ?? ''),
         'merged_course_label' => $mergedCourseLabel,
+        'merge_note' => $mergeNote,
+        'is_scope_merged' => !empty($scopeDisplay['is_merged']),
+        'merge_scope_mode' => (string)($scopeDisplay['mode'] ?? 'local'),
         'days_arr' => array_values((array)($row['days_arr'] ?? [])),
         'time_start' => (string)($row['time_start'] ?? ''),
         'time_end' => (string)($row['time_end'] ?? ''),

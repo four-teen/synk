@@ -52,6 +52,30 @@ function workload_context_key_from_values(int $groupId, int $scheduleId, int $of
     return 'offering:' . $offeringId;
 }
 
+function workload_scope_type_label(string $scope): string
+{
+    return strtoupper(trim($scope)) === 'LAB' ? 'Merged laboratory' : 'Merged lecture';
+}
+
+function workload_merge_scope_note(array $scopeDisplay): string
+{
+    if (empty($scopeDisplay['is_merged'])) {
+        return '';
+    }
+
+    $targetLabel = trim((string)($scopeDisplay['member_label'] ?? ''));
+    if ($targetLabel === '') {
+        $targetLabel = trim((string)($scopeDisplay['group_label'] ?? ''));
+    }
+
+    if (($scopeDisplay['mode'] ?? 'local') === 'full') {
+        return $targetLabel !== '' ? ('Merged subject with ' . $targetLabel) : 'Merged subject';
+    }
+
+    $scopeLabel = workload_scope_type_label((string)($scopeDisplay['scope'] ?? 'LEC'));
+    return $targetLabel !== '' ? ($scopeLabel . ' with ' . $targetLabel) : $scopeLabel;
+}
+
 $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
@@ -157,12 +181,36 @@ while ($row = $res->fetch_assoc()) {
 $stmt->close();
 
 $mergeContext = synk_schedule_merge_load_display_context($conn, array_keys($offeringIds));
+$mergeSectionLookupIds = array_keys($offeringIds);
+foreach ($mergeContext as $info) {
+    foreach ((array)($info['group_offering_ids'] ?? []) as $groupOfferingId) {
+        $mergeSectionLookupIds[] = (int)$groupOfferingId;
+    }
+
+    $ownedMemberIdsByScope = (array)($info['owned_member_ids_by_scope'] ?? []);
+    foreach (['LEC', 'LAB'] as $scope) {
+        foreach ((array)($ownedMemberIdsByScope[$scope] ?? []) as $groupOfferingId) {
+            $mergeSectionLookupIds[] = (int)$groupOfferingId;
+        }
+    }
+}
+$mergeSectionLookupIds = synk_schedule_merge_normalize_offering_ids($mergeSectionLookupIds);
+$sectionRowsByOffering = synk_schedule_merge_load_section_rows_by_offering($conn, $mergeSectionLookupIds);
+
 $studentLookupIds = array_keys($offeringIds);
 foreach ($mergeContext as $info) {
     foreach ((array)($info['group_offering_ids'] ?? []) as $groupOfferingId) {
         $studentLookupIds[] = (int)$groupOfferingId;
     }
+
+    $ownedMemberIdsByScope = (array)($info['owned_member_ids_by_scope'] ?? []);
+    foreach (['LEC', 'LAB'] as $scope) {
+        foreach ((array)($ownedMemberIdsByScope[$scope] ?? []) as $groupOfferingId) {
+            $studentLookupIds[] = (int)$groupOfferingId;
+        }
+    }
 }
+$studentLookupIds = synk_schedule_merge_normalize_offering_ids($studentLookupIds);
 $studentCountMap = synk_fetch_offering_enrollee_count_map($conn, $studentLookupIds);
 
 $contextTotals = [];
@@ -263,18 +311,55 @@ foreach ($rawRows as $rawRow) {
         $fullSection = trim((string)($rawRow['section'] ?? ''));
     }
     $mergeInfo = $mergeContext[(int)($rawRow['offering_id'] ?? 0)] ?? null;
+    $scopeDisplay = synk_schedule_merge_scope_display_context(
+        (array)$mergeInfo,
+        (string)($rawRow['type'] ?? 'LEC'),
+        (int)($rawRow['offering_id'] ?? 0),
+        $sectionRowsByOffering
+    );
     $courseLabel = $fullSection;
-    $studentCount = synk_offering_enrollee_count_for_map($studentCountMap, (int)$rawRow['offering_id']);
+    $mergeNote = workload_merge_scope_note($scopeDisplay);
+    $studentCount = 0;
 
-    if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
-        $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+    if (!empty($scopeDisplay['is_merged'])) {
+        $groupLabel = trim((string)($scopeDisplay['group_label'] ?? ''));
         if ($groupLabel !== '') {
             $courseLabel = $groupLabel;
         }
+    }
 
-        $studentCount = 0;
-        foreach ((array)($mergeInfo['group_offering_ids'] ?? []) as $groupOfferingId) {
-            $studentCount += synk_offering_enrollee_count_for_map($studentCountMap, (int)$groupOfferingId);
+    $studentOfferingIds = !empty($scopeDisplay['is_merged'])
+        ? (array)($scopeDisplay['group_offering_ids'] ?? [])
+        : [(int)($rawRow['offering_id'] ?? 0)];
+    foreach ($studentOfferingIds as $studentOfferingId) {
+        $studentCount += synk_offering_enrollee_count_for_map($studentCountMap, (int)$studentOfferingId);
+    }
+
+    if ($studentCount <= 0) {
+        $studentCount = synk_offering_enrollee_count_for_map($studentCountMap, (int)($rawRow['offering_id'] ?? 0));
+    }
+
+    if ($courseLabel === '') {
+        $courseLabel = trim((string)($rawRow['section'] ?? ''));
+    }
+
+    if ($courseLabel === '' && isset($sectionRowsByOffering[(int)($rawRow['offering_id'] ?? 0)])) {
+        $courseLabel = trim((string)($sectionRowsByOffering[(int)($rawRow['offering_id'] ?? 0)]['full_section'] ?? ''));
+    }
+
+    if ($courseLabel === '' && !empty($scopeDisplay['group_label'])) {
+        $courseLabel = trim((string)$scopeDisplay['group_label']);
+    }
+
+    if ($courseLabel === '') {
+        $courseLabel = 'Section ' . (int)($rawRow['offering_id'] ?? 0);
+    }
+
+    if ($mergeNote === '' && !empty($scopeDisplay['is_merged'])) {
+        if (($scopeDisplay['mode'] ?? 'local') === 'full') {
+            $mergeNote = 'Merged subject';
+        } else {
+            $mergeNote = workload_scope_type_label((string)($scopeDisplay['scope'] ?? 'LEC'));
         }
     }
 
@@ -288,6 +373,9 @@ foreach ($rawRows as $rawRow) {
         'course' => $courseLabel,
         'section' => (string)$rawRow['section'],
         'type' => (string)$rawRow['type'],
+        'merge_note' => $mergeNote,
+        'is_scope_merged' => !empty($scopeDisplay['is_merged']),
+        'merge_scope_mode' => (string)($scopeDisplay['mode'] ?? 'local'),
         'days_arr' => array_values((array)($rawRow['days_arr'] ?? [])),
         'time_start' => (string)($rawRow['time_start'] ?? ''),
         'time_end' => (string)($rawRow['time_end'] ?? ''),

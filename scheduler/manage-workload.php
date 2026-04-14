@@ -267,52 +267,96 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
         .print-sheet-header {
             display: none;
-            padding-top: 0;
+            position: relative;
+            z-index: 2;
+            width: 100%;
+            max-width: none;
+            margin: 0 0 0.45rem;
+            padding-top: 0.08rem;
             padding-bottom: 0.12rem;
-            margin-bottom: 0.4rem;
         }
 
         .print-sheet-title {
             font-family: Arial, sans-serif;
-            font-size: 0.98rem;
+            font-size: 1.16rem;
             font-weight: 700;
-            letter-spacing: 0.04em;
-            text-transform: uppercase;
+            letter-spacing: 0.02em;
             text-align: center;
             color: #000;
+            line-height: 1.1;
         }
 
         .print-sheet-subtitle {
             font-family: Arial, sans-serif;
-            font-size: 0.78rem;
+            font-size: 0.8rem;
             text-align: center;
             color: #000;
+            margin-top: 0.08rem;
+        }
+
+        .print-sheet-subtitle-spaced {
+            margin-bottom: 0.14rem;
+        }
+
+        .print-sheet-subtitle-line {
+            display: flex;
+            justify-content: center;
+            align-items: flex-end;
+            gap: 0.4rem;
+        }
+
+        .print-inline-label {
+            white-space: nowrap;
         }
 
         .print-sheet-line {
             display: grid;
             grid-template-columns: 1fr 1fr;
-            gap: 1rem;
-            margin-top: 0.18rem;
+            gap: 1rem 1.25rem;
+            margin-top: 0.22rem;
+            width: 100%;
             font-family: Arial, sans-serif;
             font-size: 0.76rem;
             color: #000;
         }
 
+        .print-field {
+            display: grid;
+            grid-template-columns: auto 1fr;
+            gap: 0.35rem;
+            align-items: end;
+        }
+
+        .print-field-label {
+            white-space: nowrap;
+        }
+
         .print-line-value {
             display: inline-block;
-            min-width: 180px;
-            border-bottom: 1px solid #bcc7d3;
+            min-width: 0;
+            width: 100%;
+            border-bottom: 1px solid #000;
             padding: 0 0.18rem 0.08rem;
             line-height: 1.2;
         }
 
         .print-line-value.is-filled {
-            border-bottom-color: transparent;
+            border-bottom-color: #000;
         }
 
         .print-line-value.is-blank {
-            border-bottom-color: #bcc7d3;
+            border-bottom-color: #000;
+        }
+
+        .print-line-value.no-underline {
+            width: auto;
+            border-bottom: none;
+            padding: 0 0.18rem;
+        }
+
+        .print-line-value.no-underline.is-filled,
+        .print-line-value.no-underline.is-blank {
+            border-bottom: none;
         }
 
         .print-sheet-line.single {
@@ -321,6 +365,15 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
         .print-only-block {
             display: none;
+        }
+
+        .print-form-background {
+            display: none;
+            max-width: 100%;
+        }
+
+        .print-workload-body {
+            position: relative;
         }
 
         .print-workload-footer {
@@ -443,6 +496,20 @@ if ($facultyStmt instanceof mysqli_stmt) {
             margin-top: 0.2rem;
             font-size: 0.72rem;
             color: #6f7f96;
+        }
+
+        .print-type-suffix {
+            display: none;
+        }
+
+        .workload-merge-note,
+        .scheduled-merge-note {
+            display: block;
+            margin-top: 0.28rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            color: #556b85;
+            line-height: 1.25;
         }
 
         .type-pill {
@@ -1088,6 +1155,9 @@ if ($facultyStmt instanceof mysqli_stmt) {
                 margin: 0 !important;
                 padding: 0 !important;
                 overflow: hidden !important;
+                background: #fff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
             }
 
             body * {
@@ -1110,11 +1180,15 @@ if ($facultyStmt instanceof mysqli_stmt) {
                 width: 210mm;
                 min-height: 297mm;
                 max-width: 210mm;
-                padding: 16mm 6mm 7mm;
+                padding: 0;
                 box-sizing: border-box;
                 box-shadow: none;
                 border: none;
+                border-radius: 0 !important;
+                background: transparent !important;
                 margin: 0;
+                overflow: hidden;
+                isolation: isolate;
                 page-break-after: avoid !important;
                 break-after: avoid-page !important;
             }
@@ -1123,24 +1197,45 @@ if ($facultyStmt instanceof mysqli_stmt) {
                 display: none !important;
             }
 
+            .print-workload-body {
+                position: relative;
+                z-index: 1;
+                min-height: 297mm;
+                padding: 33mm 8mm 18mm 20mm;
+                box-sizing: border-box;
+            }
+
+            .print-form-background {
+                display: block !important;
+                position: absolute;
+                inset: 0;
+                width: 210mm;
+                height: 297mm;
+                object-fit: fill;
+                z-index: 0;
+            }
+
             #workloadCard .table-responsive {
                 overflow: visible !important;
+                position: relative;
+                z-index: 1;
             }
 
             .print-sheet-header {
                 display: block !important;
-                margin-bottom: 0.45rem;
+                margin: 6.5mm 0 4.5mm;
             }
 
             .workload-table,
             .workload-table th,
             .workload-table td {
-                border: 1px solid #000 !important;
+                border: 1.15px solid #000 !important;
                 color: #000 !important;
                 background: #fff !important;
                 font-family: Arial, sans-serif;
                 font-size: 7.6pt !important;
                 table-layout: fixed;
+                box-shadow: none !important;
             }
 
             .workload-table th,
@@ -1203,6 +1298,8 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
             .workload-table {
                 width: 100% !important;
+                border-collapse: collapse !important;
+                border: 1.35px solid #000 !important;
                 page-break-inside: avoid !important;
                 break-inside: avoid-page !important;
             }
@@ -1215,20 +1312,23 @@ if ($facultyStmt instanceof mysqli_stmt) {
             }
 
             .load-status-inline {
-                display: block;
-                margin-left: 0;
-                margin-top: 2px;
-                padding: 0;
-                border: 0;
-                background: transparent !important;
-                color: #000 !important;
-                font-size: 6.8pt !important;
-                letter-spacing: 0.02em;
+                display: none !important;
+            }
+
+            .schedule-partner-note,
+            .workload-merge-note,
+            .workload-desc .type-pill {
+                display: none !important;
+            }
+
+            .print-type-suffix {
+                display: inline !important;
+                font-weight: 600;
             }
 
             .print-sheet-line,
             .print-sheet-subtitle {
-                font-size: 7.2pt !important;
+                font-size: 8pt !important;
             }
 
             .print-only-block {
@@ -1238,6 +1338,8 @@ if ($facultyStmt instanceof mysqli_stmt) {
             .print-workload-footer {
                 page-break-inside: avoid;
                 break-inside: avoid-page;
+                position: relative;
+                z-index: 1;
             }
 
             .print-signatory,
@@ -1345,25 +1447,40 @@ if ($facultyStmt instanceof mysqli_stmt) {
     </button>
 </div>
 
-<!-- PRINT HEADER (VISIBLE ONLY ON PRINT) -->
-<div id="printHeader" class="print-sheet-header">
-    <div class="print-sheet-title">INDIVIDUAL FACULTY WORKLOAD</div>
-    <div class="print-sheet-subtitle"><span id="printCampus" class="print-line-value <?= trim($campus_name) !== '' ? 'is-filled' : 'is-blank' ?>" style="min-width:220px;"><?= htmlspecialchars($campus_name) ?></span></div>
-    <div class="print-sheet-subtitle"><span id="printSemesterAy" class="print-line-value is-blank" style="min-width:240px;"></span></div>
-    <div class="print-sheet-line">
-        <div>Name: <span id="printFacultyName" class="print-line-value is-blank"></span></div>
-        <div>College: <span id="printCollege" class="print-line-value <?= trim($college_name) !== '' ? 'is-filled' : 'is-blank' ?>"><?= htmlspecialchars($college_name) ?></span></div>
-    </div>
-    <div class="print-sheet-line">
-        <div>Degree: <span class="print-line-value is-blank"></span></div>
-        <div>Major: <span class="print-line-value is-blank"></span></div>
-    </div>
-    <div class="print-sheet-line single">
-        <div>Designation: <span id="printDesignation" class="print-line-value is-blank" style="min-width:300px;"></span></div>
-    </div>
-</div>
+<div class="print-workload-body">
+    <img src="../assets/img/print/individual-faculty-workload-template.png" alt="" class="print-form-background" aria-hidden="true">
 
-    
+    <!-- PRINT HEADER (VISIBLE ONLY ON PRINT) -->
+    <div id="printHeader" class="print-sheet-header">
+        <div class="print-sheet-title">INDIVIDUAL FACULTY WORKLOAD</div>
+        <div class="print-sheet-subtitle">
+            <span id="printCampus" class="print-line-value no-underline <?= trim($campus_name) !== '' ? 'is-filled' : 'is-blank' ?>" style="max-width:58mm; min-width:36mm; text-align:center;"><?= htmlspecialchars($campus_name) ?></span>
+        </div>
+        <div class="print-sheet-subtitle print-sheet-subtitle-spaced">
+            <span id="printSemesterAy" class="print-line-value no-underline is-blank" style="max-width:95mm; min-width:62mm; text-align:center;"></span>
+        </div>
+        <div class="print-sheet-line">
+            <div class="print-field">
+                <span class="print-field-label">Name:</span>
+                <span id="printFacultyName" class="print-line-value is-blank"></span>
+            </div>
+            <div class="print-field">
+                <span class="print-field-label">College:</span>
+                <span id="printCollege" class="print-line-value <?= trim($college_name) !== '' ? 'is-filled' : 'is-blank' ?>"><?= htmlspecialchars($college_name) ?></span>
+            </div>
+        </div>
+        <div class="print-sheet-line">
+            <div class="print-field">
+                <span class="print-field-label">Degree:</span>
+                <span class="print-line-value is-blank"></span>
+            </div>
+            <div class="print-field">
+                <span class="print-field-label">Major:</span>
+                <span class="print-line-value is-blank"></span>
+            </div>
+        </div>
+    </div>
+
     <div class="table-responsive">
         <table class="table table-hover table-sm mb-0 workload-table">
             <thead class="table-light">
@@ -1391,7 +1508,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
         <tr class="workload-summary-row">
             <th colspan="2" class="text-start workload-summary-label">Designation:</th>
             <td colspan="4" class="workload-summary-value" id="designationText"></td>
-            <td></td>
+            <td class="text-center fw-semibold" id="designationUNIT"></td>
             <td></td>
             <td></td>
             <td class="text-center fw-semibold" id="designationLOAD"></td>
@@ -1479,6 +1596,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
             </div>
         </div>
     </div>
+</div>
 </div>
 </div>
 <!-- SCHEDULED CLASSES CARD -->
@@ -2341,6 +2459,7 @@ $(document).ready(function () {
         currentWorkloadRows = [];
         $("#workloadTbody").html(buildLoadingRow(12, message));
         $("#designationText").text("");
+        $("#designationUNIT").text("");
         $("#designationLOAD").text("");
         $("#totalPreparations").text("0");
         $("#totalUNIT").text("0");
@@ -2352,17 +2471,40 @@ $(document).ready(function () {
 
     function buildWorkloadDescription(row, isPaired = false) {
         const description = escapeHtml(row?.desc || "");
-        if (!isPaired) {
+        const mergeNote = String(row?.merge_note || "").trim();
+        const normalizedType = String(row?.type || row?.schedule_type || "").toUpperCase();
+        const typeLabel = normalizedType === "LAB"
+            ? "Lab"
+            : (normalizedType === "LEC" ? "Lec" : "");
+
+        if (!isPaired && !mergeNote && !typeLabel) {
             return description;
         }
 
-        const type = String(row?.type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC";
-        return `
-            ${description}
-            <span class="schedule-partner-note">
-                <span class="type-pill ${type.toLowerCase()}">${type}</span>
-            </span>
-        `;
+        const noteParts = [];
+        if (isPaired) {
+            const type = normalizedType === "LAB" ? "LAB" : "LEC";
+            noteParts.push(`<span class="type-pill ${type.toLowerCase()}">${type}</span>`);
+        }
+
+        let html = description;
+        if (typeLabel) {
+            html += `<span class="print-type-suffix"> (${escapeHtml(typeLabel)})</span>`;
+        }
+
+        if (noteParts.length > 0) {
+            html += `
+                <span class="schedule-partner-note">
+                    ${noteParts.join("")}
+                </span>
+            `;
+        }
+
+        if (mergeNote) {
+            html += `<span class="workload-merge-note">${escapeHtml(mergeNote)}</span>`;
+        }
+
+        return html;
     }
 
     function getDisplayUnits(row) {
@@ -2525,6 +2667,7 @@ $(document).ready(function () {
         setApplyWorkloadButtonsDisabled(true);
         $("#workloadTbody").html("");
         $("#designationText").text("");
+        $("#designationUNIT").text("");
         $("#designationLOAD").text("");
         $("#totalPreparations").text("0");
         $("#totalUNIT").text("0");
@@ -2534,7 +2677,6 @@ $(document).ready(function () {
         $("#totalStudents").text("");
         setPrintField("#printFacultyName", "");
         setPrintField("#printSemesterAy", "");
-        setPrintField("#printDesignation", "");
         setPrintField("#printConforme", "");
         updateApplyWorkloadControls();
         renderFacultyBrowser();
@@ -2621,6 +2763,7 @@ $(document).ready(function () {
                 groupRows.forEach(function (groupRow, groupIndex) {
                     const type = String(groupRow.schedule_type || "").toUpperCase();
                     const sectionLabel = String(
+                        groupRow.section_label ||
                         groupRow.merged_course_label ||
                         groupRow.full_section ||
                         groupRow.section_name ||
@@ -2641,6 +2784,10 @@ $(document).ready(function () {
                     const partnerNote = (groupRows.length > 1 && groupIndex === 0)
                         ? `<span class="scheduled-pair-note" style="--schedule-pair-color: ${pairColor};">Linked lecture/lab partner</span>`
                         : "";
+                    const mergeNote = String(groupRow.merge_note || "").trim();
+                    const mergeNoteHtml = mergeNote !== ""
+                        ? `<span class="scheduled-merge-note">${escapeHtml(mergeNote)}</span>`
+                        : "";
 
                     rows += `
                         <tr class="${rowClass}"${rowStyle}>
@@ -2650,7 +2797,7 @@ $(document).ready(function () {
                                        value="${escapeHtml(groupRow.schedule_id)}">
                             </td>
                             <td>${escapeHtml(groupRow.subject_code)}</td>
-                            <td>${escapeHtml(groupRow.subject_description)}${partnerNote}</td>
+                            <td>${escapeHtml(groupRow.subject_description)}${partnerNote}${mergeNoteHtml}</td>
                             <td>${escapeHtml(sectionLabel)}</td>
                             <td class="text-center">${typeBadge}</td>
                             <td>${escapeHtml(groupRow.days)}</td>
@@ -2737,6 +2884,7 @@ $(document).ready(function () {
                     </tr>
                 `);
                 $("#designationText").text("");
+                $("#designationUNIT").text("");
                 $("#designationLOAD").text("");
                 $("#totalPreparations").text("0");
                 $("#totalUNIT").text("0");
@@ -2746,7 +2894,6 @@ $(document).ready(function () {
                 $("#totalStudents").text("");
                 setPrintField("#printFacultyName", "");
                 setPrintField("#printSemesterAy", "");
-                setPrintField("#printDesignation", "");
                 setPrintField("#printConforme", "");
                 $("#workloadCard").show();
                 applyScheduledClassAvailability();
@@ -2872,16 +3019,18 @@ $(document).ready(function () {
                 Number(meta.total_preparations) || 0,
                 preparationSet.size
             );
+            const grandTotalUnits = totalUNIT + designationUnits;
             const grandTotalLoad = totalLOAD + designationUnits;
             const loadStatus = getLoadStatus(grandTotalLoad);
 
             $("#workloadTbody").html(rows);
             $("#designationText").text(formatDesignationDisplay(meta));
+            $("#designationUNIT").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
             $("#designationLOAD").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
             $("#totalPreparations").text(formatNumber(totalPreparations));
             $("#totalLAB").text(formatNumber(totalLAB));
             $("#totalLEC").text(formatNumber(totalLEC));
-            $("#totalUNIT").text(formatNumber(totalUNIT));
+            $("#totalUNIT").text(formatNumber(grandTotalUnits));
             $("#totalLOADCell").html(`
                 <span class="total-load-value">${escapeHtml(formatNumber(grandTotalLoad))}</span>
                 ${loadStatus.label ? `<span class="load-status-inline ${escapeHtml(loadStatus.className)}">${escapeHtml(loadStatus.label)}</span>` : ""}
@@ -2890,7 +3039,6 @@ $(document).ready(function () {
 
             setPrintField("#printFacultyName", context.facultyName);
             setPrintField("#printSemesterAy", context.semesterUi + " Semester | AY " + context.ayText);
-            setPrintField("#printDesignation", formatDesignationDisplay(meta));
             setPrintField("#printConforme", context.facultyName, { uppercase: true });
 
             $("#workloadCard").show();
@@ -2910,7 +3058,6 @@ $(document).ready(function () {
             `);
             setPrintField("#printFacultyName", "");
             setPrintField("#printSemesterAy", "");
-            setPrintField("#printDesignation", "");
             setPrintField("#printConforme", "");
             $("#workloadCard").show();
             applyScheduledClassAvailability();
