@@ -1274,10 +1274,15 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
     <!-- SELECT FACULTY -->
     <div class="card mb-4">
-        <div class="card-header">
+    <div class="card-header d-flex flex-wrap justify-content-between align-items-center gap-2">
+        <div>
             <h5 class="m-0">Assign Workload</h5>
             <small class="text-muted">Assign scheduled lecture and laboratory entries to faculty.</small>
         </div>
+        <button type="button" class="btn btn-outline-danger btn-sm screen-only" id="btnClearCollegeWorkload">
+            <i class="bx bx-trash me-1"></i> Remove All Assigned Workload
+        </button>
+    </div>
         <div class="card-body">
 
             <div class="row g-3 align-items-end">
@@ -1983,6 +1988,96 @@ $(document).ready(function () {
         });
 
         return dfd.promise();
+    }
+
+    function clearAllCollegeWorkloadInScope() {
+        const termContext = getFacultyBrowserTermContext();
+        if (!termContext) {
+            Swal.fire("Missing Term", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        const collegeLabel = String(WORKLOAD_COLLEGE_NAME || "current college").trim() || "current college";
+        const termLabel = `${termContext.semesterUi} Semester | AY ${termContext.ayText}`;
+        const button = $("#btnClearCollegeWorkload");
+        const originalHtml = button.html();
+
+        Swal.fire({
+            icon: "warning",
+            title: "Remove all assigned workload?",
+            html: [
+                `This will remove <b>all assigned faculty workload</b> for <b>${escapeHtml(collegeLabel)}</b>.`,
+                `Scope: <b>${escapeHtml(termLabel)}</b> only.`,
+                "This will not change other colleges."
+            ].join("<br><br>"),
+            showCancelButton: true,
+            confirmButtonText: "Yes, remove all",
+            confirmButtonColor: "#dc3545",
+            cancelButtonText: "Cancel",
+            allowOutsideClick: false
+        }).then(function (result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            button
+                .prop("disabled", true)
+                .html('<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Removing...');
+
+            Swal.fire({
+                title: "Removing Assigned Workload...",
+                html: `Please wait while workload rows for <b>${escapeHtml(collegeLabel)}</b> are being removed.`,
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                didOpen: function () {
+                    Swal.showLoading();
+                }
+            });
+
+            $.ajax({
+                url: "../backend/query_remove_all_college_workload.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    ay_id: termContext.ayId,
+                    semester: termContext.semesterNum
+                }
+            }).done(function (response) {
+                Swal.close();
+
+                if (!response || response.status !== "ok") {
+                    Swal.fire(
+                        "Error",
+                        (response && response.message) ? response.message : "Failed to remove college workload.",
+                        "error"
+                    );
+                    return;
+                }
+
+                clearFacultyOverviewCache();
+                if (getFacultyOptionList().length > 0) {
+                    loadFacultyOverview(true);
+                } else {
+                    renderFacultyBrowser();
+                }
+
+                if (getSelectedContext()) {
+                    refreshWorkloadPanels();
+                }
+
+                const deletedCount = Number(response.deleted_count) || 0;
+                Swal.fire(
+                    deletedCount > 0 ? "Workload Removed" : "Nothing to Remove",
+                    response.message || "College workload has been updated.",
+                    deletedCount > 0 ? "success" : "info"
+                );
+            }).fail(function (xhr) {
+                Swal.close();
+                Swal.fire("Error", xhr.responseText || "Failed to remove college workload.", "error");
+            }).always(function () {
+                button.prop("disabled", false).html(originalHtml);
+            });
+        });
     }
 
     function formatCompactTime(value) {
@@ -2874,6 +2969,10 @@ $(document).ready(function () {
                 button.prop("disabled", false);
             });
         });
+    });
+
+    $("#btnClearCollegeWorkload").on("click", function () {
+        clearAllCollegeWorkloadInScope();
     });
 
     /* =========================================================

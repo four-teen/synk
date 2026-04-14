@@ -110,6 +110,15 @@ function schedule_section_cell_html(array $row, string $sortBy): string
             "</span>";
     }
 
+    $inheritedTypes = array_values(array_filter(array_map(static function ($type): string {
+        return synk_normalize_schedule_type((string)$type);
+    }, (array)($merge['inherited_types'] ?? []))));
+    if (!empty($inheritedTypes) && empty($merge['is_merged_member'])) {
+        $html .= "<span class='schedule-section-meta'>" .
+            htmlspecialchars('Inherited: ' . implode(', ', $inheritedTypes), ENT_QUOTES, 'UTF-8') .
+            "</span>";
+    }
+
     return $html;
 }
 
@@ -227,6 +236,9 @@ function render_offering_status_cell_html(array $row, array $status): string
 {
     $merge = is_array($row['merge'] ?? null) ? $row['merge'] : [];
     $badges = [];
+    $inheritedTypes = array_values(array_filter(array_map(static function ($type): string {
+        return synk_normalize_schedule_type((string)$type);
+    }, (array)($merge['inherited_types'] ?? []))));
 
     if (!empty($merge['is_merged_member'])) {
         $badges[] = "<span class='badge bg-label-info text-info'>Merged</span>";
@@ -243,6 +255,12 @@ function render_offering_status_cell_html(array $row, array $status): string
         $badges[] = "<span class='badge bg-label-info text-info'>Merged x" . (int)($merge['group_size'] ?? 1) . "</span>";
     } else {
         $badges[] = $status['badge'];
+
+        foreach ($inheritedTypes as $type) {
+            $tone = $type === 'LAB' ? 'success' : 'primary';
+            $label = $type === 'LAB' ? 'LAB Inherited' : 'LEC Inherited';
+            $badges[] = "<span class='badge bg-label-{$tone} text-{$tone}'>{$label}</span>";
+        }
     }
 
     $html = [];
@@ -289,11 +307,17 @@ function render_schedule_action_cell_html(array $row, array $status): string
     $isMergedMember = !empty($merge['is_merged_member']);
     $groupSize = (int)($merge['group_size'] ?? 1);
     $groupLabel = trim((string)($merge['group_course_label'] ?? ''));
-    $mergeButtonLabel = $groupSize > 1 ? 'Manage Merge' : 'Merge';
+    $inheritedTypes = array_values(array_filter(array_map(static function ($type): string {
+        return synk_normalize_schedule_type((string)$type);
+    }, (array)($merge['inherited_types'] ?? []))));
+    $requiredTypes = ((float)($row['lab_units'] ?? 0) > 0) ? ['LEC', 'LAB'] : ['LEC'];
+    $allRequiredInherited = !empty($requiredTypes) && count(array_intersect($requiredTypes, $inheritedTypes)) === count($requiredTypes);
+    $hasOutgoingPartialMerges = !empty((array)($merge['owned_member_ids_by_scope']['LEC'] ?? [])) || !empty((array)($merge['owned_member_ids_by_scope']['LAB'] ?? []));
+    $mergeButtonLabel = ($groupSize > 1 || !empty($inheritedTypes) || $hasOutgoingPartialMerges) ? 'Manage' : 'Merge';
 
-    $scheduleButtonClass = $isMergedMember ? 'btn-outline-secondary' : (string)$status['button_class'];
-    $scheduleButtonLabel = $isMergedMember ? 'Inherited' : (string)$status['button_label'];
-    $scheduleButtonDisabled = $isMergedMember ? ' disabled' : '';
+    $scheduleButtonDisabled = ($isMergedMember || $allRequiredInherited) ? ' disabled' : '';
+    $scheduleButtonClass = ($isMergedMember || $allRequiredInherited) ? 'btn-outline-secondary' : (string)$status['button_class'];
+    $scheduleButtonLabel = ($isMergedMember || $allRequiredInherited) ? 'Inherited' : (string)$status['button_label'];
 
     $sectionName = (string)($row['section_name'] ?? '');
     $sectionLabel = (string)($row['schedule_modal_section_label'] ?? ('Section: ' . $sectionName));
@@ -340,7 +364,11 @@ function default_merge_context_for_offering(int $offeringId, array $row): array
         'group_course_label' => (string)($row['full_section'] ?? ''),
         'full_section' => (string)($row['full_section'] ?? ''),
         'section_name' => (string)($row['section_name'] ?? ''),
-        'program_code' => (string)($row['program_code'] ?? '')
+        'program_code' => (string)($row['program_code'] ?? ''),
+        'incoming_scope_owner_ids' => ['FULL' => 0, 'LEC' => 0, 'LAB' => 0],
+        'effective_owner_by_type' => ['LEC' => $offeringId, 'LAB' => $offeringId],
+        'inherited_types' => [],
+        'owned_member_ids_by_scope' => ['FULL' => [], 'LEC' => [], 'LAB' => []]
     ];
 }
 
@@ -408,6 +436,39 @@ function load_schedule_rows_by_offering(mysqli $conn, array $offeringIds): array
             'time_end' => (string)($row['time_end'] ?? ''),
             'room_label' => $roomLabel
         ];
+    }
+
+    return $rowsByOffering;
+}
+
+function load_effective_schedule_rows_by_offering(mysqli $conn, array $offeringIds): array
+{
+    $rowsByOffering = [];
+    $normalizedIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($normalizedIds)) {
+        return $rowsByOffering;
+    }
+
+    $effectiveOwnerMap = synk_schedule_merge_load_effective_owner_map($conn, $normalizedIds);
+    $sourceIds = synk_schedule_merge_collect_effective_owner_ids($effectiveOwnerMap);
+    $sourceRowsByOffering = load_schedule_rows_by_offering($conn, $sourceIds);
+
+    foreach ($normalizedIds as $offeringId) {
+        $rowsByOffering[$offeringId] = [];
+
+        foreach (synk_schedule_merge_schedule_types() as $type) {
+            $sourceOfferingId = (int)($effectiveOwnerMap[$offeringId][$type] ?? $offeringId);
+            foreach ((array)($sourceRowsByOffering[$sourceOfferingId] ?? []) as $row) {
+                if (synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')) !== $type) {
+                    continue;
+                }
+
+                $rowsByOffering[$offeringId][] = array_merge($row, [
+                    'source_offering_id' => $sourceOfferingId,
+                    'is_inherited' => $sourceOfferingId !== $offeringId
+                ]);
+            }
+        }
     }
 
     return $rowsByOffering;
@@ -596,37 +657,44 @@ while ($row = $res->fetch_assoc()) {
 $stmt->close();
 
 $mergeContext = synk_schedule_merge_load_display_context($conn, $offeringOrder);
-$ownerIds = [];
-
-foreach ($offeringOrder as $offeringId) {
-    $mergeInfo = $mergeContext[$offeringId] ?? default_merge_context_for_offering($offeringId, $offeringsById[$offeringId]);
-    $ownerIds[] = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
-}
-
-$ownerIds = synk_schedule_merge_normalize_offering_ids($ownerIds);
-$scheduleRowsByOffering = load_schedule_rows_by_offering($conn, $ownerIds);
-$workloadFacultyMap = load_workload_faculty_assignments_for_offerings($conn, $ownerIds, (int)$ay_id, (int)$semester);
-$ownerSectionRows = synk_schedule_merge_load_section_rows_by_offering($conn, $ownerIds);
+$effectiveOwnerMap = synk_schedule_merge_load_effective_owner_map($conn, $offeringOrder);
+$effectiveSourceIds = synk_schedule_merge_collect_effective_owner_ids($effectiveOwnerMap);
+$scheduleRowsByOffering = load_effective_schedule_rows_by_offering($conn, $offeringOrder);
+$workloadFacultyMap = load_workload_faculty_assignments_for_offerings($conn, $effectiveSourceIds, (int)$ay_id, (int)$semester);
+$ownerSectionRows = synk_schedule_merge_load_section_rows_by_offering($conn, $effectiveSourceIds);
 
 foreach ($offeringOrder as $offeringId) {
     $row = $offeringsById[$offeringId];
     $mergeInfo = $mergeContext[$offeringId] ?? default_merge_context_for_offering($offeringId, $row);
     $ownerOfferingId = (int)($mergeInfo['owner_offering_id'] ?? $offeringId);
-    $ownerSection = $ownerSectionRows[$ownerOfferingId] ?? [
+    $effectiveOwnersByType = (array)($effectiveOwnerMap[$offeringId] ?? []);
+    $effectiveSourceIdsForRow = synk_schedule_merge_normalize_offering_ids(array_values($effectiveOwnersByType));
+    $primarySourceOfferingId = !empty($effectiveSourceIdsForRow) ? (int)$effectiveSourceIdsForRow[0] : $offeringId;
+    $ownerSection = $ownerSectionRows[$primarySourceOfferingId] ?? [
         'full_section' => (string)($row['full_section'] ?? ''),
         'section_name' => (string)($row['section_name'] ?? '')
     ];
     $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
 
-    $row['entries'] = $scheduleRowsByOffering[$ownerOfferingId] ?? [];
-    $row['workload_faculty_assignments'] = $workloadFacultyMap[$ownerOfferingId] ?? [];
+    $row['entries'] = $scheduleRowsByOffering[$offeringId] ?? [];
+    $facultyAssignments = [];
+    foreach ($effectiveSourceIdsForRow as $sourceOfferingId) {
+        foreach ((array)($workloadFacultyMap[$sourceOfferingId] ?? []) as $assignment) {
+            $facultyId = (int)($assignment['faculty_id'] ?? 0);
+            if ($facultyId <= 0) {
+                continue;
+            }
+            $facultyAssignments[$facultyId] = $assignment;
+        }
+    }
+    $row['workload_faculty_assignments'] = array_values($facultyAssignments);
     $row['workload_faculty_names'] = array_values(array_filter(array_map(
         static function ($assignment): string {
             return trim((string)($assignment['faculty_name'] ?? ''));
         },
         (array)($row['workload_faculty_assignments'] ?? [])
     )));
-    $row['schedule_owner_offering_id'] = $ownerOfferingId;
+    $row['schedule_owner_offering_id'] = $primarySourceOfferingId;
     $row['schedule_modal_section_label'] = ((int)($mergeInfo['group_size'] ?? 1) > 1 && $groupLabel !== '')
         ? ('Merged Group: ' . $groupLabel)
         : ('Section: ' . (string)($row['section_name'] ?? ''));
@@ -636,7 +704,10 @@ foreach ($offeringOrder as $offeringId) {
         'is_merged_member' => !empty($mergeInfo['is_merged_member']),
         'has_merged_members' => !empty($mergeInfo['has_merged_members']),
         'group_size' => (int)($mergeInfo['group_size'] ?? 1),
-        'group_course_label' => $groupLabel
+        'group_course_label' => $groupLabel,
+        'inherited_types' => array_values((array)($mergeInfo['inherited_types'] ?? [])),
+        'owned_member_ids_by_scope' => (array)($mergeInfo['owned_member_ids_by_scope'] ?? []),
+        'effective_owner_by_type' => (array)($mergeInfo['effective_owner_by_type'] ?? ['LEC' => $offeringId, 'LAB' => $offeringId])
     ];
 
     $offeringsById[$offeringId] = $row;
@@ -709,7 +780,7 @@ foreach ($grouped as $offerings) {
                 $roomText,
                 (int)$entry['room_id'],
                 $type,
-                (int)$row['schedule_owner_offering_id']
+                (int)($entry['source_offering_id'] ?? $row['schedule_owner_offering_id'])
             );
         }
 

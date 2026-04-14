@@ -7,6 +7,22 @@ function synk_schedule_merge_table_name(): string
     return 'tbl_class_schedule_merge';
 }
 
+function synk_schedule_merge_scope_values(): array
+{
+    return ['FULL', 'LEC', 'LAB'];
+}
+
+function synk_schedule_merge_schedule_types(): array
+{
+    return ['LEC', 'LAB'];
+}
+
+function synk_schedule_merge_normalize_scope($scope): string
+{
+    $value = strtoupper(trim((string)$scope));
+    return in_array($value, ['LEC', 'LAB'], true) ? $value : 'FULL';
+}
+
 function synk_schedule_merge_normalize_offering_ids(array $offeringIds): array
 {
     $normalized = [];
@@ -52,17 +68,22 @@ function synk_schedule_merge_ensure_table(mysqli $conn): void
                 `schedule_merge_id` INT NOT NULL AUTO_INCREMENT,
                 `owner_offering_id` INT NOT NULL,
                 `member_offering_id` INT NOT NULL,
+                `merge_scope` VARCHAR(8) NOT NULL DEFAULT 'FULL',
                 `created_by` INT NULL,
                 `date_created` DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
                 PRIMARY KEY (`schedule_merge_id`),
-                UNIQUE KEY `uniq_schedule_merge_member` (`member_offering_id`),
-                KEY `idx_schedule_merge_owner` (`owner_offering_id`)
+                UNIQUE KEY `uniq_schedule_merge_member_scope` (`member_offering_id`, `merge_scope`),
+                KEY `idx_schedule_merge_owner_scope` (`owner_offering_id`, `merge_scope`)
             ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
         ");
     }
 
     $columns = synk_describe_columns($conn, $tableName);
     $clauses = [];
+
+    if (!isset($columns['merge_scope'])) {
+        $clauses[] = "ADD COLUMN merge_scope VARCHAR(8) NOT NULL DEFAULT 'FULL' AFTER member_offering_id";
+    }
 
     if (!isset($columns['created_by'])) {
         $clauses[] = "ADD COLUMN created_by INT NULL";
@@ -76,8 +97,25 @@ function synk_schedule_merge_ensure_table(mysqli $conn): void
         $conn->query("ALTER TABLE `{$tableName}` " . implode(', ', $clauses));
     }
 
-    if (!synk_table_has_index($conn, $tableName, 'uniq_schedule_merge_member')) {
-        $conn->query("ALTER TABLE `{$tableName}` ADD UNIQUE INDEX `uniq_schedule_merge_member` (`member_offering_id`)");
+    if (isset($columns['merge_scope']) || !empty($clauses)) {
+        $conn->query("
+            UPDATE `{$tableName}`
+            SET merge_scope = 'FULL'
+            WHERE merge_scope IS NULL
+               OR TRIM(merge_scope) = ''
+        ");
+    }
+
+    if (synk_table_has_index($conn, $tableName, 'uniq_schedule_merge_member')) {
+        $conn->query("ALTER TABLE `{$tableName}` DROP INDEX `uniq_schedule_merge_member`");
+    }
+
+    if (!synk_table_has_index($conn, $tableName, 'uniq_schedule_merge_member_scope')) {
+        $conn->query("ALTER TABLE `{$tableName}` ADD UNIQUE INDEX `uniq_schedule_merge_member_scope` (`member_offering_id`, `merge_scope`)");
+    }
+
+    if (!synk_table_has_index($conn, $tableName, 'idx_schedule_merge_owner_scope')) {
+        $conn->query("ALTER TABLE `{$tableName}` ADD INDEX `idx_schedule_merge_owner_scope` (`owner_offering_id`, `merge_scope`)");
     }
 
     if (!synk_table_has_index($conn, $tableName, 'idx_schedule_merge_owner')) {
@@ -114,12 +152,51 @@ function synk_schedule_merge_scheduled_offering_join_sql(
             FROM `{$tableName}` merge_map
             INNER JOIN tbl_class_schedule owner_sched
                 ON owner_sched.offering_id = merge_map.owner_offering_id
+               AND (
+                    merge_map.merge_scope = 'FULL'
+                    OR owner_sched.schedule_type = merge_map.merge_scope
+               )
         ) {$scheduleAlias}
             ON {$scheduleAlias}.offering_id = {$offeringAlias}.offering_id
     ";
 }
 
-function synk_schedule_merge_load_member_to_owner_map(mysqli $conn, array $offeringIds): array
+function synk_schedule_merge_load_all_member_to_owner_scope_map(mysqli $conn): array
+{
+    synk_schedule_merge_ensure_table($conn);
+
+    if (!synk_table_exists($conn, synk_schedule_merge_table_name())) {
+        return [];
+    }
+
+    $sql = "
+        SELECT owner_offering_id, member_offering_id, merge_scope
+        FROM `" . synk_schedule_merge_table_name() . "`
+    ";
+
+    $rows = [];
+    $result = $conn->query($sql);
+    if ($result instanceof mysqli_result) {
+        while ($row = $result->fetch_assoc()) {
+            $memberId = (int)($row['member_offering_id'] ?? 0);
+            $ownerId = (int)($row['owner_offering_id'] ?? 0);
+            if ($memberId <= 0 || $ownerId <= 0) {
+                continue;
+            }
+
+            $scope = synk_schedule_merge_normalize_scope($row['merge_scope'] ?? 'FULL');
+            if (!isset($rows[$memberId])) {
+                $rows[$memberId] = [];
+            }
+
+            $rows[$memberId][$scope] = $ownerId;
+        }
+    }
+
+    return $rows;
+}
+
+function synk_schedule_merge_load_member_to_owner_scope_map(mysqli $conn, array $offeringIds): array
 {
     synk_schedule_merge_ensure_table($conn);
 
@@ -130,7 +207,7 @@ function synk_schedule_merge_load_member_to_owner_map(mysqli $conn, array $offer
 
     $idList = implode(',', array_map('intval', $normalizedIds));
     $sql = "
-        SELECT owner_offering_id, member_offering_id
+        SELECT owner_offering_id, member_offering_id, merge_scope
         FROM `" . synk_schedule_merge_table_name() . "`
         WHERE member_offering_id IN ({$idList})
     ";
@@ -141,9 +218,31 @@ function synk_schedule_merge_load_member_to_owner_map(mysqli $conn, array $offer
         while ($row = $result->fetch_assoc()) {
             $memberId = (int)($row['member_offering_id'] ?? 0);
             $ownerId = (int)($row['owner_offering_id'] ?? 0);
-            if ($memberId > 0 && $ownerId > 0) {
-                $rows[$memberId] = $ownerId;
+            if ($memberId <= 0 || $ownerId <= 0) {
+                continue;
             }
+
+            $scope = synk_schedule_merge_normalize_scope($row['merge_scope'] ?? 'FULL');
+            if (!isset($rows[$memberId])) {
+                $rows[$memberId] = [];
+            }
+
+            $rows[$memberId][$scope] = $ownerId;
+        }
+    }
+
+    return $rows;
+}
+
+function synk_schedule_merge_load_member_to_owner_map(mysqli $conn, array $offeringIds): array
+{
+    $scopeMap = synk_schedule_merge_load_member_to_owner_scope_map($conn, $offeringIds);
+    $rows = [];
+
+    foreach ($scopeMap as $memberId => $item) {
+        $ownerId = (int)($item['FULL'] ?? 0);
+        if ($ownerId > 0) {
+            $rows[(int)$memberId] = $ownerId;
         }
     }
 
@@ -167,7 +266,7 @@ function synk_schedule_merge_resolve_owner_id(int $offeringId, array $memberToOw
     return $resolved;
 }
 
-function synk_schedule_merge_load_owner_to_members_map(mysqli $conn, array $ownerIds): array
+function synk_schedule_merge_load_owner_to_members_scope_map(mysqli $conn, array $ownerIds): array
 {
     synk_schedule_merge_ensure_table($conn);
 
@@ -178,10 +277,10 @@ function synk_schedule_merge_load_owner_to_members_map(mysqli $conn, array $owne
 
     $idList = implode(',', array_map('intval', $normalizedIds));
     $sql = "
-        SELECT owner_offering_id, member_offering_id
+        SELECT owner_offering_id, member_offering_id, merge_scope
         FROM `" . synk_schedule_merge_table_name() . "`
         WHERE owner_offering_id IN ({$idList})
-        ORDER BY owner_offering_id ASC, member_offering_id ASC
+        ORDER BY owner_offering_id ASC, merge_scope ASC, member_offering_id ASC
     ";
 
     $map = [];
@@ -194,19 +293,122 @@ function synk_schedule_merge_load_owner_to_members_map(mysqli $conn, array $owne
                 continue;
             }
 
+            $scope = synk_schedule_merge_normalize_scope($row['merge_scope'] ?? 'FULL');
             if (!isset($map[$ownerId])) {
                 $map[$ownerId] = [];
             }
+            if (!isset($map[$ownerId][$scope])) {
+                $map[$ownerId][$scope] = [];
+            }
 
-            $map[$ownerId][] = $memberId;
+            $map[$ownerId][$scope][] = $memberId;
         }
     }
 
-    foreach ($map as $ownerId => $memberIds) {
-        $map[$ownerId] = synk_schedule_merge_normalize_offering_ids($memberIds);
+    foreach ($map as $ownerId => $scopes) {
+        foreach (synk_schedule_merge_scope_values() as $scope) {
+            $map[$ownerId][$scope] = synk_schedule_merge_normalize_offering_ids((array)($scopes[$scope] ?? []));
+        }
     }
 
     return $map;
+}
+
+function synk_schedule_merge_load_owner_to_members_map(mysqli $conn, array $ownerIds): array
+{
+    $scopeMap = synk_schedule_merge_load_owner_to_members_scope_map($conn, $ownerIds);
+    $rows = [];
+
+    foreach ($scopeMap as $ownerId => $item) {
+        $rows[(int)$ownerId] = synk_schedule_merge_normalize_offering_ids((array)($item['FULL'] ?? []));
+    }
+
+    return $rows;
+}
+
+function synk_schedule_merge_resolve_effective_owner_for_type(
+    int $offeringId,
+    string $scheduleType,
+    array $memberScopeMap,
+    array &$cache,
+    array $path = []
+): int {
+    $type = strtoupper(trim($scheduleType)) === 'LAB' ? 'LAB' : 'LEC';
+    $cacheKey = $offeringId . ':' . $type;
+    if (isset($cache[$cacheKey])) {
+        return (int)$cache[$cacheKey];
+    }
+
+    if (isset($path[$cacheKey])) {
+        $cache[$cacheKey] = $offeringId;
+        return $offeringId;
+    }
+
+    $path[$cacheKey] = true;
+    $scopeInfo = (array)($memberScopeMap[$offeringId] ?? []);
+    $directOwnerId = (int)($scopeInfo['FULL'] ?? 0);
+
+    if ($directOwnerId <= 0) {
+        $directOwnerId = (int)($scopeInfo[$type] ?? 0);
+    }
+
+    if ($directOwnerId <= 0 || $directOwnerId === $offeringId) {
+        $cache[$cacheKey] = $offeringId;
+        return $offeringId;
+    }
+
+    $cache[$cacheKey] = synk_schedule_merge_resolve_effective_owner_for_type(
+        $directOwnerId,
+        $type,
+        $memberScopeMap,
+        $cache,
+        $path
+    );
+
+    return (int)$cache[$cacheKey];
+}
+
+function synk_schedule_merge_load_effective_owner_map(mysqli $conn, array $offeringIds): array
+{
+    $normalizedIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    $rows = [];
+
+    if (empty($normalizedIds)) {
+        return $rows;
+    }
+
+    $memberScopeMap = synk_schedule_merge_load_all_member_to_owner_scope_map($conn);
+    $cache = [];
+
+    foreach ($normalizedIds as $offeringId) {
+        $rows[$offeringId] = [];
+        foreach (synk_schedule_merge_schedule_types() as $type) {
+            $rows[$offeringId][$type] = synk_schedule_merge_resolve_effective_owner_for_type(
+                $offeringId,
+                $type,
+                $memberScopeMap,
+                $cache
+            );
+        }
+    }
+
+    return $rows;
+}
+
+function synk_schedule_merge_collect_effective_owner_ids(array $effectiveOwnerMap): array
+{
+    $ownerIds = [];
+
+    foreach ($effectiveOwnerMap as $types) {
+        foreach (synk_schedule_merge_schedule_types() as $type) {
+            $ownerId = (int)($types[$type] ?? 0);
+            if ($ownerId > 0) {
+                $ownerIds[] = $ownerId;
+            }
+        }
+    }
+
+    return synk_schedule_merge_normalize_offering_ids($ownerIds);
 }
 
 function synk_schedule_merge_load_section_rows_by_offering(mysqli $conn, array $offeringIds): array
@@ -394,15 +596,24 @@ function synk_schedule_merge_load_display_context(mysqli $conn, array $offeringI
         return $context;
     }
 
-    $memberToOwner = synk_schedule_merge_load_member_to_owner_map($conn, $normalizedIds);
-    $resolvedOwnerIds = [];
+    $memberScopeMap = synk_schedule_merge_load_member_to_owner_scope_map($conn, $normalizedIds);
+    $memberToOwner = [];
+    foreach ($memberScopeMap as $memberId => $scopes) {
+        $ownerId = (int)($scopes['FULL'] ?? 0);
+        if ($ownerId > 0) {
+            $memberToOwner[(int)$memberId] = $ownerId;
+        }
+    }
 
+    $resolvedOwnerIds = [];
     foreach ($normalizedIds as $offeringId) {
         $resolvedOwnerIds[] = synk_schedule_merge_resolve_owner_id($offeringId, $memberToOwner);
     }
     $resolvedOwnerIds = synk_schedule_merge_normalize_offering_ids($resolvedOwnerIds);
 
     $ownerToMembers = synk_schedule_merge_load_owner_to_members_map($conn, $resolvedOwnerIds);
+    $allOwnerScopeMap = synk_schedule_merge_load_owner_to_members_scope_map($conn, $normalizedIds);
+    $effectiveOwnerByType = synk_schedule_merge_load_effective_owner_map($conn, $normalizedIds);
 
     $groupOfferingIds = $normalizedIds;
     foreach ($resolvedOwnerIds as $ownerId) {
@@ -444,6 +655,22 @@ function synk_schedule_merge_load_display_context(mysqli $conn, array $offeringI
             'full_section' => ''
         ];
 
+        $incomingScopeOwners = [
+            'FULL' => (int)($memberScopeMap[$offeringId]['FULL'] ?? 0),
+            'LEC' => (int)($memberScopeMap[$offeringId]['LEC'] ?? 0),
+            'LAB' => (int)($memberScopeMap[$offeringId]['LAB'] ?? 0)
+        ];
+        $resolvedTypes = (array)($effectiveOwnerByType[$offeringId] ?? []);
+        $inheritedTypes = [];
+
+        foreach (synk_schedule_merge_schedule_types() as $type) {
+            if ((int)($resolvedTypes[$type] ?? $offeringId) !== $offeringId) {
+                $inheritedTypes[] = $type;
+            }
+        }
+
+        $ownedScopes = $allOwnerScopeMap[$offeringId] ?? [];
+
         $context[$offeringId] = [
             'offering_id' => $offeringId,
             'owner_offering_id' => $ownerId,
@@ -455,7 +682,20 @@ function synk_schedule_merge_load_display_context(mysqli $conn, array $offeringI
             'group_course_label' => (string)($groupLabelsByOwner[$ownerId] ?? ($ownRow['full_section'] ?? '')),
             'full_section' => (string)($ownRow['full_section'] ?? ''),
             'section_name' => (string)($ownRow['section_name'] ?? ''),
-            'program_code' => (string)($ownRow['program_code'] ?? '')
+            'program_code' => (string)($ownRow['program_code'] ?? ''),
+            'incoming_scope_owner_ids' => $incomingScopeOwners,
+            'effective_owner_by_type' => [
+                'LEC' => (int)($resolvedTypes['LEC'] ?? $offeringId),
+                'LAB' => (int)($resolvedTypes['LAB'] ?? $offeringId)
+            ],
+            'inherited_types' => $inheritedTypes,
+            'has_any_inherited_types' => !empty($inheritedTypes),
+            'owned_member_ids_by_scope' => [
+                'FULL' => synk_schedule_merge_normalize_offering_ids((array)($ownedScopes['FULL'] ?? [])),
+                'LEC' => synk_schedule_merge_normalize_offering_ids((array)($ownedScopes['LEC'] ?? [])),
+                'LAB' => synk_schedule_merge_normalize_offering_ids((array)($ownedScopes['LAB'] ?? []))
+            ],
+            'has_outgoing_scope_merges' => !empty($ownedScopes['LEC']) || !empty($ownedScopes['LAB'])
         ];
     }
 

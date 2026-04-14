@@ -145,95 +145,98 @@ body.swal2-shown .modal {
 }
 
 .schedule-pan-shell {
-    overflow-x: auto;
-    cursor: grab;
-    touch-action: pan-y;
-    scrollbar-width: thin;
+    overflow-x: visible;
+    cursor: default;
+    touch-action: auto;
+    scrollbar-width: auto;
 }
 
 .schedule-pan-shell.is-pan-active {
-    cursor: grabbing;
+    cursor: default;
 }
 
 .schedule-pan-shell.is-pan-active,
 .schedule-pan-shell.is-pan-active * {
-    user-select: none;
+    user-select: auto;
 }
 
 .schedule-offerings-table {
-    min-width: 1120px;
-    table-layout: auto;
+    width: 100%;
+    min-width: 100%;
+    table-layout: fixed;
 }
 
 .schedule-offerings-table th,
 .schedule-offerings-table td {
     vertical-align: middle;
+    padding: 0.7rem 0.55rem;
 }
 
 .schedule-section-col {
-    width: 104px;
-    min-width: 104px;
+    width: 8%;
+    min-width: 84px;
 }
 
 .schedule-subject-col {
-    width: 112px;
-    min-width: 112px;
+    width: 8%;
+    min-width: 82px;
 }
 
 .schedule-description-col {
-    min-width: 260px;
+    width: 20%;
+    min-width: 190px;
 }
 
 .schedule-hours-col {
-    width: 1%;
-    min-width: 52px;
+    width: 5%;
+    min-width: 46px;
     white-space: nowrap;
 }
 
 .schedule-days-col {
-    width: 98px;
-    min-width: 98px;
+    width: 8%;
+    min-width: 84px;
 }
 
 .schedule-time-col {
-    width: 146px;
-    min-width: 146px;
+    width: 12%;
+    min-width: 116px;
 }
 
 .schedule-room-col {
-    width: 138px;
-    min-width: 138px;
+    width: 10%;
+    min-width: 96px;
 }
 
 .schedule-status-col {
-    width: 1%;
-    min-width: 1px;
-    white-space: nowrap;
+    width: 11%;
+    min-width: 112px;
 }
 
 .schedule-action-col {
-    width: 1%;
-    min-width: 1px;
-    white-space: nowrap;
+    width: 8%;
+    min-width: 84px;
 }
 
 .schedule-action-col .btn-schedule {
     display: inline-flex;
     align-items: center;
     justify-content: center;
-    min-width: 90px;
+    min-width: 70px;
     touch-action: manipulation;
 }
 
 .schedule-action-stack {
     display: flex;
     flex-direction: column;
-    gap: 0.45rem;
+    gap: 0.32rem;
     align-items: stretch;
 }
 
 .schedule-action-stack .btn {
-    min-width: 110px;
+    min-width: 74px;
+    padding: 0.4rem 0.45rem;
+    font-size: 0.76rem;
 }
 
 .schedule-status-col .badge {
@@ -529,14 +532,14 @@ body.swal2-shown .modal {
 
 .schedule-stack-value {
     display: block;
-    font-size: 0.85rem;
+    font-size: 0.8rem;
     line-height: 1.2;
     text-align: center;
-    white-space: nowrap;
+    white-space: normal;
 }
 
 .schedule-stack-value.is-room {
-    max-width: 150px;
+    max-width: 110px;
     white-space: normal;
     word-break: break-word;
 }
@@ -640,6 +643,38 @@ body.swal2-shown .modal {
     text-align: center;
     color: #6c757d;
     background: #fbfcfe;
+}
+
+.schedule-merge-select-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 0.9rem;
+}
+
+.schedule-merge-select-card {
+    border: 1px solid #d7deea;
+    border-radius: 12px;
+    background: #fff;
+    padding: 0.95rem 1rem;
+}
+
+.schedule-merge-select-title {
+    font-weight: 700;
+    color: #27324f;
+}
+
+.schedule-merge-select-note {
+    margin-top: 0.3rem;
+    font-size: 0.8rem;
+    color: #6a778c;
+    line-height: 1.45;
+}
+
+.schedule-merge-select-status {
+    margin-top: 0.55rem;
+    font-size: 0.78rem;
+    color: #55657c;
+    line-height: 1.45;
 }
 
 .schedule-sort-shell {
@@ -2966,41 +3001,27 @@ body.swal2-shown .modal {
     }
 
     .schedule-offerings-table {
-        min-width: 1040px;
-    }
-
-    .schedule-section-col {
-        width: 96px;
-        min-width: 96px;
-    }
-
-    .schedule-subject-col {
-        width: 104px;
-        min-width: 104px;
+        min-width: 100%;
     }
 
     .schedule-description-col {
-        min-width: 220px;
-    }
-
-    .schedule-days-col {
-        width: 90px;
-        min-width: 90px;
+        min-width: 170px;
     }
 
     .schedule-time-col {
-        width: 134px;
-        min-width: 134px;
+        min-width: 104px;
     }
 
     .schedule-room-col {
-        width: 126px;
-        min-width: 126px;
+        min-width: 88px;
     }
 
     .schedule-status-col {
-        width: 1%;
-        min-width: 1px;
+        min-width: 100px;
+    }
+
+    .schedule-action-col {
+        min-width: 78px;
     }
 
     .room-browser-launcher {
@@ -3055,25 +3076,25 @@ body.swal2-shown .modal {
     }
 
     .schedule-offerings-table {
-        min-width: 980px;
+        min-width: 100%;
     }
 
     .schedule-description-col {
-        min-width: 200px;
+        min-width: 150px;
     }
 
     .schedule-pan-shell {
-        padding-bottom: 0.35rem;
-        -webkit-overflow-scrolling: touch;
+        padding-bottom: 0;
+        -webkit-overflow-scrolling: auto;
     }
 
     .schedule-action-col {
-        min-width: 112px;
+        min-width: 72px;
     }
 
     .schedule-action-col .btn-schedule {
         width: 100%;
-        min-height: 2.4rem;
+        min-height: 2.15rem;
     }
 
     #roomBrowserDrawer {
@@ -3764,10 +3785,10 @@ while ($ay = $ayQ->fetch_assoc()) {
       </div>
 
       <div class="modal-body">
-        <input type="hidden" id="scheduleMergeOwnerOfferingId">
+        <input type="hidden" id="scheduleMergeTargetOfferingId">
 
         <div class="schedule-merge-owner-shell mb-3">
-          <span class="schedule-merge-owner-eyebrow">Schedule Owner</span>
+          <span class="schedule-merge-owner-eyebrow">Current Offering</span>
           <div class="schedule-merge-owner-title" id="scheduleMergeOwnerTitle">Loading merge details...</div>
           <div class="schedule-merge-owner-meta" id="scheduleMergeOwnerMeta"></div>
           <div class="schedule-merge-hint" id="scheduleMergeOwnerHint"></div>
@@ -3777,20 +3798,44 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         <div class="schedule-merge-toolbar mb-3">
           <div class="schedule-hint mb-0">
-            Select the offerings that should inherit the owner schedule in this college term.
+            Keep the current offering local, inherit the whole subject, or inherit only lecture/laboratory blocks from another saved schedule.
           </div>
-          <span class="badge bg-label-info text-info" id="scheduleMergeSelectedCount">0 selected</span>
         </div>
 
-        <div class="schedule-merge-candidate-list" id="scheduleMergeCandidateList">
-          <div class="schedule-merge-empty">Loading merge candidates...</div>
+        <div class="schedule-merge-select-grid" id="scheduleMergeSelectGrid">
+          <div class="schedule-merge-select-card">
+            <div class="schedule-merge-select-title">Whole Subject</div>
+            <div class="schedule-merge-select-note">Use this when the full class offering should inherit lecture and laboratory together from the same subject offering.</div>
+            <select class="form-select mt-3" id="scheduleMergeFullSelect" disabled>
+              <option value="">Keep this offering local</option>
+            </select>
+            <div class="schedule-merge-select-status" id="scheduleMergeFullStatus">Loading options...</div>
+          </div>
+
+          <div class="schedule-merge-select-card">
+            <div class="schedule-merge-select-title">Lecture Only</div>
+            <div class="schedule-merge-select-note">Use this when only the lecture schedule should be inherited while laboratory remains local or uses another source.</div>
+            <select class="form-select mt-3" id="scheduleMergeLecSelect" disabled>
+              <option value="">Keep lecture local</option>
+            </select>
+            <div class="schedule-merge-select-status" id="scheduleMergeLecStatus">Loading options...</div>
+          </div>
+
+          <div class="schedule-merge-select-card">
+            <div class="schedule-merge-select-title">Laboratory Only</div>
+            <div class="schedule-merge-select-note">Use this when only the laboratory schedule should be inherited while lecture remains local or uses another source.</div>
+            <select class="form-select mt-3" id="scheduleMergeLabSelect" disabled>
+              <option value="">Keep laboratory local</option>
+            </select>
+            <div class="schedule-merge-select-status" id="scheduleMergeLabStatus">Loading options...</div>
+          </div>
         </div>
       </div>
 
       <div class="modal-footer">
-        <button type="button" class="btn btn-outline-secondary" id="btnClearMergeSelection">Clear Selection</button>
+        <button type="button" class="btn btn-outline-secondary" id="btnClearMergeSelection">Reset Choices</button>
         <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
-        <button type="button" class="btn btn-primary" id="btnSaveScheduleMerge">Save Merge Group</button>
+        <button type="button" class="btn btn-primary" id="btnSaveScheduleMerge">Save Merge Settings</button>
       </div>
     </div>
   </div>
@@ -7413,12 +7458,23 @@ while ($ay = $ayQ->fetch_assoc()) {
             availabilityTimeSlots: Array.isArray(source.availabilityTimeSlots) ? source.availabilityTimeSlots : [],
             availabilitySelectedKey: String(source.availabilitySelectedKey || ""),
             suggestionMessage: String(source.suggestionMessage || ""),
-            suggestionsVisible: Boolean(source.suggestionsVisible)
+            suggestionsVisible: Boolean(source.suggestionsVisible),
+            is_inherited: Boolean(source.is_inherited),
+            is_editable: source.is_editable !== undefined ? Boolean(source.is_editable) : !Boolean(source.is_inherited),
+            source_label: String(source.source_label || "")
         };
     }
 
     function getRequiredScheduleTypesClient() {
         return Number($("#block_sched_lab_units").val() || 0) > 0 ? ["LEC", "LAB"] : ["LEC"];
+    }
+
+    function getEditableScheduleTypesClient() {
+        if (!scheduleBlockState || !Array.isArray(scheduleBlockState.editableTypes)) {
+            return getRequiredScheduleTypesClient();
+        }
+
+        return scheduleBlockState.editableTypes;
     }
 
     function getScheduleBlockLabel(block, indexMap) {
@@ -7697,9 +7753,13 @@ while ($ay = $ayQ->fetch_assoc()) {
             const roomPlaceholder = type === "LAB" ? "Select laboratory room..." : "Select lecture room...";
             const roomOptionsHtml = buildRoomOptionsHtml(filterRoomsForSchedule(type), roomPlaceholder);
             const selectedDays = normalizeScheduleDays(block.days);
+            const isInherited = Boolean(block.is_inherited);
+            const inheritedMeta = isInherited && block.source_label
+                ? `Inherited from ${block.source_label}. Manage the merge settings to change this block.`
+                : (isInherited ? "Inherited block. Manage the merge settings to change this block." : "This block can be assigned to a different faculty later.");
             const dayButtons = SCHEDULE_DAY_ORDER.map(day => {
                 const isBlocked = BLOCKED_SCHEDULE_DAY_SET.has(day);
-                const shouldDisable = isBlocked && !selectedDays.includes(day);
+                const shouldDisable = isInherited || (isBlocked && !selectedDays.includes(day));
                 return `
                 <input
                     type="checkbox"
@@ -7722,15 +7782,19 @@ while ($ay = $ayQ->fetch_assoc()) {
                     <div class="schedule-block-header">
                         <div>
                             <span class="badge ${typeBadgeClass} mb-2">${escapeHtml(label)}</span>
-                            <div class="schedule-block-meta">This block can be assigned to a different faculty later.</div>
+                            <div class="schedule-block-meta">${escapeHtml(inheritedMeta)}</div>
                         </div>
-                        <button
-                            type="button"
-                            class="btn btn-outline-danger btn-sm btn-remove-schedule-block"
-                            data-block-key="${escapeHtml(block.block_key)}"
-                        >
-                            Remove
-                        </button>
+                        ${isInherited
+                            ? '<span class="badge bg-label-info text-info">Inherited</span>'
+                            : `
+                                <button
+                                    type="button"
+                                    class="btn btn-outline-danger btn-sm btn-remove-schedule-block"
+                                    data-block-key="${escapeHtml(block.block_key)}"
+                                >
+                                    Remove
+                                </button>
+                            `}
                     </div>
 
                     <div class="row g-3">
@@ -7741,13 +7805,13 @@ while ($ay = $ayQ->fetch_assoc()) {
                         <div class="col-lg-4">
                             <label class="form-label">Time</label>
                             <div class="d-flex gap-2">
-                                <input type="time" class="form-control schedule-block-time-start" data-block-key="${escapeHtml(block.block_key)}" min="${escapeHtml(SUPPORTED_TIME_START)}" max="${escapeHtml(SUPPORTED_TIME_END)}" step="1800" value="${escapeHtml(block.time_start || "")}">
-                                <input type="time" class="form-control schedule-block-time-end" data-block-key="${escapeHtml(block.block_key)}" min="${escapeHtml(SUPPORTED_TIME_START)}" max="${escapeHtml(SUPPORTED_TIME_END)}" step="1800" value="${escapeHtml(block.time_end || "")}">
+                                <input type="time" class="form-control schedule-block-time-start" data-block-key="${escapeHtml(block.block_key)}" min="${escapeHtml(SUPPORTED_TIME_START)}" max="${escapeHtml(SUPPORTED_TIME_END)}" step="1800" value="${escapeHtml(block.time_start || "")}" ${isInherited ? "disabled" : ""}>
+                                <input type="time" class="form-control schedule-block-time-end" data-block-key="${escapeHtml(block.block_key)}" min="${escapeHtml(SUPPORTED_TIME_START)}" max="${escapeHtml(SUPPORTED_TIME_END)}" step="1800" value="${escapeHtml(block.time_end || "")}" ${isInherited ? "disabled" : ""}>
                             </div>
                         </div>
                         <div class="col-lg-4">
                             <label class="form-label">Room</label>
-                            <select class="form-select schedule-block-room" data-block-key="${escapeHtml(block.block_key)}">
+                            <select class="form-select schedule-block-room" data-block-key="${escapeHtml(block.block_key)}" ${isInherited ? "disabled" : ""}>
                                 ${roomOptionsHtml}
                             </select>
                         </div>
@@ -7766,7 +7830,9 @@ while ($ay = $ayQ->fetch_assoc()) {
             });
         });
 
-        $("#btnAddLabBlock").prop("disabled", !getRequiredScheduleTypesClient().includes("LAB"));
+        const editableTypes = getEditableScheduleTypesClient();
+        $("#btnAddLectureBlock").prop("disabled", !editableTypes.includes("LEC"));
+        $("#btnAddLabBlock").prop("disabled", !editableTypes.includes("LAB"));
         renderScheduleBlockCoverageSummary();
     }
 
@@ -7778,6 +7844,10 @@ while ($ay = $ayQ->fetch_assoc()) {
         scheduleBlockState.blocks = scheduleBlockState.blocks.map(block => {
             const root = $(`[data-schedule-block="${block.block_key}"]`);
             if (!root.length) {
+                return block;
+            }
+
+            if (block.is_inherited) {
                 return block;
             }
 
@@ -7806,7 +7876,8 @@ while ($ay = $ayQ->fetch_assoc()) {
             room_id: block.room_id || "",
             time_start: block.time_start || "",
             time_end: block.time_end || "",
-            days: Array.isArray(block.days) ? block.days : []
+            days: Array.isArray(block.days) ? block.days : [],
+            is_inherited: Boolean(block.is_inherited)
         }));
     }
 
@@ -7887,16 +7958,6 @@ while ($ay = $ayQ->fetch_assoc()) {
         }
 
         loadTermRoomOptions(false).done(function () {
-            if (filterRoomsForSchedule("LEC").length === 0) {
-                Swal.fire("Room Setup Issue", "No lecture-compatible rooms are available for the selected AY and Semester.", "warning");
-                return;
-            }
-
-            if (labUnits > 0 && filterRoomsForSchedule("LAB").length === 0) {
-                Swal.fire("Room Setup Issue", "No laboratory-compatible rooms are available for the selected AY and Semester.", "warning");
-                return;
-            }
-
             $.ajax({
                 url: "../backend/query_class_schedule.php",
                 type: "POST",
@@ -7914,9 +7975,28 @@ while ($ay = $ayQ->fetch_assoc()) {
                     const requiredTypes = Array.isArray(res.required_types) && res.required_types.length > 0
                         ? res.required_types
                         : (labUnits > 0 ? ["LEC", "LAB"] : ["LEC"]);
+                    const editableTypes = Array.isArray(res.editable_types) ? res.editable_types : requiredTypes;
                     const blocks = Array.isArray(res.blocks) && res.blocks.length > 0
                         ? res.blocks.map(block => createScheduleBlock(block.type, block))
                         : requiredTypes.map(type => createScheduleBlock(type));
+
+                    editableTypes.forEach(type => {
+                        const normalizedType = normalizeScheduleBlockType(type);
+                        const hasBlock = blocks.some(block => normalizeScheduleBlockType(block.type) === normalizedType);
+                        if (!hasBlock) {
+                            blocks.push(createScheduleBlock(normalizedType));
+                        }
+                    });
+
+                    if (editableTypes.includes("LEC") && filterRoomsForSchedule("LEC").length === 0) {
+                        Swal.fire("Room Setup Issue", "No lecture-compatible rooms are available for the selected AY and Semester.", "warning");
+                        return;
+                    }
+
+                    if (editableTypes.includes("LAB") && filterRoomsForSchedule("LAB").length === 0) {
+                        Swal.fire("Room Setup Issue", "No laboratory-compatible rooms are available for the selected AY and Semester.", "warning");
+                        return;
+                    }
 
                     scheduleBlockState = {
                         offeringId,
@@ -7927,6 +8007,8 @@ while ($ay = $ayQ->fetch_assoc()) {
                         programCode: String(res.program_code || "").trim(),
                         yearLevel: parseInt(res.year_level, 10) || 0,
                         yearLabel: String(res.year_label || formatYearLevelLabel(res.year_level)).trim(),
+                        editableTypes,
+                        inheritedTypes: Array.isArray(res.inherited_types) ? res.inherited_types : [],
                         blocks,
                         facultyHelper: createScheduleBlockFacultyHelperState()
                     };
@@ -7939,7 +8021,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     $("#btnClearBlockSchedule")
                         .data("offering-id", offeringId)
                         .data("subject-label", subjectLabel)
-                        .toggleClass("d-none", !(Array.isArray(res.blocks) && res.blocks.length > 0));
+                        .toggleClass("d-none", !(Array.isArray(res.blocks) && res.blocks.some(block => !block.is_inherited)));
 
                     renderScheduleBlocks();
                     renderScheduleBlockFacultyOptions();
@@ -7966,128 +8048,101 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function resetScheduleMergeModalState() {
         scheduleMergeState = null;
-        $("#scheduleMergeOwnerOfferingId").val("");
+        $("#scheduleMergeTargetOfferingId").val("");
         $("#scheduleMergeOwnerTitle").text("Loading merge details...");
         $("#scheduleMergeOwnerMeta").text("");
         $("#scheduleMergeOwnerHint").text("");
         $("#scheduleMergeBlockingNotice").addClass("d-none").html("");
-        $("#scheduleMergeCandidateList").html('<div class="schedule-merge-empty">Loading merge candidates...</div>');
-        $("#scheduleMergeSelectedCount").text("0 selected");
+        $("#scheduleMergeFullSelect").html('<option value="">Keep this offering local</option>').prop("disabled", true);
+        $("#scheduleMergeLecSelect").html('<option value="">Keep lecture local</option>').prop("disabled", true);
+        $("#scheduleMergeLabSelect").html('<option value="">Keep laboratory local</option>').prop("disabled", true);
+        $("#scheduleMergeFullStatus").text("Loading options...");
+        $("#scheduleMergeLecStatus").text("Loading options...");
+        $("#scheduleMergeLabStatus").text("Loading options...");
         $("#btnClearMergeSelection").prop("disabled", true);
         $("#btnSaveScheduleMerge").prop("disabled", true);
     }
 
-    function scheduleMergeCandidateStatusBadge(label) {
-        const value = String(label || "").trim();
-        const normalized = value.toLowerCase();
-        let className = "bg-label-secondary text-secondary";
-
-        if (normalized.includes("merged here")) {
-            className = "bg-label-info text-info";
-        } else if (normalized.includes("merge owner")) {
-            className = "bg-label-primary text-primary";
-        } else if (normalized.includes("merged elsewhere")) {
-            className = "bg-label-warning text-warning";
-        } else if (normalized.includes("scheduled") && !normalized.includes("not scheduled")) {
-            className = "bg-label-success text-success";
-        }
-
-        return `<span class="badge ${className}">${escapeHtml(value || "Status")}</span>`;
+    function getScheduleMergeBlockingMessages(state) {
+        return Array.isArray(state?.blocking_messages) ? state.blocking_messages.filter(Boolean) : [];
     }
 
-    function getSelectedScheduleMergeMemberIds() {
-        const ids = [];
+    function findScheduleMergeOption(scope, offeringId) {
+        const normalizedId = Number(offeringId || 0);
+        if (!normalizedId || !scheduleMergeState?.options?.[scope]) {
+            return null;
+        }
 
-        $("#scheduleMergeCandidateList .schedule-merge-checkbox:checked").each(function () {
-            const value = parseInt($(this).val(), 10) || 0;
-            if (value > 0) {
-                ids.push(value);
-            }
+        return scheduleMergeState.options[scope].find(option => Number(option?.offering_id || 0) === normalizedId) || null;
+    }
+
+    function buildScheduleMergeOptionText(option) {
+        const parts = [String(option?.label || "").trim(), String(option?.subject_label || "").trim()].filter(Boolean);
+        return parts.join(" | ");
+    }
+
+    function populateScheduleMergeSelect(scope, selector, emptyLabel) {
+        const options = Array.isArray(scheduleMergeState?.options?.[scope]) ? scheduleMergeState.options[scope] : [];
+        const selectedId = Number(scheduleMergeState?.current?.[scope] || 0);
+        let html = `<option value="">${escapeHtml(emptyLabel)}</option>`;
+
+        options.forEach(option => {
+            const optionId = Number(option?.offering_id || 0);
+            const optionText = buildScheduleMergeOptionText(option);
+            const disabled = !Boolean(option?.can_select) && optionId !== selectedId;
+            html += `<option value="${escapeHtml(String(optionId))}" ${disabled ? "disabled" : ""}>${escapeHtml(optionText)}</option>`;
         });
 
-        return ids;
+        $(selector).html(html);
+        if (selectedId > 0) {
+            $(selector).val(String(selectedId));
+        }
+        $(selector).prop("disabled", options.length === 0);
     }
 
-    function updateScheduleMergeSelectionSummary() {
-        const selectedCount = getSelectedScheduleMergeMemberIds().length;
-        $("#scheduleMergeSelectedCount").text(`${selectedCount} selected`);
-        $("#btnClearMergeSelection").prop("disabled", selectedCount === 0);
-    }
+    function updateScheduleMergeScopeStatus(scope, selector, statusSelector, emptyMessage) {
+        const selectedId = Number($(selector).val() || 0);
+        const option = findScheduleMergeOption(scope, selectedId);
 
-    function buildScheduleMergeBlockingMessages(state) {
-        const messages = [];
-        const ownerLabel = String(state?.owner?.full_section || state?.owner?.section_name || "the selected owner").trim();
-
-        if (!state?.owner_has_schedule) {
-            messages.push(`${escapeHtml(ownerLabel)} needs a saved schedule first before other offerings can inherit it.`);
-        }
-
-        if (state?.owner_has_workload) {
-            const names = Array.isArray(state.owner_workload_names) ? state.owner_workload_names.filter(Boolean) : [];
-            const facultyLine = names.length > 0
-                ? ` It is already assigned in Faculty Workload to <b>${names.map(name => escapeHtml(name)).join("</b>, <b>")}</b>.`
-                : "";
-            messages.push(`This merge group cannot be changed while the owner schedule is used in Faculty Workload.${facultyLine}`);
-        }
-
-        if (state?.group_has_locked_members) {
-            messages.push("This merge group currently includes a locked offering. Unlock the group first before changing its members.");
-        }
-
-        return messages;
-    }
-
-    function renderScheduleMergeCandidates(state) {
-        const list = $("#scheduleMergeCandidateList");
-        const candidates = Array.isArray(state?.candidates) ? state.candidates : [];
-
-        if (candidates.length === 0) {
-            list.html('<div class="schedule-merge-empty">No compatible same-subject offerings were found in this college term.</div>');
-            updateScheduleMergeSelectionSummary();
+        if (!selectedId || !option) {
+            $(statusSelector).text(emptyMessage);
             return;
         }
 
-        const html = candidates.map(candidate => {
-            const offeringId = Number(candidate?.offering_id || 0);
-            const checked = Boolean(candidate?.is_selected);
-            const disabled = !Boolean(candidate?.can_select);
-            const sectionLabel = String(candidate?.full_section || candidate?.section_name || `Offering ${offeringId}`).trim();
-            const scheduleBadge = candidate?.has_schedule
-                ? '<span class="badge bg-label-success text-success">Has Schedule</span>'
-                : '<span class="badge bg-label-secondary text-secondary">No Schedule</span>';
-            const reasonHtml = candidate?.reason
-                ? `<div class="schedule-merge-candidate-reason">${escapeHtml(candidate.reason)}</div>`
-                : "";
+        const details = [];
+        if (option?.schedule_summary) {
+            details.push(String(option.schedule_summary).trim());
+        }
+        if (option?.reason && !option?.can_select) {
+            details.push(String(option.reason).trim());
+        }
 
-            return `
-                <label class="schedule-merge-candidate ${disabled ? "is-disabled" : ""}">
-                    <div class="d-flex align-items-start gap-3">
-                        <input
-                            type="checkbox"
-                            class="form-check-input mt-1 schedule-merge-checkbox"
-                            value="${escapeHtml(String(offeringId))}"
-                            ${checked ? "checked" : ""}
-                            ${disabled ? "disabled" : ""}
-                        >
-                        <div class="flex-grow-1">
-                            <div class="d-flex justify-content-between align-items-start gap-3 flex-wrap">
-                                <div>
-                                    <div class="schedule-merge-candidate-title">${escapeHtml(sectionLabel)}</div>
-                                    <div class="schedule-merge-candidate-meta d-flex flex-wrap gap-2 align-items-center">
-                                        ${scheduleMergeCandidateStatusBadge(candidate?.status_label || "")}
-                                        ${scheduleBadge}
-                                    </div>
-                                </div>
-                            </div>
-                            ${reasonHtml}
-                        </div>
-                    </div>
-                </label>
-            `;
-        }).join("");
+        $(statusSelector).text(details.filter(Boolean).join(" | ") || "Ready to use.");
+    }
 
-        list.html(html);
-        updateScheduleMergeSelectionSummary();
+    function updateScheduleMergeControlState() {
+        const blockingMessages = getScheduleMergeBlockingMessages(scheduleMergeState);
+        const hasFullSelection = Number($("#scheduleMergeFullSelect").val() || 0) > 0;
+        const requiredTypes = Array.isArray(scheduleMergeState?.target?.required_types) ? scheduleMergeState.target.required_types : ["LEC"];
+        const isBlocked = blockingMessages.length > 0;
+
+        $("#scheduleMergeFullSelect").prop("disabled", isBlocked || $("#scheduleMergeFullSelect option").length <= 1);
+        $("#scheduleMergeLecSelect").prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LEC") || $("#scheduleMergeLecSelect option").length <= 1);
+        $("#scheduleMergeLabSelect").prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LAB") || $("#scheduleMergeLabSelect option").length <= 1);
+        $("#btnSaveScheduleMerge").prop("disabled", isBlocked);
+
+        updateScheduleMergeScopeStatus("FULL", "#scheduleMergeFullSelect", "#scheduleMergeFullStatus", "Keep the full offering local.");
+
+        if (hasFullSelection) {
+            $("#scheduleMergeLecStatus").text("Whole-subject merge is active, so lecture-only inheritance is disabled.");
+            $("#scheduleMergeLabStatus").text("Whole-subject merge is active, so laboratory-only inheritance is disabled.");
+        } else {
+            updateScheduleMergeScopeStatus("LEC", "#scheduleMergeLecSelect", "#scheduleMergeLecStatus", "Keep lecture local.");
+            updateScheduleMergeScopeStatus("LAB", "#scheduleMergeLabSelect", "#scheduleMergeLabStatus", requiredTypes.includes("LAB") ? "Keep laboratory local." : "This subject does not require a laboratory block.");
+        }
+
+        const hasAnySelection = hasFullSelection || Number($("#scheduleMergeLecSelect").val() || 0) > 0 || Number($("#scheduleMergeLabSelect").val() || 0) > 0;
+        $("#btnClearMergeSelection").prop("disabled", isBlocked || !hasAnySelection);
     }
 
     function openScheduleMergeModal(button) {
@@ -8112,7 +8167,6 @@ while ($ay = $ayQ->fetch_assoc()) {
             },
             success: function (res) {
                 if (!res || res.status !== "ok") {
-                    $("#scheduleMergeCandidateList").html('<div class="schedule-merge-empty">Unable to load merge candidates.</div>');
                     Swal.fire({
                         icon: "error",
                         title: "Error",
@@ -8123,48 +8177,41 @@ while ($ay = $ayQ->fetch_assoc()) {
                 }
 
                 scheduleMergeState = res;
-                $("#scheduleMergeOwnerOfferingId").val(String(res.owner_offering_id || ""));
+                $("#scheduleMergeTargetOfferingId").val(String(res.target_offering_id || ""));
 
-                const owner = res.owner || {};
-                const ownerTitle = String(owner.group_course_label || owner.full_section || owner.section_name || "Schedule owner").trim();
-                const subjectParts = [owner.sub_code, owner.sub_description].filter(Boolean).map(value => String(value).trim());
+                const target = res.target || {};
+                const ownerTitle = String(target.full_section || target.section_name || "Current offering").trim();
+                const subjectParts = [target.sub_code, target.sub_description].filter(Boolean).map(value => String(value).trim());
                 const subjectLine = subjectParts.join(" - ");
-                const ownerLine = String(owner.full_section || owner.section_name || "").trim();
                 const metaParts = [];
 
                 if (subjectLine) {
                     metaParts.push(subjectLine);
                 }
-                if (ownerLine && ownerLine !== ownerTitle) {
-                    metaParts.push(`Owner row: ${ownerLine}`);
-                }
 
-                $("#scheduleMergeOwnerTitle").text(ownerTitle || "Schedule owner");
+                $("#scheduleMergeOwnerTitle").text(ownerTitle || "Current offering");
                 $("#scheduleMergeOwnerMeta").text(metaParts.join(" | "));
-                $("#scheduleMergeOwnerHint").text(
-                    Number(owner.group_size || 1) > 1
-                        ? `Current merged label: ${ownerTitle}`
-                        : "No additional offerings are merged yet."
-                );
+                $("#scheduleMergeOwnerHint").text("Choose whether this offering stays local, inherits a whole same-subject schedule, or inherits only lecture/laboratory blocks.");
 
-                const blockingMessages = buildScheduleMergeBlockingMessages(res);
+                const blockingMessages = getScheduleMergeBlockingMessages(res);
                 if (blockingMessages.length > 0) {
                     $("#scheduleMergeBlockingNotice")
                         .removeClass("d-none")
-                        .html(blockingMessages.map(message => `<div>${message}</div>`).join(""));
+                        .html(blockingMessages.map(message => `<div>${escapeHtml(String(message))}</div>`).join(""));
                 } else {
                     $("#scheduleMergeBlockingNotice").addClass("d-none").html("");
                 }
 
-                renderScheduleMergeCandidates(res);
-                $("#btnSaveScheduleMerge").prop("disabled", blockingMessages.length > 0);
+                populateScheduleMergeSelect("FULL", "#scheduleMergeFullSelect", "Keep this offering local");
+                populateScheduleMergeSelect("LEC", "#scheduleMergeLecSelect", "Keep lecture local");
+                populateScheduleMergeSelect("LAB", "#scheduleMergeLabSelect", "Keep laboratory local");
+                updateScheduleMergeControlState();
             },
             error: function (xhr) {
                 if (xhr.statusText === "abort") {
                     return;
                 }
 
-                $("#scheduleMergeCandidateList").html('<div class="schedule-merge-empty">Unable to load merge candidates.</div>');
                 Swal.fire({
                     icon: "error",
                     title: "Error",
@@ -8184,37 +8231,53 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
-        const ownerOfferingId = Number(scheduleMergeState.owner_offering_id || $("#scheduleMergeOwnerOfferingId").val() || 0);
-        if (!ownerOfferingId) {
-            Swal.fire("Error", "Missing schedule owner reference.", "error");
+        const targetOfferingId = Number(scheduleMergeState.target_offering_id || $("#scheduleMergeTargetOfferingId").val() || 0);
+        if (!targetOfferingId) {
+            Swal.fire("Error", "Missing offering reference.", "error");
             return;
         }
 
-        const blockingMessages = buildScheduleMergeBlockingMessages(scheduleMergeState);
+        const blockingMessages = getScheduleMergeBlockingMessages(scheduleMergeState);
         if (blockingMessages.length > 0) {
             Swal.fire({
                 icon: "warning",
                 title: "Merge Locked",
-                html: blockingMessages.join("<br><br>"),
+                html: blockingMessages.map(message => escapeHtml(String(message))).join("<br><br>"),
                 customClass: { popup: "swal-top" }
             });
             return;
         }
 
-        const selectedMemberIds = getSelectedScheduleMergeMemberIds();
-        const owner = scheduleMergeState.owner || {};
-        const ownerLabel = String(owner.group_course_label || owner.full_section || owner.section_name || "this schedule owner").trim();
-        const confirmTitle = selectedMemberIds.length > 0 ? "Save Merge Group?" : "Clear Merge Group?";
-        const confirmHtml = selectedMemberIds.length > 0
-            ? `The schedule of <b>${escapeHtml(ownerLabel)}</b> will stay as the live schedule.<br><br><b>${escapeHtml(String(selectedMemberIds.length))}</b> selected offering(s) will inherit it, and their own schedule entries will be cleared.`
-            : `This will remove every merged member from <b>${escapeHtml(ownerLabel)}</b> and make them schedulable again.`;
+        const fullOwnerId = Number($("#scheduleMergeFullSelect").val() || 0);
+        const lecOwnerId = fullOwnerId > 0 ? 0 : Number($("#scheduleMergeLecSelect").val() || 0);
+        const labOwnerId = fullOwnerId > 0 ? 0 : Number($("#scheduleMergeLabSelect").val() || 0);
+        const selectedParts = [];
+
+        if (fullOwnerId > 0) {
+            const fullOption = findScheduleMergeOption("FULL", fullOwnerId);
+            selectedParts.push(`Whole subject from <b>${escapeHtml(String(fullOption?.label || "selected source"))}</b>`);
+        } else {
+            if (lecOwnerId > 0) {
+                const lecOption = findScheduleMergeOption("LEC", lecOwnerId);
+                selectedParts.push(`Lecture from <b>${escapeHtml(String(lecOption?.label || "selected source"))}</b>`);
+            }
+            if (labOwnerId > 0) {
+                const labOption = findScheduleMergeOption("LAB", labOwnerId);
+                selectedParts.push(`Laboratory from <b>${escapeHtml(String(labOption?.label || "selected source"))}</b>`);
+            }
+        }
+
+        const confirmTitle = selectedParts.length > 0 ? "Save Merge Settings?" : "Clear Merge Settings?";
+        const confirmHtml = selectedParts.length > 0
+            ? `This offering will inherit:<br><br>${selectedParts.map(item => `- ${item}`).join("<br>")}<br><br>Any local schedule rows for inherited lecture/laboratory parts will be cleared.`
+            : "This will remove the saved merge settings for the current offering. Any inherited lecture/laboratory blocks will return to local scheduling.";
 
         Swal.fire({
             icon: "question",
             title: confirmTitle,
             html: confirmHtml,
             showCancelButton: true,
-            confirmButtonText: selectedMemberIds.length > 0 ? "Save Merge" : "Clear Merge",
+            confirmButtonText: selectedParts.length > 0 ? "Save Merge" : "Clear Merge",
             cancelButtonText: "Cancel",
             allowOutsideClick: false,
             customClass: { popup: "swal-top" }
@@ -8231,15 +8294,17 @@ while ($ay = $ayQ->fetch_assoc()) {
                 dataType: "json",
                 data: {
                     save_schedule_merge: 1,
-                    owner_offering_id: ownerOfferingId,
-                    member_offering_ids_json: JSON.stringify(selectedMemberIds)
+                    target_offering_id: targetOfferingId,
+                    full_owner_offering_id: fullOwnerId,
+                    lec_owner_offering_id: lecOwnerId,
+                    lab_owner_offering_id: labOwnerId
                 },
                 success: function (res) {
                     if (res && res.status === "ok") {
                         Swal.fire({
                             icon: "success",
-                            title: selectedMemberIds.length > 0 ? "Merge Saved" : "Merge Cleared",
-                            html: escapeHtml(res.message || "Merge group updated."),
+                            title: selectedParts.length > 0 ? "Merge Saved" : "Merge Cleared",
+                            html: escapeHtml(res.message || "Merge settings updated."),
                             timer: 1400,
                             showConfirmButton: false,
                             customClass: { popup: "swal-top" }
@@ -8253,21 +8318,19 @@ while ($ay = $ayQ->fetch_assoc()) {
                     }
 
                     $("#btnSaveScheduleMerge").prop("disabled", false);
-                    updateScheduleMergeSelectionSummary();
                     Swal.fire({
                         icon: "error",
                         title: "Error",
-                        html: (res && res.message) ? res.message : "Failed to save the merge group.",
+                        html: (res && res.message) ? res.message : "Failed to save the merge settings.",
                         customClass: { popup: "swal-top" }
                     });
                 },
                 error: function (xhr) {
                     $("#btnSaveScheduleMerge").prop("disabled", false);
-                    updateScheduleMergeSelectionSummary();
                     Swal.fire({
                         icon: "error",
                         title: "Error",
-                        html: xhr.responseText || "Failed to save the merge group.",
+                        html: xhr.responseText || "Failed to save the merge settings.",
                         customClass: { popup: "swal-top" }
                     });
                 }
@@ -8993,111 +9056,12 @@ while ($ay = $ayQ->fetch_assoc()) {
         $("#scheduleListContainer .schedule-pan-shell").each(function () {
             const shell = this;
             if (shell.dataset.panReady === "1") {
+                shell.classList.remove("is-pan-active");
                 return;
             }
 
             shell.dataset.panReady = "1";
-
-            let activePointerId = null;
-            let startX = 0;
-            let startScrollLeft = 0;
-            let isDragging = false;
-            let suppressClick = false;
-
-            function isInteractiveTarget(target) {
-                return target instanceof Element && Boolean(
-                    target.closest("button, a, input, select, textarea, label, summary, [role='button'], [contenteditable='true'], .btn, .select2-container, .select2-selection")
-                );
-            }
-
-            function finishPan(event) {
-                if (activePointerId === null) {
-                    return;
-                }
-
-                if (event && typeof event.pointerId !== "undefined" && event.pointerId !== activePointerId) {
-                    return;
-                }
-
-                const wasDragging = isDragging;
-                if (shell.releasePointerCapture && shell.hasPointerCapture && shell.hasPointerCapture(activePointerId)) {
-                    try {
-                        shell.releasePointerCapture(activePointerId);
-                    } catch (error) {
-                        // Ignore release failures for browsers that auto-release capture.
-                    }
-                }
-
-                activePointerId = null;
-                isDragging = false;
-                shell.classList.remove("is-pan-active");
-
-                if (!wasDragging) {
-                    suppressClick = false;
-                }
-            }
-
-            shell.addEventListener("pointerdown", function (event) {
-                if (typeof event.button !== "undefined" && event.button !== 0) {
-                    return;
-                }
-
-                if (isInteractiveTarget(event.target)) {
-                    return;
-                }
-
-                if (shell.scrollWidth <= shell.clientWidth + 4) {
-                    return;
-                }
-
-                activePointerId = event.pointerId;
-                startX = event.clientX;
-                startScrollLeft = shell.scrollLeft;
-                isDragging = false;
-                suppressClick = false;
-            });
-
-            shell.addEventListener("pointermove", function (event) {
-                if (activePointerId === null || event.pointerId !== activePointerId) {
-                    return;
-                }
-
-                const deltaX = event.clientX - startX;
-                if (!isDragging && Math.abs(deltaX) > 6) {
-                    isDragging = true;
-                    shell.classList.add("is-pan-active");
-
-                    if (shell.setPointerCapture) {
-                        try {
-                            shell.setPointerCapture(activePointerId);
-                        } catch (error) {
-                            // Ignore browsers that do not support pointer capture in this context.
-                        }
-                    }
-                }
-
-                if (!isDragging) {
-                    return;
-                }
-
-                shell.scrollLeft = startScrollLeft - deltaX;
-                suppressClick = true;
-                event.preventDefault();
-            });
-
-            shell.addEventListener("pointerup", finishPan);
-            shell.addEventListener("pointercancel", finishPan);
-            shell.addEventListener("lostpointercapture", finishPan);
-
-            shell.addEventListener("click", function (event) {
-                if (!suppressClick) {
-                    return;
-                }
-
-                suppressClick = false;
-                event.preventDefault();
-                event.stopPropagation();
-            }, true);
+            shell.classList.remove("is-pan-active");
         });
     }
 
@@ -11085,12 +11049,20 @@ $("#blockScheduleModal").on("hidden.bs.modal", function () {
 });
 
 $("#btnAddLectureBlock").on("click", function () {
+    if (!getEditableScheduleTypesClient().includes("LEC")) {
+        Swal.fire("Inherited Lecture", "Lecture is currently inherited from another offering. Manage the merge settings first if you want to edit it locally.", "info");
+        return;
+    }
     addScheduleBlock("LEC");
 });
 
 $("#btnAddLabBlock").on("click", function () {
     if (!getRequiredScheduleTypesClient().includes("LAB")) {
         Swal.fire("Lecture Only Subject", "This subject does not allow laboratory schedule blocks.", "warning");
+        return;
+    }
+    if (!getEditableScheduleTypesClient().includes("LAB")) {
+        Swal.fire("Inherited Laboratory", "Laboratory is currently inherited from another offering. Manage the merge settings first if you want to edit it locally.", "info");
         return;
     }
     addScheduleBlock("LAB");
@@ -11278,7 +11250,8 @@ $(document).off("click", "#btnSaveScheduleBlocks").on("click", "#btnSaveSchedule
                 room_id: block.room_id,
                 time_start: block.time_start,
                 time_end: block.time_end,
-                days_json: JSON.stringify(block.days || [])
+                days_json: JSON.stringify(block.days || []),
+                is_inherited: Boolean(block.is_inherited)
             }))
         },
         success: function (res) {
@@ -11325,13 +11298,20 @@ $(document).off("click", ".btn-merge-schedule").on("click", ".btn-merge-schedule
     openScheduleMergeModal($(this));
 });
 
-$(document).on("change", ".schedule-merge-checkbox", function () {
-    updateScheduleMergeSelectionSummary();
+$("#scheduleMergeFullSelect, #scheduleMergeLecSelect, #scheduleMergeLabSelect").on("change", function () {
+    if (this.id === "scheduleMergeFullSelect" && Number($(this).val() || 0) > 0) {
+        $("#scheduleMergeLecSelect").val("");
+        $("#scheduleMergeLabSelect").val("");
+    }
+
+    updateScheduleMergeControlState();
 });
 
 $("#btnClearMergeSelection").on("click", function () {
-    $("#scheduleMergeCandidateList .schedule-merge-checkbox:not(:disabled)").prop("checked", false);
-    updateScheduleMergeSelectionSummary();
+    $("#scheduleMergeFullSelect").val("");
+    $("#scheduleMergeLecSelect").val("");
+    $("#scheduleMergeLabSelect").val("");
+    updateScheduleMergeControlState();
 });
 
 $("#btnSaveScheduleMerge").on("click", function () {
