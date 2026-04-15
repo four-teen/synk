@@ -2295,7 +2295,14 @@ function editable_schedule_types_for_context(array $ctx, array $mergeInfo = []):
 
 function has_outgoing_merge_dependencies(array $mergeInfo = []): bool
 {
-    if (!empty($mergeInfo['member_offering_ids'])) {
+    if (!empty($mergeInfo['has_merged_members'])) {
+        return true;
+    }
+
+    if (
+        (int)($mergeInfo['owner_offering_id'] ?? 0) === (int)($mergeInfo['offering_id'] ?? 0) &&
+        !empty($mergeInfo['member_offering_ids'])
+    ) {
         return true;
     }
 
@@ -3933,35 +3940,38 @@ if (isset($_POST['load_schedule_merge_candidates'])) {
             ((string)($candidate['sub_description'] ?? '') !== '' ? ' - ' . (string)($candidate['sub_description'] ?? '') : '')
         );
         $candidateEffectiveRows = (array)($effectiveRowsByOffering[$candidateId] ?? []);
+        $isCurrentFullSelection = (int)($currentScopes['FULL'] ?? 0) === $candidateId;
 
-        if ($isSameSubject) {
-            $canSelect = true;
-            $reason = '';
-
-            if (merge_required_minutes_signature($candidate) !== $targetSignature) {
-                $canSelect = false;
-                $reason = 'Required lecture/laboratory hours do not match this offering.';
-            } elseif (empty($candidateEffectiveRows)) {
-                $canSelect = false;
-                $reason = 'No saved schedule is available to inherit yet.';
-            } elseif (
-                (int)($effectiveOwnerMap[$candidateId]['LEC'] ?? 0) === $targetOfferingId ||
-                (int)($effectiveOwnerMap[$candidateId]['LAB'] ?? 0) === $targetOfferingId
-            ) {
-                $canSelect = false;
-                $reason = 'This option already depends on the current offering.';
-            }
-
-            $options['FULL'][] = [
-                'offering_id' => $candidateId,
-                'label' => $candidateLabel,
-                'subject_label' => $candidateSubject,
-                'schedule_summary' => schedule_merge_scope_summary($candidateEffectiveRows, 'FULL'),
-                'is_selected' => (int)($currentScopes['FULL'] ?? 0) === $candidateId,
-                'can_select' => $canSelect,
-                'reason' => $reason
-            ];
+        if (empty($candidateEffectiveRows) && !$isCurrentFullSelection) {
+            continue;
         }
+
+        $canSelect = true;
+        $reason = '';
+
+        if (merge_required_minutes_signature($candidate) !== $targetSignature) {
+            $canSelect = false;
+            $reason = 'Required lecture/laboratory hours do not match this offering.';
+        } elseif (empty($candidateEffectiveRows)) {
+            $canSelect = false;
+            $reason = 'No saved schedule is available to inherit yet.';
+        } elseif (
+            (int)($effectiveOwnerMap[$candidateId]['LEC'] ?? 0) === $targetOfferingId ||
+            (int)($effectiveOwnerMap[$candidateId]['LAB'] ?? 0) === $targetOfferingId
+        ) {
+            $canSelect = false;
+            $reason = 'This option already depends on the current offering.';
+        }
+
+        $options['FULL'][] = [
+            'offering_id' => $candidateId,
+            'label' => $candidateLabel,
+            'subject_label' => $candidateSubject,
+            'schedule_summary' => schedule_merge_scope_summary($candidateEffectiveRows, 'FULL'),
+            'is_selected' => (int)($currentScopes['FULL'] ?? 0) === $candidateId,
+            'can_select' => $canSelect,
+            'reason' => $reason
+        ];
 
         foreach (['LEC', 'LAB'] as $scope) {
             if (!in_array($scope, $requiredTypes, true)) {
@@ -4097,9 +4107,6 @@ if (isset($_POST['save_schedule_merge'])) {
         }
         if ($ownerId === $targetOfferingId) {
             respond("error", "An offering cannot inherit its own schedule.");
-        }
-        if ((int)($ownerRow['sub_id'] ?? 0) !== (int)($target['sub_id'] ?? 0)) {
-            respond("error", "Whole-subject merge still requires the same subject.");
         }
         if (merge_required_minutes_signature($ownerRow) !== merge_required_minutes_signature($target)) {
             respond("error", "Required lecture/laboratory hours do not match the selected source schedule.");

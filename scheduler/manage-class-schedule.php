@@ -662,10 +662,33 @@ body.swal2-shown .modal {
     background: #fbfcfe;
 }
 
-.schedule-merge-select-grid {
-    display: grid;
-    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
-    gap: 0.9rem;
+.schedule-merge-tabs {
+    border-bottom: 1px solid #dbe3f0;
+    gap: 0.35rem;
+}
+
+.schedule-merge-tabs .nav-link {
+    border: 1px solid transparent;
+    border-top-left-radius: 12px;
+    border-top-right-radius: 12px;
+    color: #5a6a81;
+    font-weight: 600;
+    padding: 0.65rem 0.95rem;
+}
+
+.schedule-merge-tabs .nav-link:hover {
+    border-color: #d7deea #d7deea transparent;
+    color: #27324f;
+}
+
+.schedule-merge-tabs .nav-link.active {
+    background: #eef3ff;
+    border-color: #c7d5f1 #c7d5f1 #eef3ff;
+    color: #27324f;
+}
+
+.schedule-merge-tab-pane {
+    padding-top: 0.95rem;
 }
 
 .schedule-merge-select-card {
@@ -675,8 +698,8 @@ body.swal2-shown .modal {
     padding: 0.95rem 1rem;
 }
 
-.schedule-merge-select-card.is-hidden {
-    display: none;
+.schedule-merge-tab-pane .select2-container {
+    width: 100% !important;
 }
 
 .schedule-merge-select-title {
@@ -3828,36 +3851,56 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         <div class="schedule-merge-toolbar mb-3">
           <div class="schedule-hint mb-0">
-            Keep the current offering local or inherit lecture/laboratory blocks from another saved section of the same subject. Existing whole-subject merges still appear here so they can be reviewed or cleared.
+            Use tabs to choose how this offering should inherit a saved schedule. Whole Subject can use any scheduled subject in this college, while Lecture Only and Laboratory Only still match sections of the same subject.
           </div>
         </div>
 
-        <div class="schedule-merge-select-grid" id="scheduleMergeSelectGrid">
-          <div class="schedule-merge-select-card" id="scheduleMergeFullCard">
-            <div class="schedule-merge-select-title">Whole Subject</div>
-            <div class="schedule-merge-select-note">Shown only when this offering already has a saved whole-subject merge, so you can review or clear it carefully.</div>
-            <select class="form-select mt-3" id="scheduleMergeFullSelect" disabled>
-              <option value="">Keep this offering local</option>
-            </select>
-            <div class="schedule-merge-select-status" id="scheduleMergeFullStatus">Loading options...</div>
-          </div>
+        <div id="scheduleMergeSelectGrid">
+          <ul class="nav nav-tabs schedule-merge-tabs" id="scheduleMergeTabNav" role="tablist">
+            <li class="nav-item" role="presentation">
+              <button class="nav-link active" id="scheduleMergeFullTab" data-bs-toggle="tab" data-bs-target="#scheduleMergeFullPane" type="button" role="tab" aria-controls="scheduleMergeFullPane" aria-selected="true">Whole Subject</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="scheduleMergeLecTab" data-bs-toggle="tab" data-bs-target="#scheduleMergeLecPane" type="button" role="tab" aria-controls="scheduleMergeLecPane" aria-selected="false">Lecture Only</button>
+            </li>
+            <li class="nav-item" role="presentation">
+              <button class="nav-link" id="scheduleMergeLabTab" data-bs-toggle="tab" data-bs-target="#scheduleMergeLabPane" type="button" role="tab" aria-controls="scheduleMergeLabPane" aria-selected="false">Laboratory Only</button>
+            </li>
+          </ul>
 
-          <div class="schedule-merge-select-card">
-            <div class="schedule-merge-select-title">Lecture Only</div>
-            <div class="schedule-merge-select-note">Choose a lecture source from another saved section of the same subject while laboratory stays local or uses another source.</div>
-            <select class="form-select mt-3" id="scheduleMergeLecSelect" disabled>
-              <option value="">Keep lecture local</option>
-            </select>
-            <div class="schedule-merge-select-status" id="scheduleMergeLecStatus">Loading options...</div>
-          </div>
+          <div class="tab-content" id="scheduleMergeTabContent">
+            <div class="tab-pane fade show active schedule-merge-tab-pane" id="scheduleMergeFullPane" role="tabpanel" aria-labelledby="scheduleMergeFullTab">
+              <div class="schedule-merge-select-card" id="scheduleMergeFullCard">
+                <div class="schedule-merge-select-title">Whole Subject</div>
+                <div class="schedule-merge-select-note">Select a saved offering from any scheduled subject in this college. This applies the full inherited schedule to the current offering.</div>
+                <select class="form-select mt-3" id="scheduleMergeFullSelect" disabled>
+                  <option value="">Keep this offering local</option>
+                </select>
+                <div class="schedule-merge-select-status" id="scheduleMergeFullStatus">Loading options...</div>
+              </div>
+            </div>
 
-          <div class="schedule-merge-select-card">
-            <div class="schedule-merge-select-title">Laboratory Only</div>
-            <div class="schedule-merge-select-note">Choose a laboratory source from another saved section of the same subject while lecture remains local or uses another source.</div>
-            <select class="form-select mt-3" id="scheduleMergeLabSelect" disabled>
-              <option value="">Keep laboratory local</option>
-            </select>
-            <div class="schedule-merge-select-status" id="scheduleMergeLabStatus">Loading options...</div>
+            <div class="tab-pane fade schedule-merge-tab-pane" id="scheduleMergeLecPane" role="tabpanel" aria-labelledby="scheduleMergeLecTab">
+              <div class="schedule-merge-select-card" id="scheduleMergeLecCard">
+                <div class="schedule-merge-select-title">Lecture Only</div>
+                <div class="schedule-merge-select-note">Choose a lecture source from another saved section of the same subject while laboratory stays local or uses another source.</div>
+                <select class="form-select mt-3" id="scheduleMergeLecSelect" disabled>
+                  <option value="">Keep lecture local</option>
+                </select>
+                <div class="schedule-merge-select-status" id="scheduleMergeLecStatus">Loading options...</div>
+              </div>
+            </div>
+
+            <div class="tab-pane fade schedule-merge-tab-pane" id="scheduleMergeLabPane" role="tabpanel" aria-labelledby="scheduleMergeLabTab">
+              <div class="schedule-merge-select-card" id="scheduleMergeLabCard">
+                <div class="schedule-merge-select-title">Laboratory Only</div>
+                <div class="schedule-merge-select-note">Choose a laboratory source from another saved section of the same subject while lecture remains local or uses another source.</div>
+                <select class="form-select mt-3" id="scheduleMergeLabSelect" disabled>
+                  <option value="">Keep laboratory local</option>
+                </select>
+                <div class="schedule-merge-select-status" id="scheduleMergeLabStatus">Loading options...</div>
+              </div>
+            </div>
           </div>
         </div>
       </div>
@@ -8121,6 +8164,44 @@ while ($ay = $ayQ->fetch_assoc()) {
         scheduleMergeRequest = null;
     }
 
+    function initializeScheduleMergeSelect2() {
+        if (!$.fn || typeof $.fn.select2 !== "function") {
+            return;
+        }
+
+        [
+            { selector: "#scheduleMergeFullSelect", placeholder: "Keep this offering local" },
+            { selector: "#scheduleMergeLecSelect", placeholder: "Keep lecture local" },
+            { selector: "#scheduleMergeLabSelect", placeholder: "Keep laboratory local" }
+        ].forEach(function (config) {
+            const $select = $(config.selector);
+            if ($select.data("select2")) {
+                return;
+            }
+
+            $select.select2({
+                dropdownParent: $("#scheduleMergeModal"),
+                width: "100%",
+                minimumResultsForSearch: 0,
+                placeholder: config.placeholder
+            });
+        });
+    }
+
+    function showScheduleMergeTab(scope) {
+        const selectorByScope = {
+            FULL: "#scheduleMergeFullTab",
+            LEC: "#scheduleMergeLecTab",
+            LAB: "#scheduleMergeLabTab"
+        };
+        const tabButton = document.querySelector(selectorByScope[scope] || selectorByScope.FULL);
+        if (!tabButton || typeof bootstrap === "undefined" || !bootstrap.Tab) {
+            return;
+        }
+
+        bootstrap.Tab.getOrCreateInstance(tabButton).show();
+    }
+
     function resetScheduleMergeModalState() {
         scheduleMergeState = null;
         $("#scheduleMergeTargetOfferingId").val("");
@@ -8128,15 +8209,16 @@ while ($ay = $ayQ->fetch_assoc()) {
         $("#scheduleMergeOwnerMeta").text("");
         $("#scheduleMergeOwnerHint").text("");
         $("#scheduleMergeBlockingNotice").addClass("d-none").html("");
-        $("#scheduleMergeFullCard").addClass("is-hidden");
         $("#scheduleMergeFullSelect").html('<option value="">Keep this offering local</option>').prop("disabled", true);
         $("#scheduleMergeLecSelect").html('<option value="">Keep lecture local</option>').prop("disabled", true);
         $("#scheduleMergeLabSelect").html('<option value="">Keep laboratory local</option>').prop("disabled", true);
+        $("#scheduleMergeFullSelect, #scheduleMergeLecSelect, #scheduleMergeLabSelect").trigger("change.select2");
         $("#scheduleMergeFullStatus").text("Loading options...");
         $("#scheduleMergeLecStatus").text("Loading options...");
         $("#scheduleMergeLabStatus").text("Loading options...");
         $("#btnClearMergeSelection").prop("disabled", true);
         $("#btnSaveScheduleMerge").prop("disabled", true);
+        showScheduleMergeTab("FULL");
     }
 
     function getScheduleMergeBlockingMessages(state) {
@@ -8174,12 +8256,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             $(selector).val(String(selectedId));
         }
         $(selector).prop("disabled", options.length === 0);
-    }
-
-    function syncScheduleMergeScopeVisibility() {
-        const hadFullSelection = Number(scheduleMergeState?.current?.FULL || 0) > 0;
-        const hasFullSelection = Number($("#scheduleMergeFullSelect").val() || 0) > 0;
-        $("#scheduleMergeFullCard").toggleClass("is-hidden", !(hadFullSelection || hasFullSelection));
+        $(selector).trigger("change.select2");
     }
 
     function updateScheduleMergeScopeStatus(scope, selector, statusSelector, emptyMessage) {
@@ -8208,10 +8285,15 @@ while ($ay = $ayQ->fetch_assoc()) {
         const requiredTypes = Array.isArray(scheduleMergeState?.target?.required_types) ? scheduleMergeState.target.required_types : ["LEC"];
         const isBlocked = blockingMessages.length > 0;
 
-        syncScheduleMergeScopeVisibility();
-        $("#scheduleMergeFullSelect").prop("disabled", isBlocked || $("#scheduleMergeFullSelect option").length <= 1);
-        $("#scheduleMergeLecSelect").prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LEC") || $("#scheduleMergeLecSelect option").length <= 1);
-        $("#scheduleMergeLabSelect").prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LAB") || $("#scheduleMergeLabSelect option").length <= 1);
+        $("#scheduleMergeFullSelect")
+            .prop("disabled", isBlocked || $("#scheduleMergeFullSelect option").length <= 1)
+            .trigger("change.select2");
+        $("#scheduleMergeLecSelect")
+            .prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LEC") || $("#scheduleMergeLecSelect option").length <= 1)
+            .trigger("change.select2");
+        $("#scheduleMergeLabSelect")
+            .prop("disabled", isBlocked || hasFullSelection || !requiredTypes.includes("LAB") || $("#scheduleMergeLabSelect option").length <= 1)
+            .trigger("change.select2");
         $("#btnSaveScheduleMerge").prop("disabled", isBlocked);
 
         updateScheduleMergeScopeStatus("FULL", "#scheduleMergeFullSelect", "#scheduleMergeFullStatus", "Keep the full offering local.");
@@ -8274,7 +8356,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                 $("#scheduleMergeOwnerTitle").text(ownerTitle || "Current offering");
                 $("#scheduleMergeOwnerMeta").text(metaParts.join(" | "));
-                $("#scheduleMergeOwnerHint").text("Choose lecture or laboratory sources from matching sections of the same subject. Inherited blocks stay view-only in the schedule editor.");
+                $("#scheduleMergeOwnerHint").text("Use Whole Subject to inherit from any scheduled subject in this college. Lecture Only and Laboratory Only still inherit from matching sections of the same subject.");
 
                 const blockingMessages = getScheduleMergeBlockingMessages(res);
                 if (blockingMessages.length > 0) {
@@ -8289,6 +8371,16 @@ while ($ay = $ayQ->fetch_assoc()) {
                 populateScheduleMergeSelect("LEC", "#scheduleMergeLecSelect", "Keep lecture local");
                 populateScheduleMergeSelect("LAB", "#scheduleMergeLabSelect", "Keep laboratory local");
                 updateScheduleMergeControlState();
+
+                if (Number(res?.current?.FULL || 0) > 0) {
+                    showScheduleMergeTab("FULL");
+                } else if (Number(res?.current?.LEC || 0) > 0) {
+                    showScheduleMergeTab("LEC");
+                } else if (Number(res?.current?.LAB || 0) > 0) {
+                    showScheduleMergeTab("LAB");
+                } else {
+                    showScheduleMergeTab("FULL");
+                }
             },
             error: function (xhr) {
                 if (xhr.statusText === "abort") {
@@ -8338,15 +8430,15 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         if (fullOwnerId > 0) {
             const fullOption = findScheduleMergeOption("FULL", fullOwnerId);
-            selectedParts.push(`Whole subject from <b>${escapeHtml(String(fullOption?.label || "selected source"))}</b>`);
+            selectedParts.push(`Whole subject from <b>${escapeHtml(buildScheduleMergeOptionText(fullOption) || "selected source")}</b>`);
         } else {
             if (lecOwnerId > 0) {
                 const lecOption = findScheduleMergeOption("LEC", lecOwnerId);
-                selectedParts.push(`Lecture from <b>${escapeHtml(String(lecOption?.label || "selected source"))}</b>`);
+                selectedParts.push(`Lecture from <b>${escapeHtml(buildScheduleMergeOptionText(lecOption) || "selected source")}</b>`);
             }
             if (labOwnerId > 0) {
                 const labOption = findScheduleMergeOption("LAB", labOwnerId);
-                selectedParts.push(`Laboratory from <b>${escapeHtml(String(labOption?.label || "selected source"))}</b>`);
+                selectedParts.push(`Laboratory from <b>${escapeHtml(buildScheduleMergeOptionText(labOption) || "selected source")}</b>`);
             }
         }
 
@@ -11385,6 +11477,7 @@ $("#scheduleMergeFullSelect, #scheduleMergeLecSelect, #scheduleMergeLabSelect").
     if (this.id === "scheduleMergeFullSelect" && Number($(this).val() || 0) > 0) {
         $("#scheduleMergeLecSelect").val("");
         $("#scheduleMergeLabSelect").val("");
+        $("#scheduleMergeLecSelect, #scheduleMergeLabSelect").trigger("change.select2");
     }
 
     updateScheduleMergeControlState();
@@ -11394,13 +11487,16 @@ $("#btnClearMergeSelection").on("click", function () {
     $("#scheduleMergeFullSelect").val("");
     $("#scheduleMergeLecSelect").val("");
     $("#scheduleMergeLabSelect").val("");
+    $("#scheduleMergeFullSelect, #scheduleMergeLecSelect, #scheduleMergeLabSelect").trigger("change.select2");
     updateScheduleMergeControlState();
+    showScheduleMergeTab("FULL");
 });
 
 $("#btnSaveScheduleMerge").on("click", function () {
     saveScheduleMergeGroup();
 });
 
+initializeScheduleMergeSelect2();
 resetScheduleMergeModalState();
 
 });
