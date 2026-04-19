@@ -5,6 +5,7 @@ include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/offering_scope_helper.php';
 require_once '../backend/schedule_block_helper.php';
+require_once '../backend/schedule_merge_helper.php';
 
 if (!isset($_SESSION['user_id']) || ($_SESSION['role'] ?? '') !== 'admin') {
     header("Location: ../index.php");
@@ -69,6 +70,26 @@ function h($value): string
     return htmlspecialchars((string)$value, ENT_QUOTES, 'UTF-8');
 }
 
+function buildRoomDisplayLabel($roomCode, $roomName): string
+{
+    $roomCode = trim((string)$roomCode);
+    $roomName = trim((string)$roomName);
+
+    if ($roomCode !== '' && $roomName !== '') {
+        return strcasecmp($roomCode, $roomName) === 0 ? $roomCode : $roomCode . ' - ' . $roomName;
+    }
+
+    if ($roomCode !== '') {
+        return $roomCode;
+    }
+
+    if ($roomName !== '') {
+        return $roomName;
+    }
+
+    return '-';
+}
+
 function buildScheduleDisplayParts(array $row): array
 {
     $decodedDays = json_decode((string)($row['days_json'] ?? ''), true);
@@ -76,16 +97,18 @@ function buildScheduleDisplayParts(array $row): array
     $time = (!empty($row['time_start']) && !empty($row['time_end']))
         ? date('h:i A', strtotime((string)$row['time_start'])) . ' - ' . date('h:i A', strtotime((string)$row['time_end']))
         : '-';
-    $roomName = trim((string)($row['room_name'] ?? ''));
     $schedule = ($days === '-' && $time === '-') ? '-' : trim($days . ' ' . $time);
 
     return [
         'schedule' => $schedule,
-        'room' => $roomName !== '' ? $roomName : '-'
+        'room' => buildRoomDisplayLabel(
+            (string)($row['room_code'] ?? ''),
+            (string)($row['room_name'] ?? $row['room_label'] ?? '')
+        ),
     ];
 }
 
-function buildSectionDisplayLabel(array $row): string
+function buildBaseSectionDisplayLabel(array $row): string
 {
     $fullSection = trim((string)($row['full_section'] ?? ''));
     $programCode = strtoupper(trim((string)($row['program_code'] ?? '')));
@@ -114,6 +137,64 @@ function buildSectionDisplayLabel(array $row): string
     return $baseLabel;
 }
 
+function buildSectionDisplayLabel(array $row): string
+{
+    $baseLabel = trim((string)($row['report_section_label'] ?? ''));
+    if ($baseLabel === '') {
+        $baseLabel = buildBaseSectionDisplayLabel($row);
+    }
+
+    if ($baseLabel === '') {
+        $baseLabel = '-';
+    }
+
+    $mergeTag = trim((string)($row['report_merge_tag'] ?? ''));
+    if ($mergeTag !== '' && stripos($baseLabel, '[' . $mergeTag . ']') === false) {
+        return $baseLabel . ' [' . $mergeTag . ']';
+    }
+
+    return $baseLabel;
+}
+
+function buildMergedSectionDisplayLabel(array $mergeInfo, array $sectionRowsByOffering): string
+{
+    $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+    $groupOfferingIds = synk_schedule_merge_normalize_offering_ids((array)($mergeInfo['group_offering_ids'] ?? []));
+
+    if ($groupLabel === '' || empty($groupOfferingIds)) {
+        return $groupLabel;
+    }
+
+    $hasMissingMajor = false;
+    $rebuiltLabels = [];
+
+    foreach ($groupOfferingIds as $groupOfferingId) {
+        $sectionRow = $sectionRowsByOffering[$groupOfferingId] ?? null;
+        if (!is_array($sectionRow)) {
+            continue;
+        }
+
+        $major = strtoupper(trim((string)($sectionRow['major'] ?? '')));
+        if ($major !== '' && stripos($groupLabel, $major) === false) {
+            $hasMissingMajor = true;
+        }
+
+        $sectionLabel = buildBaseSectionDisplayLabel($sectionRow);
+        if ($sectionLabel !== '' && $sectionLabel !== '-') {
+            $rebuiltLabels[$sectionLabel] = true;
+        }
+    }
+
+    if (!$hasMissingMajor || empty($rebuiltLabels)) {
+        return $groupLabel;
+    }
+
+    $labelValues = array_keys($rebuiltLabels);
+    natcasesort($labelValues);
+
+    return implode('/', $labelValues);
+}
+
 function formatReportNumber($value): string
 {
     $formatted = number_format((float)$value, 2, '.', '');
@@ -139,6 +220,162 @@ function buildSubjectDescriptionLabel(array $row, string $description): string
 
     $description = trim($description);
     return $description !== '' ? $description . ', ' . $suffix : $suffix;
+}
+
+function buildCourseReportRowSignature(array $row): string
+{
+    $display = buildScheduleDisplayParts($row);
+    $sectionLabel = buildSectionDisplayLabel($row);
+
+    return implode('|', [
+        strtoupper(trim((string)($row['sub_code'] ?? ''))),
+        strtoupper(trim($sectionLabel)),
+        strtoupper(trim((string)($display['schedule'] ?? '-'))),
+        strtoupper(trim((string)($display['room'] ?? '-'))),
+    ]);
+}
+
+function appendUniqueCourseReportRow(array &$courses, array &$rowSignaturesByCode, string $code, array $row): void
+{
+    if (!isset($rowSignaturesByCode[$code])) {
+        $rowSignaturesByCode[$code] = [];
+    }
+
+    $signature = buildCourseReportRowSignature($row);
+    if (isset($rowSignaturesByCode[$code][$signature])) {
+        return;
+    }
+
+    $rowSignaturesByCode[$code][$signature] = true;
+    $courses[$code]['rows'][] = $row;
+}
+
+function buildReportMergeTag(array $scopeDisplay): string
+{
+    if (empty($scopeDisplay['is_merged'])) {
+        return '';
+    }
+
+    if (($scopeDisplay['mode'] ?? 'local') === 'full') {
+        return 'Merged Subject';
+    }
+
+    return strtoupper(trim((string)($scopeDisplay['scope'] ?? 'LEC'))) === 'LAB'
+        ? 'Merged LAB'
+        : 'Merged LEC';
+}
+
+function loadReportScheduleRowsByOffering(mysqli $conn, array $offeringIds): array
+{
+    $rowsByOffering = [];
+    $safeIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($safeIds)) {
+        return $rowsByOffering;
+    }
+
+    $sql = "
+        SELECT
+            cs.schedule_id,
+            cs.offering_id,
+            cs.schedule_type,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            NULLIF(TRIM(r.room_code), '') AS room_code,
+            NULLIF(TRIM(r.room_name), '') AS room_name
+        FROM tbl_class_schedule cs
+        LEFT JOIN tbl_rooms r
+            ON r.room_id = cs.room_id
+        WHERE cs.offering_id IN (" . implode(',', array_map('intval', $safeIds)) . ")
+        ORDER BY
+            cs.offering_id ASC,
+            FIELD(cs.schedule_type, 'LEC', 'LAB') ASC,
+            cs.time_start ASC,
+            cs.schedule_id ASC
+    ";
+
+    $result = $conn->query($sql);
+    if (!($result instanceof mysqli_result)) {
+        return $rowsByOffering;
+    }
+
+    while ($row = $result->fetch_assoc()) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        if (!isset($rowsByOffering[$offeringId])) {
+            $rowsByOffering[$offeringId] = [];
+        }
+
+        $rowsByOffering[$offeringId][] = [
+            'schedule_id' => (int)($row['schedule_id'] ?? 0),
+            'schedule_type' => strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))) === 'LAB' ? 'LAB' : 'LEC',
+            'days_json' => (string)($row['days_json'] ?? '[]'),
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? ''),
+            'room_code' => (string)($row['room_code'] ?? ''),
+            'room_name' => (string)($row['room_name'] ?? ''),
+        ];
+    }
+
+    return $rowsByOffering;
+}
+
+function loadEffectiveReportScheduleRowsByOffering(mysqli $conn, array $offeringIds, array $effectiveOwnerMap = []): array
+{
+    $rowsByOffering = [];
+    $safeIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($safeIds)) {
+        return $rowsByOffering;
+    }
+
+    if (empty($effectiveOwnerMap)) {
+        $effectiveOwnerMap = synk_schedule_merge_load_effective_owner_map($conn, $safeIds);
+    }
+
+    $effectiveOwnerIds = synk_schedule_merge_collect_effective_owner_ids($effectiveOwnerMap);
+    $scheduleRowsByOwner = loadReportScheduleRowsByOffering($conn, $effectiveOwnerIds);
+
+    foreach ($safeIds as $offeringId) {
+        $rowsByOffering[$offeringId] = [];
+
+        foreach (synk_schedule_merge_schedule_types() as $type) {
+            $effectiveOwnerId = (int)($effectiveOwnerMap[$offeringId][$type] ?? $offeringId);
+            foreach ((array)($scheduleRowsByOwner[$effectiveOwnerId] ?? []) as $scheduleRow) {
+                if (($scheduleRow['schedule_type'] ?? 'LEC') !== $type) {
+                    continue;
+                }
+
+                $scheduleRow['effective_owner_id'] = $effectiveOwnerId;
+                $rowsByOffering[$offeringId][] = $scheduleRow;
+            }
+        }
+
+        if (count($rowsByOffering[$offeringId]) <= 1) {
+            continue;
+        }
+
+        usort($rowsByOffering[$offeringId], static function (array $left, array $right): int {
+            $leftOrder = ($left['schedule_type'] ?? 'LEC') === 'LAB' ? 1 : 0;
+            $rightOrder = ($right['schedule_type'] ?? 'LEC') === 'LAB' ? 1 : 0;
+
+            return [
+                (string)($left['time_start'] ?? ''),
+                (string)($left['time_end'] ?? ''),
+                $leftOrder,
+                (int)($left['schedule_id'] ?? 0),
+            ] <=> [
+                (string)($right['time_start'] ?? ''),
+                (string)($right['time_end'] ?? ''),
+                $rightOrder,
+                (int)($right['schedule_id'] ?? 0),
+            ];
+        });
+    }
+
+    return $rowsByOffering;
 }
 
 function buildExcelHtmlDocument(array $courses, string $campusLabel, string $semester, string $ayLabel): string
@@ -195,7 +432,7 @@ function buildExcelHtmlDocument(array $courses, string $campusLabel, string $sem
             <?php endforeach; ?>
           <?php endforeach; ?>
         <?php else: ?>
-          <tr><td colspan="4" class="center">No workload rows found for this filter.</td></tr>
+          <tr><td colspan="4" class="center">No schedule rows found for this filter.</td></tr>
         <?php endif; ?>
       </table>
     </body>
@@ -246,11 +483,13 @@ $selectedCampusLabel = $selectedCampus['label'] ?? '';
 $campusPrintLabel = normalizeCampusLabel($selectedCampus['campus_name'] ?? '');
 $hasFilters = $selectedCampus !== null && $ay_id !== '' && $semester !== '';
 $courses = [];
+$courseRowSignatures = [];
 
 if ($hasFilters) {
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
+            o.offering_id,
             sm.sub_code,
             sm.sub_description,
             p.program_code,
@@ -259,22 +498,16 @@ if ($hasFilters) {
             sec.full_section,
             ps.lec_units,
             ps.lab_units,
-            ps.total_units,
-            cs.days_json,
-            cs.time_start,
-            cs.time_end,
-            r.room_name
+            ps.total_units
         FROM tbl_prospectus_offering o
         {$liveOfferingJoins}
         INNER JOIN tbl_program p ON p.program_id = o.program_id
         INNER JOIN tbl_college col ON col.college_id = p.college_id
         INNER JOIN tbl_subject_masterlist sm ON sm.sub_id = ps.sub_id
-        LEFT JOIN tbl_class_schedule cs ON cs.offering_id = o.offering_id
-        LEFT JOIN tbl_rooms r ON r.room_id = cs.room_id
         WHERE o.ay_id = ?
           AND o.semester = ?
           AND col.campus_id = ?
-        ORDER BY sm.sub_code ASC, sec.full_section ASC, sec.section_name ASC, cs.time_start ASC
+        ORDER BY sm.sub_code ASC, sec.full_section ASC, sec.section_name ASC, o.offering_id ASC
     ";
 
     $stmt = $conn->prepare($sql);
@@ -286,23 +519,124 @@ if ($hasFilters) {
         $stmt->execute();
         $res = $stmt->get_result();
 
+        $baseRows = [];
         while ($res && ($row = $res->fetch_assoc())) {
-            $code = (string)($row['sub_code'] ?? '');
-            if ($code === '') {
-                continue;
-            }
-
-            if (!isset($courses[$code])) {
-                $courses[$code] = [
-                    'desc' => (string)($row['sub_description'] ?? ''),
-                    'rows' => []
-                ];
-            }
-
-            $courses[$code]['rows'][] = $row;
+            $baseRows[] = $row;
         }
-
         $stmt->close();
+
+        if (!empty($baseRows)) {
+            $offeringIds = array_map(static function (array $row): int {
+                return (int)($row['offering_id'] ?? 0);
+            }, $baseRows);
+            $effectiveOwnerMap = synk_schedule_merge_load_effective_owner_map($conn, $offeringIds);
+            $displayContextOfferingIds = $offeringIds;
+            foreach ($effectiveOwnerMap as $types) {
+                foreach ((array)$types as $effectiveOwnerId) {
+                    $displayContextOfferingIds[] = (int)$effectiveOwnerId;
+                }
+            }
+
+            $mergeContext = synk_schedule_merge_load_display_context(
+                $conn,
+                synk_schedule_merge_normalize_offering_ids($displayContextOfferingIds)
+            );
+
+            $groupSectionOfferingIds = $displayContextOfferingIds;
+            foreach ($mergeContext as $mergeInfo) {
+                foreach ((array)($mergeInfo['group_offering_ids'] ?? []) as $groupOfferingId) {
+                    $groupSectionOfferingIds[] = (int)$groupOfferingId;
+                }
+
+                foreach ((array)($mergeInfo['owned_member_ids_by_scope'] ?? []) as $ownedMemberIds) {
+                    foreach ((array)$ownedMemberIds as $groupOfferingId) {
+                        $groupSectionOfferingIds[] = (int)$groupOfferingId;
+                    }
+                }
+
+                foreach ((array)($mergeInfo['effective_owner_by_type'] ?? []) as $effectiveOwnerId) {
+                    $groupSectionOfferingIds[] = (int)$effectiveOwnerId;
+                }
+            }
+
+            $groupSectionRowsByOffering = synk_schedule_merge_load_section_rows_by_offering(
+                $conn,
+                synk_schedule_merge_normalize_offering_ids($groupSectionOfferingIds)
+            );
+            $scheduleRowsByOffering = loadEffectiveReportScheduleRowsByOffering($conn, $offeringIds, $effectiveOwnerMap);
+
+            foreach ($baseRows as $row) {
+                $offeringId = (int)($row['offering_id'] ?? 0);
+                $mergeInfo = $mergeContext[$offeringId] ?? null;
+                $groupSize = (int)($mergeInfo['group_size'] ?? 1);
+                $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
+                $code = (string)($row['sub_code'] ?? '');
+
+                if ($code === '') {
+                    continue;
+                }
+
+                if ($groupSize > 1 && $groupLabel !== '') {
+                    $row['full_section'] = buildMergedSectionDisplayLabel((array)$mergeInfo, $groupSectionRowsByOffering);
+                    $row['major'] = '';
+                }
+
+                if (!isset($courses[$code])) {
+                    $courses[$code] = [
+                        'desc' => (string)($row['sub_description'] ?? ''),
+                        'rows' => [],
+                    ];
+                    $courseRowSignatures[$code] = [];
+                }
+
+                $scheduleRows = $scheduleRowsByOffering[$offeringId] ?? [];
+                if (empty($scheduleRows)) {
+                    if ($groupSize > 1 && $groupLabel !== '') {
+                        $row['report_section_label'] = buildMergedSectionDisplayLabel((array)$mergeInfo, $groupSectionRowsByOffering);
+                        $row['major'] = '';
+                    }
+
+                    appendUniqueCourseReportRow($courses, $courseRowSignatures, $code, array_merge($row, [
+                        'days_json' => '[]',
+                        'time_start' => '',
+                        'time_end' => '',
+                        'room_code' => '',
+                        'room_name' => '',
+                    ]));
+                    continue;
+                }
+
+                foreach ($scheduleRows as $scheduleRow) {
+                    $scheduleType = strtoupper(trim((string)($scheduleRow['schedule_type'] ?? 'LEC'))) === 'LAB' ? 'LAB' : 'LEC';
+                    $displayOfferingId = (int)($scheduleRow['effective_owner_id'] ?? ($effectiveOwnerMap[$offeringId][$scheduleType] ?? $offeringId));
+                    $displayMergeInfo = $mergeContext[$displayOfferingId] ?? ($mergeContext[$offeringId] ?? null);
+                    $scopeDisplay = synk_schedule_merge_scope_display_context(
+                        (array)$displayMergeInfo,
+                        $scheduleType,
+                        $displayOfferingId,
+                        $groupSectionRowsByOffering
+                    );
+                    $reportRow = array_merge($row, $scheduleRow);
+
+                    $sectionLabel = trim((string)($scopeDisplay['group_label'] ?? ''));
+                    if ($sectionLabel === '' && $groupSize > 1 && $groupLabel !== '') {
+                        $sectionLabel = buildMergedSectionDisplayLabel((array)$mergeInfo, $groupSectionRowsByOffering);
+                    }
+
+                    if ($sectionLabel !== '') {
+                        $reportRow['report_section_label'] = $sectionLabel;
+                        $reportRow['major'] = '';
+                    }
+
+                    $mergeTag = buildReportMergeTag($scopeDisplay);
+                    if ($mergeTag !== '') {
+                        $reportRow['report_merge_tag'] = $mergeTag;
+                    }
+
+                    appendUniqueCourseReportRow($courses, $courseRowSignatures, $code, $reportRow);
+                }
+            }
+        }
     }
 }
 
@@ -395,7 +729,7 @@ if ($exportMode === 'excel' && $hasFilters) {
         <div class="container-xxl flex-grow-1 container-p-y">
           <div class="no-print mb-4">
             <h4 class="fw-bold mb-2">Alphabetical List of Courses</h4>
-            <p class="report-note mb-0">Campus-scoped faculty workload report with print view and Excel download.</p>
+            <p class="report-note mb-0">Campus-scoped schedule report with merge-aware section display, print view, and Excel download.</p>
           </div>
 
           <div class="card report-filters no-print mb-4">
@@ -506,7 +840,7 @@ if ($exportMode === 'excel' && $hasFilters) {
                       </table>
                     </div>
                   <?php else: ?>
-                    <div class="report-empty"><i class="bx bx-folder-open"></i><h5 class="mb-2">No workload rows found for this filter</h5><p class="mb-0">Try another campus, academic year, or semester to view available schedule data.</p></div>
+                    <div class="report-empty"><i class="bx bx-folder-open"></i><h5 class="mb-2">No schedule rows found for this filter</h5><p class="mb-0">Try another campus, academic year, or semester to view available schedule data.</p></div>
                   <?php endif; ?>
                 </div>
               <?php endif; ?>

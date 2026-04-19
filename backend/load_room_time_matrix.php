@@ -92,15 +92,106 @@ function day_short_label($day) {
     return $labels[$day] ?? $day;
 }
 
-function subject_color_class($subjectCode) {
-    $subject = strtoupper(trim((string)$subjectCode));
-    if ($subject === '') {
+function matrix_theme_class($value) {
+    $key = strtoupper(trim((string)$value));
+    if ($key === '') {
         return 'sub-0';
     }
 
     $paletteSize = 12;
-    $hash = (int)(sprintf('%u', crc32($subject)) % $paletteSize);
+    $hash = (int)(sprintf('%u', crc32($key)) % $paletteSize);
     return 'sub-' . $hash;
+}
+
+function matrix_program_label_for_scope(array $scopeContext, int $offeringId, array $sectionRowsByOffering): string {
+    $offeringIds = synk_schedule_merge_normalize_offering_ids(
+        (array)($scopeContext['group_offering_ids'] ?? [$offeringId])
+    );
+    if (empty($offeringIds)) {
+        $offeringIds = [$offeringId];
+    }
+
+    $programCodes = [];
+    foreach ($offeringIds as $candidateOfferingId) {
+        $programCode = strtoupper(trim((string)($sectionRowsByOffering[$candidateOfferingId]['program_code'] ?? '')));
+        if ($programCode !== '') {
+            $programCodes[$programCode] = $programCode;
+        }
+    }
+
+    if (empty($programCodes)) {
+        return '';
+    }
+
+    $labels = array_values($programCodes);
+    natcasesort($labels);
+
+    return implode('/', $labels);
+}
+
+function matrix_has_outgoing_merge_dependencies(array $mergeInfo = []): bool {
+    if (!empty($mergeInfo['has_merged_members'])) {
+        return true;
+    }
+
+    if (
+        (int)($mergeInfo['owner_offering_id'] ?? 0) === (int)($mergeInfo['offering_id'] ?? 0) &&
+        !empty($mergeInfo['member_offering_ids'])
+    ) {
+        return true;
+    }
+
+    $ownedByScope = (array)($mergeInfo['owned_member_ids_by_scope'] ?? []);
+    foreach (['LEC', 'LAB'] as $scope) {
+        if (!empty($ownedByScope[$scope])) {
+            return true;
+        }
+    }
+
+    return false;
+}
+
+function matrix_default_section_label(int $offeringId, array $sectionRowsByOffering, string $fallback = ''): string {
+    $row = (array)($sectionRowsByOffering[$offeringId] ?? []);
+    $label = trim((string)synk_schedule_merge_compose_base_section_label($row));
+    if ($label !== '') {
+        return $label;
+    }
+
+    return trim($fallback);
+}
+
+function matrix_merge_badge_label(array $scopeContext, string $scheduleType): string {
+    if (empty($scopeContext['is_merged'])) {
+        return '';
+    }
+
+    $mode = strtolower(trim((string)($scopeContext['mode'] ?? 'local')));
+    if ($mode === 'full') {
+        return 'Merged';
+    }
+
+    return strtoupper(trim((string)$scheduleType)) === 'LAB' ? 'Merged LAB' : 'Merged LEC';
+}
+
+function matrix_merge_note_label(array $scopeContext, string $scheduleType): string {
+    if (empty($scopeContext['is_merged'])) {
+        return '';
+    }
+
+    $memberLabel = trim((string)($scopeContext['member_label'] ?? ''));
+    if ($memberLabel === '') {
+        return 'Shared through merge.';
+    }
+
+    $mode = strtolower(trim((string)($scopeContext['mode'] ?? 'local')));
+    if ($mode === 'full') {
+        return 'Shared with ' . $memberLabel;
+    }
+
+    return strtoupper(trim((string)$scheduleType)) === 'LAB'
+        ? 'Laboratory shared with ' . $memberLabel
+        : 'Lecture shared with ' . $memberLabel;
 }
 
 function overlaps($slotStart, $slotEnd, $itemStart, $itemEnd) {
@@ -252,6 +343,22 @@ while ($row = $schedRes->fetch_assoc()) {
 $schedStmt->close();
 
 $mergeContext = synk_schedule_merge_load_display_context($conn, $scheduleOfferingIds);
+$mergeRelatedOfferingIds = $scheduleOfferingIds;
+foreach ($mergeContext as $mergeInfo) {
+    $mergeRelatedOfferingIds = array_merge(
+        $mergeRelatedOfferingIds,
+        (array)($mergeInfo['group_offering_ids'] ?? []),
+        (array)($mergeInfo['member_offering_ids'] ?? [])
+    );
+
+    foreach ((array)($mergeInfo['owned_member_ids_by_scope'] ?? []) as $scopeOfferingIds) {
+        $mergeRelatedOfferingIds = array_merge($mergeRelatedOfferingIds, (array)$scopeOfferingIds);
+    }
+}
+$sectionRowsByOffering = synk_schedule_merge_load_section_rows_by_offering(
+    $conn,
+    synk_schedule_merge_normalize_offering_ids($mergeRelatedOfferingIds)
+);
 
 foreach ($rawScheduleRows as $row) {
     $decodedDays = json_decode((string)$row['days_json'], true);
@@ -261,28 +368,67 @@ foreach ($rawScheduleRows as $row) {
 
     $offeringId = (int)($row['offering_id'] ?? 0);
     $mergeInfo = $mergeContext[$offeringId] ?? null;
-    $sectionLabel = (string)($row['section_name'] ?? '');
-    if (is_array($mergeInfo) && (int)($mergeInfo['group_size'] ?? 1) > 1) {
-        $groupLabel = trim((string)($mergeInfo['group_course_label'] ?? ''));
-        if ($groupLabel !== '') {
-            $sectionLabel = $groupLabel;
-        }
+    $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? 'LEC')));
+    $defaultSectionLabel = matrix_default_section_label(
+        $offeringId,
+        $sectionRowsByOffering,
+        (string)($row['section_name'] ?? '')
+    );
+    $scopeContext = is_array($mergeInfo)
+        ? synk_schedule_merge_scope_display_context($mergeInfo, $scheduleType, $offeringId, $sectionRowsByOffering)
+        : [
+            'scope' => $scheduleType,
+            'mode' => 'local',
+            'is_merged' => false,
+            'group_offering_ids' => [$offeringId],
+            'member_offering_ids' => [],
+            'group_label' => $defaultSectionLabel,
+            'member_label' => ''
+        ];
+    $sectionLabel = trim((string)($scopeContext['group_label'] ?? ''));
+    if ($sectionLabel === '') {
+        $sectionLabel = $defaultSectionLabel;
+    }
+
+    $mergeBadge = matrix_merge_badge_label($scopeContext, $scheduleType);
+    $mergeNote = matrix_merge_note_label($scopeContext, $scheduleType);
+    $programLabel = matrix_program_label_for_scope($scopeContext, $offeringId, $sectionRowsByOffering);
+    $facultyNames = trim((string)($row['faculty_names'] ?? ''));
+    $hasWorkloadAssignment = $facultyNames !== '';
+    $hasOutgoingMerges = is_array($mergeInfo) && matrix_has_outgoing_merge_dependencies($mergeInfo);
+    $canRemove = $role === 'scheduler'
+        && (int)($row['offering_college_id'] ?? 0) === $college_id
+        && !$hasWorkloadAssignment
+        && !$hasOutgoingMerges;
+    $readonlyReason = '';
+    if ($role !== 'scheduler') {
+        $readonlyReason = 'This matrix is view-only for your account.';
+    } elseif ((int)($row['offering_college_id'] ?? 0) !== $college_id) {
+        $readonlyReason = 'This schedule belongs to another college using this room.';
+    } elseif ($hasWorkloadAssignment) {
+        $readonlyReason = 'This schedule is already assigned in Faculty Workload. Remove the workload assignment first.';
+    } elseif ($hasOutgoingMerges) {
+        $readonlyReason = $mergeBadge !== ''
+            ? "{$mergeBadge} block is still shared by other offerings. Manage the merge settings first."
+            : 'This schedule is still used as a merge source. Manage the merge settings first.';
     }
 
     $item = [
         'offering_id' => $offeringId,
         'schedule_id' => (int)$row['schedule_id'],
-        'schedule_type' => strtoupper(trim((string)($row['schedule_type'] ?? 'LEC'))),
+        'schedule_type' => $scheduleType,
         'time_start' => (string)$row['time_start'],
         'time_end' => (string)$row['time_end'],
         'sub_code' => (string)$row['sub_code'],
+        'program_code' => $programLabel,
         'section_name' => $sectionLabel,
+        'merge_badge' => $mergeBadge,
+        'merge_note' => $mergeNote,
         'college_code' => (string)($row['college_code'] ?? ''),
-        'faculty_names' => trim((string)($row['faculty_names'] ?? '')),
-        'subject_class' => subject_color_class($row['sub_code'] ?? ''),
-        'can_remove' => $role === 'scheduler'
-            && (int)($row['offering_college_id'] ?? 0) === $college_id
-            && !(is_array($mergeInfo) && !empty($mergeInfo['has_merged_members']))
+        'faculty_names' => $facultyNames,
+        'subject_class' => matrix_theme_class($programLabel !== '' ? $programLabel : (string)($row['sub_code'] ?? '')),
+        'can_remove' => $canRemove,
+        'readonly_reason' => $readonlyReason
     ];
 
     foreach ($decodedDays as $dayToken) {
@@ -307,7 +453,10 @@ if ($policyWindowLabel === '') {
 echo "<div class='mb-3 small text-muted matrix-meta-note'>";
 echo "This matrix follows the " . h($policySourceLabel) . " window of " . h($policyWindowLabel) . ".";
 echo " Time labels use 12-hour format, and each column is a 30-minute time block.";
-echo " The same subject keeps the same color across the matrix. Shared rooms include schedules from every college using that room.";
+echo " It always reflects the current live schedule workspace for this selected college term, including any saved set currently loaded into live.";
+echo " Colors are grouped by program so sections from BSIS, BSIT, BSCS, and other programs are easier to scan.";
+echo " Merged lecture and laboratory blocks are labeled from the active live merge links.";
+echo " Shared rooms include schedules from every college using that room.";
 if ($role === 'scheduler') {
     echo " Click a colored schedule block to remove the entire offering schedule, including paired lecture and laboratory rows.";
 }
@@ -375,7 +524,19 @@ foreach ($rooms as $roomId => $roomLabel) {
             }
 
             usort($currentItems, function ($a, $b) {
-                return $a['schedule_id'] <=> $b['schedule_id'];
+                if ((string)($a['sub_code'] ?? '') !== (string)($b['sub_code'] ?? '')) {
+                    return strcmp((string)($a['sub_code'] ?? ''), (string)($b['sub_code'] ?? ''));
+                }
+
+                if ((string)($a['section_name'] ?? '') !== (string)($b['section_name'] ?? '')) {
+                    return strcmp((string)($a['section_name'] ?? ''), (string)($b['section_name'] ?? ''));
+                }
+
+                if ((string)($a['schedule_type'] ?? '') !== (string)($b['schedule_type'] ?? '')) {
+                    return strcmp((string)($a['schedule_type'] ?? ''), (string)($b['schedule_type'] ?? ''));
+                }
+
+                return (int)($a['schedule_id'] ?? 0) <=> (int)($b['schedule_id'] ?? 0);
             });
 
             $signature = implode('|', array_map(function ($item) {
@@ -405,7 +566,6 @@ foreach ($rooms as $roomId => $roomLabel) {
 
             foreach ($currentItems as $item) {
                 $typeLabel = $item['schedule_type'] === 'LAB' ? 'LAB' : 'LEC';
-                $collegeSuffix = $item['college_code'] !== '' ? " | " . $item['college_code'] : '';
                 $entryClass = 'matrix-entry ' . $item['subject_class'] . ($item['can_remove'] ? ' matrix-entry-actionable' : ' matrix-entry-readonly');
                 $entryTitle = trim($item['sub_code'] . ' - ' . $item['section_name']);
                 $facultyNames = trim((string)($item['faculty_names'] ?? ''));
@@ -413,7 +573,31 @@ foreach ($rooms as $roomId => $roomLabel) {
                     $facultyNames = 'TBA';
                 }
                 $facultyHtml = "<small class='matrix-entry-faculty' title='" . h($facultyNames) . "'>" . h($facultyNames) . "</small>";
-                $entryAriaLabel = trim($entryTitle . ' ' . $typeLabel . ($facultyNames !== '' ? ' Faculty ' . $facultyNames : ''));
+                $tagHtml = [];
+                if (trim((string)($item['program_code'] ?? '')) !== '') {
+                    $tagHtml[] = "<span class='matrix-entry-chip is-program'>" . h((string)$item['program_code']) . "</span>";
+                }
+                $tagHtml[] = "<span class='matrix-entry-chip'>" . h($typeLabel) . "</span>";
+                if (trim((string)($item['merge_badge'] ?? '')) !== '') {
+                    $tagHtml[] = "<span class='matrix-entry-chip is-merge'>" . h((string)$item['merge_badge']) . "</span>";
+                }
+                if (trim((string)($item['college_code'] ?? '')) !== '') {
+                    $tagHtml[] = "<span class='matrix-entry-chip'>" . h((string)$item['college_code']) . "</span>";
+                }
+                $mergeNoteHtml = trim((string)($item['merge_note'] ?? '')) !== ''
+                    ? "<small class='matrix-entry-merge' title='" . h((string)$item['merge_note']) . "'>" . h((string)$item['merge_note']) . "</small>"
+                    : "";
+                $entryAriaLabel = trim(
+                    $entryTitle . ' ' .
+                    $typeLabel .
+                    (!empty($item['merge_badge']) ? ' ' . (string)$item['merge_badge'] : '') .
+                    (!empty($item['merge_note']) ? ' ' . (string)$item['merge_note'] : '') .
+                    ($facultyNames !== '' ? ' Faculty ' . $facultyNames : '')
+                );
+                $readonlyReason = trim((string)($item['readonly_reason'] ?? ''));
+                $titleText = $item['can_remove']
+                    ? "Click to remove this offering schedule"
+                    : ($readonlyReason !== '' ? $readonlyReason : "View-only entry");
 
                 $entriesHtml[] = "
                     <div
@@ -424,12 +608,15 @@ foreach ($rooms as $roomId => $roomLabel) {
                         data-section-name='" . h($item['section_name']) . "'
                         data-type-label='" . h($typeLabel) . "'
                         data-college-code='" . h($item['college_code']) . "'
-                        title='" . h($item['can_remove'] ? "Click to remove this offering schedule" : "View-only entry") . "'
+                        data-readonly-reason='" . h($readonlyReason) . "'
+                        title='" . h($titleText) . "'
                         role='button'
                         tabindex='0'
                         aria-label='" . h($entryAriaLabel) . "'>
                         <strong>" . h($item['sub_code']) . "</strong><br>
-                        <small>" . h($item['section_name']) . " | " . h($typeLabel) . h($collegeSuffix) . "</small>
+                        <small class='matrix-entry-section'>" . h($item['section_name']) . "</small>
+                        <div class='matrix-entry-tags'>" . implode('', $tagHtml) . "</div>
+                        {$mergeNoteHtml}
                         {$facultyHtml}
                     </div>
                 ";

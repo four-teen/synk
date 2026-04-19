@@ -360,10 +360,211 @@ function saved_schedule_tables_exist($conn) {
     return $exists;
 }
 
+function saved_schedule_workload_table_name() {
+    return 'tbl_program_schedule_set_workload_row';
+}
+
+function saved_schedule_workload_table_exists($conn) {
+    $table = saved_schedule_workload_table_name();
+    $q = $conn->query("SHOW TABLES LIKE '{$table}'");
+    return $q && $q->num_rows > 0;
+}
+
+function saved_schedule_workspace_state_table_name() {
+    return 'tbl_program_schedule_live_workspace_state';
+}
+
+function saved_schedule_workspace_state_table_exists($conn) {
+    $table = saved_schedule_workspace_state_table_name();
+    $q = $conn->query("SHOW TABLES LIKE '{$table}'");
+    return $q && $q->num_rows > 0;
+}
+
+function ensure_saved_schedule_workload_table_exists($conn) {
+    if (saved_schedule_workload_table_exists($conn)) {
+        return true;
+    }
+
+    $table = saved_schedule_workload_table_name();
+    $sql = "
+        CREATE TABLE IF NOT EXISTS `{$table}` (
+            schedule_set_workload_row_id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+            schedule_set_id INT(10) UNSIGNED NOT NULL,
+            schedule_set_row_id INT(10) UNSIGNED NOT NULL,
+            offering_id INT(10) UNSIGNED NOT NULL,
+            program_id INT(10) UNSIGNED NOT NULL,
+            schedule_type VARCHAR(10) NOT NULL DEFAULT 'LEC',
+            block_order SMALLINT(5) UNSIGNED NOT NULL DEFAULT 1,
+            faculty_id INT(10) UNSIGNED NOT NULL,
+            faculty_name_snapshot VARCHAR(180) NOT NULL DEFAULT '',
+            subject_code_snapshot VARCHAR(50) NOT NULL DEFAULT '',
+            section_name_snapshot VARCHAR(120) NOT NULL DEFAULT '',
+            date_created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            PRIMARY KEY (schedule_set_workload_row_id),
+            UNIQUE KEY uq_pss_workload_row_faculty (schedule_set_id, schedule_set_row_id, faculty_id),
+            KEY idx_pss_workload_set (schedule_set_id),
+            KEY idx_pss_workload_set_row (schedule_set_row_id),
+            KEY idx_pss_workload_faculty (faculty_id),
+            CONSTRAINT fk_pss_workload_set
+                FOREIGN KEY (schedule_set_id) REFERENCES tbl_program_schedule_set (schedule_set_id)
+                ON DELETE CASCADE
+                ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ";
+
+    if (!$conn->query($sql)) {
+        return false;
+    }
+
+    return true;
+}
+
+function ensure_saved_schedule_workspace_state_table_exists($conn) {
+    if (saved_schedule_workspace_state_table_exists($conn)) {
+        return true;
+    }
+
+    $table = saved_schedule_workspace_state_table_name();
+    $sql = "
+        CREATE TABLE IF NOT EXISTS `{$table}` (
+            workspace_state_id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+            college_id INT(10) UNSIGNED NOT NULL,
+            ay_id INT(10) UNSIGNED NOT NULL,
+            semester TINYINT(3) UNSIGNED NOT NULL,
+            last_loaded_schedule_set_id INT(10) UNSIGNED DEFAULT NULL,
+            date_created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+            date_updated DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP ON UPDATE CURRENT_TIMESTAMP,
+            PRIMARY KEY (workspace_state_id),
+            UNIQUE KEY uq_pss_workspace_scope (college_id, ay_id, semester),
+            KEY idx_pss_workspace_set (last_loaded_schedule_set_id),
+            CONSTRAINT fk_pss_workspace_set
+                FOREIGN KEY (last_loaded_schedule_set_id) REFERENCES tbl_program_schedule_set (schedule_set_id)
+                ON DELETE SET NULL
+                ON UPDATE CASCADE
+        ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci
+    ";
+
+    if (!$conn->query($sql)) {
+        return false;
+    }
+
+    return true;
+}
+
 function ensure_saved_schedule_tables_exist($conn) {
     if (!saved_schedule_tables_exist($conn)) {
         respond("error", "Create tbl_program_schedule_set and tbl_program_schedule_set_row first.");
     }
+
+    if (!ensure_saved_schedule_workload_table_exists($conn)) {
+        respond("error", "Create tbl_program_schedule_set_workload_row first.");
+    }
+
+    if (!ensure_saved_schedule_workspace_state_table_exists($conn)) {
+        respond("error", "Create tbl_program_schedule_live_workspace_state first.");
+    }
+}
+
+function saved_schedule_scope_metadata($programId, $programCode = '', $programName = '') {
+    $programId = (int)$programId;
+    $programCode = trim((string)$programCode);
+    $programName = trim((string)$programName);
+
+    $scopeLabel = 'College term';
+    if ($programId > 0) {
+        $scopeParts = array_filter([$programCode, $programName], static function ($value) {
+            return trim((string)$value) !== '';
+        });
+        $scopeLabel = 'Legacy program set';
+        if (!empty($scopeParts)) {
+            $scopeLabel .= ': ' . implode(' - ', $scopeParts);
+        }
+    }
+
+    return [
+        'scope_key' => $programId > 0 ? 'program' : 'college',
+        'scope_label' => $scopeLabel
+    ];
+}
+
+function load_saved_schedule_workspace_state($conn, $college_id, $ay_id, $semester) {
+    $table = saved_schedule_workspace_state_table_name();
+    $sql = "
+        SELECT
+            ws.last_loaded_schedule_set_id,
+            s.schedule_set_id,
+            s.program_id,
+            s.set_name,
+            COALESCE(NULLIF(TRIM(p.program_code), ''), '') AS program_code,
+            COALESCE(NULLIF(TRIM(p.program_name), ''), '') AS program_name
+        FROM `{$table}` ws
+        LEFT JOIN tbl_program_schedule_set s
+            ON s.schedule_set_id = ws.last_loaded_schedule_set_id
+           AND s.college_id = ws.college_id
+           AND s.ay_id = ws.ay_id
+           AND s.semester = ws.semester
+        LEFT JOIN tbl_program p
+            ON p.program_id = s.program_id
+        WHERE ws.college_id = ?
+          AND ws.ay_id = ?
+          AND ws.semester = ?
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param("iii", $college_id, $ay_id, $semester);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    if (!$row) {
+        return null;
+    }
+
+    $scheduleSetId = (int)($row['schedule_set_id'] ?? $row['last_loaded_schedule_set_id'] ?? 0);
+    if ($scheduleSetId <= 0) {
+        return null;
+    }
+
+    $scopeMeta = saved_schedule_scope_metadata(
+        (int)($row['program_id'] ?? 0),
+        (string)($row['program_code'] ?? ''),
+        (string)($row['program_name'] ?? '')
+    );
+
+    return [
+        'last_loaded_schedule_set_id' => $scheduleSetId,
+        'last_loaded_schedule_set_name' => (string)($row['set_name'] ?? ''),
+        'last_loaded_scope_label' => (string)($scopeMeta['scope_label'] ?? '')
+    ];
+}
+
+function save_saved_schedule_workspace_state($conn, $college_id, $ay_id, $semester, $schedule_set_id) {
+    $table = saved_schedule_workspace_state_table_name();
+    $scheduleSetId = max(0, (int)$schedule_set_id);
+    $sql = "
+        INSERT INTO `{$table}`
+            (college_id, ay_id, semester, last_loaded_schedule_set_id, date_created, date_updated)
+        VALUES (?, ?, ?, NULLIF(?, 0), CURRENT_TIMESTAMP, CURRENT_TIMESTAMP)
+        ON DUPLICATE KEY UPDATE
+            last_loaded_schedule_set_id = NULLIF(?, 0),
+            date_updated = CURRENT_TIMESTAMP
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param("iiiii", $college_id, $ay_id, $semester, $scheduleSetId, $scheduleSetId);
+    $ok = $stmt->execute();
+    $stmt->close();
+
+    return $ok;
 }
 
 function saved_schedule_program_term_has_merge_rows($conn, $college_id, $program_id, $ay_id, $semester) {
@@ -420,7 +621,58 @@ function saved_schedule_program_term_has_merge_rows($conn, $college_id, $program
     return $row !== null;
 }
 
+function saved_schedule_college_term_has_merge_rows($conn, $college_id, $ay_id, $semester) {
+    $mergeTable = synk_schedule_merge_table_name();
+    if (!synk_table_exists($conn, $mergeTable)) {
+        return false;
+    }
+
+    $sql = "
+        SELECT 1
+        FROM `{$mergeTable}` merge_map
+        INNER JOIN tbl_prospectus_offering owner_offer
+            ON owner_offer.offering_id = merge_map.owner_offering_id
+        INNER JOIN tbl_program owner_program
+            ON owner_program.program_id = owner_offer.program_id
+        INNER JOIN tbl_prospectus_offering member_offer
+            ON member_offer.offering_id = merge_map.member_offering_id
+        INNER JOIN tbl_program member_program
+            ON member_program.program_id = member_offer.program_id
+        WHERE (
+                owner_program.college_id = ?
+            AND owner_offer.ay_id = ?
+            AND owner_offer.semester = ?
+        ) OR (
+                member_program.college_id = ?
+            AND member_offer.ay_id = ?
+            AND member_offer.semester = ?
+        )
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return false;
+    }
+
+    $stmt->bind_param(
+        "iiiiii",
+        $college_id,
+        $ay_id,
+        $semester,
+        $college_id,
+        $ay_id,
+        $semester
+    );
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_row();
+    $stmt->close();
+
+    return $row !== null;
+}
+
 function load_saved_schedule_sets_for_scope($conn, $college_id, $program_id, $ay_id, $semester) {
+    $workloadTable = saved_schedule_workload_table_name();
     $sql = "
         SELECT
             s.schedule_set_id,
@@ -429,7 +681,17 @@ function load_saved_schedule_sets_for_scope($conn, $college_id, $program_id, $ay
             s.date_created,
             s.date_updated,
             COUNT(r.schedule_set_row_id) AS row_count,
-            COUNT(DISTINCT r.offering_id) AS offering_count
+            COUNT(DISTINCT r.offering_id) AS offering_count,
+            (
+                SELECT COUNT(*)
+                FROM `{$workloadTable}` wr
+                WHERE wr.schedule_set_id = s.schedule_set_id
+            ) AS workload_row_count,
+            (
+                SELECT COUNT(DISTINCT wr.faculty_id)
+                FROM `{$workloadTable}` wr
+                WHERE wr.schedule_set_id = s.schedule_set_id
+            ) AS workload_faculty_count
         FROM tbl_program_schedule_set s
         LEFT JOIN tbl_program_schedule_set_row r
             ON r.schedule_set_id = s.schedule_set_id
@@ -464,7 +726,96 @@ function load_saved_schedule_sets_for_scope($conn, $college_id, $program_id, $ay
             'date_created' => (string)($row['date_created'] ?? ''),
             'date_updated' => (string)($row['date_updated'] ?? ''),
             'row_count' => (int)($row['row_count'] ?? 0),
-            'offering_count' => (int)($row['offering_count'] ?? 0)
+            'offering_count' => (int)($row['offering_count'] ?? 0),
+            'workload_row_count' => (int)($row['workload_row_count'] ?? 0),
+            'workload_faculty_count' => (int)($row['workload_faculty_count'] ?? 0)
+        ];
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function load_saved_schedule_sets_for_college_term($conn, $college_id, $ay_id, $semester) {
+    $workloadTable = saved_schedule_workload_table_name();
+    $sql = "
+        SELECT
+            s.schedule_set_id,
+            s.program_id,
+            s.set_name,
+            s.remarks,
+            s.date_created,
+            s.date_updated,
+            COALESCE(NULLIF(TRIM(p.program_code), ''), '') AS program_code,
+            COALESCE(NULLIF(TRIM(p.program_name), ''), '') AS program_name,
+            COUNT(r.schedule_set_row_id) AS row_count,
+            COUNT(DISTINCT r.offering_id) AS offering_count,
+            COUNT(DISTINCT r.program_id) AS program_count,
+            (
+                SELECT COUNT(*)
+                FROM `{$workloadTable}` wr
+                WHERE wr.schedule_set_id = s.schedule_set_id
+            ) AS workload_row_count,
+            (
+                SELECT COUNT(DISTINCT wr.faculty_id)
+                FROM `{$workloadTable}` wr
+                WHERE wr.schedule_set_id = s.schedule_set_id
+            ) AS workload_faculty_count
+        FROM tbl_program_schedule_set s
+        LEFT JOIN tbl_program_schedule_set_row r
+            ON r.schedule_set_id = s.schedule_set_id
+        LEFT JOIN tbl_program p
+            ON p.program_id = s.program_id
+        WHERE s.college_id = ?
+          AND s.ay_id = ?
+          AND s.semester = ?
+        GROUP BY
+            s.schedule_set_id,
+            s.program_id,
+            s.set_name,
+            s.remarks,
+            s.date_created,
+            s.date_updated,
+            p.program_code,
+            p.program_name
+        ORDER BY
+            CASE WHEN s.program_id = 0 THEN 0 ELSE 1 END ASC,
+            s.date_updated DESC,
+            s.schedule_set_id DESC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("iii", $college_id, $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $programId = (int)($row['program_id'] ?? 0);
+        $scopeMeta = saved_schedule_scope_metadata(
+            $programId,
+            (string)($row['program_code'] ?? ''),
+            (string)($row['program_name'] ?? '')
+        );
+
+        $rows[] = [
+            'schedule_set_id' => (int)($row['schedule_set_id'] ?? 0),
+            'program_id' => $programId,
+            'set_name' => (string)($row['set_name'] ?? ''),
+            'remarks' => (string)($row['remarks'] ?? ''),
+            'date_created' => (string)($row['date_created'] ?? ''),
+            'date_updated' => (string)($row['date_updated'] ?? ''),
+            'row_count' => (int)($row['row_count'] ?? 0),
+            'offering_count' => (int)($row['offering_count'] ?? 0),
+            'program_count' => (int)($row['program_count'] ?? 0),
+            'workload_row_count' => (int)($row['workload_row_count'] ?? 0),
+            'workload_faculty_count' => (int)($row['workload_faculty_count'] ?? 0),
+            'scope_key' => (string)($scopeMeta['scope_key'] ?? 'college'),
+            'scope_label' => (string)($scopeMeta['scope_label'] ?? 'College term')
         ];
     }
 
@@ -504,6 +855,37 @@ function load_saved_schedule_set_record($conn, $schedule_set_id, $college_id, $p
     return $row ?: null;
 }
 
+function load_saved_schedule_set_record_for_college($conn, $schedule_set_id, $college_id) {
+    $sql = "
+        SELECT
+            schedule_set_id,
+            college_id,
+            program_id,
+            ay_id,
+            semester,
+            set_name,
+            remarks,
+            date_created,
+            date_updated
+        FROM tbl_program_schedule_set
+        WHERE schedule_set_id = ?
+          AND college_id = ?
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param("ii", $schedule_set_id, $college_id);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return $row ?: null;
+}
+
 function load_saved_schedule_set_by_name($conn, $college_id, $program_id, $ay_id, $semester, $set_name) {
     $sql = "
         SELECT
@@ -532,6 +914,71 @@ function load_saved_schedule_set_by_name($conn, $college_id, $program_id, $ay_id
     $stmt->close();
 
     return $row ?: null;
+}
+
+function load_college_schedule_set_by_name($conn, $college_id, $ay_id, $semester, $set_name) {
+    $sql = "
+        SELECT
+            schedule_set_id,
+            set_name,
+            remarks,
+            date_created,
+            date_updated
+        FROM tbl_program_schedule_set
+        WHERE college_id = ?
+          AND program_id = 0
+          AND ay_id = ?
+          AND semester = ?
+          AND set_name = ?
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return null;
+    }
+
+    $stmt->bind_param("iiis", $college_id, $ay_id, $semester, $set_name);
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_assoc();
+    $stmt->close();
+
+    return $row ?: null;
+}
+
+function saved_schedule_set_name_exists_in_same_scope($conn, $college_id, $program_id, $ay_id, $semester, $set_name, $exclude_schedule_set_id = 0) {
+    $sql = "
+        SELECT 1
+        FROM tbl_program_schedule_set
+        WHERE college_id = ?
+          AND program_id = ?
+          AND ay_id = ?
+          AND semester = ?
+          AND set_name = ?
+          AND schedule_set_id <> ?
+        LIMIT 1
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return false;
+    }
+
+    $excludeId = (int)$exclude_schedule_set_id;
+    $stmt->bind_param(
+        "iiiisi",
+        $college_id,
+        $program_id,
+        $ay_id,
+        $semester,
+        $set_name,
+        $excludeId
+    );
+    $stmt->execute();
+    $row = $stmt->get_result()->fetch_row();
+    $stmt->close();
+
+    return $row !== null;
 }
 
 function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id, $program_id) {
@@ -584,10 +1031,602 @@ function load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id, $pro
     return $rows;
 }
 
+function load_saved_schedule_set_rows_for_college($conn, $schedule_set_id, $college_id) {
+    $sql = "
+        SELECT
+            r.schedule_set_row_id,
+            r.schedule_set_id,
+            r.offering_id,
+            r.program_id,
+            r.ps_id,
+            r.section_id,
+            r.schedule_type,
+            r.block_order,
+            r.room_id,
+            r.days_json,
+            r.time_start,
+            r.time_end,
+            r.subject_code_snapshot,
+            r.subject_description_snapshot,
+            r.section_name_snapshot,
+            r.room_label_snapshot
+        FROM tbl_program_schedule_set_row r
+        INNER JOIN tbl_program_schedule_set s
+            ON s.schedule_set_id = r.schedule_set_id
+        WHERE r.schedule_set_id = ?
+          AND s.college_id = ?
+        ORDER BY
+            r.program_id ASC,
+            r.offering_id ASC,
+            r.block_order ASC,
+            FIELD(r.schedule_type, 'LEC', 'LAB'),
+            r.schedule_set_row_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("ii", $schedule_set_id, $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $rows[] = $row;
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function delete_saved_schedule_workload_rows($conn, $schedule_set_id) {
+    $table = saved_schedule_workload_table_name();
+    $stmt = $conn->prepare("
+        DELETE FROM `{$table}`
+        WHERE schedule_set_id = ?
+    ");
+    if (!$stmt) {
+        throw new RuntimeException("Failed to clear saved workload rows.");
+    }
+
+    $stmt->bind_param("i", $schedule_set_id);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new RuntimeException("Failed to clear saved workload rows.");
+    }
+
+    $deleted = max(0, (int)$stmt->affected_rows);
+    $stmt->close();
+    return $deleted;
+}
+
+function load_faculty_names_by_ids($conn, array $facultyIds) {
+    $safeIds = array_values(array_filter(array_unique(array_map('intval', $facultyIds)), static function ($value) {
+        return $value > 0;
+    }));
+    if (empty($safeIds)) {
+        return [];
+    }
+
+    $facultyHasExtName = synk_table_has_column($conn, 'tbl_faculty', 'ext_name');
+    $sql = "
+        SELECT
+            faculty_id,
+            last_name,
+            first_name,
+            " . ($facultyHasExtName ? "COALESCE(ext_name, '') AS ext_name" : "'' AS ext_name") . "
+        FROM tbl_faculty
+        WHERE faculty_id IN (" . implode(',', $safeIds) . ")
+    ";
+
+    $res = $conn->query($sql);
+    if (!$res) {
+        return [];
+    }
+
+    $names = [];
+    while ($row = $res->fetch_assoc()) {
+        $facultyId = (int)($row['faculty_id'] ?? 0);
+        if ($facultyId > 0) {
+            $names[$facultyId] = format_faculty_display_name($row);
+        }
+    }
+
+    return $names;
+}
+
+function load_workload_snapshot_rows_for_schedule_ids($conn, array $scheduleIds, $ay_id, $semester) {
+    $safeIds = array_values(array_filter(array_unique(array_map('intval', $scheduleIds)), static function ($value) {
+        return $value > 0;
+    }));
+    if (empty($safeIds)) {
+        return [];
+    }
+
+    $facultyHasExtName = synk_table_has_column($conn, 'tbl_faculty', 'ext_name');
+    $sql = "
+        SELECT
+            fw.schedule_id,
+            fw.faculty_id,
+            f.last_name,
+            f.first_name,
+            " . ($facultyHasExtName ? "COALESCE(f.ext_name, '') AS ext_name" : "'' AS ext_name") . "
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = fw.faculty_id
+        WHERE fw.schedule_id IN (" . implode(',', $safeIds) . ")
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+        ORDER BY cs.offering_id ASC, FIELD(cs.schedule_type, 'LEC', 'LAB'), cs.time_start ASC, fw.faculty_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("ii", $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $rows[] = [
+            'schedule_id' => (int)($row['schedule_id'] ?? 0),
+            'faculty_id' => (int)($row['faculty_id'] ?? 0),
+            'faculty_name' => format_faculty_display_name($row)
+        ];
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function load_saved_schedule_workload_rows_for_college($conn, $schedule_set_id, $college_id) {
+    $table = saved_schedule_workload_table_name();
+    $facultyHasExtName = synk_table_has_column($conn, 'tbl_faculty', 'ext_name');
+
+    $sql = "
+        SELECT
+            wr.schedule_set_workload_row_id,
+            wr.schedule_set_id,
+            wr.schedule_set_row_id,
+            wr.offering_id,
+            wr.program_id,
+            wr.schedule_type,
+            wr.block_order,
+            wr.faculty_id,
+            wr.faculty_name_snapshot,
+            wr.subject_code_snapshot,
+            wr.section_name_snapshot,
+            f.last_name,
+            f.first_name,
+            " . ($facultyHasExtName ? "COALESCE(f.ext_name, '') AS ext_name" : "'' AS ext_name") . "
+        FROM `{$table}` wr
+        INNER JOIN tbl_program_schedule_set s
+            ON s.schedule_set_id = wr.schedule_set_id
+        LEFT JOIN tbl_faculty f
+            ON f.faculty_id = wr.faculty_id
+        WHERE wr.schedule_set_id = ?
+          AND s.college_id = ?
+        ORDER BY
+            wr.offering_id ASC,
+            wr.block_order ASC,
+            FIELD(wr.schedule_type, 'LEC', 'LAB'),
+            wr.schedule_set_workload_row_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return [];
+    }
+
+    $stmt->bind_param("ii", $schedule_set_id, $college_id);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $rows = [];
+    while ($row = $res->fetch_assoc()) {
+        $facultyId = (int)($row['faculty_id'] ?? 0);
+        $facultyName = trim((string)($row['faculty_name_snapshot'] ?? ''));
+        if (!empty($row['last_name']) || !empty($row['first_name'])) {
+            $facultyName = format_faculty_display_name($row);
+        }
+
+        $rows[] = [
+            'schedule_set_workload_row_id' => (int)($row['schedule_set_workload_row_id'] ?? 0),
+            'schedule_set_id' => (int)($row['schedule_set_id'] ?? 0),
+            'schedule_set_row_id' => (int)($row['schedule_set_row_id'] ?? 0),
+            'offering_id' => (int)($row['offering_id'] ?? 0),
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'block_order' => (int)($row['block_order'] ?? 0),
+            'faculty_id' => $facultyId,
+            'faculty_name' => $facultyName !== '' ? $facultyName : ('Faculty #' . $facultyId),
+            'subject_code_snapshot' => (string)($row['subject_code_snapshot'] ?? ''),
+            'section_name_snapshot' => (string)($row['section_name_snapshot'] ?? '')
+        ];
+    }
+
+    $stmt->close();
+    return $rows;
+}
+
+function schedule_set_signature_days($daysJson) {
+    $days = normalize_days_array(json_decode((string)$daysJson, true));
+    return implode(',', $days);
+}
+
+function saved_schedule_signature_from_set_rows(array $rows) {
+    $items = [];
+    foreach ($rows as $row) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        $items[] = [
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'offering_id' => $offeringId,
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'room_id' => (int)($row['room_id'] ?? 0),
+            'days' => schedule_set_signature_days((string)($row['days_json'] ?? '[]')),
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? '')
+        ];
+    }
+
+    usort($items, static function (array $left, array $right): int {
+        return [
+            $left['program_id'],
+            $left['offering_id'],
+            $left['schedule_type'],
+            $left['room_id'],
+            $left['days'],
+            $left['time_start'],
+            $left['time_end']
+        ] <=> [
+            $right['program_id'],
+            $right['offering_id'],
+            $right['schedule_type'],
+            $right['room_id'],
+            $right['days'],
+            $right['time_start'],
+            $right['time_end']
+        ];
+    });
+
+    return empty($items) ? '' : sha1(json_encode($items));
+}
+
+function saved_schedule_signature_from_live_rows(array $rows) {
+    $items = [];
+
+    foreach ($rows as $row) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        $items[] = [
+            'program_id' => (int)($row['program_id'] ?? 0),
+            'offering_id' => $offeringId,
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'room_id' => (int)($row['room_id'] ?? 0),
+            'days' => schedule_set_signature_days((string)($row['days_json'] ?? '[]')),
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? '')
+        ];
+    }
+
+    usort($items, static function (array $left, array $right): int {
+        return [
+            $left['program_id'],
+            $left['offering_id'],
+            $left['schedule_type'],
+            $left['room_id'],
+            $left['days'],
+            $left['time_start'],
+            $left['time_end']
+        ] <=> [
+            $right['program_id'],
+            $right['offering_id'],
+            $right['schedule_type'],
+            $right['room_id'],
+            $right['days'],
+            $right['time_start'],
+            $right['time_end']
+        ];
+    });
+
+    return empty($items) ? '' : sha1(json_encode($items));
+}
+
+function saved_schedule_enrich_sets_with_live_state($conn, array $sets, $college_id, $ay_id, $semester) {
+    $collegeLiveRows = null;
+    $collegeLiveSignature = null;
+    $programLiveSignatures = [];
+    $activeSet = null;
+    $workspaceState = load_saved_schedule_workspace_state($conn, $college_id, $ay_id, $semester);
+    $lastLoadedSetId = (int)($workspaceState['last_loaded_schedule_set_id'] ?? 0);
+    $liveMatchesLastLoaded = 0;
+
+    foreach ($sets as $index => $set) {
+        $scheduleSetId = (int)($set['schedule_set_id'] ?? 0);
+        $programId = (int)($set['program_id'] ?? 0);
+        $setRows = $scheduleSetId > 0 ? load_saved_schedule_set_rows_for_college($conn, $scheduleSetId, $college_id) : [];
+        $setSignature = saved_schedule_signature_from_set_rows($setRows);
+
+        if ($programId > 0) {
+            if (!array_key_exists($programId, $programLiveSignatures)) {
+                $programLiveRows = load_live_schedule_snapshot_rows_for_scope($conn, $programId, $ay_id, $semester, $college_id);
+                $programLiveSignatures[$programId] = saved_schedule_signature_from_live_rows($programLiveRows);
+            }
+            $liveSignature = (string)$programLiveSignatures[$programId];
+        } else {
+            if ($collegeLiveRows === null) {
+                $collegeLiveRows = load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semester, $college_id);
+                $collegeLiveSignature = saved_schedule_signature_from_live_rows($collegeLiveRows);
+            }
+            $liveSignature = (string)$collegeLiveSignature;
+        }
+
+        $matchesLive = $setSignature !== '' && $setSignature === $liveSignature;
+        $sets[$index]['matches_live'] = $matchesLive ? 1 : 0;
+        $sets[$index]['is_last_loaded'] = ($lastLoadedSetId > 0 && $scheduleSetId === $lastLoadedSetId) ? 1 : 0;
+
+        if ($matchesLive && $activeSet === null) {
+            $activeSet = $sets[$index];
+        } elseif (
+            $matchesLive &&
+            $activeSet !== null &&
+            (int)($activeSet['program_id'] ?? 0) > 0 &&
+            $programId <= 0
+        ) {
+            $activeSet = $sets[$index];
+        }
+
+        if ($lastLoadedSetId > 0 && $scheduleSetId === $lastLoadedSetId && $matchesLive) {
+            $liveMatchesLastLoaded = 1;
+        }
+    }
+
+    if ($collegeLiveRows === null) {
+        $collegeLiveRows = load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semester, $college_id);
+    }
+
+    return [
+        'sets' => $sets,
+        'live_status' => [
+            'set_count' => count($sets),
+            'live_has_rows' => !empty($collegeLiveRows) ? 1 : 0,
+            'active_schedule_set_id' => $activeSet ? (int)($activeSet['schedule_set_id'] ?? 0) : 0,
+            'active_schedule_set_name' => $activeSet ? (string)($activeSet['set_name'] ?? '') : '',
+            'active_scope_label' => $activeSet ? (string)($activeSet['scope_label'] ?? '') : '',
+            'is_live_saved' => $activeSet ? 1 : 0,
+            'last_loaded_schedule_set_id' => $lastLoadedSetId,
+            'last_loaded_schedule_set_name' => (string)($workspaceState['last_loaded_schedule_set_name'] ?? ''),
+            'last_loaded_scope_label' => (string)($workspaceState['last_loaded_scope_label'] ?? ''),
+            'live_matches_last_loaded' => $liveMatchesLastLoaded
+        ]
+    ];
+}
+
+function delete_workload_assignments_for_offerings($conn, array $offeringIds, $ay_id, $semester) {
+    $safeIds = array_values(array_filter(array_unique(array_map('intval', $offeringIds)), static function ($value) {
+        return $value > 0;
+    }));
+    if (empty($safeIds)) {
+        return 0;
+    }
+
+    $sql = "
+        DELETE fw
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        WHERE cs.offering_id IN (" . implode(',', $safeIds) . ")
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        throw new RuntimeException("Failed to clear affected workload assignments.");
+    }
+
+    $stmt->bind_param("ii", $ay_id, $semester);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        throw new RuntimeException("Failed to clear affected workload assignments.");
+    }
+
+    $deleted = max(0, (int)$stmt->affected_rows);
+    $stmt->close();
+    return $deleted;
+}
+
+function saved_workload_restore_label(array $row) {
+    $subject = trim((string)($row['subject_code'] ?? $row['subject_code_snapshot'] ?? ''));
+    $section = trim((string)($row['section_name'] ?? $row['section_name_snapshot'] ?? ''));
+    $type = synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC'));
+
+    $parts = array_filter([$subject, $section, $type], static function ($value) {
+        return trim((string)$value) !== '';
+    });
+
+    return !empty($parts) ? implode(' / ', $parts) : 'Saved workload row';
+}
+
+function validate_saved_schedule_workload_restore($conn, array $workloadRows, array $normalizedRowsBySetRowId, array $affectedOfferingIds, $ay_id, $semester) {
+    if (empty($workloadRows)) {
+        return null;
+    }
+
+    $facultyIds = [];
+    foreach ($workloadRows as $workloadRow) {
+        $facultyId = (int)($workloadRow['faculty_id'] ?? 0);
+        if ($facultyId > 0) {
+            $facultyIds[] = $facultyId;
+        }
+    }
+
+    $facultyNames = load_faculty_names_by_ids($conn, $facultyIds);
+    $restoreRows = [];
+
+    foreach ($workloadRows as $workloadRow) {
+        $facultyId = (int)($workloadRow['faculty_id'] ?? 0);
+        $setRowId = (int)($workloadRow['schedule_set_row_id'] ?? 0);
+
+        if ($facultyId <= 0 || !isset($facultyNames[$facultyId])) {
+            $snapshotName = trim((string)($workloadRow['faculty_name'] ?? 'Saved faculty'));
+            return "Saved workload references <b>" . htmlspecialchars($snapshotName, ENT_QUOTES, 'UTF-8') . "</b>, but that faculty record is no longer available.";
+        }
+
+        if ($setRowId <= 0 || empty($normalizedRowsBySetRowId[$setRowId])) {
+            return "Saved workload references a schedule row that is no longer available in this set.";
+        }
+
+        $scheduleRow = $normalizedRowsBySetRowId[$setRowId];
+        $restoreRows[] = [
+            'faculty_id' => $facultyId,
+            'faculty_name' => $facultyNames[$facultyId],
+            'schedule_set_row_id' => $setRowId,
+            'offering_id' => (int)($scheduleRow['offering_id'] ?? 0),
+            'schedule_type' => (string)($scheduleRow['schedule_type'] ?? 'LEC'),
+            'subject_code' => (string)($scheduleRow['subject_code'] ?? $workloadRow['subject_code_snapshot'] ?? ''),
+            'section_name' => (string)($scheduleRow['section_name'] ?? $workloadRow['section_name_snapshot'] ?? ''),
+            'days' => (array)($scheduleRow['days'] ?? []),
+            'time_start' => (string)($scheduleRow['time_start'] ?? ''),
+            'time_end' => (string)($scheduleRow['time_end'] ?? '')
+        ];
+    }
+
+    $count = count($restoreRows);
+    for ($i = 0; $i < $count; $i++) {
+        for ($j = $i + 1; $j < $count; $j++) {
+            $left = $restoreRows[$i];
+            $right = $restoreRows[$j];
+
+            if ((int)$left['faculty_id'] !== (int)$right['faculty_id']) {
+                continue;
+            }
+
+            if (!days_overlap((array)$left['days'], (array)$right['days'])) {
+                continue;
+            }
+
+            if (!time_overlap((string)$left['time_start'], (string)$left['time_end'], (string)$right['time_start'], (string)$right['time_end'])) {
+                continue;
+            }
+
+            return "<b>Faculty Workload Conflict</b><br><b>" .
+                htmlspecialchars((string)$left['faculty_name'], ENT_QUOTES, 'UTF-8') .
+                "</b> has overlapping saved workload rows: <b>" .
+                htmlspecialchars(saved_workload_restore_label($left), ENT_QUOTES, 'UTF-8') .
+                "</b> and <b>" .
+                htmlspecialchars(saved_workload_restore_label($right), ENT_QUOTES, 'UTF-8') .
+                "</b>.";
+        }
+    }
+
+    $safeFacultyIds = array_values(array_filter(array_unique(array_map('intval', $facultyIds)), static function ($value) {
+        return $value > 0;
+    }));
+    if (empty($safeFacultyIds)) {
+        return null;
+    }
+
+    $safeAffectedIds = array_values(array_filter(array_unique(array_map('intval', $affectedOfferingIds)), static function ($value) {
+        return $value > 0;
+    }));
+
+    $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
+    $sql = "
+        SELECT
+            fw.faculty_id,
+            cs.offering_id,
+            cs.schedule_type,
+            cs.days_json,
+            cs.time_start,
+            cs.time_end,
+            sm.sub_code,
+            sec.section_name
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        WHERE fw.faculty_id IN (" . implode(',', $safeFacultyIds) . ")
+          AND fw.ay_id = ?
+          AND fw.semester = ?
+    ";
+
+    if (!empty($safeAffectedIds)) {
+        $sql .= " AND cs.offering_id NOT IN (" . implode(',', $safeAffectedIds) . ")";
+    }
+
+    $stmt = $conn->prepare($sql);
+    if (!$stmt) {
+        return "Unable to validate saved workload faculty conflicts.";
+    }
+
+    $stmt->bind_param("ii", $ay_id, $semester);
+    $stmt->execute();
+    $res = $stmt->get_result();
+
+    $existingRows = [];
+    while ($row = $res->fetch_assoc()) {
+        $facultyId = (int)($row['faculty_id'] ?? 0);
+        $existingRows[$facultyId][] = [
+            'faculty_id' => $facultyId,
+            'faculty_name' => $facultyNames[$facultyId] ?? ('Faculty #' . $facultyId),
+            'schedule_type' => synk_normalize_schedule_type((string)($row['schedule_type'] ?? 'LEC')),
+            'subject_code' => (string)($row['sub_code'] ?? ''),
+            'section_name' => (string)($row['section_name'] ?? ''),
+            'days' => normalize_days_array(json_decode((string)($row['days_json'] ?? '[]'), true)),
+            'time_start' => (string)($row['time_start'] ?? ''),
+            'time_end' => (string)($row['time_end'] ?? '')
+        ];
+    }
+    $stmt->close();
+
+    foreach ($restoreRows as $restoreRow) {
+        $facultyId = (int)$restoreRow['faculty_id'];
+        foreach ((array)($existingRows[$facultyId] ?? []) as $existingRow) {
+            if (!days_overlap((array)$restoreRow['days'], (array)$existingRow['days'])) {
+                continue;
+            }
+
+            if (!time_overlap((string)$restoreRow['time_start'], (string)$restoreRow['time_end'], (string)$existingRow['time_start'], (string)$existingRow['time_end'])) {
+                continue;
+            }
+
+            return "<b>Faculty Workload Conflict</b><br><b>" .
+                htmlspecialchars((string)$restoreRow['faculty_name'], ENT_QUOTES, 'UTF-8') .
+                "</b> already has another assignment that overlaps with <b>" .
+                htmlspecialchars(saved_workload_restore_label($restoreRow), ENT_QUOTES, 'UTF-8') .
+                "</b>: <b>" .
+                htmlspecialchars(saved_workload_restore_label($existingRow), ENT_QUOTES, 'UTF-8') .
+                "</b>.";
+        }
+    }
+
+    return null;
+}
+
 function load_live_schedule_snapshot_rows_for_scope($conn, $program_id, $ay_id, $semester, $college_id) {
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
+            cs.schedule_id,
             o.offering_id,
             o.program_id,
             o.ps_id,
@@ -648,6 +1687,7 @@ function load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semes
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
     $sql = "
         SELECT
+            cs.schedule_id,
             o.offering_id,
             o.program_id,
             o.ps_id,
@@ -2876,11 +3916,14 @@ function insert_schedule_row($conn, $offering_id, $schedule_type, $group_id, $ro
     }
 
     $ok = $stmt->execute();
+    $insertedId = (int)$conn->insert_id;
     $stmt->close();
 
     if (!$ok) {
         throw new RuntimeException("Failed to insert {$schedule_type} schedule.");
     }
+
+    return $insertedId;
 }
 
 function update_schedule_block_row($conn, $schedule_id, $schedule_type, $group_id, $room_id, $days_json, $time_start, $time_end) {
@@ -3600,7 +4643,6 @@ if (isset($_POST['clear_all_college_schedules'])) {
         return (int)$offering['offering_id'];
     }, $offerings);
 
-    $workloadMap = load_workload_faculty_map_for_offerings($conn, $offeringIds, $ay_id, $semester);
     $scheduleCounts = load_schedule_row_counts_for_offerings($conn, $offeringIds);
     $mergeContext = synk_schedule_merge_load_display_context($conn, $offeringIds);
     $offeringsById = [];
@@ -3622,6 +4664,7 @@ if (isset($_POST['clear_all_college_schedules'])) {
     $deletedRows = 0;
     $resetOfferings = 0;
     $clearedOfferingCount = 0;
+    $removedWorkloadRowCount = 0;
 
     foreach ($groups as $ownerId => $groupOfferingIds) {
         $groupOfferingIds = synk_schedule_merge_normalize_offering_ids($groupOfferingIds);
@@ -3636,19 +4679,6 @@ if (isset($_POST['clear_all_college_schedules'])) {
             if (($offering['offering_status'] ?? '') === 'locked') {
                 $skipReason = "This offering belongs to a merged group that includes a locked offering.";
                 break;
-            }
-        }
-
-        if ($skipReason === "") {
-            $groupFacultyNames = [];
-            foreach ($groupOfferingIds as $offeringId) {
-                foreach (($workloadMap[$offeringId] ?? []) as $facultyName) {
-                    $groupFacultyNames[$facultyName] = $facultyName;
-                }
-            }
-
-            if (!empty($groupFacultyNames)) {
-                $skipReason = "Assigned in Faculty Workload to " . implode(', ', array_values($groupFacultyNames)) . ".";
             }
         }
 
@@ -3684,6 +4714,13 @@ if (isset($_POST['clear_all_college_schedules'])) {
 
         $conn->begin_transaction();
         try {
+            $removedWorkloadRowCount = delete_workload_assignments_for_offerings(
+                $conn,
+                $safeIds,
+                $ay_id,
+                $semester
+            );
+
             if (!$conn->query("
                 DELETE FROM tbl_class_schedule
                 WHERE offering_id IN ({$idList})
@@ -3726,6 +4763,7 @@ if (isset($_POST['clear_all_college_schedules'])) {
         "scoped_offering_count" => count($offerings),
         "clearable_offering_count" => count($clearableIds),
         "cleared_offering_count" => $clearedOfferingCount,
+        "removed_workload_row_count" => $removedWorkloadRowCount,
         "deleted_schedule_row_count" => $deletedRows,
         "reset_offering_count" => $resetOfferings,
         "skipped_count" => count($skipped),
@@ -4283,60 +5321,193 @@ if (isset($_POST['save_schedule_merge'])) {
 }
 
 /* =====================================================
-   LOAD SAVED SCHEDULE SETS FOR CURRENT PROGRAM TERM
+   LOAD SAVED SCHEDULE SETS FOR CURRENT COLLEGE TERM
 ===================================================== */
 if (isset($_POST['load_schedule_sets'])) {
     ensure_saved_schedule_tables_exist($conn);
 
-    $program_id = (int)($_POST['program_id'] ?? 0);
     $ay_id = (int)($_POST['ay_id'] ?? 0);
     $semester = (int)($_POST['semester'] ?? 0);
 
-    if ($program_id <= 0 || !$ay_id || !in_array($semester, [1, 2, 3], true)) {
-        respond("error", "Select Program, Academic Year, and Semester first.");
+    if (!$ay_id || !in_array($semester, [1, 2, 3], true)) {
+        respond("error", "Select Academic Year and Semester first.");
     }
 
-    $sets = load_saved_schedule_sets_for_scope($conn, $college_id, $program_id, $ay_id, $semester);
+    $sets = load_saved_schedule_sets_for_college_term($conn, $college_id, $ay_id, $semester);
+    $liveState = saved_schedule_enrich_sets_with_live_state($conn, $sets, $college_id, $ay_id, $semester);
     respond("ok", "Loaded saved schedule sets.", [
-        "sets" => $sets
+        "sets" => $liveState['sets'],
+        "live_status" => $liveState['live_status']
     ]);
 }
 
 /* =====================================================
-   SAVE CURRENT LIVE SCHEDULES AS A SET
+   UPDATE SAVED SCHEDULE SET NAME / NOTE
 ===================================================== */
-if (isset($_POST['save_schedule_set'])) {
+if (isset($_POST['update_schedule_set_meta'])) {
     ensure_saved_schedule_tables_exist($conn);
 
-    $program_id = (int)($_POST['program_id'] ?? 0);
-    $ay_id = (int)($_POST['ay_id'] ?? 0);
-    $semester = (int)($_POST['semester'] ?? 0);
+    $schedule_set_id = (int)($_POST['schedule_set_id'] ?? 0);
     $set_name = trim((string)($_POST['set_name'] ?? ''));
     $remarks = trim((string)($_POST['remarks'] ?? ''));
-    $overwriteExisting = (int)($_POST['overwrite_existing_set'] ?? 0) === 1;
 
     $set_name = preg_replace('/\s+/', ' ', $set_name);
     $set_name = substr($set_name, 0, 120);
     $remarks = substr($remarks, 0, 255);
 
-    if ($program_id <= 0 || !$ay_id || !in_array($semester, [1, 2, 3], true)) {
-        respond("error", "Select Program, Academic Year, and Semester first.");
+    if ($schedule_set_id <= 0) {
+        respond("error", "Select a saved schedule set first.");
     }
 
     if ($set_name === '') {
         respond("error", "Provide a name for this saved schedule set.");
     }
 
-    if (saved_schedule_program_term_has_merge_rows($conn, $college_id, $program_id, $ay_id, $semester)) {
-        respond("error", "Saved schedule sets are disabled while merged schedule groups exist in this program term. Unmerge the affected offerings first.");
+    $setRecord = load_saved_schedule_set_record_for_college($conn, $schedule_set_id, $college_id);
+    if (!$setRecord) {
+        respond("error", "Saved schedule set not found in your scheduler workspace.");
     }
 
-    $snapshotRows = load_live_schedule_snapshot_rows_for_scope($conn, $program_id, $ay_id, $semester, $college_id);
+    $programId = (int)($setRecord['program_id'] ?? 0);
+    $ayId = (int)($setRecord['ay_id'] ?? 0);
+    $semester = (int)($setRecord['semester'] ?? 0);
+
+    if (saved_schedule_set_name_exists_in_same_scope($conn, $college_id, $programId, $ayId, $semester, $set_name, $schedule_set_id)) {
+        respond("error", "Another saved schedule set already uses this name in the same scope.");
+    }
+
+    $remarksForDb = $remarks !== '' ? $remarks : null;
+    $stmt = $conn->prepare("
+        UPDATE tbl_program_schedule_set
+        SET set_name = ?,
+            remarks = ?,
+            date_updated = CURRENT_TIMESTAMP
+        WHERE schedule_set_id = ?
+          AND college_id = ?
+        LIMIT 1
+    ");
+    if (!$stmt) {
+        respond("error", "Failed to prepare saved set update.");
+    }
+
+    $stmt->bind_param("ssii", $set_name, $remarksForDb, $schedule_set_id, $college_id);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        respond("error", "Failed to update the saved schedule set.");
+    }
+    $stmt->close();
+
+    respond("ok", "Saved schedule set updated.", [
+        "schedule_set_id" => $schedule_set_id,
+        "set_name" => $set_name,
+        "remarks" => $remarks
+    ]);
+}
+
+/* =====================================================
+   DELETE SAVED SCHEDULE SET
+===================================================== */
+if (isset($_POST['delete_schedule_set'])) {
+    ensure_saved_schedule_tables_exist($conn);
+
+    $schedule_set_id = (int)($_POST['schedule_set_id'] ?? 0);
+    if ($schedule_set_id <= 0) {
+        respond("error", "Select a saved schedule set first.");
+    }
+
+    $setRecord = load_saved_schedule_set_record_for_college($conn, $schedule_set_id, $college_id);
+    if (!$setRecord) {
+        respond("error", "Saved schedule set not found in your scheduler workspace.");
+    }
+
+    $deleted = 0;
+    $conn->begin_transaction();
+    try {
+        delete_saved_schedule_workload_rows($conn, $schedule_set_id);
+
+        $rowStmt = $conn->prepare("
+            DELETE FROM tbl_program_schedule_set_row
+            WHERE schedule_set_id = ?
+        ");
+        if (!$rowStmt) {
+            throw new RuntimeException("Failed to prepare saved set row deletion.");
+        }
+        $rowStmt->bind_param("i", $schedule_set_id);
+        if (!$rowStmt->execute()) {
+            $rowStmt->close();
+            throw new RuntimeException("Failed to delete saved set rows.");
+        }
+        $rowStmt->close();
+
+        $stmt = $conn->prepare("
+            DELETE FROM tbl_program_schedule_set
+            WHERE schedule_set_id = ?
+              AND college_id = ?
+            LIMIT 1
+        ");
+        if (!$stmt) {
+            throw new RuntimeException("Failed to prepare saved set deletion.");
+        }
+
+        $stmt->bind_param("ii", $schedule_set_id, $college_id);
+        if (!$stmt->execute()) {
+            $stmt->close();
+            throw new RuntimeException("Failed to delete the saved schedule set.");
+        }
+
+        $deleted = (int)$stmt->affected_rows;
+        $stmt->close();
+        $conn->commit();
+    } catch (Throwable $e) {
+        $conn->rollback();
+        respond("error", "Failed to delete the saved schedule set.");
+    }
+
+    if ($deleted < 1) {
+        respond("error", "Saved schedule set was not deleted.");
+    }
+
+    respond("ok", "Saved schedule set deleted.", [
+        "schedule_set_id" => $schedule_set_id,
+        "set_name" => (string)($setRecord['set_name'] ?? '')
+    ]);
+}
+
+/* =====================================================
+   SAVE CURRENT COLLEGE LIVE SCHEDULES AS A SET
+===================================================== */
+if (isset($_POST['save_schedule_set'])) {
+    ensure_saved_schedule_tables_exist($conn);
+
+    $ay_id = (int)($_POST['ay_id'] ?? 0);
+    $semester = (int)($_POST['semester'] ?? 0);
+    $set_name = trim((string)($_POST['set_name'] ?? ''));
+    $remarks = trim((string)($_POST['remarks'] ?? ''));
+    $overwriteExisting = (int)($_POST['overwrite_existing_set'] ?? 0) === 1;
+    $includeWorkloadAssignments = (int)($_POST['include_workload_assignments'] ?? 0) === 1;
+
+    $set_name = preg_replace('/\s+/', ' ', $set_name);
+    $set_name = substr($set_name, 0, 120);
+    $remarks = substr($remarks, 0, 255);
+
+    if (!$ay_id || !in_array($semester, [1, 2, 3], true)) {
+        respond("error", "Select Academic Year and Semester first.");
+    }
+
+    if ($set_name === '') {
+        respond("error", "Provide a name for this saved schedule set.");
+    }
+
+    if (saved_schedule_college_term_has_merge_rows($conn, $college_id, $ay_id, $semester)) {
+        respond("error", "Saved schedule sets are disabled while merged schedule groups exist in this college term. Unmerge the affected offerings first.");
+    }
+
+    $snapshotRows = load_live_schedule_snapshot_rows_for_college_term($conn, $ay_id, $semester, $college_id);
     if (empty($snapshotRows)) {
-        respond("error", "No live schedules were found in the current program term to save.");
+        respond("error", "No live schedules were found in the current college term to save.");
     }
 
-    $existingSet = load_saved_schedule_set_by_name($conn, $college_id, $program_id, $ay_id, $semester, $set_name);
+    $existingSet = load_college_schedule_set_by_name($conn, $college_id, $ay_id, $semester, $set_name);
     if ($existingSet && !$overwriteExisting) {
         respond("exists", "A saved schedule set with this name already exists.", [
             "existing_set_id" => (int)($existingSet['schedule_set_id'] ?? 0),
@@ -4348,6 +5519,10 @@ if (isset($_POST['save_schedule_set'])) {
     $scheduleSetId = 0;
     $blockOrderByOffering = [];
     $offeringMap = [];
+    $sourceScheduleIdToSetRowId = [];
+    $sourceScheduleIdToSetRowMeta = [];
+    $savedWorkloadRowCount = 0;
+    $savedWorkloadFacultyMap = [];
 
     $conn->begin_transaction();
     try {
@@ -4370,6 +5545,8 @@ if (isset($_POST['save_schedule_set'])) {
                 throw new RuntimeException("Failed to update schedule set.");
             }
             $updateSet->close();
+
+            delete_saved_schedule_workload_rows($conn, $scheduleSetId);
 
             $deleteRows = $conn->prepare("
                 DELETE FROM tbl_program_schedule_set_row
@@ -4396,10 +5573,11 @@ if (isset($_POST['save_schedule_set'])) {
             }
 
             $createdBy = (int)($_SESSION['user_id'] ?? 0);
+            $collegeScheduleProgramId = 0;
             $insertSet->bind_param(
                 "iiiissi",
                 $college_id,
-                $program_id,
+                $collegeScheduleProgramId,
                 $ay_id,
                 $semester,
                 $set_name,
@@ -4484,10 +5662,105 @@ if (isset($_POST['save_schedule_set'])) {
                 throw new RuntimeException("Failed to save schedule set rows.");
             }
 
+            $scheduleSetRowId = (int)$conn->insert_id;
+            $sourceScheduleId = (int)($row['schedule_id'] ?? 0);
+            if ($sourceScheduleId > 0 && $scheduleSetRowId > 0) {
+                $sourceScheduleIdToSetRowId[$sourceScheduleId] = $scheduleSetRowId;
+                $sourceScheduleIdToSetRowMeta[$sourceScheduleId] = [
+                    'offering_id' => $offeringId,
+                    'program_id' => $programId,
+                    'schedule_type' => $scheduleType,
+                    'block_order' => $blockOrder,
+                    'subject_code' => $subjectCode,
+                    'section_name' => $sectionName
+                ];
+            }
+
             $offeringMap[$offeringId] = true;
         }
 
         $insertRow->close();
+
+        if ($includeWorkloadAssignments && !empty($sourceScheduleIdToSetRowId)) {
+            $workloadRows = load_workload_snapshot_rows_for_schedule_ids(
+                $conn,
+                array_keys($sourceScheduleIdToSetRowId),
+                $ay_id,
+                $semester
+            );
+
+            if (!empty($workloadRows)) {
+                $workloadTable = saved_schedule_workload_table_name();
+                $insertWorkload = $conn->prepare("
+                    INSERT INTO `{$workloadTable}`
+                    (
+                        schedule_set_id,
+                        schedule_set_row_id,
+                        offering_id,
+                        program_id,
+                        schedule_type,
+                        block_order,
+                        faculty_id,
+                        faculty_name_snapshot,
+                        subject_code_snapshot,
+                        section_name_snapshot
+                    )
+                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                ");
+                if (!$insertWorkload) {
+                    throw new RuntimeException("Failed to save workload rows.");
+                }
+
+                foreach ($workloadRows as $workloadRow) {
+                    $sourceScheduleId = (int)($workloadRow['schedule_id'] ?? 0);
+                    $setRowId = (int)($sourceScheduleIdToSetRowId[$sourceScheduleId] ?? 0);
+                    $meta = (array)($sourceScheduleIdToSetRowMeta[$sourceScheduleId] ?? []);
+                    $facultyId = (int)($workloadRow['faculty_id'] ?? 0);
+                    if ($setRowId <= 0 || $facultyId <= 0) {
+                        continue;
+                    }
+
+                    $offeringId = (int)($meta['offering_id'] ?? 0);
+                    $programId = (int)($meta['program_id'] ?? 0);
+                    $scheduleType = synk_normalize_schedule_type((string)($meta['schedule_type'] ?? 'LEC'));
+                    $blockOrder = (int)($meta['block_order'] ?? 1);
+                    $facultyName = substr(trim((string)($workloadRow['faculty_name'] ?? '')), 0, 180);
+                    $subjectCode = substr(trim((string)($meta['subject_code'] ?? '')), 0, 50);
+                    $sectionName = substr(trim((string)($meta['section_name'] ?? '')), 0, 120);
+
+                    $insertWorkload->bind_param(
+                        "iiiisiisss",
+                        $scheduleSetId,
+                        $setRowId,
+                        $offeringId,
+                        $programId,
+                        $scheduleType,
+                        $blockOrder,
+                        $facultyId,
+                        $facultyName,
+                        $subjectCode,
+                        $sectionName
+                    );
+
+                    if (!$insertWorkload->execute()) {
+                        $insertWorkload->close();
+                        throw new RuntimeException("Failed to save workload rows.");
+                    }
+
+                    if ($insertWorkload->affected_rows > 0) {
+                        $savedWorkloadRowCount++;
+                        $savedWorkloadFacultyMap[$facultyId] = true;
+                    }
+                }
+
+                $insertWorkload->close();
+            }
+        }
+
+        if (!save_saved_schedule_workspace_state($conn, $college_id, $ay_id, $semester, $scheduleSetId)) {
+            throw new RuntimeException("Failed to remember the active saved schedule set.");
+        }
+
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
@@ -4498,7 +5771,10 @@ if (isset($_POST['save_schedule_set'])) {
         "schedule_set_id" => $scheduleSetId,
         "set_name" => $set_name,
         "row_count" => count($snapshotRows),
-        "offering_count" => count($offeringMap)
+        "offering_count" => count($offeringMap),
+        "workload_row_count" => $savedWorkloadRowCount,
+        "workload_faculty_count" => count($savedWorkloadFacultyMap),
+        "include_workload_assignments" => $includeWorkloadAssignments ? 1 : 0
     ]);
 }
 
@@ -4508,36 +5784,56 @@ if (isset($_POST['save_schedule_set'])) {
 if (isset($_POST['load_schedule_set_into_live'])) {
     ensure_saved_schedule_tables_exist($conn);
 
-    $program_id = (int)($_POST['program_id'] ?? 0);
     $schedule_set_id = (int)($_POST['schedule_set_id'] ?? 0);
-    if ($program_id <= 0 || $schedule_set_id <= 0) {
+    $restoreWorkloadAssignments = (int)($_POST['restore_workload_assignments'] ?? 0) === 1;
+    if ($schedule_set_id <= 0) {
         respond("error", "Select a saved schedule set first.");
     }
 
-    $setRecord = load_saved_schedule_set_record($conn, $schedule_set_id, $college_id, $program_id);
+    $setRecord = load_saved_schedule_set_record_for_college($conn, $schedule_set_id, $college_id);
     if (!$setRecord) {
-        respond("error", "Saved schedule set not found in your program scheduler.");
+        respond("error", "Saved schedule set not found in your scheduler workspace.");
     }
 
-    if (saved_schedule_program_term_has_merge_rows($conn, $college_id, (int)($setRecord['program_id'] ?? 0), (int)($setRecord['ay_id'] ?? 0), (int)($setRecord['semester'] ?? 0))) {
-        respond("error", "Loading a saved schedule set is disabled while merged schedule groups exist in this program term. Clear or unmerge the active merge groups first.");
+    $setProgramId = (int)($setRecord['program_id'] ?? 0);
+    $isCollegeTermSet = $setProgramId <= 0;
+
+    if ($isCollegeTermSet) {
+        if (saved_schedule_college_term_has_merge_rows($conn, $college_id, (int)$setRecord['ay_id'], (int)$setRecord['semester'])) {
+            respond("error", "Loading a saved schedule set is disabled while merged schedule groups exist in this college term. Clear or unmerge the active merge groups first.");
+        }
+    } elseif (saved_schedule_program_term_has_merge_rows($conn, $college_id, $setProgramId, (int)$setRecord['ay_id'], (int)$setRecord['semester'])) {
+        respond("error", "Loading this legacy saved schedule set is disabled while merged schedule groups exist in its program term. Clear or unmerge the active merge groups first.");
     }
 
-    $setRows = load_saved_schedule_set_rows($conn, $schedule_set_id, $college_id, $program_id);
+    $setRows = load_saved_schedule_set_rows_for_college($conn, $schedule_set_id, $college_id);
     if (empty($setRows)) {
         respond("error", "This saved schedule set does not contain any rows.");
     }
 
-    $scopeOfferings = load_scoped_offerings_for_term(
-        $conn,
-        (int)($setRecord['program_id'] ?? 0),
-        (int)$setRecord['ay_id'],
-        (int)$setRecord['semester'],
-        $college_id
-    );
+    $savedWorkloadRows = load_saved_schedule_workload_rows_for_college($conn, $schedule_set_id, $college_id);
+    $savedWorkloadRowCount = count($savedWorkloadRows);
+    if ($restoreWorkloadAssignments && $savedWorkloadRowCount === 0) {
+        respond("error", "This saved schedule set does not include Faculty Workload assignments.");
+    }
+
+    $scopeOfferings = $isCollegeTermSet
+        ? load_scoped_offerings_for_college_term(
+            $conn,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester'],
+            $college_id
+        )
+        : load_scoped_offerings_for_term(
+            $conn,
+            $setProgramId,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester'],
+            $college_id
+        );
 
     if (empty($scopeOfferings)) {
-        respond("error", "The saved set program term is no longer available. Re-run Generate Offerings first.");
+        respond("error", "The saved set scope is no longer available. Re-run Generate Offerings first.");
     }
 
     $scopeMap = [];
@@ -4563,13 +5859,20 @@ if (isset($_POST['load_schedule_set_into_live'])) {
         }
     }
 
-    $currentLiveOfferingIds = load_live_scheduled_offering_ids_for_scope(
-        $conn,
-        (int)($setRecord['program_id'] ?? 0),
-        (int)$setRecord['ay_id'],
-        (int)$setRecord['semester'],
-        $college_id
-    );
+    $currentLiveOfferingIds = $isCollegeTermSet
+        ? load_live_scheduled_offering_ids_for_college_term(
+            $conn,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester'],
+            $college_id
+        )
+        : load_live_scheduled_offering_ids_for_scope(
+            $conn,
+            $setProgramId,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester'],
+            $college_id
+        );
 
     $affectedOfferingMap = [];
     foreach ($currentLiveOfferingIds as $offeringId) {
@@ -4593,7 +5896,7 @@ if (isset($_POST['load_schedule_set_into_live'])) {
             : ($setLabelsByOffering[$offeringId] ?? ('Offering #' . $offeringId));
 
         if (!$scopeOffering) {
-            $outdatedLines[] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . ': offering no longer exists in this program term.';
+            $outdatedLines[] = htmlspecialchars($label, ENT_QUOTES, 'UTF-8') . ': offering no longer exists in this saved set scope.';
             continue;
         }
 
@@ -4624,7 +5927,7 @@ if (isset($_POST['load_schedule_set_into_live'])) {
         (int)$setRecord['semester']
     );
 
-    if (!empty($workloadMap)) {
+    if (!empty($workloadMap) && !$restoreWorkloadAssignments) {
         $workloadLines = [];
         foreach ($affectedOfferingIds as $offeringId) {
             if (empty($workloadMap[$offeringId])) {
@@ -4645,13 +5948,15 @@ if (isset($_POST['load_schedule_set_into_live'])) {
             respond(
                 "error",
                 "Remove the affected Faculty Workload assignments before loading this saved set.<br><br>" .
-                implode("<br>", array_slice($workloadLines, 0, 8))
+                implode("<br>", array_slice($workloadLines, 0, 8)) .
+                ($savedWorkloadRowCount > 0 ? "<br><br>Or load again with Restore saved Faculty Workload enabled." : "")
             );
         }
     }
 
     $contextCache = [];
     $normalizedRows = [];
+    $normalizedRowsBySetRowId = [];
 
     foreach ($setRows as $row) {
         $offeringId = (int)($row['offering_id'] ?? 0);
@@ -4692,19 +5997,27 @@ if (isset($_POST['load_schedule_set_into_live'])) {
             $type
         );
 
-        $normalizedRows[] = [
+        $scheduleSetRowId = (int)($row['schedule_set_row_id'] ?? 0);
+        $normalizedRow = [
+            'schedule_set_row_id' => $scheduleSetRowId,
             'offering_id' => $offeringId,
             'section_id' => (int)($row['section_id'] ?? 0),
             'section_name' => (string)($row['section_name_snapshot'] ?? ($contextCache[$offeringId]['section_name'] ?? '')),
             'schedule_type' => $type,
+            'block_order' => (int)($row['block_order'] ?? 0),
             'room_id' => $roomId,
             'room_label' => (string)($row['room_label_snapshot'] ?? ''),
             'days' => $days,
             'days_json' => json_encode($days),
             'time_start' => $timeStart,
             'time_end' => $timeEnd,
+            'subject_code' => (string)($row['subject_code_snapshot'] ?? ''),
             'label' => $label
         ];
+        $normalizedRows[] = $normalizedRow;
+        if ($scheduleSetRowId > 0) {
+            $normalizedRowsBySetRowId[$scheduleSetRowId] = $normalizedRow;
+        }
     }
 
     $internalConflict = validate_saved_schedule_set_internal_conflicts($normalizedRows);
@@ -4733,6 +6046,21 @@ if (isset($_POST['load_schedule_set_into_live'])) {
         }
     }
 
+    if ($restoreWorkloadAssignments) {
+        $workloadConflict = validate_saved_schedule_workload_restore(
+            $conn,
+            $savedWorkloadRows,
+            $normalizedRowsBySetRowId,
+            $affectedOfferingIds,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester']
+        );
+
+        if ($workloadConflict !== null) {
+            respond("conflict", $workloadConflict);
+        }
+    }
+
     $rowsByOffering = [];
     foreach ($normalizedRows as $row) {
         $rowsByOffering[(int)$row['offering_id']][] = $row;
@@ -4742,10 +6070,20 @@ if (isset($_POST['load_schedule_set_into_live'])) {
     $insertedRowCount = 0;
     $activatedOfferingCount = 0;
     $pendingOfferingCount = 0;
+    $removedWorkloadRowCount = 0;
+    $restoredWorkloadRowCount = 0;
+    $insertedScheduleIdBySetRowId = [];
 
     $conn->begin_transaction();
     try {
         $idList = implode(',', array_map('intval', $affectedOfferingIds));
+
+        $removedWorkloadRowCount = delete_workload_assignments_for_offerings(
+            $conn,
+            $affectedOfferingIds,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester']
+        );
 
         if (!$conn->query("
             DELETE FROM tbl_class_schedule
@@ -4768,7 +6106,7 @@ if (isset($_POST['load_schedule_set_into_live'])) {
             $groupId = count($offeringRows) > 1 ? random_int(100000, 2147483647) : null;
 
             foreach ($offeringRows as $row) {
-                insert_schedule_row(
+                $newScheduleId = insert_schedule_row(
                     $conn,
                     (int)$offeringId,
                     (string)$row['schedule_type'],
@@ -4779,6 +6117,10 @@ if (isset($_POST['load_schedule_set_into_live'])) {
                     (string)$row['time_end'],
                     (int)($_SESSION['user_id'] ?? 0)
                 );
+                $setRowId = (int)($row['schedule_set_row_id'] ?? 0);
+                if ($setRowId > 0 && $newScheduleId > 0) {
+                    $insertedScheduleIdBySetRowId[$setRowId] = $newScheduleId;
+                }
                 $insertedRowCount++;
             }
 
@@ -4797,6 +6139,58 @@ if (isset($_POST['load_schedule_set_into_live'])) {
             }
         }
 
+        if ($restoreWorkloadAssignments && !empty($savedWorkloadRows)) {
+            $setAyId = (int)$setRecord['ay_id'];
+            $setSemester = (int)$setRecord['semester'];
+            $insertWorkload = $conn->prepare("
+                INSERT IGNORE INTO tbl_faculty_workload_sched
+                    (schedule_id, faculty_id, ay_id, semester)
+                VALUES (?, ?, ?, ?)
+            ");
+            if (!$insertWorkload) {
+                throw new RuntimeException("Failed to restore saved workload assignments.");
+            }
+
+            foreach ($savedWorkloadRows as $workloadRow) {
+                $setRowId = (int)($workloadRow['schedule_set_row_id'] ?? 0);
+                $newScheduleId = (int)($insertedScheduleIdBySetRowId[$setRowId] ?? 0);
+                $facultyId = (int)($workloadRow['faculty_id'] ?? 0);
+
+                if ($setRowId <= 0 || $newScheduleId <= 0 || $facultyId <= 0) {
+                    continue;
+                }
+
+                $insertWorkload->bind_param(
+                    "iiii",
+                    $newScheduleId,
+                    $facultyId,
+                    $setAyId,
+                    $setSemester
+                );
+
+                if (!$insertWorkload->execute()) {
+                    $insertWorkload->close();
+                    throw new RuntimeException("Failed to restore saved workload assignments.");
+                }
+
+                if ($insertWorkload->affected_rows > 0) {
+                    $restoredWorkloadRowCount++;
+                }
+            }
+
+            $insertWorkload->close();
+        }
+
+        if (!save_saved_schedule_workspace_state(
+            $conn,
+            $college_id,
+            (int)$setRecord['ay_id'],
+            (int)$setRecord['semester'],
+            (int)$setRecord['schedule_set_id']
+        )) {
+            throw new RuntimeException("Failed to remember the loaded saved schedule set.");
+        }
+
         $conn->commit();
     } catch (Throwable $e) {
         $conn->rollback();
@@ -4812,7 +6206,11 @@ if (isset($_POST['load_schedule_set_into_live'])) {
         "loaded_offering_count" => count($rowsByOffering),
         "loaded_row_count" => $insertedRowCount,
         "activated_offering_count" => $activatedOfferingCount,
-        "pending_offering_count" => $pendingOfferingCount
+        "pending_offering_count" => $pendingOfferingCount,
+        "saved_workload_row_count" => $savedWorkloadRowCount,
+        "removed_workload_row_count" => $removedWorkloadRowCount,
+        "restored_workload_row_count" => $restoredWorkloadRowCount,
+        "restore_workload_assignments" => $restoreWorkloadAssignments ? 1 : 0
     ]);
 }
 
@@ -4821,6 +6219,8 @@ if (isset($_POST['load_schedule_set_into_live'])) {
 ===================================================== */
 if (
     !isset($_POST['load_schedule_sets']) &&
+    !isset($_POST['update_schedule_set_meta']) &&
+    !isset($_POST['delete_schedule_set']) &&
     !isset($_POST['save_schedule_set']) &&
     !isset($_POST['load_schedule_set_into_live']) &&
     !isset($_POST['load_schedule_merge_candidates']) &&

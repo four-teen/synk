@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/schema_helper.php';
+require_once __DIR__ . '/saved_schedule_helper.php';
 
 if (!isset($_SESSION['user_id']) || !isset($_SESSION['role'])) {
     http_response_code(403);
@@ -397,18 +398,18 @@ if (isset($_POST['delete_prospectus'])) {
             }
         }
 
-        if (synk_table_exists($conn, 'tbl_class_schedule_set') && synk_table_exists($conn, 'tbl_class_schedule_set_row')) {
+        if (!empty($offeringIds) && synk_saved_schedule_tables_exist($conn)) {
             $scheduleSetIds = [];
+            $offeringIdList = implode(',', array_map('intval', array_values($offeringIds)));
             $setStmt = $conn->prepare("
-                SELECT schedule_set_id
-                FROM tbl_class_schedule_set
-                WHERE prospectus_id = ?
+                SELECT DISTINCT schedule_set_id
+                FROM tbl_program_schedule_set_row
+                WHERE offering_id IN ({$offeringIdList})
             ");
             if (!$setStmt) {
                 throw new RuntimeException('Failed to inspect saved schedule sets.');
             }
 
-            $setStmt->bind_param("i", $prospectusId);
             $setStmt->execute();
             $setRes = $setStmt->get_result();
 
@@ -420,26 +421,39 @@ if (isset($_POST['delete_prospectus'])) {
             }
             $setStmt->close();
 
-            synk_delete_rows_by_id_list($conn, 'tbl_class_schedule_set_row', 'schedule_set_id', array_values($scheduleSetIds));
+            if (!empty($scheduleSetIds)) {
+                if (synk_saved_schedule_workspace_state_table_exists($conn)) {
+                    $workspaceTable = synk_saved_schedule_workspace_state_table_name();
+                    $scheduleSetIdList = implode(',', array_map('intval', array_values($scheduleSetIds)));
+                    if (!$conn->query("
+                        UPDATE `{$workspaceTable}`
+                        SET last_loaded_schedule_set_id = NULL
+                        WHERE last_loaded_schedule_set_id IN ({$scheduleSetIdList})
+                    ")) {
+                        throw new RuntimeException('Failed to clear loaded saved schedule state.');
+                    }
+                }
 
-            $deleteSetStmt = $conn->prepare("
-                DELETE FROM tbl_class_schedule_set
-                WHERE prospectus_id = ?
-            ");
-            if (!$deleteSetStmt) {
-                throw new RuntimeException('Failed to delete saved schedule sets.');
-            }
+                if (synk_saved_schedule_workload_table_exists($conn)) {
+                    synk_delete_rows_by_id_list(
+                        $conn,
+                        synk_saved_schedule_workload_table_name(),
+                        'schedule_set_id',
+                        array_values($scheduleSetIds)
+                    );
+                }
 
-            $deleteSetStmt->bind_param("i", $prospectusId);
-            if (!$deleteSetStmt->execute()) {
-                $deleteSetStmt->close();
-                throw new RuntimeException('Failed to delete saved schedule sets.');
+                synk_delete_rows_by_id_list($conn, 'tbl_program_schedule_set_row', 'schedule_set_id', array_values($scheduleSetIds));
+                synk_delete_rows_by_id_list($conn, 'tbl_program_schedule_set', 'schedule_set_id', array_values($scheduleSetIds));
             }
-            $deleteSetStmt->close();
         }
 
         if (!empty($scheduleIds) && synk_table_exists($conn, 'tbl_faculty_workload_sched')) {
             synk_delete_rows_by_id_list($conn, 'tbl_faculty_workload_sched', 'schedule_id', array_values($scheduleIds));
+        }
+
+        if (!empty($scheduleIds) && synk_table_exists($conn, 'tbl_faculty_need_workload_sched')) {
+            synk_delete_rows_by_id_list($conn, 'tbl_faculty_need_workload_sched', 'schedule_id', array_values($scheduleIds));
         }
 
         if (synk_table_exists($conn, 'tbl_faculty_workload_simulation')) {
@@ -448,6 +462,17 @@ if (isset($_POST['delete_prospectus'])) {
             }
             if (!empty($offeringIds)) {
                 synk_delete_rows_by_id_list($conn, 'tbl_faculty_workload_simulation', 'offering_id', array_values($offeringIds));
+            }
+        }
+
+        if (!empty($offeringIds) && synk_table_exists($conn, 'tbl_class_schedule_merge')) {
+            $offeringIdList = implode(',', array_map('intval', array_values($offeringIds)));
+            if (!$conn->query("
+                DELETE FROM tbl_class_schedule_merge
+                WHERE owner_offering_id IN ({$offeringIdList})
+                   OR member_offering_id IN ({$offeringIdList})
+            ")) {
+                throw new RuntimeException('Failed to delete merge links.');
             }
         }
 

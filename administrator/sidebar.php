@@ -308,6 +308,56 @@ foreach ($sidebarSections as $section) {
   </div>
 
   <style>
+    #layout-menu {
+      height: 100vh;
+      max-height: 100vh;
+      overflow: hidden;
+    }
+
+    #layout-menu .app-brand {
+      flex: 0 0 auto;
+    }
+
+    #layout-menu .menu-inner {
+      min-height: 0;
+      height: auto;
+      max-height: calc(100vh - 4.625rem);
+      overflow-x: hidden !important;
+      overflow-y: auto !important;
+      padding-bottom: 1rem;
+      overscroll-behavior: contain;
+      -webkit-overflow-scrolling: touch;
+      touch-action: pan-y;
+      scrollbar-width: thin;
+      scrollbar-color: rgba(105, 108, 255, 0.42) transparent;
+    }
+
+    #layout-menu .menu-inner::-webkit-scrollbar {
+      width: 0.38rem;
+    }
+
+    #layout-menu .menu-inner::-webkit-scrollbar-track {
+      background: transparent;
+    }
+
+    #layout-menu .menu-inner::-webkit-scrollbar-thumb {
+      border-radius: 999px;
+      background: rgba(105, 108, 255, 0.38);
+    }
+
+    #layout-menu .menu-inner:hover::-webkit-scrollbar-thumb {
+      background: rgba(105, 108, 255, 0.58);
+    }
+
+    #layout-menu .menu-inner.ps {
+      position: relative;
+    }
+
+    #layout-menu .menu-inner.ps > .ps__rail-x,
+    #layout-menu .menu-inner.ps > .ps__rail-y {
+      display: none !important;
+    }
+
     #layout-menu .sidebar-action-card {
       --sidebar-card-radius: 0.75rem;
       position: relative;

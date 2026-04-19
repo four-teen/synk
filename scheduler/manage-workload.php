@@ -4,6 +4,7 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/schema_helper.php';
+require_once '../backend/faculty_need_helper.php';
 
 /* =====================================================
    WORKLOAD COMPUTATION CONFIG
@@ -56,6 +57,7 @@ if ((int)$currentTerm['semester'] === 1) {
 
 // LOAD FACULTY ASSIGNED TO THIS COLLEGE
 $faculty_options = "";
+$faculty_need_options = "";
 $assignmentHasAyId = synk_table_has_column($conn, 'tbl_college_faculty', 'ay_id');
 $assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'semester');
 $facultySql = "
@@ -94,10 +96,18 @@ if ($facultyStmt instanceof mysqli_stmt) {
     while ($f = $facultyResult->fetch_assoc()) {
         $fid = (int)$f['faculty_id'];
         $fname = htmlspecialchars((string)$f['full_name'], ENT_QUOTES, 'UTF-8');
-        $faculty_options .= "<option value='{$fid}'>{$fname}</option>";
+        $faculty_options .= "<option value='{$fid}' data-assignee-type='faculty'>{$fname}</option>";
     }
 
     $facultyStmt->close();
+}
+
+foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultAyId, (int)$currentTerm['semester']) as $need) {
+    $needId = (int)($need['faculty_need_id'] ?? 0);
+    $needLabel = htmlspecialchars((string)($need['need_label'] ?? ''), ENT_QUOTES, 'UTF-8');
+    if ($needId > 0 && $needLabel !== '') {
+        $faculty_need_options .= "<option value='need:{$needId}' data-assignee-type='faculty_need' data-faculty-need-id='{$needId}'>{$needLabel}</option>";
+    }
 }
 
 ?>
@@ -238,6 +248,46 @@ if ($facultyStmt instanceof mysqli_stmt) {
             background: #f6f9fc;
         }
 
+        .external-workload-divider td {
+            background: #fff7e6;
+            color: #8a5a00;
+            font-size: 0.78rem;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+        }
+
+        .external-workload-row td {
+            background: #fffdf8;
+            color: #5f6f83;
+        }
+
+        .external-workload-row .workload-code {
+            border-left: 4px solid #f0b84e;
+        }
+
+        .workload-external-note {
+            display: block;
+            margin-top: 0.28rem;
+            font-size: 0.72rem;
+            font-weight: 700;
+            color: #9a6512;
+        }
+
+        .external-workload-lock {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.3rem;
+            padding: 0.28rem 0.55rem;
+            border-radius: 999px;
+            border: 1px solid #f1d08e;
+            background: #fff6dc;
+            color: #8a5a00;
+            font-size: 0.74rem;
+            font-weight: 700;
+            white-space: nowrap;
+        }
+
         .load-status-inline {
             display: inline-block;
             margin-left: 0.45rem;
@@ -253,6 +303,38 @@ if ($facultyStmt instanceof mysqli_stmt) {
         .total-load-value {
             font-size: inherit;
             font-weight: 700;
+        }
+
+        .print-total-value {
+            display: none;
+        }
+
+        .print-only-table-cell {
+            display: none;
+        }
+
+        .workload-total-load-screen {
+            padding-left: 0.75rem !important;
+            padding-right: 1rem !important;
+        }
+
+        .total-load-screen-inner {
+            display: grid;
+            grid-template-columns: 1fr 1fr 1fr;
+            align-items: center;
+            width: 100%;
+            gap: 0.5rem;
+        }
+
+        .total-load-screen-inner .total-load-value {
+            grid-column: 1;
+            justify-self: center;
+        }
+
+        .total-load-screen-inner .load-status-inline {
+            grid-column: 2 / 4;
+            justify-self: start;
+            margin-left: 0;
         }
 
         .load-status-inline.underload {
@@ -307,6 +389,95 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
         .print-inline-label {
             white-space: nowrap;
+        }
+
+        .workload-start-panel {
+            position: relative;
+            overflow: hidden;
+            border: 1px solid #e3ebf5;
+            border-radius: 18px;
+            background:
+                radial-gradient(circle at 14% 22%, rgba(29, 145, 219, 0.13), transparent 26%),
+                radial-gradient(circle at 86% 18%, rgba(34, 160, 107, 0.11), transparent 24%),
+                linear-gradient(135deg, #ffffff 0%, #f7fbff 52%, #fffaf2 100%);
+            box-shadow: 0 16px 38px rgba(55, 74, 96, 0.08);
+        }
+
+        .workload-start-panel::after {
+            content: "";
+            position: absolute;
+            right: -4rem;
+            bottom: -6rem;
+            width: 18rem;
+            height: 18rem;
+            border-radius: 999px;
+            border: 36px solid rgba(93, 104, 244, 0.055);
+            pointer-events: none;
+        }
+
+        .workload-start-body {
+            position: relative;
+            z-index: 1;
+            max-width: 820px;
+            margin: 0 auto;
+            padding: 3.8rem 1.5rem;
+            text-align: center;
+        }
+
+        .workload-start-icon {
+            width: 64px;
+            height: 64px;
+            margin: 0 auto 1.2rem;
+            border-radius: 20px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: #eef7ff;
+            color: #1479b8;
+            box-shadow: 0 12px 28px rgba(20, 121, 184, 0.14);
+            font-size: 2rem;
+        }
+
+        .workload-start-title {
+            margin: 0;
+            color: #43546a;
+            font-weight: 800;
+            letter-spacing: 0.01em;
+        }
+
+        .workload-start-copy {
+            max-width: 660px;
+            margin: 0.65rem auto 0;
+            color: #6f7f94;
+            line-height: 1.6;
+        }
+
+        .workload-start-chips {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.55rem;
+            margin: 1.35rem 0 1.55rem;
+        }
+
+        .workload-start-chip {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.35rem;
+            padding: 0.45rem 0.75rem;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.76);
+            border: 1px solid rgba(126, 151, 180, 0.18);
+            color: #52657d;
+            font-size: 0.78rem;
+            font-weight: 700;
+        }
+
+        .workload-start-actions {
+            display: flex;
+            flex-wrap: wrap;
+            justify-content: center;
+            gap: 0.75rem;
         }
 
         .print-sheet-line {
@@ -412,7 +583,9 @@ if ($facultyStmt instanceof mysqli_stmt) {
             line-height: 1.15;
         }
 
-        #printConforme {
+        #printConforme,
+        #printPreparedBy,
+        #printApprovedBy {
             text-align: center;
         }
 
@@ -1141,6 +1314,13 @@ if ($facultyStmt instanceof mysqli_stmt) {
             line-height: 42px !important;
         }
 
+        .faculty-need-actions {
+            display: flex;
+            flex-wrap: wrap;
+            align-items: center;
+            gap: 0.5rem;
+        }
+
         /* PRINT */
         @page {
             size: A4 portrait;
@@ -1307,12 +1487,26 @@ if ($facultyStmt instanceof mysqli_stmt) {
             .btn,
             .badge,
             .select2-container,
-            .screen-only {
+            .screen-only,
+            .external-workload-divider,
+            .external-workload-row {
                 display: none !important;
             }
 
             .load-status-inline {
                 display: none !important;
+            }
+
+            .screen-total-value {
+                display: none !important;
+            }
+
+            .print-total-value {
+                display: inline !important;
+            }
+
+            .print-only-table-cell {
+                display: table-cell !important;
             }
 
             .schedule-partner-note,
@@ -1381,18 +1575,38 @@ if ($facultyStmt instanceof mysqli_stmt) {
             <h5 class="m-0">Assign Workload</h5>
             <small class="text-muted">Assign scheduled lecture and laboratory entries to faculty.</small>
         </div>
-        <button type="button" class="btn btn-outline-danger btn-sm screen-only" id="btnClearCollegeWorkload">
-            <i class="bx bx-trash me-1"></i> Remove All Assigned Workload
-        </button>
+        <div class="d-flex flex-wrap align-items-center gap-2">
+            <button type="button" class="btn btn-outline-info btn-sm screen-only" data-bs-toggle="modal" data-bs-target="#workloadHelpModal">
+                <i class="bx bx-help-circle me-1"></i> Help
+            </button>
+            <button type="button" class="btn btn-outline-danger btn-sm screen-only" id="btnClearCollegeWorkload">
+                <i class="bx bx-trash me-1"></i> Remove All Assigned Workload
+            </button>
+        </div>
     </div>
         <div class="card-body">
 
             <div class="row g-3 align-items-end">
                 <div class="col-md-6">
-                    <label class="form-label fw-semibold">Select Faculty</label>
+                    <div class="d-flex align-items-center justify-content-between gap-2">
+                        <label class="form-label fw-semibold mb-0">Select Faculty / Faculty Need</label>
+                        <div class="faculty-need-actions screen-only">
+                            <button type="button" class="btn btn-link btn-sm px-0" id="btnAddFacultyNeed">
+                                <i class="bx bx-plus-circle me-1"></i>Add Faculty Need
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm" id="btnDeleteFacultyNeed" style="display:none;">
+                                <i class="bx bx-trash me-1"></i>Delete Selected Faculty Need
+                            </button>
+                        </div>
+                    </div>
                     <select id="faculty_id" class="form-select select2-single">
                         <option value="">Select Faculty</option>
-                        <?= $faculty_options ?>
+                        <optgroup label="Faculty">
+                            <?= $faculty_options ?>
+                        </optgroup>
+                        <optgroup label="Faculty Needs" id="facultyNeedOptgroup">
+                            <?= $faculty_need_options ?>
+                        </optgroup>
                     </select>
                 </div>
 
@@ -1424,7 +1638,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
             <div class="mt-3" id="facultyAlert" style="display:none;">
                 <div class="alert alert-info mb-0">
-                    <strong>Faculty Selected:</strong> <span id="facultyNameText"></span>
+                    <strong id="selectedAssigneeLabel">Faculty Selected:</strong> <span id="facultyNameText"></span>
                     &nbsp;|&nbsp; <span class="fw-summary-label">Term:</span>
                     <span id="termSummary"></span>
                 </div>
@@ -1432,6 +1646,30 @@ if ($facultyStmt instanceof mysqli_stmt) {
 
         </div>
     </div>
+<div class="card mt-4 workload-start-panel screen-only" id="workloadStartPanel">
+    <div class="workload-start-body">
+        <div class="workload-start-icon">
+            <i class="bx bx-user-check"></i>
+        </div>
+        <h5 class="workload-start-title">Ready to Assign Faculty Workload</h5>
+        <p class="workload-start-copy">
+            Select a faculty to view current workload, check university-wide schedule conflicts, and assign available lecture/laboratory schedules.
+        </p>
+        <div class="workload-start-chips" aria-label="Workload rules">
+            <span class="workload-start-chip"><i class="bx bx-globe"></i> University-wide load status</span>
+            <span class="workload-start-chip"><i class="bx bx-lock-alt"></i> External workload is view-only</span>
+            <span class="workload-start-chip"><i class="bx bx-printer"></i> Print remains college-scoped</span>
+        </div>
+        <div class="workload-start-actions">
+            <button type="button" class="btn btn-primary" id="btnStartOpenFacultyOverview">
+                <i class="bx bx-user-pin me-1"></i> Open Faculty Load Overview
+            </button>
+            <button type="button" class="btn btn-outline-secondary" id="btnStartChooseFaculty">
+                <i class="bx bx-search me-1"></i> Choose Faculty
+            </button>
+        </div>
+    </div>
+</div>
 <div class="card mt-4 workload-card" id="workloadCard" style="display:none;">
 <div class="card-header d-flex justify-content-between align-items-center">
     <div>
@@ -1530,9 +1768,9 @@ if ($facultyStmt instanceof mysqli_stmt) {
             <th class="text-center" id="totalUNIT">0</th>
             <th class="text-center" id="totalLAB">0</th>
             <th class="text-center" id="totalLEC">0</th>
-            <th class="text-center fw-semibold" id="totalLOADCell">0</th>
-            <th class="text-center" id="totalStudents"></th>
-            <th class="screen-only"></th>
+            <th class="text-center fw-semibold screen-only workload-total-load-screen" colspan="3" id="totalLOADCell">0</th>
+            <th class="text-center fw-semibold print-only-table-cell" id="printTotalLOADCell">0</th>
+            <th class="text-center print-only-table-cell" id="totalStudents"></th>
         </tr>
     </tfoot>
         </table>
@@ -1549,15 +1787,15 @@ if ($facultyStmt instanceof mysqli_stmt) {
         </div>
         <div class="print-signatory">
             <div class="print-sign-label">Prepared by:</div>
-            <div class="print-sign-line"></div>
-            <div class="print-sign-caption">&nbsp;</div>
+            <div id="printPreparedBy" class="print-sign-line print-sign-uppercase"></div>
+            <div class="print-sign-caption">Program Chairperson</div>
             <div class="print-sign-line short"></div>
             <div class="print-sign-caption">Date</div>
         </div>
         <div class="print-signatory full-width">
             <div class="print-sign-label">Approved:</div>
-            <div class="print-sign-line"></div>
-            <div class="print-sign-caption">&nbsp;</div>
+            <div id="printApprovedBy" class="print-sign-line print-sign-uppercase"></div>
+            <div class="print-sign-caption">College Dean</div>
         </div>
     </div>
 
@@ -1706,7 +1944,7 @@ if ($facultyStmt instanceof mysqli_stmt) {
             </span>
             <div>
                 <h5 id="facultyBrowserDrawerLabel">Faculty Load Overview</h5>
-                <p>Browse faculty totals for the selected term and jump straight into any workload profile.</p>
+                <p>Browse university-wide faculty totals for the selected term and jump straight into any workload profile.</p>
             </div>
         </div>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
@@ -1714,10 +1952,55 @@ if ($facultyStmt instanceof mysqli_stmt) {
     <div class="offcanvas-body">
         <div class="faculty-browser-summary" id="facultyBrowserSummary"></div>
         <div class="faculty-browser-note">
-            Uses the current A.Y. and semester on this page. Click a faculty card to load that faculty into the main workload panels.
+            Uses actual assigned workload across colleges/campuses for the current A.Y. and semester. Click a faculty card to load that faculty into the main workload panels.
         </div>
         <div id="facultyBrowserList">
             <div class="faculty-browser-empty">Loading faculty workload overview...</div>
+        </div>
+    </div>
+</div>
+
+<div class="modal fade" id="workloadHelpModal" tabindex="-1" aria-labelledby="workloadHelpModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-lg modal-dialog-centered">
+        <div class="modal-content border-0 shadow-sm">
+            <div class="modal-header border-0 pb-0">
+                <div>
+                    <h5 class="modal-title" id="workloadHelpModalLabel">Faculty Workload Guide</h5>
+                    <small class="text-muted">Quick guide for assigning real faculty and faculty needs.</small>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div class="row g-3">
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded-3 h-100">
+                            <h6 class="fw-semibold mb-2"><i class="bx bx-user me-1"></i> Real Faculty</h6>
+                            <p class="text-muted mb-0">Select a faculty to assign available schedules. The workload view checks actual university-wide load and shows other college/campus assignments as view-only.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded-3 h-100">
+                            <h6 class="fw-semibold mb-2"><i class="bx bx-user-plus me-1"></i> Faculty Need</h6>
+                            <p class="text-muted mb-0">Use Add Faculty Need when no real faculty can take remaining loads. Faculty needs can receive schedules and print workload, but they do not count as real faculty.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded-3 h-100">
+                            <h6 class="fw-semibold mb-2"><i class="bx bx-lock-alt me-1"></i> View-Only Rows</h6>
+                            <p class="text-muted mb-0">Rows from other colleges/campuses are visible for conflict awareness but cannot be removed from this college workload page.</p>
+                        </div>
+                    </div>
+                    <div class="col-md-6">
+                        <div class="p-3 border rounded-3 h-100">
+                            <h6 class="fw-semibold mb-2"><i class="bx bx-printer me-1"></i> Print Scope</h6>
+                            <p class="text-muted mb-0">Print workload remains college-scoped. Faculty need workload can also be printed using the same workload print format.</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+            <div class="modal-footer border-0 pt-0">
+                <button type="button" class="btn btn-primary" data-bs-dismiss="modal">I understand</button>
+            </div>
         </div>
     </div>
 </div>
@@ -1752,17 +2035,11 @@ let facultyBrowserDrawerInstance = null;
 let currentScheduledClassRows = [];
 let currentWorkloadRows = [];
 const SCHEDULE_PAIR_COLORS = ["#22a06b", "#e85d75", "#5d68f4", "#d39c0f", "#2e8de4", "#8a63f7"];
+const NORMAL_LOAD_SINGLE_PREP_UNITS = 21;
+const NORMAL_LOAD_MULTIPLE_PREP_UNITS = 18;
+const LOAD_COMPARISON_TOLERANCE = 0.0001;
 
 $(document).ready(function () {
-
-    /* =========================================================
-       INIT SELECT2 (ONCE ONLY)
-    ========================================================= */
-    $('.select2-single').select2({
-        width: '100%',
-        placeholder: "Select...",
-        allowClear: true
-    });
 
     /* =========================================================
        SEMESTER MAP
@@ -1787,6 +2064,15 @@ $(document).ready(function () {
             .replace(/'/g, "&#39;");
     }
 
+    /* =========================================================
+       INIT SELECT2 (ONCE ONLY)
+    ========================================================= */
+    $('.select2-single').select2({
+        width: '100%',
+        placeholder: "Select...",
+        allowClear: true
+    });
+
     function toNumber(value) {
         const n = Number(value);
         return Number.isFinite(n) ? n : 0;
@@ -1802,14 +2088,20 @@ $(document).ready(function () {
         return n > 0 ? String(n) : "";
     }
 
-    function getLoadStatus(loadValue) {
-        const numericLoad = toNumber(loadValue);
+    function getNormalLoadUnits(preparationCount) {
+        const prepCount = Math.max(0, Math.floor(toNumber(preparationCount)));
+        return prepCount >= 2 ? NORMAL_LOAD_MULTIPLE_PREP_UNITS : NORMAL_LOAD_SINGLE_PREP_UNITS;
+    }
 
-        if (numericLoad > 21) {
+    function getLoadStatus(loadValue, preparationCount = 0) {
+        const numericLoad = toNumber(loadValue);
+        const normalLoadUnits = getNormalLoadUnits(preparationCount);
+
+        if (numericLoad > normalLoadUnits + LOAD_COMPARISON_TOLERANCE) {
             return { label: "Overload", className: "overload", drawerLabel: "Overload" };
         }
 
-        if (numericLoad >= 18) {
+        if (numericLoad >= normalLoadUnits - LOAD_COMPARISON_TOLERANCE) {
             return { label: "", className: "normal", drawerLabel: "Normal Load" };
         }
 
@@ -1838,6 +2130,10 @@ $(document).ready(function () {
         const items = [];
         $("#faculty_id option").each(function () {
             const option = $(this);
+            if (String(option.data("assigneeType") || "") === "faculty_need") {
+                return;
+            }
+
             const facultyId = parseInt(option.val(), 10) || 0;
             const fullName = String(option.text() || "").trim();
 
@@ -1859,6 +2155,128 @@ $(document).ready(function () {
         facultyOverviewRequest = null;
         facultyOverviewCacheKey = "";
         facultyOverviewCache = [];
+    }
+
+    function renderFacultyNeedOptions(needs, selectedValue = "") {
+        const optgroup = $("#facultyNeedOptgroup");
+        const currentValue = selectedValue || String($("#faculty_id").val() || "");
+        const sourceNeeds = Array.isArray(needs) ? needs : [];
+        let html = "";
+
+        sourceNeeds.forEach(function (need) {
+            const needId = Number(need?.faculty_need_id) || 0;
+            const label = String(need?.need_label || "").trim();
+            if (!needId || !label) {
+                return;
+            }
+
+            html += `<option value="need:${escapeHtml(needId)}" data-assignee-type="faculty_need" data-faculty-need-id="${escapeHtml(needId)}">${escapeHtml(label)}</option>`;
+        });
+
+        optgroup.html(html);
+        if (currentValue && $("#faculty_id option[value='" + currentValue.replace(/'/g, "\\'") + "']").length > 0) {
+            $("#faculty_id").val(currentValue);
+        } else if (String(currentValue).startsWith("need:")) {
+            $("#faculty_id").val("");
+        }
+
+        if ($("#faculty_id").hasClass("select2-hidden-accessible")) {
+            $("#faculty_id").trigger("change.select2");
+        }
+
+        updateFacultyNeedActions();
+    }
+
+    function loadFacultyNeedOptions(selectedValue = "") {
+        const termContext = getFacultyBrowserTermContext();
+        if (!termContext) {
+            renderFacultyNeedOptions([], selectedValue);
+            return $.Deferred().resolve([]).promise();
+        }
+
+        return $.ajax({
+            url: "../backend/query_faculty_need.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                action: "list",
+                ay_id: termContext.ayId,
+                semester: termContext.semesterNum
+            }
+        }).done(function (response) {
+            renderFacultyNeedOptions(response && response.status === "ok" ? response.needs : [], selectedValue);
+        });
+    }
+
+    function deleteFacultyNeed(facultyNeedId, needLabel = "") {
+        const termContext = getFacultyBrowserTermContext();
+        if (!termContext) {
+            Swal.fire("Missing Term", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        const normalizedNeedId = Number(facultyNeedId) || 0;
+        if (!normalizedNeedId) {
+            Swal.fire("Unavailable", "The selected faculty need cannot be deleted right now.", "info");
+            return;
+        }
+
+        if ($("#faculty_id").hasClass("select2-hidden-accessible")) {
+            $("#faculty_id").select2("close");
+        }
+
+        const labelText = String(needLabel || `FACULTY NEED ${normalizedNeedId}`).trim() || `FACULTY NEED ${normalizedNeedId}`;
+
+        Swal.fire({
+            title: "Delete faculty need?",
+            html: `Remove <b>${escapeHtml(labelText)}</b> from the selected term? Any workload assigned to this faculty need will also be removed.`,
+            icon: "warning",
+            showCancelButton: true,
+            confirmButtonColor: "#d33",
+            confirmButtonText: "Delete"
+        }).then(function (result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            $.ajax({
+                url: "../backend/query_faculty_need.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    action: "delete",
+                    faculty_need_id: normalizedNeedId,
+                    ay_id: termContext.ayId,
+                    semester: termContext.semesterNum
+                }
+            }).done(function (response) {
+                if (!response || response.status !== "ok") {
+                    Swal.fire("Error", response?.message || "Unable to delete faculty need.", "error");
+                    return;
+                }
+
+                const deletedPayload = response.deleted || {};
+                const removedWorkloadCount = Number(deletedPayload.deleted_workload_count) || 0;
+                const deletedLabel = String(deletedPayload.need_label || labelText).trim() || labelText;
+                const successMessage = removedWorkloadCount > 0
+                    ? `${deletedLabel} was deleted. ${removedWorkloadCount} assigned workload row(s) were also removed.`
+                    : `${deletedLabel} was deleted.`;
+
+                Swal.fire({
+                    title: "Deleted",
+                    text: successMessage,
+                    icon: "success",
+                    timer: 1200,
+                    showConfirmButton: false,
+                    allowOutsideClick: false,
+                    allowEscapeKey: false
+                }).then(function () {
+                    window.location.reload();
+                });
+            }).fail(function (xhr) {
+                Swal.fire("Error", xhr.responseText || "Unable to delete faculty need.", "error");
+            });
+        });
     }
 
     function buildFacultyBrowserMetric(label, value) {
@@ -1919,7 +2337,7 @@ $(document).ready(function () {
             const workloadLoad = toNumber(summaryRow.workload_load);
             const designationUnits = toNumber(summaryRow.designation_units);
             const totalPreparations = Math.max(0, Number(summaryRow.total_preparations) || 0);
-            const loadStatus = getLoadStatus(totalLoad);
+            const loadStatus = getLoadStatus(totalLoad, totalPreparations);
 
             return {
                 faculty_id: option.faculty_id,
@@ -1937,17 +2355,17 @@ $(document).ready(function () {
             {
                 key: "overload",
                 title: "Overload",
-                subtitle: "Faculty above 21 teaching-load units for the selected term."
+                subtitle: "Faculty above the prep-based normal load for the selected term."
             },
             {
                 key: "normal",
                 title: "Normal Load",
-                subtitle: "Faculty within the regular workload band for the selected term."
+                subtitle: "Faculty exactly at 21 units for 1 prep, or 18 units for 2 or more preps."
             },
             {
                 key: "underload",
                 title: "Underload",
-                subtitle: "Faculty below the regular workload band for the selected term."
+                subtitle: "Faculty below the prep-based normal load for the selected term."
             }
         ];
 
@@ -2322,18 +2740,25 @@ $(document).ready(function () {
             const tableRow = checkbox.closest("tr");
             const scheduleId = String(checkbox.val() || "").trim();
             const scheduledRow = scheduledRowsById.get(scheduleId) || null;
-            const hasConflict = scheduledRow
-                ? currentWorkloadRows.some(function (workloadRow) {
+            const conflictRow = scheduledRow
+                ? currentWorkloadRows.find(function (workloadRow) {
                     return rowsHaveTimeConflict(scheduledRow, workloadRow);
                 })
-                : false;
+                : null;
+            const hasConflict = Boolean(conflictRow);
 
             checkbox.prop("checked", hasConflict ? false : checkbox.is(":checked"));
             checkbox.prop("disabled", hasConflict);
             tableRow.toggleClass("schedule-conflict-disabled", hasConflict);
 
             if (hasConflict) {
-                tableRow.attr("title", "Conflicts with current faculty workload");
+                const conflictSource = conflictRow?.is_external ? getWorkloadSourceLabel(conflictRow) : "";
+                tableRow.attr(
+                    "title",
+                    conflictSource
+                        ? `Conflicts with view-only workload from ${conflictSource}`
+                        : "Conflicts with current faculty workload"
+                );
                 tableRow.attr("aria-disabled", "true");
             } else {
                 tableRow.removeAttr("title");
@@ -2375,10 +2800,25 @@ $(document).ready(function () {
         $field.toggleClass("is-blank", normalized === "");
     }
 
+    function clearPrintSignatories() {
+        setPrintField("#printPreparedBy", "");
+        setPrintField("#printApprovedBy", "");
+    }
+
+    function applyWorkloadPrintSignatories(signatories) {
+        const preparedBy = signatories && typeof signatories === "object" ? signatories.prepared_by : null;
+        const approvedBy = signatories && typeof signatories === "object" ? signatories.approved_by : null;
+
+        setPrintField("#printPreparedBy", preparedBy?.name || "", { uppercase: true });
+        setPrintField("#printApprovedBy", approvedBy?.name || "", { uppercase: true });
+    }
+
     function normalizeWorkloadResponse(payload) {
         if (Array.isArray(payload)) {
             return {
                 rows: payload,
+                external_rows: [],
+                signatories: {},
                 meta: {
                     designation_name: "",
                     designation_label: "",
@@ -2394,6 +2834,8 @@ $(document).ready(function () {
 
         return {
             rows: payload.rows,
+            external_rows: Array.isArray(payload.external_rows) ? payload.external_rows : [],
+            signatories: payload.signatories && typeof payload.signatories === "object" ? payload.signatories : {},
             meta: payload.meta || {}
         };
     }
@@ -2466,7 +2908,74 @@ $(document).ready(function () {
         $("#totalLEC").text("0");
         $("#totalLAB").text("0");
         $("#totalLOADCell").text("0");
+        $("#printTotalLOADCell").text("0");
         $("#totalStudents").text("");
+    }
+
+    function calculateWorkloadMetricTotals(rowsData) {
+        const sourceRows = Array.isArray(rowsData) ? rowsData : [];
+        const countedGroups = new Set();
+        const preparationSet = new Set();
+        const totals = {
+            unit: 0,
+            lab: 0,
+            lec: 0,
+            load: 0,
+            preparations: 0
+        };
+
+        sourceRows.forEach(function (row) {
+            const groupKey = getWorkloadGroupKey(row);
+            if (!countedGroups.has(groupKey)) {
+                countedGroups.add(groupKey);
+                totals.unit += toNumber(row.units);
+                totals.lab += toNumber(row.lab);
+                totals.lec += toNumber(row.lec);
+                totals.load += toNumber(row.faculty_load);
+            }
+
+            const preparationKey = String(row?.sub_code || "").trim();
+            if (preparationKey !== "") {
+                preparationSet.add(preparationKey);
+            }
+        });
+
+        totals.preparations = preparationSet.size;
+        return totals;
+    }
+
+    function buildDualTotalValue(screenValue, printValue, options = {}) {
+        const screenText = formatNumber(screenValue);
+        const printText = formatNumber(printValue);
+        const className = options.className ? ` ${options.className}` : "";
+
+        if (screenText === printText) {
+            const sameClass = String(className).trim();
+            return sameClass
+                ? `<span class="${escapeHtml(sameClass)}">${escapeHtml(screenText)}</span>`
+                : `<span>${escapeHtml(screenText)}</span>`;
+        }
+
+        return `
+            <span class="screen-total-value${className}">${escapeHtml(screenText)}</span>
+            <span class="print-total-value${className}">${escapeHtml(printText)}</span>
+        `;
+    }
+
+    function getWorkloadSourceLabel(row) {
+        const campusName = String(row?.schedule_campus_name || "").trim();
+        const collegeName = String(row?.schedule_college_name || "").trim();
+        const parts = [];
+
+        if (campusName) {
+            parts.push(campusName);
+        }
+
+        if (collegeName && collegeName.toUpperCase() !== campusName.toUpperCase()) {
+            parts.push(collegeName);
+        }
+
+        return parts.join(" - ");
     }
 
     function buildWorkloadDescription(row, isPaired = false) {
@@ -2477,7 +2986,7 @@ $(document).ready(function () {
             ? "Lab"
             : (normalizedType === "LEC" ? "Lec" : "");
 
-        if (!isPaired && !mergeNote && !typeLabel) {
+        if (!row?.is_external && !isPaired && !mergeNote && !typeLabel) {
             return description;
         }
 
@@ -2502,6 +3011,15 @@ $(document).ready(function () {
 
         if (mergeNote) {
             html += `<span class="workload-merge-note">${escapeHtml(mergeNote)}</span>`;
+        }
+
+        if (row?.is_external) {
+            const sourceLabel = getWorkloadSourceLabel(row);
+            html += `
+                <span class="workload-external-note">
+                    View-only workload${sourceLabel ? ` from ${escapeHtml(sourceLabel)}` : ""}
+                </span>
+            `;
         }
 
         return html;
@@ -2600,6 +3118,7 @@ $(document).ready(function () {
     }
 
     function buildRemoveWorkloadButton(options = {}) {
+        const rowAssigneeType = String(options.assigneeType || options?.row?.assignee_type || "faculty").trim() || "faculty";
         const workloadIds = Array.isArray(options.workloadIds)
             ? options.workloadIds
                 .map(value => Number(value) || 0)
@@ -2618,6 +3137,7 @@ $(document).ready(function () {
         return `
             <button class="btn btn-sm btn-delete-workload btnRemoveWL"
                     data-ids="${escapeHtml(ids.join(","))}"
+                    data-assignee-type="${escapeHtml(rowAssigneeType)}"
                     data-subject="${escapeHtml(subjectCode)}"
                     data-delete-count="${escapeHtml(String(deleteCount))}"
                     title="${escapeHtml(title)}">
@@ -2626,25 +3146,149 @@ $(document).ready(function () {
         `;
     }
 
+    function buildExternalWorkloadAction(row) {
+        const sourceLabel = getWorkloadSourceLabel(row);
+        const title = sourceLabel
+            ? `Assigned outside this college: ${sourceLabel}`
+            : "Assigned outside this college";
+
+        return `
+            <span class="external-workload-lock" title="${escapeHtml(title)}">
+                <i class="bx bx-lock-alt"></i>
+                View only
+            </span>
+        `;
+    }
+
+    function renderExternalWorkloadRows(externalRowsData) {
+        const sourceRows = Array.isArray(externalRowsData) ? externalRowsData : [];
+        if (sourceRows.length === 0) {
+            return "";
+        }
+
+        let rows = `
+            <tr class="external-workload-divider">
+                <td colspan="12">Other college / campus workload - view only</td>
+            </tr>
+        `;
+
+        for (let i = 0; i < sourceRows.length; i++) {
+            const row = sourceRows[i];
+            const groupKey = getWorkloadGroupKey(row);
+            const groupRows = [row];
+
+            while ((i + groupRows.length) < sourceRows.length) {
+                const candidateRow = sourceRows[i + groupRows.length];
+                if (getWorkloadGroupKey(candidateRow) !== groupKey) {
+                    break;
+                }
+                groupRows.push(candidateRow);
+            }
+
+            const displayUnits = toNumber(row.units);
+            const displayLabUnits = toNumber(row.lab);
+            const displayLecUnits = toNumber(row.lec);
+            const isMergedGroup = groupRows.length > 1;
+
+            if (isMergedGroup) {
+                const mergedStudents = groupRows.reduce(function (maxValue, groupRow) {
+                    return Math.max(maxValue, toNumber(groupRow.student_count));
+                }, 0);
+
+                groupRows.forEach(function (groupRow, groupIndex) {
+                    rows += `
+                        <tr class="external-workload-row ${groupIndex === 0 ? "paired-row paired-anchor" : "paired-row"}">
+                            <td class="workload-code">${escapeHtml(groupRow.sub_code)}</td>
+                            <td class="workload-desc">${buildWorkloadDescription(groupRow, true)}</td>
+                            <td>${escapeHtml(groupRow.course || groupRow.section)}</td>
+                            <td class="workload-days">${escapeHtml(groupRow.days)}</td>
+                            <td class="workload-time">${formatCompactTime(groupRow.time)}</td>
+                            <td class="workload-room">${escapeHtml(groupRow.room)}</td>
+                            ${groupIndex === 0 ? `
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayUnits)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayLabUnits)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(displayLecUnits)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatNumber(row.faculty_load)}</td>
+                                <td class="text-center merged-metric" rowspan="${groupRows.length}">${formatStudentCount(mergedStudents)}</td>
+                                <td class="text-end screen-only" rowspan="${groupRows.length}">
+                                    ${buildExternalWorkloadAction(row)}
+                                </td>
+                            ` : ""}
+                        </tr>
+                    `;
+                });
+
+                i += groupRows.length - 1;
+                continue;
+            }
+
+            rows += `
+                <tr class="external-workload-row">
+                    <td class="workload-code">${escapeHtml(row.sub_code)}</td>
+                    <td class="workload-desc">${buildWorkloadDescription(row)}</td>
+                    <td>${escapeHtml(row.course || row.section)}</td>
+                    <td class="workload-days">${escapeHtml(row.days)}</td>
+                    <td class="workload-time">${formatCompactTime(row.time)}</td>
+                    <td class="workload-room">${escapeHtml(row.room)}</td>
+                    <td class="text-center">${formatNumber(displayUnits)}</td>
+                    <td class="text-center">${formatNumber(displayLabUnits)}</td>
+                    <td class="text-center">${formatNumber(displayLecUnits)}</td>
+                    <td class="text-center fw-semibold">${formatNumber(row.faculty_load)}</td>
+                    <td class="text-center">${formatStudentCount(row.student_count)}</td>
+                    <td class="text-end screen-only">
+                        ${buildExternalWorkloadAction(row)}
+                    </td>
+                </tr>
+            `;
+        }
+
+        return rows;
+    }
+
     function getSelectedContext() {
-        const facultyId = $("#faculty_id").val();
+        const selectedValue = String($("#faculty_id").val() || "").trim();
         const ayText = $("#fw_ay").val();
         const semesterUi = $("#fw_semester").val();
         const ayId = Number($("#fw_ay option:selected").data("ay-id")) || 0;
         const semesterNum = SEMESTER_MAP[semesterUi] || 0;
+        const needMatch = selectedValue.match(/^need:(\d+)$/);
+        const assigneeType = needMatch ? "faculty_need" : "faculty";
+        const facultyNeedId = needMatch ? (Number(needMatch[1]) || 0) : 0;
+        const facultyId = assigneeType === "faculty" ? (Number(selectedValue) || 0) : 0;
 
-        if (!facultyId || !ayText || !semesterUi || !ayId || !semesterNum) {
+        if (!selectedValue || (assigneeType === "faculty" && !facultyId) || (assigneeType === "faculty_need" && !facultyNeedId) || !ayText || !semesterUi || !ayId || !semesterNum) {
             return null;
         }
 
         return {
+            assigneeType,
             facultyId,
+            facultyNeedId,
+            assigneeValue: selectedValue,
+            isFacultyNeed: assigneeType === "faculty_need",
             facultyName: $("#faculty_id option:selected").text(),
             ayId,
             ayText,
             semesterUi,
             semesterNum
         };
+    }
+
+    function updateFacultyNeedActions(context = getSelectedContext()) {
+        const deleteButton = $("#btnDeleteFacultyNeed");
+        if (deleteButton.length === 0) {
+            return;
+        }
+
+        if (!context || !context.isFacultyNeed || !context.facultyNeedId) {
+            deleteButton.hide().data("needId", 0).data("needLabel", "");
+            return;
+        }
+
+        deleteButton
+            .show()
+            .data("needId", context.facultyNeedId)
+            .data("needLabel", context.facultyName);
     }
 
     function abortPendingRequest(request) {
@@ -2663,6 +3307,7 @@ $(document).ready(function () {
         $("#facultyAlert").hide();
         $("#scheduledClassCard").hide();
         $("#workloadCard").hide();
+        $("#workloadStartPanel").stop(true, true).fadeIn(160);
         $("#checkAllSchedules").prop("checked", false);
         setApplyWorkloadButtonsDisabled(true);
         $("#workloadTbody").html("");
@@ -2674,10 +3319,13 @@ $(document).ready(function () {
         $("#totalLEC").text("0");
         $("#totalLAB").text("0");
         $("#totalLOADCell").text("0");
+        $("#printTotalLOADCell").text("0");
         $("#totalStudents").text("");
         setPrintField("#printFacultyName", "");
         setPrintField("#printSemesterAy", "");
         setPrintField("#printConforme", "");
+        clearPrintSignatories();
+        updateFacultyNeedActions(null);
         updateApplyWorkloadControls();
         renderFacultyBrowser();
     }
@@ -2714,7 +3362,9 @@ $(document).ready(function () {
             type: "POST",
             dataType: "json",
             data: {
+                assignee_type: context.assigneeType,
                 faculty_id: context.facultyId,
+                faculty_need_id: context.facultyNeedId,
                 ay_id: context.ayId,
                 ay: context.ayText,
                 semester_num: context.semesterNum,
@@ -2864,7 +3514,9 @@ $(document).ready(function () {
             type: "POST",
             dataType: "json",
             data: {
+                assignee_type: context.assigneeType,
                 faculty_id: context.facultyId,
+                faculty_need_id: context.facultyNeedId,
                 ay_id: context.ayId,
                 semester: context.semesterNum
             }
@@ -2891,24 +3543,23 @@ $(document).ready(function () {
                 $("#totalLEC").text("0");
                 $("#totalLAB").text("0");
                 $("#totalLOADCell").text("0");
+                $("#printTotalLOADCell").text("0");
                 $("#totalStudents").text("");
                 setPrintField("#printFacultyName", "");
                 setPrintField("#printSemesterAy", "");
                 setPrintField("#printConforme", "");
+                clearPrintSignatories();
                 $("#workloadCard").show();
                 applyScheduledClassAvailability();
                 return;
             }
 
             const rowsData = payload.rows;
-            currentWorkloadRows = rowsData;
+            const externalRowsData = payload.external_rows.map(function (row) {
+                return Object.assign({}, row, { is_external: true });
+            });
+            currentWorkloadRows = rowsData.concat(externalRowsData);
             const meta = payload.meta || {};
-            const preparationSet = new Set();
-            const countedGroups = new Set();
-            let totalLEC = 0;
-            let totalLAB = 0;
-            let totalUNIT = 0;
-            let totalLOAD = 0;
             let rows = "";
 
             for (let i = 0; i < rowsData.length; i++) {
@@ -2928,19 +3579,6 @@ $(document).ready(function () {
                 const displayLabUnits = toNumber(row.lab);
                 const displayLecUnits = toNumber(row.lec);
                 const isMergedGroup = groupRows.length > 1;
-
-                if (!countedGroups.has(groupKey)) {
-                    countedGroups.add(groupKey);
-                    totalUNIT += displayUnits;
-                    totalLAB += displayLabUnits;
-                    totalLEC += displayLecUnits;
-                    totalLOAD += toNumber(row.faculty_load);
-                }
-
-                const preparationKey = String(row.sub_code || "").trim();
-                if (preparationKey !== "") {
-                    preparationSet.add(preparationKey);
-                }
 
                 if (isMergedGroup) {
                     const mergedStudents = groupRows.reduce(function (maxValue, groupRow) {
@@ -2972,7 +3610,8 @@ $(document).ready(function () {
                                     <td class="text-end screen-only" rowspan="${groupRows.length}">
                                         ${buildRemoveWorkloadButton({
                                             workloadIds: groupedWorkloadIds,
-                                            subjectCode: groupRow.sub_code
+                                            subjectCode: groupRow.sub_code,
+                                            assigneeType: groupRow.assignee_type
                                         })}
                                     </td>
                                 ` : ""}
@@ -3008,38 +3647,49 @@ $(document).ready(function () {
                 rows = `
                     <tr>
                         <td colspan="12" class="text-center text-muted">
-                            No workload assigned yet.
+                            ${externalRowsData.length > 0 ? "No workload assigned in this college." : "No workload assigned yet."}
                         </td>
                     </tr>
                 `;
             }
 
+            rows += renderExternalWorkloadRows(externalRowsData);
+
             const designationUnits = toNumber(meta.designation_units);
-            const totalPreparations = Math.max(
+            const collegeTotals = calculateWorkloadMetricTotals(rowsData);
+            const screenTotals = calculateWorkloadMetricTotals(currentWorkloadRows);
+            const printTotalPreparations = Math.max(
                 Number(meta.total_preparations) || 0,
-                preparationSet.size
+                collegeTotals.preparations
             );
-            const grandTotalUnits = totalUNIT + designationUnits;
-            const grandTotalLoad = totalLOAD + designationUnits;
-            const loadStatus = getLoadStatus(grandTotalLoad);
+            const screenTotalPreparations = Math.max(printTotalPreparations, screenTotals.preparations);
+            const printGrandTotalUnits = collegeTotals.unit + designationUnits;
+            const printGrandTotalLoad = collegeTotals.load + designationUnits;
+            const screenGrandTotalUnits = screenTotals.unit + designationUnits;
+            const screenGrandTotalLoad = screenTotals.load + designationUnits;
+            const loadStatus = getLoadStatus(screenGrandTotalLoad, screenTotalPreparations);
 
             $("#workloadTbody").html(rows);
             $("#designationText").text(formatDesignationDisplay(meta));
             $("#designationUNIT").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
             $("#designationLOAD").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
-            $("#totalPreparations").text(formatNumber(totalPreparations));
-            $("#totalLAB").text(formatNumber(totalLAB));
-            $("#totalLEC").text(formatNumber(totalLEC));
-            $("#totalUNIT").text(formatNumber(grandTotalUnits));
+            $("#totalPreparations").html(buildDualTotalValue(screenTotalPreparations, printTotalPreparations));
+            $("#totalLAB").html(buildDualTotalValue(screenTotals.lab, collegeTotals.lab));
+            $("#totalLEC").html(buildDualTotalValue(screenTotals.lec, collegeTotals.lec));
+            $("#totalUNIT").html(buildDualTotalValue(screenGrandTotalUnits, printGrandTotalUnits));
             $("#totalLOADCell").html(`
-                <span class="total-load-value">${escapeHtml(formatNumber(grandTotalLoad))}</span>
-                ${loadStatus.label ? `<span class="load-status-inline ${escapeHtml(loadStatus.className)}">${escapeHtml(loadStatus.label)}</span>` : ""}
+                <span class="total-load-screen-inner">
+                    <span class="total-load-value">${escapeHtml(formatNumber(screenGrandTotalLoad))}</span>
+                    ${loadStatus.label ? `<span class="load-status-inline ${escapeHtml(loadStatus.className)}">${escapeHtml(loadStatus.label)}</span>` : ""}
+                </span>
             `);
+            $("#printTotalLOADCell").text(formatNumber(printGrandTotalLoad));
             $("#totalStudents").text("");
 
             setPrintField("#printFacultyName", context.facultyName);
             setPrintField("#printSemesterAy", context.semesterUi + " Semester | AY " + context.ayText);
             setPrintField("#printConforme", context.facultyName, { uppercase: true });
+            applyWorkloadPrintSignatories(payload.signatories);
 
             $("#workloadCard").show();
             applyScheduledClassAvailability();
@@ -3059,6 +3709,7 @@ $(document).ready(function () {
             setPrintField("#printFacultyName", "");
             setPrintField("#printSemesterAy", "");
             setPrintField("#printConforme", "");
+            clearPrintSignatories();
             $("#workloadCard").show();
             applyScheduledClassAvailability();
         });
@@ -3080,6 +3731,7 @@ $(document).ready(function () {
         const workloadId = workloadIds[0] || 0;
         const deleteCount = parseInt(button.data("deleteCount"), 10) || workloadIds.length || 1;
         const subjectCode = String(button.data("subject") || "this class").trim() || "this class";
+        const assigneeType = String(button.data("assigneeType") || "faculty").trim() || "faculty";
 
         if (!workloadId) {
             Swal.fire("Unavailable", "The selected workload row cannot be removed right now.", "info");
@@ -3104,8 +3756,8 @@ $(document).ready(function () {
             $.post(
                 "../backend/query_remove_workload.php",
                 deleteCount > 1
-                    ? { workload_ids: workloadIds }
-                    : { workload_id: workloadId },
+                    ? { workload_ids: workloadIds, assignee_type: assigneeType }
+                    : { workload_id: workloadId, assignee_type: assigneeType },
                 function () {
                     refreshWorkloadPanels();
                     loadFacultyOverview(true);
@@ -3128,6 +3780,17 @@ $(document).ready(function () {
     $("#faculty_id, #fw_ay, #fw_semester").on("change", function () {
         const termChanged = this.id === "fw_ay" || this.id === "fw_semester";
         if (termChanged) {
+            const currentAssigneeValue = String($("#faculty_id").val() || "");
+            if (currentAssigneeValue.startsWith("need:")) {
+                $("#faculty_id").val("").trigger("change.select2");
+                loadFacultyNeedOptions("");
+                clearFacultyOverviewCache();
+                updateFacultyNeedActions(null);
+                hideSelectionPanels();
+                return;
+            }
+
+            loadFacultyNeedOptions(currentAssigneeValue);
             clearFacultyOverviewCache();
             loadFacultyOverview(true);
         } else {
@@ -3135,18 +3798,78 @@ $(document).ready(function () {
         }
 
         const context = getSelectedContext();
+        updateFacultyNeedActions(context);
         if (!context) {
             hideSelectionPanels();
             return;
         }
 
         $("#facultyNameText").text(context.facultyName);
+        $("#selectedAssigneeLabel").text(context.isFacultyNeed ? "Faculty Need Selected:" : "Faculty Selected:");
         $("#termSummary").text(context.semesterUi + " A.Y. " + context.ayText);
 
         $("#facultyAlert").stop(true, true).slideDown();
         $("#scheduledClassCard").stop(true, true).slideDown();
+        $("#workloadStartPanel").stop(true, true).fadeOut(120);
 
         refreshWorkloadPanels();
+    });
+
+    $("#btnStartOpenFacultyOverview").on("click", function () {
+        $("#btnOpenFacultyBrowser").trigger("click");
+    });
+
+    $("#btnStartChooseFaculty").on("click", function () {
+        const selectElement = $("#faculty_id");
+        if (selectElement.hasClass("select2-hidden-accessible")) {
+            selectElement.select2("open");
+            return;
+        }
+
+        selectElement.trigger("focus");
+    });
+
+    $("#btnAddFacultyNeed").on("click", function () {
+        const termContext = getFacultyBrowserTermContext();
+        if (!termContext) {
+            Swal.fire("Missing Term", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        const button = $(this);
+        button.prop("disabled", true);
+
+        $.ajax({
+            url: "../backend/query_faculty_need.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                action: "create",
+                ay_id: termContext.ayId,
+                semester: termContext.semesterNum
+            }
+        }).done(function (response) {
+            if (!response || response.status !== "ok" || !response.need) {
+                Swal.fire("Error", response?.message || "Unable to create faculty need.", "error");
+                return;
+            }
+
+            const selectedValue = `need:${Number(response.need.faculty_need_id) || 0}`;
+            renderFacultyNeedOptions(response.needs || [], selectedValue);
+            $("#faculty_id").val(selectedValue).trigger("change");
+        }).fail(function (xhr) {
+            Swal.fire("Error", xhr.responseText || "Unable to create faculty need.", "error");
+        }).always(function () {
+            button.prop("disabled", false);
+        });
+    });
+
+    $("#btnDeleteFacultyNeed").on("click", function () {
+        const button = $(this);
+        deleteFacultyNeed(
+            Number(button.data("needId")) || 0,
+            String(button.data("needLabel") || "")
+        );
     });
 
     $("#btnOpenFacultyBrowser").on("click", function () {
@@ -3181,12 +3904,10 @@ $(document).ready(function () {
     ========================================================= */
     $(document).on("click", ".btnApplyToWorkloadTrigger", function () {
 
-        let faculty_id = $("#faculty_id").val();
-        let ay_text    = $("#fw_ay").val();
-        let semester_ui = $("#fw_semester").val();
+        const context = getSelectedContext();
 
-        if (!faculty_id || !ay_text || !semester_ui) {
-            Swal.fire("Missing Data", "Please select Faculty, A.Y., and Semester.", "warning");
+        if (!context) {
+            Swal.fire("Missing Data", "Please select Faculty or Faculty Need, A.Y., and Semester.", "warning");
             return;
         }
 
@@ -3203,7 +3924,9 @@ $(document).ready(function () {
         $.post(
             "../backend/query_apply_workload.php",
             {
-                faculty_id: faculty_id,
+                assignee_type: context.assigneeType,
+                faculty_id: context.facultyId,
+                faculty_need_id: context.facultyNeedId,
                 ay_id: currentAyId,
                 semester: currentSemesterNum,
                 schedule_ids: schedule_ids

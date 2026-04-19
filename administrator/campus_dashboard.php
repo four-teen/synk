@@ -6,6 +6,7 @@ require_once '../backend/academic_term_helper.php';
 require_once '../backend/academic_schedule_policy_helper.php';
 require_once '../backend/offering_scope_helper.php';
 require_once '../backend/schema_helper.php';
+require_once '../backend/schedule_block_helper.php';
 
 function campus_dashboard_day_token(string $day): string
 {
@@ -85,6 +86,80 @@ function campus_dashboard_overlap_hours(int $startMinutes, int $endMinutes, int 
     }
 
     return ($effectiveEnd - $effectiveStart) / 60;
+}
+
+function campus_dashboard_title_case(string $value): string
+{
+    $value = trim($value);
+    if ($value === '') {
+        return '';
+    }
+
+    $value = strtolower($value);
+    $value = preg_replace_callback('/(^|[\s,\/-])([a-z])/', static function ($matches) {
+        return $matches[1] . strtoupper($matches[2]);
+    }, $value);
+
+    return (string)$value;
+}
+
+function campus_dashboard_format_faculty_name(array $row): string
+{
+    $fullName = trim((string)($row['last_name'] ?? ''));
+    $firstName = trim((string)($row['first_name'] ?? ''));
+    $middleName = trim((string)($row['middle_name'] ?? ''));
+    $extName = trim((string)($row['ext_name'] ?? ''));
+
+    if ($firstName !== '') {
+        $fullName .= ($fullName !== '' ? ', ' : '') . $firstName;
+    }
+
+    if ($middleName !== '') {
+        $fullName .= ' ' . strtoupper(substr($middleName, 0, 1)) . '.';
+    }
+
+    if ($extName !== '') {
+        $fullName .= ', ' . $extName;
+    }
+
+    return trim($fullName, " ,");
+}
+
+function campus_dashboard_context_key(int $groupId, int $scheduleId, int $offeringId): string
+{
+    if ($groupId > 0) {
+        return 'group:' . $groupId;
+    }
+
+    if ($scheduleId > 0) {
+        return 'schedule:' . $scheduleId;
+    }
+
+    return 'offering:' . $offeringId;
+}
+
+function campus_dashboard_unique_labels(array $labels): array
+{
+    $bucket = [];
+    foreach ($labels as $label) {
+        $label = trim((string)$label);
+        if ($label !== '') {
+            $bucket[$label] = true;
+        }
+    }
+
+    $labels = array_keys($bucket);
+    natcasesort($labels);
+    return array_values($labels);
+}
+
+function campus_dashboard_format_load_value(float $value): string
+{
+    if (abs($value - round($value)) < 0.01) {
+        return number_format($value, 0);
+    }
+
+    return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
 }
 
 if (!isset($_SESSION['user_id'])) {
@@ -420,6 +495,29 @@ if ($analyticsReady) {
         $scheduleScopeParams[] = $campusId;
     }
 
+    $assignmentSourceSql = [
+        "
+            SELECT DISTINCT schedule_id, 1 AS has_assignment
+            FROM tbl_faculty_workload_sched
+            WHERE ay_id = ?
+              AND semester = ?
+        "
+    ];
+    $assignmentSourceTypes = 'ii';
+    $assignmentSourceParams = [$currentAyId, $currentSem];
+
+    if (synk_table_exists($conn, 'tbl_faculty_need_workload_sched')) {
+        $assignmentSourceSql[] = "
+            SELECT DISTINCT schedule_id, 1 AS has_assignment
+            FROM tbl_faculty_need_workload_sched
+            WHERE ay_id = ?
+              AND semester = ?
+        ";
+        $assignmentSourceTypes .= 'ii';
+        $assignmentSourceParams[] = $currentAyId;
+        $assignmentSourceParams[] = $currentSem;
+    }
+
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
     $scheduleSql = "
         SELECT
@@ -427,7 +525,7 @@ if ($analyticsReady) {
             cs.days_json,
             cs.time_start,
             cs.time_end,
-            COALESCE(fa.has_faculty, 0) AS has_faculty
+            COALESCE(fa.has_assignment, 0) AS has_assignment
         FROM tbl_class_schedule cs
         INNER JOIN tbl_prospectus_offering po
             ON po.offering_id = cs.offering_id
@@ -439,10 +537,7 @@ if ($analyticsReady) {
         INNER JOIN tbl_campus camp
             ON camp.campus_id = col.campus_id
         LEFT JOIN (
-            SELECT DISTINCT schedule_id, 1 AS has_faculty
-            FROM tbl_faculty_workload_sched
-            WHERE ay_id = ?
-              AND semester = ?
+            " . implode("\n            UNION\n", $assignmentSourceSql) . "
         ) fa
             ON fa.schedule_id = cs.schedule_id
         WHERE po.ay_id = ?
@@ -452,11 +547,11 @@ if ($analyticsReady) {
     ";
 
     $stmt = $conn->prepare($scheduleSql);
-    $scheduleParams = [$currentAyId, $currentSem, $currentAyId, $currentSem];
+    $scheduleParams = array_merge($assignmentSourceParams, [$currentAyId, $currentSem]);
     foreach ($scheduleScopeParams as $scopeParam) {
         $scheduleParams[] = $scopeParam;
     }
-    $scheduleTypes = 'iiii' . $scheduleScopeTypes;
+    $scheduleTypes = $assignmentSourceTypes . 'ii' . $scheduleScopeTypes;
 
     if ($stmt && synk_bind_dynamic_params($stmt, $scheduleTypes, $scheduleParams)) {
         $stmt->execute();
@@ -464,7 +559,7 @@ if ($analyticsReady) {
 
         while ($scheduleRow = $scheduleResult->fetch_assoc()) {
             $scheduleSummary['scheduled_classes']++;
-            if ((int)$scheduleRow['has_faculty'] === 1) {
+            if ((int)$scheduleRow['has_assignment'] === 1) {
                 $scheduleSummary['assigned_classes']++;
             } else {
                 $scheduleSummary['unassigned_classes']++;
@@ -889,6 +984,523 @@ if ($isUniversitySummary) {
 }
 
 
+$facultyDirectoryScopeLabel = $selectedCollegeId
+    ? (string)($selectedCollegeName ?? 'Selected College')
+    : ($isUniversitySummary ? 'All Campuses' : $campusName . ' Campus');
+$facultyDirectoryScopeLabelEscaped = htmlspecialchars($facultyDirectoryScopeLabel, ENT_QUOTES, 'UTF-8');
+$facultyDirectory = [
+    'rows' => [],
+    'total' => 0,
+    'faculty_with_workload' => 0,
+    'faculty_with_designation' => 0,
+    'inactive_total' => 0,
+    'assigned_classes_total' => 0,
+    'average_total_load' => 0.0,
+    'scope_label' => $facultyDirectoryScopeLabel,
+    'term_text' => $academicTermText,
+    'workload_ready' => $analyticsReady,
+    'note' => $analyticsReady
+        ? 'Directory details follow the active academic term and current campus or college filter.'
+        : 'Faculty master data is available, but workload figures will populate once the academic term is configured.',
+];
+
+if (
+    synk_table_exists($conn, 'tbl_faculty')
+    && synk_table_exists($conn, 'tbl_college_faculty')
+    && synk_table_exists($conn, 'tbl_college')
+) {
+    $assignmentHasAyId = synk_table_has_column($conn, 'tbl_college_faculty', 'ay_id');
+    $assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'semester');
+    $facultyHasMiddleName = synk_table_has_column($conn, 'tbl_faculty', 'middle_name');
+    $facultyHasExtName = synk_table_has_column($conn, 'tbl_faculty', 'ext_name');
+    $facultyHasDesignationId = synk_table_has_column($conn, 'tbl_faculty', 'designation_id');
+    $facultyHasStatus = synk_table_has_column($conn, 'tbl_faculty', 'status');
+    $facultyDesignationTextColumn = null;
+    foreach (['designation', 'designation_name'] as $candidate) {
+        if (synk_table_has_column($conn, 'tbl_faculty', $candidate)) {
+            $facultyDesignationTextColumn = $candidate;
+            break;
+        }
+    }
+
+    $designationTableExists = synk_table_exists($conn, 'tbl_designation');
+    $designationHasName = $designationTableExists && synk_table_has_column($conn, 'tbl_designation', 'designation_name');
+    $designationHasUnits = $designationTableExists && synk_table_has_column($conn, 'tbl_designation', 'designation_units');
+    $designationHasStatus = $designationTableExists && synk_table_has_column($conn, 'tbl_designation', 'status');
+    $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
+    $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+
+    $designationJoinSql = '';
+    $designationNameExpr = "''";
+    $designationUnitsExpr = '0';
+    $facultyDesignationExpr = $facultyDesignationTextColumn !== null
+        ? "NULLIF(TRIM(f.`{$facultyDesignationTextColumn}`), '')"
+        : 'NULL';
+
+    if ($facultyHasDesignationId) {
+        $designationSelectId = 'f.designation_id';
+    } else {
+        $designationSelectId = '0';
+    }
+
+    if ($facultyHasDesignationId && $designationTableExists && $designationHasName) {
+        $designationJoinSql = "
+            LEFT JOIN tbl_designation d
+                ON d.designation_id = f.designation_id
+               " . ($designationHasStatus ? "AND d.status = 'active'" : '') . "
+        ";
+        $designationNameExpr = "COALESCE(NULLIF(TRIM(d.designation_name), ''), {$facultyDesignationExpr}, '')";
+        $designationUnitsExpr = $designationHasUnits ? 'COALESCE(d.designation_units, 0)' : '0';
+    } elseif ($facultyDesignationExpr !== 'NULL') {
+        $designationNameExpr = "COALESCE({$facultyDesignationExpr}, '')";
+    }
+
+    $facultyDirectoryWhere = ["LOWER(TRIM(COALESCE(cf.status, 'active'))) = 'active'"];
+    $facultyDirectoryTypes = '';
+    $facultyDirectoryParams = [];
+
+    if ($assignmentHasAyId && $assignmentHasSemester && $currentAyId > 0 && $currentSem > 0) {
+        $facultyDirectoryWhere[] = '((cf.ay_id = ? AND cf.semester = ?) OR (cf.ay_id IS NULL AND cf.semester IS NULL))';
+        $facultyDirectoryTypes .= 'ii';
+        $facultyDirectoryParams[] = $currentAyId;
+        $facultyDirectoryParams[] = $currentSem;
+    }
+
+    if ($selectedCollegeId) {
+        $facultyDirectoryWhere[] = 'col.college_id = ?';
+        $facultyDirectoryTypes .= 'i';
+        $facultyDirectoryParams[] = $selectedCollegeId;
+    } elseif (!$isUniversitySummary) {
+        $facultyDirectoryWhere[] = 'camp.campus_id = ?';
+        $facultyDirectoryTypes .= 'i';
+        $facultyDirectoryParams[] = $campusId;
+    }
+
+    $facultyDirectoryGroupBy = ['f.faculty_id', 'f.last_name', 'f.first_name'];
+    if ($facultyHasMiddleName) {
+        $facultyDirectoryGroupBy[] = 'f.middle_name';
+    }
+    if ($facultyHasExtName) {
+        $facultyDirectoryGroupBy[] = 'f.ext_name';
+    }
+    if ($facultyHasStatus) {
+        $facultyDirectoryGroupBy[] = 'f.status';
+    }
+    $facultyDirectoryGroupBy[] = $designationSelectId;
+    $facultyDirectoryGroupBy[] = $designationNameExpr;
+    $facultyDirectoryGroupBy[] = $designationUnitsExpr;
+
+    $facultyDirectorySql = "
+        SELECT
+            f.faculty_id,
+            f.last_name,
+            f.first_name,
+            " . ($facultyHasMiddleName ? 'f.middle_name' : 'NULL AS middle_name') . ",
+            " . ($facultyHasExtName ? 'f.ext_name' : 'NULL AS ext_name') . ",
+            " . ($facultyHasStatus ? "LOWER(TRIM(COALESCE(f.status, 'active'))) AS faculty_status" : "'active' AS faculty_status") . ",
+            {$designationSelectId} AS designation_id,
+            {$designationNameExpr} AS designation_name,
+            {$designationUnitsExpr} AS designation_units,
+            COUNT(DISTINCT cf.college_faculty_id) AS assignment_rows,
+            COUNT(DISTINCT col.college_id) AS college_count,
+            GROUP_CONCAT(DISTINCT col.college_name ORDER BY col.college_name SEPARATOR '||') AS college_names,
+            GROUP_CONCAT(DISTINCT COALESCE(NULLIF(TRIM(col.college_code), ''), col.college_name) ORDER BY col.college_name SEPARATOR '||') AS college_codes,
+            GROUP_CONCAT(DISTINCT camp.campus_name ORDER BY camp.campus_name SEPARATOR '||') AS campus_names
+        FROM tbl_college_faculty cf
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = cf.faculty_id
+        INNER JOIN tbl_college col
+            ON col.college_id = cf.college_id
+        INNER JOIN tbl_campus camp
+            ON camp.campus_id = col.campus_id
+        {$designationJoinSql}
+        WHERE " . implode("\n          AND ", $facultyDirectoryWhere) . "
+        GROUP BY " . implode(",\n            ", $facultyDirectoryGroupBy) . "
+        ORDER BY
+            CASE WHEN " . ($facultyHasStatus ? "LOWER(TRIM(COALESCE(f.status, 'active')))" : "'active'") . " = 'inactive' THEN 1 ELSE 0 END,
+            f.last_name ASC,
+            f.first_name ASC,
+            f.faculty_id ASC
+    ";
+
+    $facultyDirectoryStmt = $conn->prepare($facultyDirectorySql);
+    $facultyDirectoryRowsById = [];
+
+    if ($facultyDirectoryStmt && synk_bind_dynamic_params($facultyDirectoryStmt, $facultyDirectoryTypes, $facultyDirectoryParams)) {
+        $facultyDirectoryStmt->execute();
+        $facultyDirectoryResult = $facultyDirectoryStmt->get_result();
+
+        if ($facultyDirectoryResult instanceof mysqli_result) {
+            while ($facultyRow = $facultyDirectoryResult->fetch_assoc()) {
+                $facultyId = (int)($facultyRow['faculty_id'] ?? 0);
+                if ($facultyId <= 0) {
+                    continue;
+                }
+
+                $status = strtolower(trim((string)($facultyRow['faculty_status'] ?? 'active')));
+                if ($status !== 'inactive') {
+                    $status = 'active';
+                }
+
+                $designationName = trim((string)($facultyRow['designation_name'] ?? ''));
+                $collegeNames = campus_dashboard_unique_labels(explode('||', (string)($facultyRow['college_names'] ?? '')));
+                $campusNames = campus_dashboard_unique_labels(explode('||', (string)($facultyRow['campus_names'] ?? '')));
+
+                $facultyDirectoryRowsById[$facultyId] = [
+                    'faculty_id' => $facultyId,
+                    'full_name' => campus_dashboard_format_faculty_name($facultyRow),
+                    'last_name' => trim((string)($facultyRow['last_name'] ?? '')),
+                    'first_name' => trim((string)($facultyRow['first_name'] ?? '')),
+                    'middle_name' => trim((string)($facultyRow['middle_name'] ?? '')),
+                    'ext_name' => trim((string)($facultyRow['ext_name'] ?? '')),
+                    'status' => $status,
+                    'status_label' => $status === 'inactive' ? 'Inactive' : 'Active',
+                    'designation_id' => (int)($facultyRow['designation_id'] ?? 0),
+                    'designation_name' => $designationName,
+                    'designation_label' => campus_dashboard_title_case($designationName),
+                    'designation_units' => round((float)($facultyRow['designation_units'] ?? 0), 2),
+                    'assignment_rows' => (int)($facultyRow['assignment_rows'] ?? 0),
+                    'college_count' => (int)($facultyRow['college_count'] ?? count($collegeNames)),
+                    'college_labels' => $collegeNames,
+                    'college_label' => implode(', ', $collegeNames),
+                    'campus_labels' => $campusNames,
+                    'campus_label' => implode(', ', $campusNames),
+                    'assigned_count' => 0,
+                    'program_count' => 0,
+                    'program_labels' => [],
+                    'section_count' => 0,
+                    'section_labels' => [],
+                    'subject_count' => 0,
+                    'subject_labels' => [],
+                    'workload_load' => 0.0,
+                    'total_load' => round((float)($facultyRow['designation_units'] ?? 0), 2),
+                    'total_preparations' => 0,
+                    'class_assignment_labels' => [],
+                ];
+            }
+        }
+
+        $facultyDirectoryStmt->close();
+    } elseif ($facultyDirectoryStmt) {
+        $facultyDirectoryStmt->close();
+    }
+
+    if (!empty($facultyDirectoryRowsById) && $analyticsReady && synk_table_exists($conn, 'tbl_faculty_workload_sched')) {
+        $facultyIds = array_keys($facultyDirectoryRowsById);
+        $facultyIdList = implode(',', array_map('intval', $facultyIds));
+        $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
+        $workloadScopeSql = '';
+        $workloadScopeTypes = '';
+        $workloadScopeParams = [];
+
+        if ($selectedCollegeId) {
+            $workloadScopeSql = ' AND p.college_id = ?';
+            $workloadScopeTypes = 'i';
+            $workloadScopeParams[] = $selectedCollegeId;
+        } elseif (!$isUniversitySummary) {
+            $workloadScopeSql = ' AND camp.campus_id = ?';
+            $workloadScopeTypes = 'i';
+            $workloadScopeParams[] = $campusId;
+        }
+
+        $workloadSql = "
+            SELECT
+                fw.faculty_id,
+                cs.schedule_id,
+                o.offering_id,
+                " . ($classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id') . ",
+                " . ($classScheduleHasType ? 'cs.schedule_type AS schedule_type' : "'LEC' AS schedule_type") . ",
+                sm.sub_code,
+                sm.sub_description,
+                COALESCE(NULLIF(TRIM(p.program_code), ''), p.program_name, CONCAT('Program ', p.program_id)) AS program_label,
+                sec.section_name,
+                col.college_name,
+                camp.campus_name,
+                ps.lec_units,
+                ps.lab_units,
+                ps.total_units
+            FROM tbl_faculty_workload_sched fw
+            INNER JOIN tbl_class_schedule cs
+                ON cs.schedule_id = fw.schedule_id
+            INNER JOIN tbl_prospectus_offering o
+                ON o.offering_id = cs.offering_id
+            {$liveOfferingJoins}
+            INNER JOIN tbl_program p
+                ON p.program_id = o.program_id
+            INNER JOIN tbl_college col
+                ON col.college_id = p.college_id
+            INNER JOIN tbl_campus camp
+                ON camp.campus_id = col.campus_id
+            INNER JOIN tbl_subject_masterlist sm
+                ON sm.sub_id = ps.sub_id
+            WHERE fw.ay_id = ?
+              AND fw.semester = ?
+              AND o.ay_id = ?
+              AND o.semester = ?
+              AND fw.faculty_id IN ({$facultyIdList})
+              {$workloadScopeSql}
+            ORDER BY
+                fw.faculty_id ASC,
+                sec.section_name ASC,
+                sm.sub_code ASC,
+                cs.schedule_id ASC
+        ";
+
+        $workloadStmt = $conn->prepare($workloadSql);
+        $workloadParams = array_merge([$currentAyId, $currentSem, $currentAyId, $currentSem], $workloadScopeParams);
+        $workloadTypes = 'iiii' . $workloadScopeTypes;
+        $rowsByFacultyContext = [];
+        $preparationMap = [];
+        $scheduleMap = [];
+        $programMap = [];
+        $sectionMap = [];
+        $subjectMap = [];
+        $assignmentMap = [];
+        $offeringIds = [];
+
+        if ($workloadStmt && synk_bind_dynamic_params($workloadStmt, $workloadTypes, $workloadParams)) {
+            $workloadStmt->execute();
+            $workloadResult = $workloadStmt->get_result();
+
+            if ($workloadResult instanceof mysqli_result) {
+                while ($workloadRow = $workloadResult->fetch_assoc()) {
+                    $facultyId = (int)($workloadRow['faculty_id'] ?? 0);
+                    if (!isset($facultyDirectoryRowsById[$facultyId])) {
+                        continue;
+                    }
+
+                    $scheduleId = (int)($workloadRow['schedule_id'] ?? 0);
+                    $offeringId = (int)($workloadRow['offering_id'] ?? 0);
+                    $contextKey = campus_dashboard_context_key(
+                        (int)($workloadRow['group_id'] ?? 0),
+                        $scheduleId,
+                        $offeringId
+                    );
+
+                    $rowsByFacultyContext[$facultyId][$contextKey][] = [
+                        'schedule_type' => (string)($workloadRow['schedule_type'] ?? 'LEC'),
+                        'lec_units' => (float)($workloadRow['lec_units'] ?? 0),
+                        'lab_units' => (float)($workloadRow['lab_units'] ?? 0),
+                        'total_units' => (float)($workloadRow['total_units'] ?? 0),
+                    ];
+
+                    if ($scheduleId > 0) {
+                        $scheduleMap[$facultyId][$scheduleId] = true;
+                    }
+
+                    if ($offeringId > 0) {
+                        $offeringIds[$offeringId] = true;
+                    }
+
+                    $subCode = trim((string)($workloadRow['sub_code'] ?? ''));
+                    $subDescription = trim((string)($workloadRow['sub_description'] ?? ''));
+                    $subjectLabel = $subCode;
+                    if ($subDescription !== '') {
+                        $subjectLabel = $subjectLabel !== '' ? $subjectLabel . ' - ' . $subDescription : $subDescription;
+                    }
+                    if ($subjectLabel !== '') {
+                        $subjectMap[$facultyId][$subjectLabel] = true;
+                    }
+                    if ($subCode !== '') {
+                        $preparationMap[$facultyId][$subCode] = true;
+                    }
+
+                    $programLabel = trim((string)($workloadRow['program_label'] ?? ''));
+                    if ($programLabel !== '') {
+                        $programMap[$facultyId][$programLabel] = true;
+                    }
+
+                    $sectionName = trim((string)($workloadRow['section_name'] ?? ''));
+                    if ($sectionName !== '') {
+                        $sectionMap[$facultyId][$sectionName] = true;
+                    }
+
+                    if (!isset($assignmentMap[$facultyId][$contextKey])) {
+                        $assignmentMap[$facultyId][$contextKey] = [
+                            'subject_label' => $subjectLabel !== '' ? $subjectLabel : 'Unlabeled Subject',
+                            'program_labels' => [],
+                            'section_labels' => [],
+                            'college_labels' => [],
+                            'type_map' => [],
+                        ];
+                    }
+
+                    if ($programLabel !== '') {
+                        $assignmentMap[$facultyId][$contextKey]['program_labels'][$programLabel] = true;
+                    }
+                    if ($sectionName !== '') {
+                        $assignmentMap[$facultyId][$contextKey]['section_labels'][$sectionName] = true;
+                    }
+
+                    $collegeLabel = trim((string)($workloadRow['college_name'] ?? ''));
+                    if ($collegeLabel !== '') {
+                        $assignmentMap[$facultyId][$contextKey]['college_labels'][$collegeLabel] = true;
+                    }
+
+                    $scheduleType = strtoupper(trim((string)($workloadRow['schedule_type'] ?? 'LEC')));
+                    if ($scheduleType === '') {
+                        $scheduleType = 'LEC';
+                    }
+                    $assignmentMap[$facultyId][$contextKey]['type_map'][$scheduleType] = true;
+                }
+            }
+
+            $workloadStmt->close();
+        } elseif ($workloadStmt) {
+            $workloadStmt->close();
+        }
+
+        $contextTotals = [];
+        if (!empty($offeringIds)) {
+            $offeringIdList = implode(',', array_map('intval', array_keys($offeringIds)));
+            $contextSql = "
+                SELECT
+                    cs.schedule_id,
+                    cs.offering_id,
+                    " . ($classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id') . ",
+                    " . ($classScheduleHasType ? 'cs.schedule_type AS schedule_type' : "'LEC' AS schedule_type") . "
+                FROM tbl_class_schedule cs
+                WHERE cs.offering_id IN ({$offeringIdList})
+            ";
+            $contextResult = $conn->query($contextSql);
+
+            if ($contextResult instanceof mysqli_result) {
+                while ($contextRow = $contextResult->fetch_assoc()) {
+                    $contextKey = campus_dashboard_context_key(
+                        (int)($contextRow['group_id'] ?? 0),
+                        (int)($contextRow['schedule_id'] ?? 0),
+                        (int)($contextRow['offering_id'] ?? 0)
+                    );
+
+                    if (!isset($contextTotals[$contextKey])) {
+                        $contextTotals[$contextKey] = [
+                            'total_count' => 0,
+                            'lec_count' => 0,
+                            'lab_count' => 0,
+                        ];
+                    }
+
+                    $contextTotals[$contextKey]['total_count']++;
+                    if (strtoupper(trim((string)($contextRow['schedule_type'] ?? 'LEC'))) === 'LAB') {
+                        $contextTotals[$contextKey]['lab_count']++;
+                    } else {
+                        $contextTotals[$contextKey]['lec_count']++;
+                    }
+                }
+
+                $contextResult->free();
+            }
+        }
+
+        foreach ($facultyDirectoryRowsById as $facultyId => &$facultyDirectoryRow) {
+            $totalLoad = 0.0;
+            foreach (($rowsByFacultyContext[$facultyId] ?? []) as $contextKey => $contextRows) {
+                $metrics = synk_schedule_sum_display_metrics($contextRows, $contextTotals[$contextKey] ?? []);
+                $totalLoad += (float)($metrics['faculty_load'] ?? 0);
+            }
+
+            $classAssignments = [];
+            foreach (($assignmentMap[$facultyId] ?? []) as $assignment) {
+                $programLabels = campus_dashboard_unique_labels(array_keys($assignment['program_labels'] ?? []));
+                $sectionLabels = campus_dashboard_unique_labels(array_keys($assignment['section_labels'] ?? []));
+                $collegeLabels = campus_dashboard_unique_labels(array_keys($assignment['college_labels'] ?? []));
+                $typeLabels = campus_dashboard_unique_labels(array_keys($assignment['type_map'] ?? []));
+
+                usort($typeLabels, static function ($left, $right) {
+                    $order = ['LEC' => 0, 'LAB' => 1];
+                    return ($order[$left] ?? 99) <=> ($order[$right] ?? 99);
+                });
+
+                $metaParts = [];
+                if (!empty($programLabels)) {
+                    $metaParts[] = implode(', ', $programLabels);
+                }
+                if (!empty($sectionLabels)) {
+                    $metaParts[] = implode(', ', $sectionLabels);
+                }
+                if (!empty($collegeLabels) && (!$selectedCollegeId || count($collegeLabels) > 1)) {
+                    $metaParts[] = implode(', ', $collegeLabels);
+                }
+                if (!empty($typeLabels)) {
+                    $metaParts[] = implode('/', $typeLabels);
+                }
+
+                $assignmentLabel = $assignment['subject_label'];
+                if (!empty($metaParts)) {
+                    $assignmentLabel .= ' | ' . implode(' | ', $metaParts);
+                }
+                $classAssignments[] = $assignmentLabel;
+            }
+
+            $programLabels = campus_dashboard_unique_labels(array_keys($programMap[$facultyId] ?? []));
+            $sectionLabels = campus_dashboard_unique_labels(array_keys($sectionMap[$facultyId] ?? []));
+            $subjectLabels = campus_dashboard_unique_labels(array_keys($subjectMap[$facultyId] ?? []));
+
+            $facultyDirectoryRow['assigned_count'] = count($scheduleMap[$facultyId] ?? []);
+            $facultyDirectoryRow['program_labels'] = $programLabels;
+            $facultyDirectoryRow['program_count'] = count($programLabels);
+            $facultyDirectoryRow['section_labels'] = $sectionLabels;
+            $facultyDirectoryRow['section_count'] = count($sectionLabels);
+            $facultyDirectoryRow['subject_labels'] = $subjectLabels;
+            $facultyDirectoryRow['subject_count'] = count($subjectLabels);
+            $facultyDirectoryRow['workload_load'] = round($totalLoad, 2);
+            $facultyDirectoryRow['total_preparations'] = count($preparationMap[$facultyId] ?? []);
+            $facultyDirectoryRow['total_load'] = round($facultyDirectoryRow['workload_load'] + (float)$facultyDirectoryRow['designation_units'], 2);
+            $facultyDirectoryRow['class_assignment_labels'] = campus_dashboard_unique_labels($classAssignments);
+        }
+        unset($facultyDirectoryRow);
+    }
+
+    $facultyDirectoryRows = array_values($facultyDirectoryRowsById);
+    usort($facultyDirectoryRows, static function (array $left, array $right): int {
+        $statusOrderLeft = (($left['status'] ?? 'active') === 'inactive') ? 1 : 0;
+        $statusOrderRight = (($right['status'] ?? 'active') === 'inactive') ? 1 : 0;
+        if ($statusOrderLeft !== $statusOrderRight) {
+            return $statusOrderLeft <=> $statusOrderRight;
+        }
+
+        $assignedCompare = ((int)($right['assigned_count'] ?? 0)) <=> ((int)($left['assigned_count'] ?? 0));
+        if ($assignedCompare !== 0) {
+            return $assignedCompare;
+        }
+
+        $loadCompare = ((float)($right['total_load'] ?? 0)) <=> ((float)($left['total_load'] ?? 0));
+        if ($loadCompare !== 0) {
+            return $loadCompare;
+        }
+
+        return strnatcasecmp((string)($left['full_name'] ?? ''), (string)($right['full_name'] ?? ''));
+    });
+
+    $totalLoadAccumulator = 0.0;
+    foreach ($facultyDirectoryRows as $facultyDirectoryRow) {
+        $facultyDirectory['assigned_classes_total'] += (int)($facultyDirectoryRow['assigned_count'] ?? 0);
+        $totalLoadAccumulator += (float)($facultyDirectoryRow['total_load'] ?? 0);
+
+        if ((int)($facultyDirectoryRow['assigned_count'] ?? 0) > 0) {
+            $facultyDirectory['faculty_with_workload']++;
+        }
+        if (trim((string)($facultyDirectoryRow['designation_name'] ?? '')) !== '') {
+            $facultyDirectory['faculty_with_designation']++;
+        }
+        if ((string)($facultyDirectoryRow['status'] ?? 'active') === 'inactive') {
+            $facultyDirectory['inactive_total']++;
+        }
+    }
+
+    $facultyDirectory['rows'] = $facultyDirectoryRows;
+    $facultyDirectory['total'] = count($facultyDirectoryRows);
+    if ($facultyDirectory['total'] > 0) {
+        $facultyDirectory['average_total_load'] = round($totalLoadAccumulator / $facultyDirectory['total'], 2);
+    }
+}
+
+$facultyDirectoryJson = json_encode($facultyDirectory['rows'], JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($facultyDirectoryJson === false) {
+    $facultyDirectoryJson = '[]';
+}
+
+
 
 
 ?>
@@ -1300,6 +1912,621 @@ if ($isUniversitySummary) {
       height: 100%;
     }
 
+    .faculty-directory-note {
+      font-size: 0.83rem;
+      color: #8592a3;
+      line-height: 1.45;
+    }
+
+    .faculty-directory-stats {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .faculty-directory-stat {
+      border: 1px solid #e7e7ef;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #f9faff 100%);
+      padding: 0.85rem 0.95rem;
+      min-width: 0;
+    }
+
+    .faculty-directory-stat-label {
+      display: block;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      color: #8592a3;
+      letter-spacing: 0.04em;
+      line-height: 1.3;
+    }
+
+    .faculty-directory-stat-value {
+      display: block;
+      margin-top: 0.35rem;
+      color: #435971;
+      font-size: 1.18rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .faculty-directory-toolbar {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      margin-bottom: 0.95rem;
+    }
+
+    .faculty-directory-toolbar .input-group-text,
+    .faculty-directory-toolbar .btn,
+    .faculty-directory-toolbar .form-control {
+      font-size: 0.9rem;
+    }
+
+    .faculty-directory-summary {
+      color: #8592a3;
+      font-size: 0.83rem;
+      font-weight: 600;
+      line-height: 1.4;
+    }
+
+    .faculty-directory-list {
+      display: flex;
+      flex-direction: column;
+      gap: 0.75rem;
+      max-height: 420px;
+      overflow-y: auto;
+      padding-right: 0.15rem;
+    }
+
+    .faculty-directory-item {
+      width: 100%;
+      border: 1px solid #e7e7ef;
+      border-radius: 14px;
+      background: #fff;
+      padding: 0.9rem 0.95rem;
+      text-align: left;
+      transition: border-color 0.2s ease, box-shadow 0.2s ease, transform 0.2s ease;
+    }
+
+    .faculty-directory-item:hover,
+    .faculty-directory-item:focus {
+      border-color: rgba(105, 108, 255, 0.35);
+      box-shadow: 0 10px 22px rgba(67, 89, 113, 0.08);
+      transform: translateY(-1px);
+    }
+
+    .faculty-directory-item-top {
+      display: flex;
+      justify-content: space-between;
+      align-items: flex-start;
+      gap: 0.75rem;
+      min-width: 0;
+    }
+
+    .faculty-directory-item-name {
+      color: #435971;
+      font-size: 0.98rem;
+      font-weight: 700;
+      line-height: 1.25;
+      word-break: break-word;
+    }
+
+    .faculty-directory-item-subtext {
+      margin-top: 0.25rem;
+      color: #8592a3;
+      font-size: 0.82rem;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .faculty-directory-item-metrics {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-top: 0.8rem;
+    }
+
+    .faculty-directory-chip {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.35rem;
+      border-radius: 999px;
+      border: 1px solid #dfe4f1;
+      background: #f7f8fd;
+      color: #566a7f;
+      font-size: 0.76rem;
+      font-weight: 700;
+      line-height: 1.1;
+      padding: 0.38rem 0.65rem;
+      min-height: 32px;
+    }
+
+    .faculty-directory-chip.is-accent {
+      border-color: rgba(105, 108, 255, 0.18);
+      background: rgba(105, 108, 255, 0.09);
+      color: #5b61f2;
+    }
+
+    .faculty-directory-chip.is-success {
+      border-color: rgba(113, 221, 55, 0.25);
+      background: rgba(113, 221, 55, 0.12);
+      color: #4c9d22;
+    }
+
+    .faculty-directory-chip.is-warning {
+      border-color: rgba(255, 171, 0, 0.28);
+      background: rgba(255, 171, 0, 0.12);
+      color: #b87800;
+    }
+
+    .faculty-directory-empty {
+      border: 1px dashed rgba(67, 89, 113, 0.22);
+      border-radius: 14px;
+      background: rgba(245, 246, 255, 0.7);
+      color: #8592a3;
+      text-align: center;
+      padding: 1.35rem 1rem;
+      line-height: 1.5;
+    }
+
+    .faculty-directory-empty i {
+      font-size: 1.25rem;
+      margin-bottom: 0.35rem;
+      display: block;
+    }
+
+    .faculty-detail-subtitle {
+      color: #8592a3;
+      font-size: 0.86rem;
+      line-height: 1.45;
+      margin-top: 0.25rem;
+    }
+
+    .faculty-detail-section-title {
+      font-size: 0.8rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      color: #8592a3;
+      margin-bottom: 0.75rem;
+    }
+
+    .faculty-detail-grid {
+      display: grid;
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 0.85rem;
+      margin-bottom: 1rem;
+    }
+
+    .faculty-detail-panel {
+      border: 1px solid #e7e7ef;
+      border-radius: 14px;
+      background: #fff;
+      padding: 0.95rem;
+      min-width: 0;
+    }
+
+    .faculty-detail-field {
+      display: grid;
+      gap: 0.2rem;
+      margin-bottom: 0.7rem;
+    }
+
+    .faculty-detail-field:last-child {
+      margin-bottom: 0;
+    }
+
+    .faculty-detail-label {
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #8592a3;
+      line-height: 1.35;
+    }
+
+    .faculty-detail-value {
+      color: #435971;
+      font-size: 0.95rem;
+      font-weight: 600;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .faculty-detail-metrics {
+      display: grid;
+      grid-template-columns: repeat(4, minmax(0, 1fr));
+      gap: 0.75rem;
+      margin-bottom: 1rem;
+    }
+
+    .faculty-detail-metric {
+      border: 1px solid #e7e7ef;
+      border-radius: 12px;
+      background: linear-gradient(180deg, #ffffff 0%, #fafbff 100%);
+      padding: 0.85rem 0.9rem;
+      min-width: 0;
+    }
+
+    .faculty-detail-metric-label {
+      display: block;
+      color: #8592a3;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      line-height: 1.35;
+    }
+
+    .faculty-detail-metric-value {
+      display: block;
+      margin-top: 0.32rem;
+      color: #435971;
+      font-size: 1.06rem;
+      font-weight: 700;
+      line-height: 1.2;
+    }
+
+    .faculty-detail-badge-list {
+      display: flex;
+      flex-wrap: wrap;
+      gap: 0.5rem;
+      margin-bottom: 0.95rem;
+    }
+
+    .faculty-detail-badge {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.42rem 0.75rem;
+      border: 1px solid #dfe4f1;
+      background: #f7f8fd;
+      color: #566a7f;
+      font-size: 0.78rem;
+      font-weight: 700;
+      line-height: 1.15;
+      max-width: 100%;
+      word-break: break-word;
+    }
+
+    .faculty-detail-assignment-list {
+      list-style: none;
+      margin: 0;
+      padding: 0;
+      display: grid;
+      gap: 0.55rem;
+    }
+
+    .faculty-detail-assignment-list li {
+      border: 1px solid #e7e7ef;
+      border-radius: 12px;
+      padding: 0.8rem 0.9rem;
+      background: #fff;
+      color: #566a7f;
+      line-height: 1.45;
+      word-break: break-word;
+    }
+
+    .faculty-workload-summary {
+      color: #8592a3;
+      font-size: 0.84rem;
+      font-weight: 600;
+      line-height: 1.45;
+      margin-bottom: 0.85rem;
+    }
+
+    .faculty-workload-table-wrap {
+      border: 1px solid #e7e7ef;
+      border-radius: 14px;
+      overflow: auto;
+      background: #fff;
+    }
+
+    .faculty-workload-table {
+      width: 100%;
+      min-width: 920px;
+      margin-bottom: 0;
+    }
+
+    .faculty-workload-table thead th {
+      position: sticky;
+      top: 0;
+      z-index: 1;
+      background: #f8f9fd;
+      color: #8592a3;
+      font-size: 0.72rem;
+      font-weight: 700;
+      text-transform: uppercase;
+      letter-spacing: 0.04em;
+      border-bottom: 1px solid #e7e7ef;
+      white-space: nowrap;
+    }
+
+    .faculty-workload-table td {
+      color: #566a7f;
+      font-size: 0.88rem;
+      line-height: 1.45;
+      vertical-align: top;
+      border-color: #eef1f6;
+    }
+
+    .faculty-workload-code {
+      font-weight: 700;
+      color: #435971;
+      white-space: nowrap;
+    }
+
+    .faculty-workload-desc {
+      min-width: 260px;
+    }
+
+    .faculty-workload-course {
+      min-width: 160px;
+    }
+
+    .faculty-workload-note {
+      display: block;
+      margin-top: 0.25rem;
+      color: #8592a3;
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+
+    .faculty-workload-inline-meta {
+      display: block;
+      margin-top: 0.28rem;
+      color: #8592a3;
+      font-size: 0.76rem;
+      line-height: 1.45;
+    }
+
+    .faculty-workload-type {
+      display: inline-flex;
+      align-items: center;
+      border-radius: 999px;
+      padding: 0.18rem 0.52rem;
+      background: rgba(105, 108, 255, 0.08);
+      color: #5b61f2;
+      font-size: 0.72rem;
+      font-weight: 700;
+      line-height: 1.1;
+    }
+
+    .faculty-workload-loader {
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      gap: 0.7rem;
+      min-height: 130px;
+      color: #8592a3;
+      font-weight: 600;
+      text-align: center;
+    }
+
+    .faculty-directory-workload-alert .alert {
+      background: #eaf8ff;
+      border-color: #cbeaf8;
+      color: #1a7da8;
+      margin-bottom: 0.9rem;
+    }
+
+    .workload-card {
+      border: 1px solid #dbe5f1;
+      box-shadow: 0 2px 8px rgba(18, 38, 63, 0.05);
+      border-radius: 16px;
+    }
+
+    .workload-card .card-header {
+      padding-bottom: 0.95rem;
+      border-bottom-color: #e7edf5;
+    }
+
+    .workload-table thead th {
+      font-size: 0.72rem;
+      text-transform: uppercase;
+      letter-spacing: 0.08em;
+      color: #5f728b;
+      border-bottom: 1px solid #dbe4ef;
+      border-top: 1px solid #dbe4ef;
+      box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.95), inset 0 -1px 0 rgba(204, 216, 229, 0.9);
+      white-space: nowrap;
+      background: #f8fbfe;
+      vertical-align: middle;
+    }
+
+    .workload-table thead th.course-head { width: 7.5%; }
+    .workload-table thead th.day-head { width: 5.5%; }
+    .workload-table thead th.time-head { width: 7.5%; }
+    .workload-table thead th.room-head { width: 6.5%; }
+    .workload-table thead th.unit-head { width: 4.5%; }
+    .workload-table thead th.hours-group-head { width: 9%; }
+    .workload-table thead th.load-head { width: 6%; }
+    .workload-table thead th.students-head { width: 7.5%; }
+    .workload-table thead th.hours-subhead {
+      width: 4.5%;
+      white-space: nowrap;
+      word-break: keep-all;
+      overflow-wrap: normal;
+    }
+
+    .workload-table tbody td {
+      color: #5c6f88;
+      border-color: #e7edf5;
+      vertical-align: middle;
+    }
+
+    .workload-table tfoot th,
+    .workload-table tfoot td {
+      color: #5f728b;
+      border-top: 2px solid #d7e1ec;
+      background: #f9fbfd;
+      vertical-align: middle;
+    }
+
+    .workload-code {
+      font-weight: 700;
+      color: #5b6f86;
+      white-space: nowrap;
+    }
+
+    .workload-desc {
+      color: #5f728b;
+    }
+
+    .workload-days,
+    .workload-room {
+      white-space: nowrap;
+    }
+
+    .workload-time {
+      white-space: normal;
+      line-height: 1.08;
+      min-width: 88px;
+    }
+
+    .time-line {
+      display: block;
+      white-space: nowrap;
+    }
+
+    .merged-metric {
+      vertical-align: middle !important;
+      background: #fbfcfe;
+      font-weight: 600;
+    }
+
+    .workload-summary-row th,
+    .workload-summary-row td {
+      background: #f9fbfd;
+      font-size: inherit;
+      border-top: 1px solid #d7e1ec;
+      border-bottom: 1px solid #d7e1ec;
+    }
+
+    .workload-summary-label {
+      color: #52657d;
+      font-weight: 700;
+      white-space: nowrap;
+    }
+
+    .workload-summary-value {
+      color: #4f6279;
+      font-weight: 600;
+    }
+
+    .summary-separator th,
+    .summary-separator td {
+      border-top: 2px solid #b9c8d9 !important;
+    }
+
+    .workload-total-row th,
+    .workload-total-row td {
+      border-top: 2px solid #b7c6d8 !important;
+      font-size: inherit;
+      background: #f6f9fc;
+    }
+
+    .load-status-inline {
+      display: inline-block;
+      margin-left: 0.45rem;
+      padding: 2px 8px;
+      border-radius: 999px;
+      font-size: 0.76rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      vertical-align: middle;
+    }
+
+    .load-status-inline.underload {
+      background: #fff3cd;
+      color: #7a5a00;
+    }
+
+    .load-status-inline.overload {
+      background: #fde8ea;
+      color: #a61c2d;
+    }
+
+    .workload-total-load-screen {
+      padding-left: 0.75rem !important;
+      padding-right: 1rem !important;
+    }
+
+    .total-load-screen-inner {
+      display: grid;
+      grid-template-columns: 1fr 1fr 1fr;
+      align-items: center;
+      width: 100%;
+      gap: 0.5rem;
+    }
+
+    .total-load-screen-inner .total-load-value {
+      grid-column: 1;
+      justify-self: center;
+      font-weight: 700;
+    }
+
+    .total-load-screen-inner .load-status-inline {
+      grid-column: 2 / 4;
+      justify-self: start;
+      margin-left: 0;
+    }
+
+    .paired-anchor {
+      background: #fbfcfe;
+    }
+
+    .paired-row td {
+      background-image: linear-gradient(to right, rgba(88, 116, 255, 0.04), rgba(88, 116, 255, 0));
+    }
+
+    .schedule-partner-note {
+      display: block;
+      margin-top: 0.2rem;
+      font-size: 0.72rem;
+      color: #6f7f96;
+    }
+
+    .print-type-suffix {
+      display: none;
+    }
+
+    .workload-merge-note {
+      display: block;
+      margin-top: 0.28rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      color: #556b85;
+      line-height: 1.25;
+    }
+
+    .type-pill {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      min-width: 42px;
+      padding: 2px 8px;
+      border-radius: 6px;
+      font-size: 0.72rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+    }
+
+    .type-pill.lec {
+      background: #e8e9ff;
+      color: #5d68f4;
+    }
+
+    .type-pill.lab {
+      background: #fff0cf;
+      color: #c98900;
+    }
+
     @media (min-width: 1200px) {
       #matrixModal {
         --matrix-room-col-width: 104px;
@@ -1344,6 +2571,18 @@ if ($isUniversitySummary) {
         border-left: 0;
         border-right: 0;
         border-bottom: 0;
+      }
+
+      .faculty-directory-stats,
+      .faculty-detail-grid,
+      .faculty-detail-metrics {
+        grid-template-columns: 1fr;
+      }
+    }
+
+    @media (max-width: 575.98px) {
+      .faculty-directory-item-top {
+        flex-direction: column;
       }
     }
   </style>
@@ -1767,7 +3006,6 @@ if ($isUniversitySummary) {
                   </div>
                 </div>
 
-                <!-- FACULTY DIRECTORY PLACEHOLDER -->
                 <div class="card shadow-sm mb-4">
                   <div class="card-header d-flex justify-content-between align-items-center">
                     <div>
@@ -1779,13 +3017,58 @@ if ($isUniversitySummary) {
                     </a>
                   </div>
                   <div class="card-body">
-                    <p class="text-muted mb-2">
-                      Show top faculty for this campus (e.g., by workload or department).
+                    <p class="faculty-directory-note mb-3">
+                      <?= htmlspecialchars($facultyDirectory['note'], ENT_QUOTES, 'UTF-8'); ?><br>
+                      <span class="fw-semibold"><?= $facultyDirectoryScopeLabelEscaped; ?></span> |
+                      <?= $academicTermTextEscaped; ?>
                     </p>
-                    <div class="alert alert-secondary mb-0">
-                      <i class="bx bx-user me-1"></i>
-                      Faculty assignments.
-                    </div>
+
+                    <?php if ($facultyDirectory['total'] > 0): ?>
+                      <div class="faculty-directory-stats">
+                        <div class="faculty-directory-stat">
+                          <span class="faculty-directory-stat-label">Faculty</span>
+                          <span class="faculty-directory-stat-value"><?= (int)$facultyDirectory['total']; ?></span>
+                        </div>
+                        <div class="faculty-directory-stat">
+                          <span class="faculty-directory-stat-label">With Workload</span>
+                          <span class="faculty-directory-stat-value"><?= (int)$facultyDirectory['faculty_with_workload']; ?></span>
+                        </div>
+                        <div class="faculty-directory-stat">
+                          <span class="faculty-directory-stat-label">Assigned Classes</span>
+                          <span class="faculty-directory-stat-value"><?= (int)$facultyDirectory['assigned_classes_total']; ?></span>
+                        </div>
+                        <div class="faculty-directory-stat">
+                          <span class="faculty-directory-stat-label">Avg Total Load</span>
+                          <span class="faculty-directory-stat-value"><?= htmlspecialchars(campus_dashboard_format_load_value((float)$facultyDirectory['average_total_load']), ENT_QUOTES, 'UTF-8'); ?></span>
+                        </div>
+                      </div>
+
+                      <div class="faculty-directory-toolbar">
+                        <div class="input-group input-group-sm">
+                          <span class="input-group-text"><i class="bx bx-search"></i></span>
+                          <input
+                            type="search"
+                            id="facultyDirectorySearch"
+                            class="form-control"
+                            placeholder="Search faculty, college, program, or subject"
+                            autocomplete="off"
+                          >
+                          <button class="btn btn-outline-secondary" type="button" id="facultyDirectoryClearSearch">
+                            Clear
+                          </button>
+                        </div>
+                        <div class="faculty-directory-summary" id="facultyDirectorySummaryText">
+                          Loading faculty directory...
+                        </div>
+                      </div>
+
+                      <div class="faculty-directory-list" id="facultyDirectoryList"></div>
+                    <?php else: ?>
+                      <div class="faculty-directory-empty">
+                        <i class="bx bx-user-x"></i>
+                        No faculty assignments are available for the current campus and college settings.
+                      </div>
+                    <?php endif; ?>
                   </div>
                 </div>
 
@@ -1840,6 +3123,28 @@ if ($isUniversitySummary) {
     <div class="layout-overlay layout-menu-toggle"></div>
   </div>
 
+  <div class="modal fade" id="facultyDirectoryDetailModal" tabindex="-1" aria-hidden="true">
+    <div class="modal-dialog modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title mb-0" id="facultyDirectoryDetailTitle">Faculty Details</h5>
+            <div class="faculty-detail-subtitle" id="facultyDirectoryDetailSubtitle">
+              Current settings overview
+            </div>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal"></button>
+        </div>
+        <div class="modal-body" id="facultyDirectoryDetailBody">
+          <div class="faculty-directory-empty">
+            <i class="bx bx-user"></i>
+            Select a faculty member to view current-setting details.
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="matrixModal" tabindex="-1" data-bs-backdrop="false" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen-lg-down modal-xxl modal-dialog-scrollable">
       <div class="modal-content">
@@ -1892,6 +3197,7 @@ if ($isUniversitySummary) {
       var utilizationAvailable = <?= json_encode($utilizationChartAvailable, JSON_NUMERIC_CHECK); ?>;
       var analyticsReady = <?= $analyticsReady ? 'true' : 'false'; ?>;
       var campusIdParam = <?= json_encode((string)$campusIdParam); ?>;
+      var dashboardCampusId = <?= $isUniversitySummary ? 0 : (int)$campusId; ?>;
       var currentAyId = <?= (int)$currentAyId; ?>;
       var currentSem = <?= (int)$currentSem; ?>;
       var selectedCollegeId = <?= (int)$selectedCollegeId; ?>;
@@ -1904,6 +3210,22 @@ if ($isUniversitySummary) {
       var utilizationMetricLabel = <?= json_encode((string)$utilizationMetricLabel); ?>;
       var highestUtilizationLabel = <?= json_encode((string)$highestUtilizationLabel); ?>;
       var highestUtilizationPercent = <?= json_encode((float)$highestUtilizationPercent, JSON_NUMERIC_CHECK); ?>;
+      var facultyDirectoryData = <?= $facultyDirectoryJson; ?>;
+      var facultyDirectoryScopeLabel = <?= json_encode((string)$facultyDirectory['scope_label']); ?>;
+      var facultyDirectorySearchInput = document.getElementById("facultyDirectorySearch");
+      var facultyDirectoryClearButton = document.getElementById("facultyDirectoryClearSearch");
+      var facultyDirectoryList = document.getElementById("facultyDirectoryList");
+      var facultyDirectorySummaryText = document.getElementById("facultyDirectorySummaryText");
+      var facultyDirectoryDetailModalElement = document.getElementById("facultyDirectoryDetailModal");
+      var facultyDirectoryDetailTitle = document.getElementById("facultyDirectoryDetailTitle");
+      var facultyDirectoryDetailSubtitle = document.getElementById("facultyDirectoryDetailSubtitle");
+      var facultyDirectoryDetailBody = document.getElementById("facultyDirectoryDetailBody");
+      var facultyDirectoryDetailModal = facultyDirectoryDetailModalElement && typeof bootstrap !== "undefined"
+        ? new bootstrap.Modal(facultyDirectoryDetailModalElement)
+        : null;
+      var facultyDirectoryWorkloadRequest = null;
+      var facultyDirectoryWorkloadCache = new Map();
+      var facultyDirectoryActiveFacultyId = 0;
       var hasApexCharts = typeof ApexCharts !== "undefined";
       var scheduleHeatmapChart = null;
       var scheduleHeatmapRequest = null;
@@ -1959,6 +3281,602 @@ if ($isUniversitySummary) {
         if (element) {
           element.textContent = message;
         }
+      }
+
+      function formatLoadValue(value) {
+        var numericValue = Number(value) || 0;
+        if (Math.abs(numericValue - Math.round(numericValue)) < 0.01) {
+          return String(Math.round(numericValue));
+        }
+
+        return numericValue.toFixed(2).replace(/\.00$/, "").replace(/(\.\d*[1-9])0+$/, "$1");
+      }
+
+      function toNumber(value) {
+        var numericValue = Number(value);
+        return Number.isFinite(numericValue) ? numericValue : 0;
+      }
+
+      function formatNumber(value) {
+        var numericValue = toNumber(value);
+        return Number.isInteger(numericValue) ? String(numericValue) : String(parseFloat(numericValue.toFixed(2)));
+      }
+
+      function formatStudentCount(value) {
+        var numericValue = Math.round(toNumber(value));
+        return numericValue > 0 ? String(numericValue) : "";
+      }
+
+      function getNormalLoadUnits(preparationCount) {
+        var prepCount = Math.max(0, Math.floor(toNumber(preparationCount)));
+        return prepCount >= 2 ? 18 : 21;
+      }
+
+      function getLoadStatus(loadValue, preparationCount) {
+        var numericLoad = toNumber(loadValue);
+        var normalLoadUnits = getNormalLoadUnits(preparationCount);
+        var tolerance = 0.0001;
+
+        if (numericLoad > normalLoadUnits + tolerance) {
+          return { label: "Overload", className: "overload" };
+        }
+
+        if (numericLoad >= normalLoadUnits - tolerance) {
+          return { label: "", className: "normal" };
+        }
+
+        return { label: "Underload", className: "underload" };
+      }
+
+      function facultyDirectoryEmptyMarkup(message) {
+        return (
+          '<div class="faculty-directory-empty">' +
+            '<i class="bx bx-user"></i>' +
+            escapeHtml(message) +
+          "</div>"
+        );
+      }
+
+      function facultyDirectorySearchBlob(item) {
+        var parts = [
+          item && item.full_name,
+          item && item.status_label,
+          item && item.designation_label,
+          item && item.designation_name,
+          item && item.college_label,
+          item && item.campus_label
+        ];
+
+        if (item && Array.isArray(item.program_labels)) {
+          parts.push(item.program_labels.join(" "));
+        }
+        if (item && Array.isArray(item.section_labels)) {
+          parts.push(item.section_labels.join(" "));
+        }
+        if (item && Array.isArray(item.subject_labels)) {
+          parts.push(item.subject_labels.join(" "));
+        }
+        if (item && Array.isArray(item.class_assignment_labels)) {
+          parts.push(item.class_assignment_labels.join(" "));
+        }
+
+        return parts.join(" ").toLowerCase();
+      }
+
+      function renderFacultyDirectorySummary(rows, keyword) {
+        if (!facultyDirectorySummaryText) {
+          return;
+        }
+
+        var total = Array.isArray(rows) ? rows.length : 0;
+        if (total === 0) {
+          facultyDirectorySummaryText.textContent = keyword
+            ? "No faculty matched your search in the current settings."
+            : "No faculty assignments are available in the current settings.";
+          return;
+        }
+
+        var assignedFaculty = rows.filter(function (row) {
+          return Number(row && row.assigned_count) > 0;
+        }).length;
+        var assignedClasses = rows.reduce(function (sum, row) {
+          return sum + (Number(row && row.assigned_count) || 0);
+        }, 0);
+
+        facultyDirectorySummaryText.textContent =
+          "Showing " + total + " faculty in " + facultyDirectoryScopeLabel +
+          " | " + assignedFaculty + " with workload | " + assignedClasses + " assigned classes";
+      }
+
+      function buildFacultyDirectoryItemMarkup(item) {
+        var statusClass = String(item && item.status || "").toLowerCase() === "inactive"
+          ? "bg-label-danger"
+          : "bg-label-success";
+        var designationLabel = String(item && (item.designation_label || item.designation_name) || "").trim();
+        var contextLineParts = [];
+
+        if (designationLabel) {
+          contextLineParts.push(designationLabel);
+        }
+        if (item && item.college_label) {
+          contextLineParts.push(String(item.college_label));
+        }
+        if (!contextLineParts.length) {
+          contextLineParts.push("Current scope: " + facultyDirectoryScopeLabel);
+        }
+
+        return (
+          '<button type="button" class="faculty-directory-item btn-view-faculty-detail" data-faculty-id="' + escapeHtml(item.faculty_id) + '">' +
+            '<div class="faculty-directory-item-top">' +
+              '<div class="min-w-0 flex-grow-1">' +
+                '<div class="faculty-directory-item-name">' + escapeHtml(item.full_name || "Unnamed Faculty") + "</div>" +
+                '<div class="faculty-directory-item-subtext">' + escapeHtml(contextLineParts.join(" | ")) + "</div>" +
+              "</div>" +
+              '<span class="badge ' + statusClass + '">' + escapeHtml(item.status_label || "Active") + "</span>" +
+            "</div>" +
+            '<div class="faculty-directory-item-metrics">' +
+              '<span class="faculty-directory-chip is-accent"><i class="bx bx-briefcase-alt-2"></i>' + escapeHtml(String(Number(item.assigned_count) || 0)) + " class" + ((Number(item.assigned_count) || 0) === 1 ? "" : "es") + "</span>" +
+              '<span class="faculty-directory-chip is-success"><i class="bx bx-line-chart"></i>' + escapeHtml(formatLoadValue(item.total_load)) + " total load</span>" +
+              '<span class="faculty-directory-chip"><i class="bx bx-book-content"></i>' + escapeHtml(String(Number(item.total_preparations) || 0)) + " prep" + ((Number(item.total_preparations) || 0) === 1 ? "" : "s") + "</span>" +
+              '<span class="faculty-directory-chip is-warning"><i class="bx bx-layer"></i>' + escapeHtml(String(Number(item.program_count) || 0)) + " program" + ((Number(item.program_count) || 0) === 1 ? "" : "s") + "</span>" +
+            "</div>" +
+          "</button>"
+        );
+      }
+
+      function renderFacultyDirectoryList() {
+        if (!facultyDirectoryList) {
+          return;
+        }
+
+        var keyword = facultyDirectorySearchInput
+          ? String(facultyDirectorySearchInput.value || "").trim().toLowerCase()
+          : "";
+
+        var rows = (Array.isArray(facultyDirectoryData) ? facultyDirectoryData : []).filter(function (item) {
+          if (keyword === "") {
+            return true;
+          }
+
+          return facultyDirectorySearchBlob(item).indexOf(keyword) !== -1;
+        });
+
+        renderFacultyDirectorySummary(rows, keyword);
+
+        if (!rows.length) {
+          facultyDirectoryList.innerHTML = facultyDirectoryEmptyMarkup("No faculty matched the current search.");
+          return;
+        }
+
+        facultyDirectoryList.innerHTML = rows.map(buildFacultyDirectoryItemMarkup).join("");
+      }
+
+      function buildFacultyDetailField(label, value) {
+        return (
+          '<div class="faculty-detail-field">' +
+            '<span class="faculty-detail-label">' + escapeHtml(label) + "</span>" +
+            '<span class="faculty-detail-value">' + escapeHtml(value || "--") + "</span>" +
+          "</div>"
+        );
+      }
+
+      function buildFacultyDetailBadges(labels, fallback) {
+        if (!Array.isArray(labels) || labels.length === 0) {
+          return '<div class="faculty-directory-empty">' + escapeHtml(fallback) + "</div>";
+        }
+
+        return '<div class="faculty-detail-badge-list">' + labels.map(function (label) {
+          return '<span class="faculty-detail-badge">' + escapeHtml(label) + "</span>";
+        }).join("") + "</div>";
+      }
+
+      function buildFacultyWorkloadLoader(message) {
+        return (
+          '<div class="faculty-workload-loader">' +
+            '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' +
+            '<span>' + escapeHtml(message) + "</span>" +
+          "</div>"
+        );
+      }
+
+      function formatCompactTime(value) {
+        var raw = String(value == null ? "" : value).trim();
+        var parts;
+
+        if (raw === "") {
+          return "";
+        }
+
+        parts = raw.split("-");
+        if (parts.length !== 2) {
+          return escapeHtml(raw);
+        }
+
+        return (
+          '<span class="time-line">' + escapeHtml(parts[0].trim()) + "</span>" +
+          '<span class="time-line">' + escapeHtml(parts[1].trim()) + "</span>"
+        );
+      }
+
+      function getWorkloadGroupKey(row) {
+        var groupId = Number(row && row.group_id) || 0;
+        if (groupId > 0) {
+          return "group:" + groupId;
+        }
+
+        var offeringId = Number(row && row.offering_id) || 0;
+        if (offeringId > 0) {
+          return "offering:" + offeringId;
+        }
+
+        return "workload:" + (Number(row && row.workload_id) || 0);
+      }
+
+      function calculateWorkloadMetricTotals(rowsData) {
+        var sourceRows = Array.isArray(rowsData) ? rowsData : [];
+        var countedGroups = new Set();
+        var preparationSet = new Set();
+        var totals = {
+          unit: 0,
+          lab: 0,
+          lec: 0,
+          load: 0,
+          preparations: 0
+        };
+
+        sourceRows.forEach(function (row) {
+          var groupKey = getWorkloadGroupKey(row);
+          var preparationKey = String(row && row.sub_code || "").trim();
+
+          if (!countedGroups.has(groupKey)) {
+            countedGroups.add(groupKey);
+            totals.unit += toNumber(row && row.units);
+            totals.lab += toNumber(row && row.lab);
+            totals.lec += toNumber(row && row.lec);
+            totals.load += toNumber(row && row.faculty_load);
+          }
+
+          if (preparationKey !== "") {
+            preparationSet.add(preparationKey);
+          }
+        });
+
+        totals.preparations = preparationSet.size;
+        return totals;
+      }
+
+      function formatDesignationDisplay(meta, item) {
+        var sourceMeta = meta || {};
+        var designationName = String(sourceMeta.designation_name || item && item.designation_name || "").trim();
+        var designationLabel = String(sourceMeta.designation_label || item && (item.designation_label || item.designation_name) || "").trim();
+        var collegeLabel = String(selectedCollegeName || item && item.college_label || "").trim();
+
+        if (!designationLabel) {
+          return "";
+        }
+
+        if (designationName.toUpperCase() === "DEAN" && collegeLabel !== "") {
+          return designationLabel + ", " + collegeLabel;
+        }
+
+        return designationLabel;
+      }
+
+      function buildWorkloadDescription(row, isPaired) {
+        var description = escapeHtml(row && row.desc || "");
+        var mergeNote = String(row && row.merge_note || "").trim();
+        var normalizedType = String(row && (row.type || row.schedule_type) || "").toUpperCase();
+        var typeLabel = normalizedType === "LAB" ? "Lab" : (normalizedType === "LEC" ? "Lec" : "");
+        var noteParts = [];
+        var html = description;
+        var typeValue;
+
+        if (isPaired) {
+          typeValue = normalizedType === "LAB" ? "LAB" : "LEC";
+          noteParts.push('<span class="type-pill ' + typeValue.toLowerCase() + '">' + escapeHtml(typeValue) + "</span>");
+        }
+
+        if (typeLabel) {
+          html += '<span class="print-type-suffix"> (' + escapeHtml(typeLabel) + ")</span>";
+        }
+
+        if (noteParts.length > 0) {
+          html += '<span class="schedule-partner-note">' + noteParts.join("") + "</span>";
+        }
+
+        if (mergeNote) {
+          html += '<span class="workload-merge-note">' + escapeHtml(mergeNote) + "</span>";
+        }
+
+        return html;
+      }
+
+      function buildFacultyWorkloadPanelMarkup(payload, item) {
+        var response = payload || {};
+        var rows = Array.isArray(response.rows) ? response.rows : [];
+        var meta = response.meta || {};
+        var totals;
+        var preparationCount;
+        var designationUnits;
+        var designationText;
+        var grandTotalUnits;
+        var grandTotalLoad;
+        var loadStatus;
+        var tableBody = "";
+        var i;
+        var row;
+        var groupKey;
+        var groupRows;
+        var candidateRow;
+        var displayUnits;
+        var displayLabUnits;
+        var displayLecUnits;
+        var mergedStudents;
+        var j;
+
+        if (!rows.length) {
+          return (
+            '<div class="card workload-card">' +
+              '<div class="card-header">' +
+                '<h5 class="m-0">Current Faculty Workload</h5>' +
+                '<small class="text-muted">Classes already assigned for this term</small>' +
+              "</div>" +
+              '<div class="card-body">' +
+                '<div class="faculty-directory-workload-alert">' +
+                  '<div class="alert mb-0">' +
+                    '<strong>Faculty Selected:</strong> ' + escapeHtml(item && item.full_name || "Selected Faculty") +
+                    ' | <span class="fw-summary-label">Term:</span> ' + escapeHtml(String(meta.term_text || academicTermText || "Current academic term")) +
+                  "</div>" +
+                "</div>" +
+                facultyDirectoryEmptyMarkup("No workload assigned yet.") +
+              "</div>" +
+            "</div>"
+          );
+        }
+
+        totals = calculateWorkloadMetricTotals(rows);
+        preparationCount = Math.max(Number(meta.total_preparations) || 0, totals.preparations);
+        designationUnits = toNumber(meta.designation_units || item && item.designation_units);
+        designationText = formatDesignationDisplay(meta, item);
+        grandTotalUnits = totals.unit + designationUnits;
+        grandTotalLoad = totals.load + designationUnits;
+        loadStatus = getLoadStatus(grandTotalLoad, preparationCount);
+
+        for (i = 0; i < rows.length; i += 1) {
+          row = rows[i];
+          groupKey = getWorkloadGroupKey(row);
+          groupRows = [row];
+
+          while ((i + groupRows.length) < rows.length) {
+            candidateRow = rows[i + groupRows.length];
+            if (getWorkloadGroupKey(candidateRow) !== groupKey) {
+              break;
+            }
+            groupRows.push(candidateRow);
+          }
+
+          displayUnits = toNumber(row && row.units);
+          displayLabUnits = toNumber(row && row.lab);
+          displayLecUnits = toNumber(row && row.lec);
+
+          if (groupRows.length > 1) {
+            mergedStudents = groupRows.reduce(function (maxValue, groupRow) {
+              return Math.max(maxValue, toNumber(groupRow && groupRow.student_count));
+            }, 0);
+
+            for (j = 0; j < groupRows.length; j += 1) {
+              row = groupRows[j];
+              tableBody +=
+                '<tr class="' + (j === 0 ? 'paired-row paired-anchor' : 'paired-row') + '">' +
+                  '<td class="workload-code">' + escapeHtml(String(row && row.sub_code || '')) + '</td>' +
+                  '<td class="workload-desc">' + buildWorkloadDescription(row, true) + '</td>' +
+                  '<td>' + escapeHtml(String(row && (row.course || row.section) || '')) + '</td>' +
+                  '<td class="workload-days">' + escapeHtml(String(row && row.days || '')) + '</td>' +
+                  '<td class="workload-time">' + formatCompactTime(String(row && row.time || '')) + '</td>' +
+                  '<td class="workload-room">' + escapeHtml(String(row && row.room || '')) + '</td>' +
+                  (j === 0
+                    ? '<td class="text-center merged-metric" rowspan="' + groupRows.length + '">' + escapeHtml(formatNumber(displayUnits)) + '</td>' +
+                      '<td class="text-center merged-metric" rowspan="' + groupRows.length + '">' + escapeHtml(formatNumber(displayLabUnits)) + '</td>' +
+                      '<td class="text-center merged-metric" rowspan="' + groupRows.length + '">' + escapeHtml(formatNumber(displayLecUnits)) + '</td>' +
+                      '<td class="text-center merged-metric" rowspan="' + groupRows.length + '">' + escapeHtml(formatNumber(row && row.faculty_load)) + '</td>' +
+                      '<td class="text-center merged-metric" rowspan="' + groupRows.length + '">' + escapeHtml(formatStudentCount(mergedStudents)) + '</td>'
+                    : '') +
+                '</tr>';
+            }
+
+            i += groupRows.length - 1;
+            continue;
+          }
+
+          tableBody +=
+            '<tr>' +
+              '<td class="workload-code">' + escapeHtml(String(row && row.sub_code || '')) + '</td>' +
+              '<td class="workload-desc">' + buildWorkloadDescription(row, false) + '</td>' +
+              '<td>' + escapeHtml(String(row && (row.course || row.section) || '')) + '</td>' +
+              '<td class="workload-days">' + escapeHtml(String(row && row.days || '')) + '</td>' +
+              '<td class="workload-time">' + formatCompactTime(String(row && row.time || '')) + '</td>' +
+              '<td class="workload-room">' + escapeHtml(String(row && row.room || '')) + '</td>' +
+              '<td class="text-center">' + escapeHtml(formatNumber(displayUnits)) + '</td>' +
+              '<td class="text-center">' + escapeHtml(formatNumber(displayLabUnits)) + '</td>' +
+              '<td class="text-center">' + escapeHtml(formatNumber(displayLecUnits)) + '</td>' +
+              '<td class="text-center fw-semibold">' + escapeHtml(formatNumber(row && row.faculty_load)) + '</td>' +
+              '<td class="text-center">' + escapeHtml(formatStudentCount(row && row.student_count)) + '</td>' +
+            '</tr>';
+        }
+
+        if (tableBody === "") {
+          tableBody = '<tr><td colspan="11" class="text-center text-muted">No workload assigned yet.</td></tr>';
+        }
+
+        return (
+          '<div class="card workload-card">' +
+            '<div class="card-header">' +
+              '<h5 class="m-0">Current Faculty Workload</h5>' +
+              '<small class="text-muted">Classes already assigned for this term</small>' +
+            '</div>' +
+            '<div class="card-body">' +
+              '<div class="faculty-directory-workload-alert">' +
+                '<div class="alert mb-0">' +
+                  '<strong>Faculty Selected:</strong> ' + escapeHtml(item && item.full_name || 'Selected Faculty') +
+                  ' | <span class="fw-summary-label">Term:</span> ' + escapeHtml(String(meta.term_text || academicTermText || 'Current academic term')) +
+                '</div>' +
+              '</div>' +
+              '<div class="table-responsive">' +
+                '<table class="table table-hover table-sm mb-0 workload-table">' +
+                  '<thead class="table-light">' +
+                    '<tr>' +
+                      '<th rowspan="2">Course No.</th>' +
+                      '<th rowspan="2">Course Description</th>' +
+                      '<th rowspan="2" class="course-head">Course</th>' +
+                      '<th rowspan="2" class="day-head">Day</th>' +
+                      '<th rowspan="2" class="time-head">Time</th>' +
+                      '<th rowspan="2" class="room-head">Room</th>' +
+                      '<th rowspan="2" class="text-center unit-head">Unit</th>' +
+                      '<th colspan="2" class="text-center hours-group-head">No. of Hours</th>' +
+                      '<th rowspan="2" class="text-center load-head">Load</th>' +
+                      '<th rowspan="2" class="text-center students-head"># of<br>Students</th>' +
+                    '</tr>' +
+                    '<tr>' +
+                      '<th class="text-center hours-subhead">Lab</th>' +
+                      '<th class="text-center hours-subhead">Lec</th>' +
+                    '</tr>' +
+                  '</thead>' +
+                  '<tbody>' + tableBody + '</tbody>' +
+                  '<tfoot class="table-light">' +
+                    '<tr class="workload-summary-row">' +
+                      '<th colspan="2" class="text-start workload-summary-label">Designation:</th>' +
+                      '<td colspan="4" class="workload-summary-value">' + escapeHtml(designationText) + '</td>' +
+                      '<td class="text-center fw-semibold">' + (designationUnits > 0 ? escapeHtml(formatNumber(designationUnits)) : '') + '</td>' +
+                      '<td></td>' +
+                      '<td></td>' +
+                      '<td class="text-center fw-semibold">' + (designationUnits > 0 ? escapeHtml(formatNumber(designationUnits)) : '') + '</td>' +
+                      '<td></td>' +
+                    '</tr>' +
+                    '<tr class="workload-summary-row summary-separator">' +
+                      '<th colspan="2" class="text-start workload-summary-label">No. of Prep:</th>' +
+                      '<td colspan="4" class="workload-summary-value">' + escapeHtml(String(preparationCount)) + '</td>' +
+                      '<td></td>' +
+                      '<td></td>' +
+                      '<td></td>' +
+                      '<td></td>' +
+                      '<td></td>' +
+                    '</tr>' +
+                    '<tr class="workload-summary-row workload-total-row">' +
+                      '<th colspan="6" class="text-end fw-semibold total-label">Total Load</th>' +
+                      '<th class="text-center">' + escapeHtml(formatNumber(grandTotalUnits)) + '</th>' +
+                      '<th class="text-center">' + escapeHtml(formatNumber(totals.lab)) + '</th>' +
+                      '<th class="text-center">' + escapeHtml(formatNumber(totals.lec)) + '</th>' +
+                      '<th class="text-center fw-semibold workload-total-load-screen">' +
+                        '<span class="total-load-screen-inner">' +
+                          '<span class="total-load-value">' + escapeHtml(formatNumber(grandTotalLoad)) + '</span>' +
+                          (loadStatus.label ? '<span class="load-status-inline ' + escapeHtml(loadStatus.className) + '">' + escapeHtml(loadStatus.label) + '</span>' : '') +
+                        '</span>' +
+                      '</th>' +
+                      '<th class="text-center"></th>' +
+                    '</tr>' +
+                  '</tfoot>' +
+                '</table>' +
+              '</div>' +
+            '</div>' +
+          '</div>'
+        );
+      }
+
+      function loadFacultyDirectoryWorkload(item) {
+        var workloadPanel = document.getElementById("facultyDirectoryWorkloadPanel");
+        var requestKey;
+
+        if (!workloadPanel || !item) {
+          return;
+        }
+
+        requestKey = [
+          Number(item.faculty_id) || 0,
+          Number(selectedCollegeId) || 0,
+          Number(dashboardCampusId) || 0,
+          Number(currentAyId) || 0,
+          Number(currentSem) || 0
+        ].join(":");
+
+        if (facultyDirectoryWorkloadCache.has(requestKey)) {
+          workloadPanel.innerHTML = buildFacultyWorkloadPanelMarkup(facultyDirectoryWorkloadCache.get(requestKey), item);
+          return;
+        }
+
+        workloadPanel.innerHTML = buildFacultyWorkloadLoader("Loading current scheduler workload...");
+
+        if (facultyDirectoryWorkloadRequest && facultyDirectoryWorkloadRequest.readyState !== 4) {
+          facultyDirectoryWorkloadRequest.abort();
+        }
+
+        facultyDirectoryWorkloadRequest = $.ajax({
+          url: "../backend/query_admin_faculty_workload.php",
+          type: "POST",
+          dataType: "json",
+          data: {
+            faculty_id: Number(item.faculty_id) || 0,
+            college_id: Number(selectedCollegeId) || 0,
+            campus_id: Number(dashboardCampusId) || 0
+          }
+        }).done(function (response) {
+          facultyDirectoryWorkloadRequest = null;
+
+          if (facultyDirectoryActiveFacultyId !== Number(item.faculty_id) || !document.getElementById("facultyDirectoryWorkloadPanel")) {
+            return;
+          }
+
+          if (!response || response.status !== "ok") {
+            workloadPanel.innerHTML = facultyDirectoryEmptyMarkup(
+              response && response.message
+                ? String(response.message)
+                : "Unable to load scheduler workload for this faculty."
+            );
+            return;
+          }
+
+          facultyDirectoryWorkloadCache.set(requestKey, response);
+          if (facultyDirectoryDetailSubtitle) {
+            facultyDirectoryDetailSubtitle.textContent =
+              facultyDirectoryScopeLabel + " | " + String((response.meta || {}).term_text || academicTermText || "Current academic term");
+          }
+          workloadPanel.innerHTML = buildFacultyWorkloadPanelMarkup(response, item);
+        }).fail(function (xhr, statusText) {
+          facultyDirectoryWorkloadRequest = null;
+          if (statusText === "abort") {
+            return;
+          }
+
+          if (facultyDirectoryActiveFacultyId !== Number(item.faculty_id) || !document.getElementById("facultyDirectoryWorkloadPanel")) {
+            return;
+          }
+
+          workloadPanel.innerHTML = facultyDirectoryEmptyMarkup("Unable to load scheduler workload for this faculty.");
+        });
+      }
+
+      function openFacultyDirectoryDetail(facultyId) {
+        var item = (Array.isArray(facultyDirectoryData) ? facultyDirectoryData : []).find(function (row) {
+          return Number(row && row.faculty_id) === Number(facultyId);
+        });
+
+        if (!item || !facultyDirectoryDetailBody || !facultyDirectoryDetailTitle || !facultyDirectoryDetailSubtitle) {
+          return;
+        }
+
+        facultyDirectoryActiveFacultyId = Number(item.faculty_id) || 0;
+
+        facultyDirectoryDetailTitle.textContent = item.full_name || "Faculty Details";
+        facultyDirectoryDetailSubtitle.textContent =
+          facultyDirectoryScopeLabel + " | " + (academicTermText || "Current academic term");
+
+        facultyDirectoryDetailBody.innerHTML =
+          '<div id="facultyDirectoryWorkloadPanel">' + buildFacultyWorkloadLoader("Loading current scheduler workload...") + '</div>';
+
+        if (facultyDirectoryDetailModal) {
+          facultyDirectoryDetailModal.show();
+        }
+
+        loadFacultyDirectoryWorkload(item);
       }
 
       function scheduleHeatmapAllRoomsLabel() {
@@ -2437,6 +4355,42 @@ if ($isUniversitySummary) {
             Number(highestUtilizationPercent).toFixed(1) +
             "% of the university's 40-hour weekly baseline."
         );
+      }
+
+      renderFacultyDirectoryList();
+
+      if (facultyDirectorySearchInput) {
+        facultyDirectorySearchInput.addEventListener("input", renderFacultyDirectoryList);
+      }
+
+      if (facultyDirectoryClearButton) {
+        facultyDirectoryClearButton.addEventListener("click", function () {
+          if (facultyDirectorySearchInput) {
+            facultyDirectorySearchInput.value = "";
+          }
+          renderFacultyDirectoryList();
+        });
+      }
+
+      if (facultyDirectoryList) {
+        facultyDirectoryList.addEventListener("click", function (event) {
+          var trigger = event.target.closest(".btn-view-faculty-detail");
+          if (!trigger) {
+            return;
+          }
+
+          openFacultyDirectoryDetail(trigger.getAttribute("data-faculty-id"));
+        });
+      }
+
+      if (facultyDirectoryDetailModalElement) {
+        facultyDirectoryDetailModalElement.addEventListener("hidden.bs.modal", function () {
+          facultyDirectoryActiveFacultyId = 0;
+          if (facultyDirectoryWorkloadRequest && facultyDirectoryWorkloadRequest.readyState !== 4) {
+            facultyDirectoryWorkloadRequest.abort();
+          }
+          facultyDirectoryWorkloadRequest = null;
+        });
       }
 
       if (!analyticsReady) {

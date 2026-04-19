@@ -6,6 +6,7 @@ include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/scheduler_access_helper.php';
 require_once '../backend/signatory_settings_helper.php';
+require_once '../backend/program_chair_signatory_helper.php';
 
 synk_scheduler_bootstrap_session_scope($conn);
 
@@ -46,6 +47,8 @@ function page_signatory_slot(array $settings, string $slotCode, string $fallback
 
 $collegeLabel = trim((string)($_SESSION['college_name'] ?? '')) ?: 'College not assigned';
 $currentTerm = synk_fetch_current_academic_term($conn);
+$currentAyId = (int)($currentTerm['ay_id'] ?? 0);
+$currentSemester = (int)($currentTerm['semester'] ?? 0);
 $currentTermText = (string)($currentTerm['term_text'] ?? 'Current academic term');
 
 if ($collegeId > 0) {
@@ -75,13 +78,13 @@ if ($collegeId > 0) {
 $pageAlert = null;
 $postedPreparedByName = '';
 $postedPreparedByTitle = '';
+$postedProgramChairProgramId = 0;
+$postedProgramChairFacultyId = 0;
+$preparedByFormWasSubmitted = false;
 
 if ($_SERVER['REQUEST_METHOD'] === 'POST') {
     $postedToken = trim((string)($_POST['csrf_token'] ?? ''));
-    $action = trim((string)($_POST['signatory_action'] ?? 'save'));
-
-    $postedPreparedByName = trim((string)($_POST['prepared_by_name'] ?? ''));
-    $postedPreparedByTitle = trim((string)($_POST['prepared_by_title'] ?? ''));
+    $isProgramChairRequest = isset($_POST['program_chair_action']);
 
     if (
         $postedToken === ''
@@ -91,41 +94,85 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             'type' => 'danger',
             'message' => 'Invalid request token. Please reload the page and try again.',
         ];
-    } elseif ($action === 'clear') {
-        $saved = synk_save_signatory_settings(
-            $conn,
-            'college',
-            $collegeId,
-            [
-                'prepared_by' => [
-                    'faculty_id' => 0,
-                    'signatory_name' => '',
-                    'signatory_title' => '',
-                ],
-            ],
-            $userId
-        );
+    } elseif ($isProgramChairRequest) {
+        $programChairAction = trim((string)($_POST['program_chair_action'] ?? 'save'));
+        $postedProgramChairProgramId = (int)($_POST['program_chair_program_id'] ?? 0);
+        $postedProgramChairFacultyId = (int)($_POST['program_chair_faculty_id'] ?? 0);
 
-        if ($saved) {
-            $pageAlert = [
-                'type' => 'success',
-                'message' => 'Prepared by signatory cleared successfully.',
-            ];
-            $postedPreparedByName = '';
-            $postedPreparedByTitle = '';
-        } else {
-            $pageAlert = [
-                'type' => 'danger',
-                'message' => 'Unable to clear the prepared by signatory right now.',
-            ];
-        }
-    } else {
-        if ($postedPreparedByName === '' || $postedPreparedByTitle === '') {
+        if ($postedProgramChairProgramId <= 0) {
             $pageAlert = [
                 'type' => 'warning',
-                'message' => 'Please enter both the prepared by signatory name and designation.',
+                'message' => 'Please select a program for the Program Chair assignment.',
             ];
+        } elseif (!synk_program_chair_signatory_program_belongs_to_college($conn, $collegeId, $postedProgramChairProgramId)) {
+            $pageAlert = [
+                'type' => 'danger',
+                'message' => 'The selected program does not belong to your assigned college.',
+            ];
+        } elseif ($programChairAction === 'remove') {
+            $removed = synk_program_chair_signatory_remove($conn, $collegeId, $postedProgramChairProgramId, $userId);
+
+            if ($removed) {
+                $pageAlert = [
+                    'type' => 'success',
+                    'message' => 'Program Chair assignment removed successfully.',
+                ];
+                $postedProgramChairProgramId = 0;
+                $postedProgramChairFacultyId = 0;
+            } else {
+                $pageAlert = [
+                    'type' => 'danger',
+                    'message' => 'Unable to remove the Program Chair assignment right now.',
+                ];
+            }
         } else {
+            if ($postedProgramChairFacultyId <= 0) {
+                $pageAlert = [
+                    'type' => 'warning',
+                    'message' => 'Please select a faculty member for the Program Chair assignment.',
+                ];
+            } elseif (!synk_program_chair_signatory_faculty_is_assigned(
+                $conn,
+                $collegeId,
+                $postedProgramChairFacultyId,
+                $currentAyId,
+                $currentSemester
+            )) {
+                $pageAlert = [
+                    'type' => 'danger',
+                    'message' => 'The selected faculty member is not active in this college for the current term.',
+                ];
+            } else {
+                $saved = synk_program_chair_signatory_save(
+                    $conn,
+                    $collegeId,
+                    $postedProgramChairProgramId,
+                    $postedProgramChairFacultyId,
+                    $userId
+                );
+
+                if ($saved) {
+                    $pageAlert = [
+                        'type' => 'success',
+                        'message' => 'Program Chair assignment saved successfully.',
+                    ];
+                    $postedProgramChairProgramId = 0;
+                    $postedProgramChairFacultyId = 0;
+                } else {
+                    $pageAlert = [
+                        'type' => 'danger',
+                        'message' => 'Unable to save the Program Chair assignment right now.',
+                    ];
+                }
+            }
+        }
+    } else {
+        $preparedByFormWasSubmitted = true;
+        $action = trim((string)($_POST['signatory_action'] ?? 'save'));
+        $postedPreparedByName = trim((string)($_POST['prepared_by_name'] ?? ''));
+        $postedPreparedByTitle = trim((string)($_POST['prepared_by_title'] ?? ''));
+
+        if ($action === 'clear') {
             $saved = synk_save_signatory_settings(
                 $conn,
                 'college',
@@ -133,8 +180,8 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
                 [
                     'prepared_by' => [
                         'faculty_id' => 0,
-                        'signatory_name' => $postedPreparedByName,
-                        'signatory_title' => $postedPreparedByTitle,
+                        'signatory_name' => '',
+                        'signatory_title' => '',
                     ],
                 ],
                 $userId
@@ -143,13 +190,48 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST') {
             if ($saved) {
                 $pageAlert = [
                     'type' => 'success',
-                    'message' => 'Prepared by signatory saved successfully.',
+                    'message' => 'Prepared by signatory cleared successfully.',
                 ];
+                $postedPreparedByName = '';
+                $postedPreparedByTitle = '';
             } else {
                 $pageAlert = [
                     'type' => 'danger',
-                    'message' => 'Unable to save the prepared by signatory right now.',
+                    'message' => 'Unable to clear the prepared by signatory right now.',
                 ];
+            }
+        } else {
+            if ($postedPreparedByName === '' || $postedPreparedByTitle === '') {
+                $pageAlert = [
+                    'type' => 'warning',
+                    'message' => 'Please enter both the prepared by signatory name and designation.',
+                ];
+            } else {
+                $saved = synk_save_signatory_settings(
+                    $conn,
+                    'college',
+                    $collegeId,
+                    [
+                        'prepared_by' => [
+                            'faculty_id' => 0,
+                            'signatory_name' => $postedPreparedByName,
+                            'signatory_title' => $postedPreparedByTitle,
+                        ],
+                    ],
+                    $userId
+                );
+
+                if ($saved) {
+                    $pageAlert = [
+                        'type' => 'success',
+                        'message' => 'Prepared by signatory saved successfully.',
+                    ];
+                } else {
+                    $pageAlert = [
+                        'type' => 'danger',
+                        'message' => 'Unable to save the prepared by signatory right now.',
+                    ];
+                }
             }
         }
     }
@@ -164,10 +246,14 @@ $checkedByRightSignatory = page_signatory_slot($adminSignatorySettings, 'checked
 $recommendingApprovalSignatory = page_signatory_slot($adminSignatorySettings, 'recommending_approval', 'Recommending Approval');
 $approvedBySignatory = page_signatory_slot($adminSignatorySettings, 'approved_by', 'Approved by');
 
-$preparedByFormName = $postedPreparedByName !== '' || ($_SERVER['REQUEST_METHOD'] === 'POST' && $postedPreparedByName === '')
+$programChairPrograms = synk_program_chair_signatory_fetch_program_options($conn, $collegeId);
+$programChairFacultyOptions = synk_program_chair_signatory_fetch_faculty_options($conn, $collegeId, $currentAyId, $currentSemester);
+$programChairAssignments = synk_program_chair_signatory_fetch_assignments($conn, $collegeId);
+
+$preparedByFormName = $preparedByFormWasSubmitted
     ? $postedPreparedByName
     : $preparedBySignatory['signatory_name'];
-$preparedByFormTitle = $postedPreparedByTitle !== '' || ($_SERVER['REQUEST_METHOD'] === 'POST' && $postedPreparedByTitle === '')
+$preparedByFormTitle = $preparedByFormWasSubmitted
     ? $postedPreparedByTitle
     : $preparedBySignatory['signatory_title'];
 ?>
@@ -351,6 +437,37 @@ $preparedByFormTitle = $postedPreparedByTitle !== '' || ($_SERVER['REQUEST_METHO
       flex-wrap: wrap;
     }
 
+    .program-chair-assignment-table th {
+      font-size: 0.76rem;
+      letter-spacing: 0.06em;
+      text-transform: uppercase;
+      color: #667a93;
+    }
+
+    .program-chair-assignment-table td {
+      vertical-align: middle;
+      color: #4f6078;
+    }
+
+    .program-chair-program-name {
+      font-weight: 700;
+      color: #233446;
+    }
+
+    .program-chair-faculty-name {
+      font-weight: 700;
+      color: #2f3f57;
+    }
+
+    .program-chair-empty {
+      padding: 1rem;
+      border-radius: 0.95rem;
+      border: 1px dashed #ccd8ea;
+      background: #fbfcff;
+      color: #6b7280;
+      font-weight: 600;
+    }
+
     @media (max-width: 767.98px) {
       .signatory-save-row .btn {
         width: 100%;
@@ -487,6 +604,124 @@ $preparedByFormTitle = $postedPreparedByTitle !== '' || ($_SERVER['REQUEST_METHO
                         <div class="signatory-reference-name"><?= page_h($approvedBySignatory['signatory_name'] !== '' ? $approvedBySignatory['signatory_name'] : '-') ?></div>
                         <div class="signatory-reference-title"><?= page_h($approvedBySignatory['signatory_title'] !== '' ? $approvedBySignatory['signatory_title'] : '-') ?></div>
                       </div>
+                    </div>
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            <div class="col-12">
+              <div class="card signatory-card">
+                <div class="card-body p-4">
+                  <div class="signatory-pane">
+                    <div class="d-flex flex-column flex-lg-row justify-content-between gap-3 mb-4">
+                      <div>
+                        <span class="signatory-section-label">Program-level signatories</span>
+                        <h5 class="mb-2">Program Chair Assignments</h5>
+                        <p class="text-muted mb-0">Assign the Program Chair per program using faculty already assigned to this college for the current term. Saving an existing program updates its chair only.</p>
+                      </div>
+                      <div class="signatory-chip align-self-start">
+                        <span>Scope</span>
+                        <strong><?= page_h($collegeLabel) ?></strong>
+                      </div>
+                    </div>
+
+                    <form method="POST" class="row g-3 align-items-end" novalidate>
+                      <input type="hidden" name="csrf_token" value="<?= page_h($csrfToken) ?>">
+                      <input type="hidden" name="program_chair_action" value="save">
+
+                      <div class="col-lg-5">
+                        <label class="form-label" for="program_chair_program_id">Program</label>
+                        <select class="form-select" id="program_chair_program_id" name="program_chair_program_id" required>
+                          <option value="">Select program</option>
+                          <?php foreach ($programChairPrograms as $programOption): ?>
+                            <?php $programIdOption = (int)($programOption['program_id'] ?? 0); ?>
+                            <option value="<?= $programIdOption ?>" <?= $postedProgramChairProgramId === $programIdOption ? 'selected' : '' ?>>
+                              <?= page_h($programOption['label'] ?? '') ?>
+                            </option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+
+                      <div class="col-lg-5">
+                        <label class="form-label" for="program_chair_faculty_id">Faculty / Program Chair</label>
+                        <select class="form-select" id="program_chair_faculty_id" name="program_chair_faculty_id" required>
+                          <option value="">Select faculty</option>
+                          <?php foreach ($programChairFacultyOptions as $facultyOption): ?>
+                            <?php
+                              $facultyIdOption = (int)($facultyOption['faculty_id'] ?? 0);
+                              $facultyLabel = trim((string)($facultyOption['full_name'] ?? ''));
+                              $designationLabel = trim((string)($facultyOption['designation_name'] ?? ''));
+                              if ($designationLabel !== '') {
+                                  $facultyLabel .= ' - ' . $designationLabel;
+                              }
+                            ?>
+                            <option value="<?= $facultyIdOption ?>" <?= $postedProgramChairFacultyId === $facultyIdOption ? 'selected' : '' ?>>
+                              <?= page_h($facultyLabel) ?>
+                            </option>
+                          <?php endforeach; ?>
+                        </select>
+                      </div>
+
+                      <div class="col-lg-2 d-grid">
+                        <button type="submit" class="btn btn-primary">
+                          Save Chair
+                        </button>
+                      </div>
+                    </form>
+
+                    <div class="mt-4">
+                      <h6 class="mb-3">Current program chair assignments</h6>
+
+                      <?php if (empty($programChairPrograms)): ?>
+                        <div class="program-chair-empty">No active programs are available for this college.</div>
+                      <?php else: ?>
+                        <div class="table-responsive">
+                          <table class="table table-hover align-middle mb-0 program-chair-assignment-table">
+                            <thead class="table-light">
+                              <tr>
+                                <th>Program</th>
+                                <th>Assigned Program Chair</th>
+                                <th>Designation</th>
+                                <th class="text-end">Action</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              <?php foreach ($programChairPrograms as $programOption): ?>
+                                <?php
+                                  $programIdOption = (int)($programOption['program_id'] ?? 0);
+                                  $assignment = is_array($programChairAssignments[$programIdOption] ?? null)
+                                      ? $programChairAssignments[$programIdOption]
+                                      : null;
+                                ?>
+                                <tr>
+                                  <td>
+                                    <div class="program-chair-program-name"><?= page_h($programOption['label'] ?? '') ?></div>
+                                  </td>
+                                  <td>
+                                    <div class="program-chair-faculty-name"><?= page_h($assignment['faculty_name'] ?? '-') ?></div>
+                                  </td>
+                                  <td><?= page_h($assignment['designation_name'] ?? '-') ?></td>
+                                  <td class="text-end">
+                                    <?php if (is_array($assignment)): ?>
+                                      <form method="POST" class="d-inline">
+                                        <input type="hidden" name="csrf_token" value="<?= page_h($csrfToken) ?>">
+                                        <input type="hidden" name="program_chair_action" value="remove">
+                                        <input type="hidden" name="program_chair_program_id" value="<?= $programIdOption ?>">
+                                        <button type="submit" class="btn btn-sm btn-outline-danger">
+                                          Remove
+                                        </button>
+                                      </form>
+                                    <?php else: ?>
+                                      <span class="text-muted small">Not assigned</span>
+                                    <?php endif; ?>
+                                  </td>
+                                </tr>
+                              <?php endforeach; ?>
+                            </tbody>
+                          </table>
+                        </div>
+                      <?php endif; ?>
                     </div>
                   </div>
                 </div>

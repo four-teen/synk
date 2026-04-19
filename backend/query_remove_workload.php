@@ -1,8 +1,12 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/faculty_need_helper.php';
 
 if (!isset($_SESSION['user_id'])) exit;
+
+$assigneeType = strtolower(trim((string)($_POST['assignee_type'] ?? 'faculty')));
+$isFacultyNeed = $assigneeType === 'faculty_need';
 
 $ids = [];
 
@@ -34,9 +38,16 @@ $ids = array_values($ids);
 $placeholders = implode(',', array_fill(0, count($ids), '?'));
 $types = str_repeat('i', count($ids));
 
+$targetTable = $isFacultyNeed ? synk_faculty_need_workload_table_name() : 'tbl_faculty_workload_sched';
+$targetColumn = $isFacultyNeed ? 'need_workload_id' : 'workload_id';
+
+if ($isFacultyNeed) {
+    synk_faculty_need_ensure_tables($conn);
+}
+
 $stmt = $conn->prepare("
-    DELETE FROM tbl_faculty_workload_sched
-    WHERE workload_id IN ($placeholders)
+    DELETE FROM `{$targetTable}`
+    WHERE {$targetColumn} IN ($placeholders)
 ");
 
 if (!$stmt) exit;

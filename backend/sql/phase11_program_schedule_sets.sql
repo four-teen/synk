@@ -40,3 +40,27 @@ CREATE TABLE tbl_program_schedule_set_row (
     ON DELETE CASCADE
     ON UPDATE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;
+
+CREATE TABLE IF NOT EXISTS tbl_program_schedule_set_workload_row (
+  schedule_set_workload_row_id INT(10) UNSIGNED NOT NULL AUTO_INCREMENT,
+  schedule_set_id INT(10) UNSIGNED NOT NULL,
+  schedule_set_row_id INT(10) UNSIGNED NOT NULL,
+  offering_id INT(10) UNSIGNED NOT NULL,
+  program_id INT(10) UNSIGNED NOT NULL,
+  schedule_type VARCHAR(10) NOT NULL DEFAULT 'LEC',
+  block_order SMALLINT(5) UNSIGNED NOT NULL DEFAULT 1,
+  faculty_id INT(10) UNSIGNED NOT NULL,
+  faculty_name_snapshot VARCHAR(180) NOT NULL DEFAULT '',
+  subject_code_snapshot VARCHAR(50) NOT NULL DEFAULT '',
+  section_name_snapshot VARCHAR(120) NOT NULL DEFAULT '',
+  date_created DATETIME NOT NULL DEFAULT CURRENT_TIMESTAMP,
+  PRIMARY KEY (schedule_set_workload_row_id),
+  UNIQUE KEY uq_pss_workload_row_faculty (schedule_set_id, schedule_set_row_id, faculty_id),
+  KEY idx_pss_workload_set (schedule_set_id),
+  KEY idx_pss_workload_set_row (schedule_set_row_id),
+  KEY idx_pss_workload_faculty (faculty_id),
+  CONSTRAINT fk_pss_workload_set
+    FOREIGN KEY (schedule_set_id) REFERENCES tbl_program_schedule_set (schedule_set_id)
+    ON DELETE CASCADE
+    ON UPDATE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_general_ci;

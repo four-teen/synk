@@ -4,6 +4,7 @@ include 'db.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
+require_once __DIR__ . '/faculty_need_helper.php';
 
 header('Content-Type: application/json');
 
@@ -122,19 +123,27 @@ $schedulePolicy = synk_fetch_effective_schedule_policy($conn, $college_id);
 /* ===============================
    INPUTS
 ================================ */
+$assigneeType = strtolower(trim((string)($_POST['assignee_type'] ?? 'faculty')));
 $faculty_id = (int)($_POST['faculty_id'] ?? 0);
+$faculty_need_id = (int)($_POST['faculty_need_id'] ?? 0);
 $ay_id      = (int)($_POST['ay_id'] ?? 0);
 $semester   = (int)($_POST['semester'] ?? 0); // 1,2,3
 $schedules  = $_POST['schedule_ids'] ?? [];
+$isFacultyNeed = $assigneeType === 'faculty_need';
+$targetId = $isFacultyNeed ? $faculty_need_id : $faculty_id;
 
 if (
-    !$faculty_id ||
+    !$targetId ||
     !$ay_id ||
     !$semester ||
     !is_array($schedules) ||
     count($schedules) === 0
 ) {
     respond('error', 'Invalid input.');
+}
+
+if ($isFacultyNeed && !is_array(synk_faculty_need_find($conn, $college_id, $ay_id, $semester, $faculty_need_id))) {
+    respond('error', 'The selected faculty need is no longer available for this term.');
 }
 
 $scheduleMap = [];
@@ -151,6 +160,7 @@ if (empty($schedule_ids)) {
 
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+synk_faculty_need_ensure_tables($conn);
 
 /* ===============================
    LOAD CANDIDATE SCHEDULES
@@ -182,7 +192,11 @@ $candidateJoinParts = [
     'LEFT JOIN tbl_faculty_workload_sched assigned_fw',
     '    ON assigned_fw.schedule_id = cs.schedule_id',
     '   AND assigned_fw.ay_id = ?',
-    '   AND assigned_fw.semester = ?'
+    '   AND assigned_fw.semester = ?',
+    'LEFT JOIN `' . synk_faculty_need_workload_table_name() . '` assigned_need',
+    '    ON assigned_need.schedule_id = cs.schedule_id',
+    '   AND assigned_need.ay_id = ?',
+    '   AND assigned_need.semester = ?'
 ];
 
 $candidateSql = "
@@ -194,12 +208,13 @@ $candidateSql = "
       AND o.semester = ?
       AND p.college_id = ?
       AND assigned_fw.schedule_id IS NULL
+      AND assigned_need.schedule_id IS NULL
     ORDER BY cs.time_start, cs.schedule_id
 ";
 
 $candStmt = $conn->prepare($candidateSql);
-$candidateBindTypes = 'ii';
-$candidateBindParams = [$ay_id, $semester];
+$candidateBindTypes = 'iiii';
+$candidateBindParams = [$ay_id, $semester, $ay_id, $semester];
 
 $candidateBindTypes .= 'iii';
 $candidateBindParams[] = $ay_id;
@@ -226,6 +241,8 @@ if (empty($candidates)) {
    - no college filter on purpose:
      faculty cannot teach overlapping classes anywhere
 ================================ */
+$existingTable = $isFacultyNeed ? synk_faculty_need_workload_table_name() : 'tbl_faculty_workload_sched';
+$existingTargetColumn = $isFacultyNeed ? 'fw.faculty_need_id' : 'fw.faculty_id';
 $existingSql = "
     SELECT
         cs.schedule_id,
@@ -235,7 +252,7 @@ $existingSql = "
         cs.time_end,
         sm.sub_code,
         sec.section_name
-    FROM tbl_faculty_workload_sched fw
+    FROM `{$existingTable}` fw
     INNER JOIN tbl_class_schedule cs
         ON cs.schedule_id = fw.schedule_id
     INNER JOIN tbl_prospectus_offering o
@@ -243,13 +260,13 @@ $existingSql = "
     " . synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph') . "
     INNER JOIN tbl_subject_masterlist sm
         ON sm.sub_id = ps.sub_id
-    WHERE fw.faculty_id = ?
+    WHERE {$existingTargetColumn} = ?
       AND fw.ay_id = ?
       AND fw.semester = ?
 ";
 
 $existingStmt = $conn->prepare($existingSql);
-$existingStmt->bind_param('iii', $faculty_id, $ay_id, $semester);
+$existingStmt->bind_param('iii', $targetId, $ay_id, $semester);
 $existingStmt->execute();
 $existingRes = $existingStmt->get_result();
 
@@ -263,11 +280,17 @@ $existingStmt->close();
 /* ===============================
    CONFLICT CHECK + INSERT
 ================================ */
-$insSql = "
-    INSERT IGNORE INTO tbl_faculty_workload_sched
-        (schedule_id, faculty_id, ay_id, semester)
-    VALUES (?, ?, ?, ?)
-";
+$insSql = $isFacultyNeed
+    ? "
+        INSERT IGNORE INTO `" . synk_faculty_need_workload_table_name() . "`
+            (schedule_id, faculty_need_id, ay_id, semester)
+        VALUES (?, ?, ?, ?)
+    "
+    : "
+        INSERT IGNORE INTO tbl_faculty_workload_sched
+            (schedule_id, faculty_id, ay_id, semester)
+        VALUES (?, ?, ?, ?)
+    ";
 $insStmt = $conn->prepare($insSql);
 
 $inserted = 0;
@@ -303,7 +326,7 @@ foreach ($candidates as $cand) {
     }
 
     $sid = (int)$cand['schedule_id'];
-    $insStmt->bind_param('iiii', $sid, $faculty_id, $ay_id, $semester);
+    $insStmt->bind_param('iiii', $sid, $targetId, $ay_id, $semester);
     if ($insStmt->execute() && $insStmt->affected_rows > 0) {
         $inserted++;
         $acceptedBatch[] = $cand;
@@ -348,7 +371,7 @@ if (!empty($conflicts)) {
 
     $summary = $inserted > 0
         ? "<p class='mb-2'><b>{$inserted}</b> class(es) were applied. Some selections were skipped due to workload conflicts:</p>"
-        : "<p class='mb-2'>No class was applied because all selected schedules conflict with this faculty's workload:</p>";
+        : "<p class='mb-2'>No class was applied because all selected schedules conflict with the selected assignee's workload:</p>";
 
     $html = "<div class='text-start'>{$summary}<ul class='mb-0'>" . implode('', $items) . "</ul></div>";
 

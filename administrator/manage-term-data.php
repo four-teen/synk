@@ -4,6 +4,8 @@ ob_start();
 
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
+require_once '../backend/schema_helper.php';
+require_once '../backend/saved_schedule_helper.php';
 
 if (!isset($_SESSION['user_id']) || (string)($_SESSION['role'] ?? '') !== 'admin') {
     header('Location: ../index.php');
@@ -231,6 +233,16 @@ function synk_admin_fetch_scope_preview(mysqli $conn, $collegeId, $ayId, $semest
         'scheduled_offerings_total' => 0,
         'schedule_rows_total' => 0,
         'faculty_assignments_total' => 0,
+        'faculty_need_total' => 0,
+        'faculty_need_assignments_total' => 0,
+        'merge_rows_total' => 0,
+        'saved_schedule_sets_total' => 0,
+        'saved_schedule_rows_total' => 0,
+        'saved_schedule_workload_rows_total' => 0,
+        'workload_simulation_rows_total' => 0,
+        'loaded_schedule_set_id' => 0,
+        'loaded_schedule_set_name' => '',
+        'loaded_schedule_scope_label' => '',
     ];
 
     $sql = "
@@ -269,14 +281,197 @@ function synk_admin_fetch_scope_preview(mysqli $conn, $collegeId, $ayId, $semest
     $row = $stmt->get_result()->fetch_assoc() ?: [];
     $stmt->close();
 
-    return [
+    $preview = [
         'programs_total' => (int)($row['programs_total'] ?? 0),
         'sections_total' => (int)($row['sections_total'] ?? 0),
         'offerings_total' => (int)($row['offerings_total'] ?? 0),
         'scheduled_offerings_total' => (int)($row['scheduled_offerings_total'] ?? 0),
         'schedule_rows_total' => (int)($row['schedule_rows_total'] ?? 0),
         'faculty_assignments_total' => (int)($row['faculty_assignments_total'] ?? 0),
+        'faculty_need_total' => 0,
+        'faculty_need_assignments_total' => 0,
+        'merge_rows_total' => 0,
+        'saved_schedule_sets_total' => 0,
+        'saved_schedule_rows_total' => 0,
+        'saved_schedule_workload_rows_total' => 0,
+        'workload_simulation_rows_total' => 0,
+        'loaded_schedule_set_id' => 0,
+        'loaded_schedule_set_name' => '',
+        'loaded_schedule_scope_label' => '',
     ];
+
+    if (synk_table_exists($conn, 'tbl_faculty_need')) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS total
+            FROM tbl_faculty_need
+            WHERE college_id = ?
+              AND ay_id = ?
+              AND semester = ?
+              AND status = 'active'
+        ");
+        if ($stmt instanceof mysqli_stmt) {
+            $stmt->bind_param('iii', $collegeId, $ayId, $semester);
+            $stmt->execute();
+            $needRow = $stmt->get_result()->fetch_assoc() ?: [];
+            $preview['faculty_need_total'] = (int)($needRow['total'] ?? 0);
+            $stmt->close();
+        }
+    }
+
+    if (synk_table_exists($conn, 'tbl_faculty_need_workload_sched') && synk_table_exists($conn, 'tbl_faculty_need')) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS total
+            FROM tbl_faculty_need_workload_sched fnw
+            INNER JOIN tbl_faculty_need fn
+                ON fn.faculty_need_id = fnw.faculty_need_id
+            WHERE fn.college_id = ?
+              AND fn.ay_id = ?
+              AND fn.semester = ?
+        ");
+        if ($stmt instanceof mysqli_stmt) {
+            $stmt->bind_param('iii', $collegeId, $ayId, $semester);
+            $stmt->execute();
+            $workloadRow = $stmt->get_result()->fetch_assoc() ?: [];
+            $preview['faculty_need_assignments_total'] = (int)($workloadRow['total'] ?? 0);
+            $stmt->close();
+        }
+    }
+
+    if (synk_table_exists($conn, 'tbl_class_schedule_merge')) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(DISTINCT merge_map.schedule_merge_id) AS total
+            FROM tbl_class_schedule_merge merge_map
+            LEFT JOIN tbl_prospectus_offering owner_offer
+                ON owner_offer.offering_id = merge_map.owner_offering_id
+            LEFT JOIN tbl_program owner_program
+                ON owner_program.program_id = owner_offer.program_id
+            LEFT JOIN tbl_prospectus_offering member_offer
+                ON member_offer.offering_id = merge_map.member_offering_id
+            LEFT JOIN tbl_program member_program
+                ON member_program.program_id = member_offer.program_id
+            WHERE (
+                    owner_program.college_id = ?
+                AND owner_offer.ay_id = ?
+                AND owner_offer.semester = ?
+            ) OR (
+                    member_program.college_id = ?
+                AND member_offer.ay_id = ?
+                AND member_offer.semester = ?
+            )
+        ");
+        if ($stmt instanceof mysqli_stmt) {
+            $stmt->bind_param('iiiiii', $collegeId, $ayId, $semester, $collegeId, $ayId, $semester);
+            $stmt->execute();
+            $mergeRow = $stmt->get_result()->fetch_assoc() ?: [];
+            $preview['merge_rows_total'] = (int)($mergeRow['total'] ?? 0);
+            $stmt->close();
+        }
+    }
+
+    if (synk_table_exists($conn, 'tbl_program_schedule_set')) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS total
+            FROM tbl_program_schedule_set
+            WHERE college_id = ?
+              AND ay_id = ?
+              AND semester = ?
+        ");
+        if ($stmt instanceof mysqli_stmt) {
+            $stmt->bind_param('iii', $collegeId, $ayId, $semester);
+            $stmt->execute();
+            $setRow = $stmt->get_result()->fetch_assoc() ?: [];
+            $preview['saved_schedule_sets_total'] = (int)($setRow['total'] ?? 0);
+            $stmt->close();
+        }
+
+        if (synk_table_exists($conn, 'tbl_program_schedule_set_row')) {
+            $stmt = $conn->prepare("
+                SELECT COUNT(*) AS total
+                FROM tbl_program_schedule_set_row sr
+                INNER JOIN tbl_program_schedule_set ss
+                    ON ss.schedule_set_id = sr.schedule_set_id
+                WHERE ss.college_id = ?
+                  AND ss.ay_id = ?
+                  AND ss.semester = ?
+            ");
+            if ($stmt instanceof mysqli_stmt) {
+                $stmt->bind_param('iii', $collegeId, $ayId, $semester);
+                $stmt->execute();
+                $setRowCount = $stmt->get_result()->fetch_assoc() ?: [];
+                $preview['saved_schedule_rows_total'] = (int)($setRowCount['total'] ?? 0);
+                $stmt->close();
+            }
+        }
+
+        if (synk_saved_schedule_workload_table_exists($conn)) {
+            $workloadTable = synk_saved_schedule_workload_table_name();
+            $stmt = $conn->prepare("
+                SELECT COUNT(*) AS total
+                FROM `{$workloadTable}` sw
+                INNER JOIN tbl_program_schedule_set ss
+                    ON ss.schedule_set_id = sw.schedule_set_id
+                WHERE ss.college_id = ?
+                  AND ss.ay_id = ?
+                  AND ss.semester = ?
+            ");
+            if ($stmt instanceof mysqli_stmt) {
+                $stmt->bind_param('iii', $collegeId, $ayId, $semester);
+                $stmt->execute();
+                $savedWorkloadRow = $stmt->get_result()->fetch_assoc() ?: [];
+                $preview['saved_schedule_workload_rows_total'] = (int)($savedWorkloadRow['total'] ?? 0);
+                $stmt->close();
+            }
+        }
+
+        $workspaceState = synk_saved_schedule_load_workspace_state($conn, (int)$collegeId, (int)$ayId, (int)$semester);
+        if (is_array($workspaceState)) {
+            $preview['loaded_schedule_set_id'] = (int)($workspaceState['schedule_set_id'] ?? 0);
+            $preview['loaded_schedule_set_name'] = (string)($workspaceState['set_name'] ?? '');
+            $preview['loaded_schedule_scope_label'] = (string)($workspaceState['scope_label'] ?? '');
+        }
+    }
+
+    if (synk_table_exists($conn, 'tbl_faculty_workload_simulation')) {
+        $stmt = $conn->prepare("
+            SELECT COUNT(*) AS total
+            FROM tbl_faculty_workload_simulation
+            WHERE college_id = ?
+              AND ay_id = ?
+              AND semester = ?
+        ");
+        if ($stmt instanceof mysqli_stmt) {
+            $stmt->bind_param('iii', $collegeId, $ayId, $semester);
+            $stmt->execute();
+            $simulationRow = $stmt->get_result()->fetch_assoc() ?: [];
+            $preview['workload_simulation_rows_total'] = (int)($simulationRow['total'] ?? 0);
+            $stmt->close();
+        }
+    }
+
+    return $preview;
+}
+
+function synk_admin_scope_has_operational_data(array $preview): bool
+{
+    foreach ([
+        'offerings_total',
+        'schedule_rows_total',
+        'faculty_assignments_total',
+        'faculty_need_total',
+        'faculty_need_assignments_total',
+        'merge_rows_total',
+        'saved_schedule_sets_total',
+        'saved_schedule_rows_total',
+        'saved_schedule_workload_rows_total',
+        'workload_simulation_rows_total',
+        'loaded_schedule_set_id',
+    ] as $key) {
+        if ((int)($preview[$key] ?? 0) > 0) {
+            return true;
+        }
+    }
+
+    return false;
 }
 
 function synk_admin_fetch_campus_trend(mysqli $conn, $campuses, $maxTerms = 6)
@@ -377,6 +572,30 @@ function synk_admin_execute_statement(mysqli_stmt $stmt, $errorMessage)
     }
 }
 
+function synk_admin_delete_rows_by_id_list(mysqli $conn, string $tableName, string $columnName, array $ids): int
+{
+    $normalized = [];
+    foreach ($ids as $id) {
+        $value = (int)$id;
+        if ($value > 0) {
+            $normalized[$value] = $value;
+        }
+    }
+
+    if (empty($normalized) || !synk_table_exists($conn, $tableName)) {
+        return 0;
+    }
+
+    $idList = implode(',', array_map('intval', array_values($normalized)));
+    $sql = "DELETE FROM `{$tableName}` WHERE `{$columnName}` IN ({$idList})";
+
+    if (!$conn->query($sql)) {
+        throw new RuntimeException("Failed to clear rows from {$tableName}.");
+    }
+
+    return max(0, (int)$conn->affected_rows);
+}
+
 $campuses = synk_admin_fetch_campuses($conn);
 $colleges = synk_admin_fetch_colleges($conn);
 $academicYears = synk_admin_fetch_academic_years($conn);
@@ -433,11 +652,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $previewBeforeReset = synk_admin_fetch_scope_preview($conn, $postedCollegeId, $postedAyId, $postedSemester);
-    if (
-        $previewBeforeReset['offerings_total'] <= 0 &&
-        $previewBeforeReset['schedule_rows_total'] <= 0 &&
-        $previewBeforeReset['faculty_assignments_total'] <= 0
-    ) {
+    if (!synk_admin_scope_has_operational_data($previewBeforeReset)) {
         synk_admin_redirect_with_flash(
             $postedCampusId,
             $postedCollegeId,
@@ -455,7 +670,7 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
             $postedAyId,
             $postedSemester,
             'warning',
-            'Confirm that you understand this action removes schedules and faculty assignments for the selected term.'
+            'Confirm that you understand this action removes schedules, workload assignments, merge links, and saved schedule artifacts for the selected term.'
         );
     }
 
@@ -474,11 +689,222 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $deletedAssignments = 0;
+    $deletedFacultyNeedAssignments = 0;
+    $deletedFacultyNeeds = 0;
+    $deletedMergeRows = 0;
+    $deletedSavedScheduleSets = 0;
+    $deletedSavedScheduleRows = 0;
+    $deletedSavedScheduleWorkloadRows = 0;
+    $deletedWorkloadSimulations = 0;
+    $clearedLoadedScheduleStates = 0;
     $deletedSchedules = 0;
 
     $conn->begin_transaction();
 
     try {
+        $offeringIds = [];
+        $scheduleIds = [];
+        $scheduleSetIds = [];
+
+        $offeringStmt = $conn->prepare("
+            SELECT po.offering_id
+            FROM tbl_prospectus_offering po
+            INNER JOIN tbl_program p
+                ON p.program_id = po.program_id
+            WHERE p.college_id = ?
+              AND po.ay_id = ?
+              AND po.semester = ?
+        ");
+
+        if (!$offeringStmt) {
+            throw new RuntimeException('Failed to inspect scoped offerings.');
+        }
+
+        $offeringStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+        synk_admin_execute_statement($offeringStmt, 'Failed to inspect scoped offerings.');
+        $offeringResult = $offeringStmt->get_result();
+        while ($offeringResult instanceof mysqli_result && ($offeringRow = $offeringResult->fetch_assoc())) {
+            $offeringId = (int)($offeringRow['offering_id'] ?? 0);
+            if ($offeringId > 0) {
+                $offeringIds[$offeringId] = $offeringId;
+            }
+        }
+        $offeringStmt->close();
+
+        if (!empty($offeringIds) && synk_table_exists($conn, 'tbl_class_schedule')) {
+            $offeringIdList = implode(',', array_map('intval', array_values($offeringIds)));
+            $scheduleResult = $conn->query("
+                SELECT schedule_id
+                FROM tbl_class_schedule
+                WHERE offering_id IN ({$offeringIdList})
+            ");
+
+            if ($scheduleResult === false) {
+                throw new RuntimeException('Failed to inspect scoped class schedules.');
+            }
+
+            while ($scheduleRow = $scheduleResult->fetch_assoc()) {
+                $scheduleId = (int)($scheduleRow['schedule_id'] ?? 0);
+                if ($scheduleId > 0) {
+                    $scheduleIds[$scheduleId] = $scheduleId;
+                }
+            }
+        }
+
+        if (synk_table_exists($conn, 'tbl_program_schedule_set')) {
+            $setStmt = $conn->prepare("
+                SELECT schedule_set_id
+                FROM tbl_program_schedule_set
+                WHERE college_id = ?
+                  AND ay_id = ?
+                  AND semester = ?
+            ");
+
+            if (!$setStmt) {
+                throw new RuntimeException('Failed to inspect saved schedule sets.');
+            }
+
+            $setStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($setStmt, 'Failed to inspect saved schedule sets.');
+            $setResult = $setStmt->get_result();
+            while ($setResult instanceof mysqli_result && ($setRow = $setResult->fetch_assoc())) {
+                $scheduleSetId = (int)($setRow['schedule_set_id'] ?? 0);
+                if ($scheduleSetId > 0) {
+                    $scheduleSetIds[$scheduleSetId] = $scheduleSetId;
+                }
+            }
+            $setStmt->close();
+        }
+
+        if (synk_saved_schedule_workspace_state_table_exists($conn)) {
+            $workspaceTable = synk_saved_schedule_workspace_state_table_name();
+            $clearWorkspaceStmt = $conn->prepare("
+                DELETE FROM `{$workspaceTable}`
+                WHERE college_id = ?
+                  AND ay_id = ?
+                  AND semester = ?
+            ");
+
+            if (!$clearWorkspaceStmt) {
+                throw new RuntimeException('Failed to clear loaded saved-set state.');
+            }
+
+            $clearWorkspaceStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($clearWorkspaceStmt, 'Failed to clear loaded saved-set state.');
+            $clearedLoadedScheduleStates = max(0, (int)$clearWorkspaceStmt->affected_rows);
+            $clearWorkspaceStmt->close();
+        }
+
+        if (!empty($scheduleSetIds)) {
+            if (synk_saved_schedule_workload_table_exists($conn)) {
+                $deletedSavedScheduleWorkloadRows = synk_admin_delete_rows_by_id_list(
+                    $conn,
+                    synk_saved_schedule_workload_table_name(),
+                    'schedule_set_id',
+                    array_values($scheduleSetIds)
+                );
+            }
+
+            if (synk_table_exists($conn, 'tbl_program_schedule_set_row')) {
+                $deletedSavedScheduleRows = synk_admin_delete_rows_by_id_list(
+                    $conn,
+                    'tbl_program_schedule_set_row',
+                    'schedule_set_id',
+                    array_values($scheduleSetIds)
+                );
+            }
+        }
+
+        if (synk_table_exists($conn, 'tbl_program_schedule_set')) {
+            $deleteSavedSetsStmt = $conn->prepare("
+                DELETE FROM tbl_program_schedule_set
+                WHERE college_id = ?
+                  AND ay_id = ?
+                  AND semester = ?
+            ");
+
+            if (!$deleteSavedSetsStmt) {
+                throw new RuntimeException('Failed to clear saved schedule sets.');
+            }
+
+            $deleteSavedSetsStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($deleteSavedSetsStmt, 'Failed to clear saved schedule sets.');
+            $deletedSavedScheduleSets = max(0, (int)$deleteSavedSetsStmt->affected_rows);
+            $deleteSavedSetsStmt->close();
+        }
+
+        if (synk_table_exists($conn, 'tbl_class_schedule_merge')) {
+            $deleteMergeStmt = $conn->prepare("
+                DELETE merge_map
+                FROM tbl_class_schedule_merge merge_map
+                LEFT JOIN tbl_prospectus_offering owner_offer
+                    ON owner_offer.offering_id = merge_map.owner_offering_id
+                LEFT JOIN tbl_program owner_program
+                    ON owner_program.program_id = owner_offer.program_id
+                LEFT JOIN tbl_prospectus_offering member_offer
+                    ON member_offer.offering_id = merge_map.member_offering_id
+                LEFT JOIN tbl_program member_program
+                    ON member_program.program_id = member_offer.program_id
+                WHERE (
+                        owner_program.college_id = ?
+                    AND owner_offer.ay_id = ?
+                    AND owner_offer.semester = ?
+                ) OR (
+                        member_program.college_id = ?
+                    AND member_offer.ay_id = ?
+                    AND member_offer.semester = ?
+                )
+            ");
+
+            if (!$deleteMergeStmt) {
+                throw new RuntimeException('Failed to prepare merge reset query.');
+            }
+
+            $deleteMergeStmt->bind_param('iiiiii', $postedCollegeId, $postedAyId, $postedSemester, $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($deleteMergeStmt, 'Failed to clear merge links.');
+            $deletedMergeRows = max(0, (int)$deleteMergeStmt->affected_rows);
+            $deleteMergeStmt->close();
+        }
+
+        if (synk_table_exists($conn, 'tbl_faculty_need_workload_sched') && synk_table_exists($conn, 'tbl_faculty_need')) {
+            $deleteNeedAssignmentsStmt = $conn->prepare("
+                DELETE fnw
+                FROM tbl_faculty_need_workload_sched fnw
+                INNER JOIN tbl_faculty_need fn
+                    ON fn.faculty_need_id = fnw.faculty_need_id
+                WHERE fn.college_id = ?
+                  AND fn.ay_id = ?
+                  AND fn.semester = ?
+            ");
+
+            if (!$deleteNeedAssignmentsStmt) {
+                throw new RuntimeException('Failed to prepare faculty need assignment reset query.');
+            }
+
+            $deleteNeedAssignmentsStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($deleteNeedAssignmentsStmt, 'Failed to clear faculty need workload assignments.');
+            $deletedFacultyNeedAssignments = max(0, (int)$deleteNeedAssignmentsStmt->affected_rows);
+            $deleteNeedAssignmentsStmt->close();
+        }
+
+        if (synk_table_exists($conn, 'tbl_faculty_need')) {
+            $deleteNeedsStmt = $conn->prepare("
+                DELETE FROM tbl_faculty_need
+                WHERE college_id = ?
+                  AND ay_id = ?
+                  AND semester = ?
+            ");
+
+            if (!$deleteNeedsStmt) {
+                throw new RuntimeException('Failed to prepare faculty need reset query.');
+            }
+
+            $deleteNeedsStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($deleteNeedsStmt, 'Failed to clear faculty need records.');
+            $deletedFacultyNeeds = max(0, (int)$deleteNeedsStmt->affected_rows);
+            $deleteNeedsStmt->close();
+        }
+
         $deleteAssignments = $conn->prepare("
             DELETE fws
             FROM tbl_faculty_workload_sched fws
@@ -501,6 +927,24 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
         synk_admin_execute_statement($deleteAssignments, 'Failed to clear faculty workload assignments.');
         $deletedAssignments = max(0, (int)$deleteAssignments->affected_rows);
         $deleteAssignments->close();
+
+        if (synk_table_exists($conn, 'tbl_faculty_workload_simulation')) {
+            $deleteSimulationStmt = $conn->prepare("
+                DELETE FROM tbl_faculty_workload_simulation
+                WHERE college_id = ?
+                  AND ay_id = ?
+                  AND semester = ?
+            ");
+
+            if (!$deleteSimulationStmt) {
+                throw new RuntimeException('Failed to prepare workload simulation reset query.');
+            }
+
+            $deleteSimulationStmt->bind_param('iii', $postedCollegeId, $postedAyId, $postedSemester);
+            synk_admin_execute_statement($deleteSimulationStmt, 'Failed to clear workload simulations.');
+            $deletedWorkloadSimulations = max(0, (int)$deleteSimulationStmt->affected_rows);
+            $deleteSimulationStmt->close();
+        }
 
         $deleteSchedules = $conn->prepare("
             DELETE cs
@@ -555,11 +999,19 @@ if ($_SERVER['REQUEST_METHOD'] === 'POST' && (string)($_POST['action'] ?? '') ==
     }
 
     $successMessage = sprintf(
-        '%s was reset for %s. Removed %d schedule rows, removed %d faculty assignments, and set %d offerings back to pending.',
+        '%s was reset for %s. Removed %d schedule rows, %d faculty assignments, %d faculty-need assignments, %d faculty needs, %d merge links, %d saved sets, %d saved set rows, %d saved workload rows, %d workload simulations, cleared %d loaded saved-set states, and set %d offerings back to pending.',
         trim((string)($scope['college']['college_name'] ?? 'Selected college')),
         trim((string)($scope['academic_year']['ay'] ?? 'selected academic year')) . ' - ' . trim((string)$scope['semester_label']),
         $deletedSchedules,
         $deletedAssignments,
+        $deletedFacultyNeedAssignments,
+        $deletedFacultyNeeds,
+        $deletedMergeRows,
+        $deletedSavedScheduleSets,
+        $deletedSavedScheduleRows,
+        $deletedSavedScheduleWorkloadRows,
+        $deletedWorkloadSimulations,
+        $clearedLoadedScheduleStates,
         $previewBeforeReset['offerings_total']
     );
 
@@ -605,13 +1057,23 @@ $scopePreview = $hasValidScope
         'scheduled_offerings_total' => 0,
         'schedule_rows_total' => 0,
         'faculty_assignments_total' => 0,
+        'faculty_need_total' => 0,
+        'faculty_need_assignments_total' => 0,
+        'merge_rows_total' => 0,
+        'saved_schedule_sets_total' => 0,
+        'saved_schedule_rows_total' => 0,
+        'saved_schedule_workload_rows_total' => 0,
+        'workload_simulation_rows_total' => 0,
+        'loaded_schedule_set_id' => 0,
+        'loaded_schedule_set_name' => '',
+        'loaded_schedule_scope_label' => '',
     ];
 
 $expectedConfirmationPhrase = $hasValidScope
     ? synk_admin_normalize_confirmation_phrase('CLEAR ' . synk_admin_college_confirmation_token($selectedScope['college'] ?? []))
     : '';
 
-$hasResettableScope = $hasValidScope && $scopePreview['offerings_total'] > 0;
+$hasResettableScope = $hasValidScope && synk_admin_scope_has_operational_data($scopePreview);
 $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['series']);
 ?>
 <!DOCTYPE html>
@@ -780,12 +1242,13 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                       <h4 class="fw-bold mb-2">Reset one college term without touching setup records</h4>
                       <p class="text-muted mb-3">
                         This page clears generated scheduling data for a selected college, academic year, and semester.
-                        It removes class schedules and faculty workload assignments, then resets scoped offerings back to
-                        <strong>pending</strong> so the scheduler can start that term again.
+                        It removes class schedules, faculty and Faculty Need workload assignments, merge links, saved
+                        schedule sets, and the loaded saved-set state for that term, then resets scoped offerings back to
+                        <strong>pending</strong> so the scheduler can start cleanly again.
                       </p>
                       <div class="alert alert-warning mb-0">
                         Master data is preserved: campuses, colleges, programs, curriculum structures, sections, rooms,
-                        and faculty records are not deleted here.
+                        and faculty records are not deleted here. Only term-scoped scheduler output is cleared.
                       </div>
                     </div>
                     <div class="col-lg-4">
@@ -951,8 +1414,10 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                     </div>
                     <div class="card-body">
                       <ul class="warning-list text-muted">
-                        <li>Deletes faculty workload assignments connected to the selected college and term.</li>
+                        <li>Deletes faculty workload assignments and Faculty Need assignments connected to the selected college and term.</li>
                         <li>Deletes class schedule rows for that same college and term.</li>
+                        <li>Clears merge links, saved schedule sets, saved-set workload rows, and the loaded saved-set state for the same scope.</li>
+                        <li>Clears workload simulation rows saved for the same college term.</li>
                         <li>Sets scoped generated class offerings back to <strong>pending</strong> so they can be scheduled again.</li>
                         <li>Does not delete the campus, college, program, faculty, section, room, or curriculum setup records.</li>
                       </ul>
@@ -1028,6 +1493,45 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                           </div>
                         </div>
 
+                        <div class="row g-3 mb-4">
+                          <div class="col-sm-6 col-lg-3">
+                            <div class="preview-metric">
+                              <div class="text-muted small mb-2">Faculty Needs</div>
+                              <div class="metric-value"><?php echo (int)$scopePreview['faculty_need_total']; ?></div>
+                            </div>
+                          </div>
+                          <div class="col-sm-6 col-lg-3">
+                            <div class="preview-metric">
+                              <div class="text-muted small mb-2">Merge Links</div>
+                              <div class="metric-value"><?php echo (int)$scopePreview['merge_rows_total']; ?></div>
+                            </div>
+                          </div>
+                          <div class="col-sm-6 col-lg-3">
+                            <div class="preview-metric">
+                              <div class="text-muted small mb-2">Saved Sets</div>
+                              <div class="metric-value"><?php echo (int)$scopePreview['saved_schedule_sets_total']; ?></div>
+                            </div>
+                          </div>
+                          <div class="col-sm-6 col-lg-3">
+                            <div class="preview-metric">
+                              <div class="text-muted small mb-2">Simulations</div>
+                              <div class="metric-value"><?php echo (int)$scopePreview['workload_simulation_rows_total']; ?></div>
+                            </div>
+                          </div>
+                        </div>
+
+                        <div class="alert alert-info mb-4">
+                          <?php if ((int)$scopePreview['loaded_schedule_set_id'] > 0): ?>
+                            <strong>Loaded saved set:</strong>
+                            <?php echo synk_admin_h($scopePreview['loaded_schedule_set_name']); ?>
+                            <?php if (trim((string)($scopePreview['loaded_schedule_scope_label'] ?? '')) !== ''): ?>
+                              <span class="text-muted">(<?php echo synk_admin_h($scopePreview['loaded_schedule_scope_label']); ?>)</span>
+                            <?php endif; ?>
+                          <?php else: ?>
+                            <strong>Loaded saved set:</strong> None recorded for this college term.
+                          <?php endif; ?>
+                        </div>
+
                         <div class="table-responsive">
                           <table class="table table-sm align-middle impact-table mb-0">
                             <thead class="table-light">
@@ -1057,6 +1561,48 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                                 <td>Faculty workload assignments</td>
                                 <td class="text-end"><?php echo (int)$scopePreview['faculty_assignments_total']; ?></td>
                                 <td class="text-end">0 assignments</td>
+                              </tr>
+                              <tr>
+                                <td>Faculty Need records</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['faculty_need_total']; ?></td>
+                                <td class="text-end">0 needs</td>
+                              </tr>
+                              <tr>
+                                <td>Faculty Need workload assignments</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['faculty_need_assignments_total']; ?></td>
+                                <td class="text-end">0 assignments</td>
+                              </tr>
+                              <tr>
+                                <td>Merged subject links</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['merge_rows_total']; ?></td>
+                                <td class="text-end">0 links</td>
+                              </tr>
+                              <tr>
+                                <td>Saved schedule sets</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['saved_schedule_sets_total']; ?></td>
+                                <td class="text-end">0 sets</td>
+                              </tr>
+                              <tr>
+                                <td>Saved schedule rows</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['saved_schedule_rows_total']; ?></td>
+                                <td class="text-end">0 rows</td>
+                              </tr>
+                              <tr>
+                                <td>Saved workload rows</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['saved_schedule_workload_rows_total']; ?></td>
+                                <td class="text-end">0 rows</td>
+                              </tr>
+                              <tr>
+                                <td>Workload simulation rows</td>
+                                <td class="text-end"><?php echo (int)$scopePreview['workload_simulation_rows_total']; ?></td>
+                                <td class="text-end">0 rows</td>
+                              </tr>
+                              <tr>
+                                <td>Loaded saved-set state</td>
+                                <td class="text-end">
+                                  <?php echo (int)$scopePreview['loaded_schedule_set_id'] > 0 ? '1 loaded set' : 'No loaded set'; ?>
+                                </td>
+                                <td class="text-end">Cleared</td>
                               </tr>
                               <tr>
                                 <td>Sections affected</td>
@@ -1115,7 +1661,7 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                             <div class="fw-semibold mb-2">Required confirmation phrase</div>
                             <div class="confirmation-code mb-2"><?php echo synk_admin_h($expectedConfirmationPhrase); ?></div>
                             <div class="text-muted small">
-                              Type the phrase exactly to confirm that you want to clear schedules and workload assignments for this scope.
+                              Type the phrase exactly to confirm that you want to clear schedules, workload assignments, merged links, and saved schedule artifacts for this scope.
                             </div>
                           </div>
 
@@ -1136,7 +1682,8 @@ $hasTrendData = !empty($campusTrend['categories']) && !empty($campusTrend['serie
                           <div class="form-check mb-4">
                             <input class="form-check-input" type="checkbox" value="1" id="acknowledgeReset" name="acknowledge_reset" />
                             <label class="form-check-label" for="acknowledgeReset">
-                              I understand that this removes class schedules and faculty workload assignments for the selected term,
+                              I understand that this removes class schedules, faculty and Faculty Need workload assignments,
+                              merged subject links, saved schedule sets, and saved-set workspace state for the selected term,
                               while keeping the college setup and curriculum records.
                             </label>
                           </div>

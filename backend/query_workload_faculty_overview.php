@@ -148,13 +148,12 @@ $rawSql = "
         ON sm.sub_id = ps.sub_id
     WHERE fw.ay_id = ?
       AND fw.semester = ?
-      AND p.college_id = ?
       AND fw.faculty_id IN ({$facultyIdList})
     ORDER BY " . implode(",\n             ", $orderParts) . "
 ";
 
 $rawStmt = $conn->prepare($rawSql);
-$rawStmt->bind_param("iii", $ayId, $semester, $collegeId);
+$rawStmt->bind_param("ii", $ayId, $semester);
 $rawStmt->execute();
 $rawRes = $rawStmt->get_result();
 

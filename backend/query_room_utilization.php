@@ -5,6 +5,8 @@ require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/offering_enrollee_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
+require_once __DIR__ . '/schedule_merge_helper.php';
+require_once __DIR__ . '/program_chair_signatory_helper.php';
 
 header('Content-Type: application/json');
 
@@ -203,6 +205,665 @@ function room_workload_context_key_from_values(int $groupId, int $scheduleId, in
     return 'offering:' . $offeringId;
 }
 
+function room_utilization_schedule_type($type): string
+{
+    return strtoupper(trim((string)$type)) === 'LAB' ? 'LAB' : 'LEC';
+}
+
+function room_utilization_default_section_label(int $offeringId, array $sectionRowsByOffering, string $fallback = ''): string
+{
+    $sectionRow = (array)($sectionRowsByOffering[$offeringId] ?? []);
+    $label = trim((string)($sectionRow['full_section'] ?? ''));
+
+    if ($label === '') {
+        $label = trim((string)synk_schedule_merge_compose_base_section_label($sectionRow));
+    }
+
+    if ($label === '') {
+        $label = trim($fallback);
+    }
+
+    return $label;
+}
+
+function room_utilization_program_label_for_scope(array $scopeDisplay, int $offeringId, array $sectionRowsByOffering): string
+{
+    $programCodes = [];
+    $offeringIds = synk_schedule_merge_normalize_offering_ids(
+        (array)($scopeDisplay['group_offering_ids'] ?? [$offeringId])
+    );
+
+    if (empty($offeringIds)) {
+        $offeringIds = [$offeringId];
+    }
+
+    foreach ($offeringIds as $candidateOfferingId) {
+        $programCode = strtoupper(trim((string)($sectionRowsByOffering[$candidateOfferingId]['program_code'] ?? '')));
+        if ($programCode !== '') {
+            $programCodes[$programCode] = $programCode;
+        }
+    }
+
+    $labels = array_values($programCodes);
+    natcasesort($labels);
+
+    return implode('/', $labels);
+}
+
+function room_utilization_load_program_rows_by_offering(mysqli $conn, array $offeringIds): array
+{
+    $normalizedIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($normalizedIds)) {
+        return [];
+    }
+
+    $idList = implode(',', array_map('intval', $normalizedIds));
+    $sql = "
+        SELECT
+            po.offering_id,
+            p.program_id,
+            COALESCE(p.program_code, '') AS program_code,
+            COALESCE(p.program_name, '') AS program_name,
+            COALESCE(p.major, '') AS major
+        FROM tbl_prospectus_offering po
+        INNER JOIN tbl_program p
+            ON p.program_id = po.program_id
+        WHERE po.offering_id IN ({$idList})
+    ";
+
+    $rows = [];
+    $result = $conn->query($sql);
+    if ($result instanceof mysqli_result) {
+        while ($row = $result->fetch_assoc()) {
+            $offeringId = (int)($row['offering_id'] ?? 0);
+            if ($offeringId <= 0) {
+                continue;
+            }
+
+            $rows[$offeringId] = [
+                'program_id' => (int)($row['program_id'] ?? 0),
+                'program_code' => trim((string)($row['program_code'] ?? '')),
+                'program_name' => trim((string)($row['program_name'] ?? '')),
+                'major' => trim((string)($row['major'] ?? '')),
+            ];
+        }
+    }
+
+    return $rows;
+}
+
+function room_utilization_programs_for_scope(array $scopeDisplay, int $offeringId, array $programRowsByOffering): array
+{
+    $offeringIds = synk_schedule_merge_normalize_offering_ids(
+        (array)($scopeDisplay['group_offering_ids'] ?? [$offeringId])
+    );
+
+    if (empty($offeringIds)) {
+        $offeringIds = [$offeringId];
+    }
+
+    $programs = [];
+    foreach ($offeringIds as $candidateOfferingId) {
+        $program = (array)($programRowsByOffering[$candidateOfferingId] ?? []);
+        $programId = (int)($program['program_id'] ?? 0);
+        $programCode = strtoupper(trim((string)($program['program_code'] ?? '')));
+
+        if ($programId <= 0 && $programCode === '') {
+            continue;
+        }
+
+        $programKey = $programId > 0 ? 'id:' . $programId : 'code:' . $programCode;
+        if (isset($programs[$programKey])) {
+            continue;
+        }
+
+        $programs[$programKey] = [
+            'program_id' => $programId,
+            'program_code' => $programCode,
+            'program_name' => trim((string)($program['program_name'] ?? '')),
+            'major' => trim((string)($program['major'] ?? '')),
+        ];
+    }
+
+    return array_values($programs);
+}
+
+function room_utilization_program_label_from_programs(array $programs): string
+{
+    $programCodes = [];
+
+    foreach ($programs as $program) {
+        $programCode = strtoupper(trim((string)($program['program_code'] ?? '')));
+        if ($programCode !== '') {
+            $programCodes[$programCode] = $programCode;
+        }
+    }
+
+    $labels = array_values($programCodes);
+    natcasesort($labels);
+
+    return implode('/', $labels);
+}
+
+function room_utilization_compact_text($value): string
+{
+    return preg_replace('/[^A-Z0-9]+/', '', strtoupper(trim((string)$value))) ?? '';
+}
+
+function room_utilization_faculty_print_name(array $row): string
+{
+    $lastName = trim((string)($row['last_name'] ?? ''));
+    $firstName = trim((string)($row['first_name'] ?? ''));
+    $middleName = trim((string)($row['middle_name'] ?? ''));
+    $extName = trim((string)($row['ext_name'] ?? ''));
+
+    $name = trim($lastName . ', ' . $firstName, ' ,');
+    if ($middleName !== '') {
+        $name .= ' ' . strtoupper(substr($middleName, 0, 1)) . '.';
+    }
+
+    if ($extName !== '') {
+        $name .= ', ' . $extName;
+    }
+
+    return trim($name, ' ,');
+}
+
+function room_utilization_fetch_ay_id(mysqli $conn, string $ayLabel): int
+{
+    $ayLabel = trim($ayLabel);
+    if ($ayLabel === '') {
+        return 0;
+    }
+
+    $stmt = $conn->prepare("SELECT ay_id FROM tbl_academic_years WHERE ay = ? LIMIT 1");
+    if (!($stmt instanceof mysqli_stmt)) {
+        return 0;
+    }
+
+    $stmt->bind_param('s', $ayLabel);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $row = ($result instanceof mysqli_result) ? $result->fetch_assoc() : null;
+    $stmt->close();
+
+    return is_array($row) ? (int)($row['ay_id'] ?? 0) : 0;
+}
+
+function room_utilization_fetch_college_signatory_assignments(mysqli $conn, int $collegeId, int $ayId, int $semester): array
+{
+    if (
+        $collegeId <= 0
+        || !synk_table_exists($conn, 'tbl_college_faculty')
+        || !synk_table_exists($conn, 'tbl_faculty')
+        || !synk_table_exists($conn, 'tbl_designation')
+        || !synk_table_has_column($conn, 'tbl_faculty', 'designation_id')
+    ) {
+        return [];
+    }
+
+    $assignmentHasAyId = synk_table_has_column($conn, 'tbl_college_faculty', 'ay_id');
+    $assignmentHasSemester = synk_table_has_column($conn, 'tbl_college_faculty', 'semester');
+    $designationHasStatus = synk_table_has_column($conn, 'tbl_designation', 'status');
+
+    $whereParts = [
+        'cf.college_id = ?',
+        "LOWER(TRIM(cf.status)) = 'active'",
+        "LOWER(TRIM(f.status)) = 'active'",
+        "NULLIF(TRIM(d.designation_name), '') IS NOT NULL",
+    ];
+    $types = 'i';
+    $params = [$collegeId];
+
+    if ($designationHasStatus) {
+        $whereParts[] = "LOWER(TRIM(d.status)) = 'active'";
+    }
+
+    if ($assignmentHasAyId && $assignmentHasSemester && $ayId > 0 && $semester > 0) {
+        $whereParts[] = '((cf.ay_id = ? AND cf.semester = ?) OR (cf.ay_id IS NULL AND cf.semester IS NULL))';
+        $types .= 'ii';
+        $params[] = $ayId;
+        $params[] = $semester;
+    }
+
+    $sql = "
+        SELECT
+            cf.college_faculty_id,
+            f.faculty_id,
+            f.last_name,
+            f.first_name,
+            " . (synk_table_has_column($conn, 'tbl_faculty', 'middle_name') ? 'f.middle_name' : "'' AS middle_name") . ",
+            " . (synk_table_has_column($conn, 'tbl_faculty', 'ext_name') ? 'f.ext_name' : "'' AS ext_name") . ",
+            d.designation_name
+        FROM tbl_college_faculty cf
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = cf.faculty_id
+        INNER JOIN tbl_designation d
+            ON d.designation_id = f.designation_id
+        WHERE " . implode("\n          AND ", $whereParts) . "
+        ORDER BY f.last_name ASC, f.first_name ASC, cf.college_faculty_id ASC
+    ";
+
+    $stmt = $conn->prepare($sql);
+    if (!($stmt instanceof mysqli_stmt)) {
+        return [];
+    }
+
+    synk_bind_dynamic_params($stmt, $types, $params);
+    $stmt->execute();
+    $result = $stmt->get_result();
+    $rows = [];
+
+    if ($result instanceof mysqli_result) {
+        while ($row = $result->fetch_assoc()) {
+            $rows[] = [
+                'college_faculty_id' => (int)($row['college_faculty_id'] ?? 0),
+                'faculty_id' => (int)($row['faculty_id'] ?? 0),
+                'name' => room_utilization_faculty_print_name($row),
+                'designation_name' => trim((string)($row['designation_name'] ?? '')),
+            ];
+        }
+    }
+
+    $stmt->close();
+
+    return $rows;
+}
+
+function room_utilization_designation_is_program_chair(string $designationName): bool
+{
+    $designationName = strtoupper(trim($designationName));
+    return $designationName !== ''
+        && strpos($designationName, 'PROGRAM') !== false
+        && (
+            strpos($designationName, 'CHAIR') !== false
+            || strpos($designationName, 'CHAIRMAN') !== false
+            || strpos($designationName, 'CHAIRPERSON') !== false
+            || strpos($designationName, 'CHAIPERSON') !== false
+        );
+}
+
+function room_utilization_designation_is_dean(string $designationName): bool
+{
+    return preg_match('/\bDEAN\b/i', $designationName) === 1;
+}
+
+function room_utilization_program_keywords(array $program): array
+{
+    $text = strtoupper(trim(
+        (string)($program['program_name'] ?? '')
+        . ' '
+        . (string)($program['major'] ?? '')
+    ));
+
+    if ($text === '') {
+        return [];
+    }
+
+    $tokens = preg_split('/[^A-Z0-9]+/', $text) ?: [];
+    $stopWords = [
+        'A' => true,
+        'AN' => true,
+        'AND' => true,
+        'ARTS' => true,
+        'BACHELOR' => true,
+        'BS' => true,
+        'DEGREE' => true,
+        'IN' => true,
+        'MAJOR' => true,
+        'OF' => true,
+        'SCIENCE' => true,
+        'THE' => true,
+    ];
+
+    $keywords = [];
+    foreach ($tokens as $token) {
+        $token = trim($token);
+        if (strlen($token) < 3 || isset($stopWords[$token])) {
+            continue;
+        }
+
+        $keywords[$token] = $token;
+    }
+
+    return array_values($keywords);
+}
+
+function room_utilization_program_chair_match_score(array $assignment, array $program): int
+{
+    $designation = strtoupper(trim((string)($assignment['designation_name'] ?? '')));
+    $designationCompact = room_utilization_compact_text($designation);
+    $score = 0;
+
+    $programCodeCompact = room_utilization_compact_text($program['program_code'] ?? '');
+    if ($programCodeCompact !== '' && strpos($designationCompact, $programCodeCompact) !== false) {
+        $score += 120;
+    }
+
+    $programTextCompact = room_utilization_compact_text(
+        trim((string)($program['program_name'] ?? '') . ' ' . (string)($program['major'] ?? ''))
+    );
+    if ($programTextCompact !== '' && strpos($designationCompact, $programTextCompact) !== false) {
+        $score += 100;
+    }
+
+    $keywords = room_utilization_program_keywords($program);
+    if (!empty($keywords)) {
+        $matchedKeywords = 0;
+        foreach ($keywords as $keyword) {
+            if (strpos($designation, $keyword) !== false) {
+                $matchedKeywords++;
+            }
+        }
+
+        if ($matchedKeywords >= 2) {
+            $score += 70 + $matchedKeywords;
+        } elseif ($matchedKeywords === count($keywords) && $matchedKeywords === 1) {
+            $score += 40;
+        }
+    }
+
+    return $score;
+}
+
+function room_utilization_dominant_program_from_rows(array $rows): array
+{
+    $programs = [];
+    $counts = [];
+    $order = [];
+    $nextOrder = 0;
+
+    foreach ($rows as $row) {
+        $rowPrograms = [];
+
+        if (isset($row['program_scope']) && is_array($row['program_scope'])) {
+            $rowPrograms = $row['program_scope'];
+        } else {
+            $rowPrograms[] = [
+                'program_id' => (int)($row['program_id'] ?? 0),
+                'program_code' => trim((string)($row['program_code'] ?? '')),
+                'program_name' => trim((string)($row['program_name'] ?? '')),
+                'major' => trim((string)($row['program_major'] ?? '')),
+            ];
+        }
+
+        $countedInRow = [];
+        foreach ($rowPrograms as $program) {
+            $programId = (int)($program['program_id'] ?? 0);
+            $programCode = strtoupper(trim((string)($program['program_code'] ?? '')));
+
+            if ($programId <= 0 && $programCode === '') {
+                continue;
+            }
+
+            $programKey = $programId > 0 ? 'id:' . $programId : 'code:' . $programCode;
+            if (isset($countedInRow[$programKey])) {
+                continue;
+            }
+
+            if (!isset($programs[$programKey])) {
+                $programs[$programKey] = [
+                    'program_id' => $programId,
+                    'program_code' => $programCode,
+                    'program_name' => trim((string)($program['program_name'] ?? '')),
+                    'major' => trim((string)($program['major'] ?? '')),
+                ];
+                $counts[$programKey] = 0;
+                $order[$programKey] = $nextOrder++;
+            }
+
+            $counts[$programKey]++;
+            $countedInRow[$programKey] = true;
+        }
+    }
+
+    if (empty($programs)) {
+        return [];
+    }
+
+    $keys = array_keys($programs);
+    usort($keys, static function ($left, $right) use ($counts, $order): int {
+        $countCompare = ($counts[$right] ?? 0) <=> ($counts[$left] ?? 0);
+        if ($countCompare !== 0) {
+            return $countCompare;
+        }
+
+        return ($order[$left] ?? 0) <=> ($order[$right] ?? 0);
+    });
+
+    $dominantKey = (string)$keys[0];
+    $dominantProgram = $programs[$dominantKey];
+    $dominantProgram['subject_count'] = (int)($counts[$dominantKey] ?? 0);
+
+    return $dominantProgram;
+}
+
+function room_utilization_pick_prepared_by(array $assignments, array $dominantProgram): array
+{
+    if (empty($dominantProgram)) {
+        return ['name' => '', 'designation' => '', 'program_code' => ''];
+    }
+
+    $candidates = [];
+
+    foreach ($assignments as $index => $assignment) {
+        $designationName = trim((string)($assignment['designation_name'] ?? ''));
+        if (!room_utilization_designation_is_program_chair($designationName)) {
+            continue;
+        }
+
+        $candidates[] = [
+            'assignment' => $assignment,
+            'score' => room_utilization_program_chair_match_score($assignment, $dominantProgram),
+            'order' => $index,
+        ];
+    }
+
+    if (empty($candidates)) {
+        return ['name' => '', 'designation' => '', 'program_code' => (string)($dominantProgram['program_code'] ?? '')];
+    }
+
+    usort($candidates, static function (array $left, array $right): int {
+        $scoreCompare = ((int)$right['score']) <=> ((int)$left['score']);
+        if ($scoreCompare !== 0) {
+            return $scoreCompare;
+        }
+
+        return ((int)$left['order']) <=> ((int)$right['order']);
+    });
+
+    $selected = (array)$candidates[0]['assignment'];
+
+    return [
+        'name' => (string)($selected['name'] ?? ''),
+        'designation' => (string)($selected['designation_name'] ?? ''),
+        'program_code' => (string)($dominantProgram['program_code'] ?? ''),
+    ];
+}
+
+function room_utilization_dean_score(array $assignment): int
+{
+    $designationName = strtoupper(trim((string)($assignment['designation_name'] ?? '')));
+    if ($designationName === 'DEAN') {
+        return 120;
+    }
+
+    if (strpos($designationName, 'DEAN (') === 0) {
+        return 110;
+    }
+
+    if (strpos($designationName, 'COLLEGE DEAN') !== false) {
+        return 100;
+    }
+
+    if (strpos($designationName, 'DEAN') === 0) {
+        return 90;
+    }
+
+    return room_utilization_designation_is_dean($designationName) ? 70 : 0;
+}
+
+function room_utilization_pick_attested_by(array $assignments): array
+{
+    $candidates = [];
+
+    foreach ($assignments as $index => $assignment) {
+        if (!room_utilization_designation_is_dean((string)($assignment['designation_name'] ?? ''))) {
+            continue;
+        }
+
+        $candidates[] = [
+            'assignment' => $assignment,
+            'score' => room_utilization_dean_score($assignment),
+            'order' => $index,
+        ];
+    }
+
+    if (empty($candidates)) {
+        return ['name' => '', 'designation' => ''];
+    }
+
+    usort($candidates, static function (array $left, array $right): int {
+        $scoreCompare = ((int)$right['score']) <=> ((int)$left['score']);
+        if ($scoreCompare !== 0) {
+            return $scoreCompare;
+        }
+
+        return ((int)$left['order']) <=> ((int)$right['order']);
+    });
+
+    $selected = (array)$candidates[0]['assignment'];
+
+    return [
+        'name' => (string)($selected['name'] ?? ''),
+        'designation' => (string)($selected['designation_name'] ?? ''),
+    ];
+}
+
+function room_utilization_build_print_signatories(
+    mysqli $conn,
+    int $collegeId,
+    string $ayLabel,
+    int $semester,
+    array $rows
+): array {
+    $dominantProgram = room_utilization_dominant_program_from_rows($rows);
+    $ayId = room_utilization_fetch_ay_id($conn, $ayLabel);
+    $explicitProgramChair = null;
+
+    if ((int)($dominantProgram['program_id'] ?? 0) > 0) {
+        $explicitProgramChair = synk_program_chair_signatory_fetch_for_program(
+            $conn,
+            $collegeId,
+            (int)$dominantProgram['program_id'],
+            $ayId,
+            $semester
+        );
+    }
+
+    $assignments = room_utilization_fetch_college_signatory_assignments($conn, $collegeId, $ayId, $semester);
+    $preparedBy = is_array($explicitProgramChair)
+        ? [
+            'name' => (string)($explicitProgramChair['name'] ?? ''),
+            'designation' => (string)($explicitProgramChair['designation'] ?? 'Program Chairman'),
+            'program_code' => (string)($explicitProgramChair['program_code'] ?? ($dominantProgram['program_code'] ?? '')),
+        ]
+        : room_utilization_pick_prepared_by($assignments, $dominantProgram);
+
+    return [
+        'prepared_by' => $preparedBy,
+        'attested_by' => room_utilization_pick_attested_by($assignments),
+        'dominant_program' => $dominantProgram,
+    ];
+}
+
+function room_utilization_apply_merge_display(mysqli $conn, array $rows): array
+{
+    $offeringIds = [];
+    foreach ($rows as $row) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId > 0) {
+            $offeringIds[] = $offeringId;
+        }
+    }
+
+    $offeringIds = synk_schedule_merge_normalize_offering_ids($offeringIds);
+    if (empty($offeringIds)) {
+        return $rows;
+    }
+
+    $mergeContext = synk_schedule_merge_load_display_context($conn, $offeringIds);
+    $relatedOfferingIds = $offeringIds;
+
+    foreach ($mergeContext as $mergeInfo) {
+        $relatedOfferingIds = array_merge(
+            $relatedOfferingIds,
+            (array)($mergeInfo['group_offering_ids'] ?? []),
+            (array)($mergeInfo['member_offering_ids'] ?? []),
+            (array)($mergeInfo['effective_owner_by_type'] ?? [])
+        );
+
+        foreach ((array)($mergeInfo['owned_member_ids_by_scope'] ?? []) as $scopeOfferingIds) {
+            $relatedOfferingIds = array_merge($relatedOfferingIds, (array)$scopeOfferingIds);
+        }
+    }
+
+    $sectionRowsByOffering = synk_schedule_merge_load_section_rows_by_offering(
+        $conn,
+        synk_schedule_merge_normalize_offering_ids($relatedOfferingIds)
+    );
+    $programRowsByOffering = room_utilization_load_program_rows_by_offering(
+        $conn,
+        synk_schedule_merge_normalize_offering_ids($relatedOfferingIds)
+    );
+
+    foreach ($rows as &$row) {
+        $offeringId = (int)($row['offering_id'] ?? 0);
+        if ($offeringId <= 0) {
+            continue;
+        }
+
+        $scheduleType = room_utilization_schedule_type($row['schedule_type'] ?? 'LEC');
+        $fallbackSection = trim((string)($row['section_name'] ?? ''));
+        $defaultSection = room_utilization_default_section_label($offeringId, $sectionRowsByOffering, $fallbackSection);
+        $scopeDisplay = synk_schedule_merge_scope_display_context(
+            (array)($mergeContext[$offeringId] ?? []),
+            $scheduleType,
+            $offeringId,
+            $sectionRowsByOffering
+        );
+        $mergedSection = trim((string)($scopeDisplay['group_label'] ?? ''));
+        $programScope = room_utilization_programs_for_scope($scopeDisplay, $offeringId, $programRowsByOffering);
+        $programLabel = room_utilization_program_label_from_programs($programScope);
+
+        if (empty($programScope)) {
+            $programLabel = room_utilization_program_label_for_scope($scopeDisplay, $offeringId, $sectionRowsByOffering);
+        }
+
+        $row['schedule_type'] = $scheduleType;
+        $row['program_scope'] = $programScope;
+        $row['program_ids'] = array_values(array_filter(array_map(static function (array $program): int {
+            return (int)($program['program_id'] ?? 0);
+        }, $programScope)));
+        if ($programLabel !== '') {
+            $row['program_code'] = $programLabel;
+        }
+
+        if (!empty($scopeDisplay['is_merged']) && $mergedSection !== '') {
+            $row['section_name'] = $mergedSection;
+            $row['program_major'] = '';
+            continue;
+        }
+
+        if ($defaultSection !== '') {
+            $row['section_name'] = $defaultSection;
+        }
+    }
+    unset($row);
+
+    return $rows;
+}
+
 if (isset($_POST['load_room_options'])) {
     $ay = trim((string)($_POST['ay'] ?? ''));
     $semester = mapSemester($_POST['semester'] ?? '');
@@ -234,6 +895,7 @@ if (isset($_POST['load_room_options'])) {
 ========================================================== */
 if (isset($_POST['load_room_schedule'])) {
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
+    $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 
     $ay       = trim($_POST['ay']);
     $semester = mapSemester($_POST['semester']);
@@ -252,10 +914,15 @@ if (isset($_POST['load_room_schedule'])) {
 
     $sql = "
         SELECT
+            po.offering_id,
+            " . ($classScheduleHasType ? 'cs.schedule_type' : "'LEC' AS schedule_type") . ",
             cs.time_start,
             cs.time_end,
             cs.days_json,
             sm.sub_code AS subject_code,
+            COALESCE(p.program_id, 0) AS program_id,
+            COALESCE(p.program_code, '') AS program_code,
+            COALESCE(p.program_name, '') AS program_name,
             COALESCE(p.major, '') AS program_major,
             sec.full_section AS section_name,
             f.faculty_id,
@@ -298,7 +965,14 @@ if (isset($_POST['load_room_schedule'])) {
         $data[] = $row;
     }
 
-    echo json_encode($data);
+    $data = room_utilization_apply_merge_display($conn, $data);
+    $signatories = room_utilization_build_print_signatories($conn, $college_id, $ay, $semester, $data);
+
+    echo json_encode([
+        'status' => 'ok',
+        'rows' => $data,
+        'signatories' => $signatories,
+    ]);
     exit;
 }
 
@@ -307,6 +981,7 @@ if (isset($_POST['load_room_schedule'])) {
 ========================================================== */
 if (isset($_POST['load_all_rooms'])) {
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
+    $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 
     $ay       = trim($_POST['ay']);
     $semester = mapSemester($_POST['semester']);
@@ -328,11 +1003,16 @@ if (isset($_POST['load_all_rooms'])) {
 
     $schedSql = "
         SELECT
+            po.offering_id,
+            " . ($classScheduleHasType ? 'cs.schedule_type' : "'LEC' AS schedule_type") . ",
             cs.room_id,
             cs.time_start,
             cs.time_end,
             cs.days_json,
             sm.sub_code AS subject_code,
+            COALESCE(p.program_id, 0) AS program_id,
+            COALESCE(p.program_code, '') AS program_code,
+            COALESCE(p.program_name, '') AS program_name,
             COALESCE(p.major, '') AS program_major,
             sec.full_section AS section_name,
             f.faculty_id,
@@ -367,8 +1047,14 @@ if (isset($_POST['load_all_rooms'])) {
     $schedStmt->bind_param("si", $ay, $semester);
     $schedStmt->execute();
     $schedRes = $schedStmt->get_result();
+    $scheduleRows = [];
 
     while ($row = $schedRes->fetch_assoc()) {
+        $scheduleRows[] = $row;
+    }
+    $schedStmt->close();
+
+    foreach (room_utilization_apply_merge_display($conn, $scheduleRows) as $row) {
         $roomId = (int)$row['room_id'];
         if (!isset($rooms[$roomId])) {
             continue;
@@ -389,7 +1075,12 @@ if (isset($_POST['load_all_rooms'])) {
             "time_end"     => $row['time_end'],
             "days_json"    => $row['days_json'],
             "subject_code" => $row['subject_code'],
+            "program_id"   => (int)($row['program_id'] ?? 0),
+            "program_code" => $row['program_code'],
+            "program_name" => $row['program_name'],
             "program_major" => $row['program_major'],
+            "program_scope" => $row['program_scope'] ?? [],
+            "program_ids" => $row['program_ids'] ?? [],
             "section_name" => $row['section_name'],
             "faculty_id"   => (int)($row['faculty_id'] ?? 0),
             "faculty_name" => $row['faculty_name']

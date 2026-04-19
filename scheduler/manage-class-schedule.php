@@ -94,6 +94,31 @@ $roomOptions = "";
     color: #6c757d;
 }
 
+.schedule-page-header {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+}
+
+.schedule-guide-trigger {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    min-height: 2.5rem;
+    padding: 0.5rem 0.9rem;
+    border-radius: 12px;
+    font-weight: 600;
+    white-space: nowrap;
+}
+
+.schedule-guide-plain {
+    white-space: pre-line;
+    color: #43556f;
+    font-size: 0.93rem;
+    line-height: 1.65;
+}
+
 .swal-top {
     z-index: 20000 !important;
 }
@@ -896,6 +921,157 @@ body.swal2-shown .modal {
     color: #1f2a44;
 }
 
+.schedule-set-active-state {
+    display: inline-flex;
+    align-items: center;
+    gap: 0.45rem;
+    width: fit-content;
+    max-width: 100%;
+    margin-bottom: 0.75rem;
+    padding: 0.45rem 0.7rem;
+    border: 1px solid #dbe5f6;
+    border-radius: 999px;
+    background: #f8faff;
+    color: #5f6f8d;
+    font-size: 0.82rem;
+    font-weight: 700;
+    line-height: 1.25;
+}
+
+.schedule-set-active-state.is-active {
+    border-color: #c9f0d4;
+    background: #f1fff5;
+    color: #20703d;
+}
+
+.schedule-set-active-state.is-live {
+    border-color: #dbe5f6;
+    background: #f8faff;
+    color: #5f6f8d;
+}
+
+.schedule-set-active-state.is-unsaved {
+    border-color: #ffe0a8;
+    background: #fff9ed;
+    color: #956000;
+}
+
+.schedule-set-active-state.is-modified {
+    border-color: #ffd7a3;
+    background: #fff4e3;
+    color: #9a5e00;
+}
+
+.schedule-set-manager-summary {
+    color: #5f6f8d;
+    font-size: 0.86rem;
+    line-height: 1.45;
+}
+
+.schedule-set-manager-table-wrap {
+    border: 1px solid #dbe5f6;
+    border-radius: 12px;
+    overflow: hidden;
+}
+
+.schedule-set-manager-table {
+    margin-bottom: 0;
+}
+
+.schedule-set-manager-table th {
+    background: #f7f9ff;
+    color: #627392;
+    font-size: 0.72rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.schedule-set-manager-table td {
+    color: #5f6f8d;
+    vertical-align: middle;
+}
+
+.schedule-set-manager-table tr.is-editing td {
+    background: #f6f8ff;
+}
+
+.schedule-set-manager-name {
+    color: #1f2a44;
+    font-weight: 700;
+}
+
+.schedule-set-manager-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.45rem;
+}
+
+.schedule-set-manager-note {
+    color: #6c7f99;
+    font-size: 0.82rem;
+    line-height: 1.45;
+}
+
+.schedule-set-manager-status {
+    margin-bottom: 1rem;
+}
+
+.schedule-set-editor-panel {
+    border: 1px solid #cfdaf0;
+    border-radius: 14px;
+    background: #f9fbff;
+    padding: 1rem;
+    margin-bottom: 1rem;
+}
+
+.schedule-set-editor-heading {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 1rem;
+    margin-bottom: 0.9rem;
+}
+
+.schedule-set-editor-title {
+    color: #1f2a44;
+    font-weight: 800;
+}
+
+.schedule-set-editor-subtitle {
+    color: #6c7f99;
+    font-size: 0.84rem;
+    line-height: 1.45;
+}
+
+.schedule-set-editor-panel .form-label {
+    color: #627392;
+    font-size: 0.74rem;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+}
+
+.schedule-set-editor-panel .form-control {
+    border-color: #cfdaf0;
+    border-radius: 10px;
+}
+
+.schedule-set-editor-panel .form-control:focus {
+    border-color: #7d8bff;
+    box-shadow: 0 0 0 0.18rem rgba(82, 103, 216, 0.12);
+}
+
+.schedule-set-editor-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 0.65rem;
+    margin-top: 1rem;
+}
+
 .suggestion-board {
     border: 1px solid #d8e1f2;
     border-radius: 14px;
@@ -1356,6 +1532,61 @@ body.swal2-shown .modal {
     font-size: 0.58rem;
 }
 
+.matrix-entry-section {
+    display: block;
+    margin-top: 2px;
+    font-size: 0.6rem;
+    font-weight: 700;
+    line-height: 1.15;
+    color: rgba(255, 255, 255, 0.96);
+    white-space: normal;
+    word-break: break-word;
+}
+
+.matrix-entry-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 3px;
+    margin-top: 3px;
+}
+
+.matrix-entry-chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    padding: 1px 5px;
+    background: rgba(255, 255, 255, 0.18);
+    color: #fff;
+    font-size: 0.52rem;
+    font-weight: 800;
+    letter-spacing: 0.03em;
+    line-height: 1.2;
+    text-transform: uppercase;
+    white-space: nowrap;
+}
+
+.matrix-entry-chip.is-program {
+    background: rgba(255, 255, 255, 0.96);
+    color: #1f2a44;
+    box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.88);
+}
+
+.matrix-entry-chip.is-merge {
+    background: rgba(255, 243, 176, 0.24);
+    color: #fff7cf;
+}
+
+.matrix-entry-merge {
+    display: block;
+    margin-top: 3px;
+    color: rgba(255, 255, 255, 0.96);
+    font-size: 0.54rem;
+    line-height: 1.12;
+    white-space: normal;
+    word-break: break-word;
+}
+
 .matrix-entry-faculty {
     display: block;
     color: rgba(255, 255, 255, 0.94);
@@ -1382,7 +1613,7 @@ body.swal2-shown .modal {
     letter-spacing: 0.02em;
 }
 
-/* SUBJECT COLORS (auto-rotated) */
+/* ROOM MATRIX ENTRY COLORS (auto-rotated by program key) */
 .sub-0 { background: #2563eb; }
 .sub-1 { background: #059669; }
 .sub-2 { background: #d97706; }
@@ -1466,6 +1697,19 @@ body.swal2-shown .modal {
 #matrixModal .matrix-cell small {
     font-size: 0.56rem;
     opacity: 0.94;
+}
+
+#matrixModal .matrix-entry-section {
+    font-size: 0.56rem;
+}
+
+#matrixModal .matrix-entry-chip {
+    font-size: 0.48rem;
+    padding: 1px 4px;
+}
+
+#matrixModal .matrix-entry-merge {
+    font-size: 0.5rem;
 }
 
 #matrixModal .matrix-entry-faculty {
@@ -1694,6 +1938,16 @@ body.swal2-shown .modal {
     color: #3446c3;
 }
 
+.section-matrix-section.is-merged {
+    background: #fff8ea;
+    color: #8a5f17;
+}
+
+.section-matrix-section.is-current.is-merged {
+    background: #fff2d8;
+    color: #7b4d07;
+}
+
 .section-matrix-cell {
     min-width: 170px;
     background: rgba(255, 255, 255, 0.96);
@@ -1711,9 +1965,25 @@ body.swal2-shown .modal {
     background: rgba(255, 244, 228, 0.92);
 }
 
+.section-matrix-cell.has-merged-entry {
+    background: rgba(255, 249, 237, 0.96);
+}
+
+.section-matrix-cell.has-merge-column {
+    background: rgba(255, 252, 245, 0.96);
+}
+
+.section-matrix-cell.is-vacant.has-merge-column {
+    background: rgba(255, 250, 242, 0.92);
+}
+
+.section-matrix-cell.is-conflict.has-merged-entry {
+    background: rgba(255, 241, 214, 0.96);
+}
+
 .section-matrix-entry {
     border: 1px solid #d6e0f3;
-    border-radius: 12px;
+    border-radius: 0;
     background: #ffffff;
     padding: 0.45rem 0.55rem;
     box-shadow: 0 6px 18px rgba(31, 42, 68, 0.05);
@@ -1726,6 +1996,56 @@ body.swal2-shown .modal {
 .section-matrix-entry.is-focus {
     border-color: #7d8bff;
     background: #eef2ff;
+}
+
+.section-matrix-entry.is-merged {
+    border-color: #ead39d;
+    background: #fff8ea;
+    box-shadow: none;
+}
+
+.section-matrix-entry.is-merged.is-focus {
+    border-color: #d7b267;
+    background: #fff1d3;
+}
+
+.section-matrix-entry.is-merged .section-matrix-entry-title {
+    color: #6f4d12;
+}
+
+.section-matrix-entry.is-merged .section-matrix-entry-meta {
+    color: #86602a;
+}
+
+.section-matrix-entry .suggestion-chip {
+    border-radius: 0;
+}
+
+.section-matrix-entry.is-merged .suggestion-chip {
+    background: #fff0c7;
+    color: #8f5b08;
+}
+
+.section-matrix-entry-badges {
+    display: flex;
+    align-items: center;
+    gap: 0.35rem;
+    flex-wrap: wrap;
+}
+
+.section-matrix-merge-pill {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 0.18rem 0.45rem;
+    border: 1px solid #ecd49a;
+    border-radius: 0;
+    background: #fff3d4;
+    color: #87560a;
+    font-size: 0.66rem;
+    font-weight: 700;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
 }
 
 .section-matrix-entry-title {
@@ -1746,13 +2066,13 @@ body.swal2-shown .modal {
 
 .section-matrix-fill {
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: 0;
     background: linear-gradient(180deg, rgba(99, 133, 255, 0.18) 0%, rgba(99, 133, 255, 0.08) 100%);
 }
 
 .section-matrix-vacant {
     min-height: 44px;
-    border-radius: 10px;
+    border-radius: 0;
     border: 1px dashed #d4dff3;
     background: rgba(250, 252, 255, 0.86);
 }
@@ -3033,6 +3353,15 @@ body.swal2-shown .modal {
 }
 
 @media (max-width: 991.98px) {
+    .schedule-page-header {
+        flex-direction: column;
+        align-items: stretch;
+    }
+
+    .schedule-guide-trigger {
+        align-self: flex-start;
+    }
+
     .schedule-workspace-shell {
         padding: 1.2rem 1.15rem 1.1rem;
     }
@@ -3180,13 +3509,27 @@ body.swal2-shown .modal {
 <div class="content-wrapper">
 <div class="container-xxl flex-grow-1 container-p-y">
 
-<h4 class="fw-bold mb-3">
-  <i class="bx bx-time-five me-2"></i> Class Scheduling
-</h4>
+<div class="schedule-page-header mb-4">
+  <div>
+    <h4 class="fw-bold mb-3">
+      <i class="bx bx-time-five me-2"></i> Class Scheduling
+    </h4>
 
-<p class="text-muted mb-4">
-  Schedule classes by defining <strong>day, time, and room</strong> for each offering.
-</p>
+    <p class="text-muted mb-0">
+      Schedule classes by defining <strong>day, time, and room</strong> for each offering.
+    </p>
+  </div>
+
+  <button
+    type="button"
+    class="btn btn-outline-info btn-sm schedule-guide-trigger"
+    data-bs-toggle="modal"
+    data-bs-target="#scheduleGuideModal"
+  >
+    <i class="bx bx-help-circle"></i>
+    Help / Guide
+  </button>
+</div>
 
 <div class="alert alert-info mb-4">
   <strong>Scheduling Policy:</strong>
@@ -3273,6 +3616,10 @@ while ($ay = $ayQ->fetch_assoc()) {
       <div class="schedule-toolbar-grid">
         <div class="schedule-toolbar-panel schedule-set-panel">
           <label class="schedule-toolbar-label" for="scheduleSetSelect">Saved Schedule Sets</label>
+          <div class="schedule-set-active-state is-live" id="scheduleSetActiveState">
+            <i class="bx bx-radio-circle"></i>
+            <span>No set created (current: live)</span>
+          </div>
           <div class="schedule-set-shell">
             <div class="schedule-set-select">
               <select id="scheduleSetSelect" class="form-select" disabled>
@@ -3286,13 +3633,16 @@ while ($ay = $ayQ->fetch_assoc()) {
               <button class="btn btn-outline-primary btn-sm" id="btnSaveScheduleSet" disabled>
                 <i class="bx bx-save"></i> Save Live as Set
               </button>
+              <button class="btn btn-outline-secondary btn-sm" id="btnManageScheduleSets" disabled>
+                <i class="bx bx-cog"></i> Manage Sets
+              </button>
               <button class="btn btn-primary btn-sm" id="btnLoadScheduleSet" disabled>
                 <i class="bx bx-import"></i> Load Set to Live
               </button>
             </div>
           </div>
           <div class="schedule-set-meta mt-2" id="scheduleSetDetails">
-            Live schedules remain the active workspace for the selected program term. Save them as a reusable set, then clear or revise live schedules and load any saved set back later.
+            Live schedules remain the active workspace for the selected college term. Save them as a reusable set, then clear or revise live schedules and load any saved set back later.
           </div>
         </div>
 
@@ -3371,6 +3721,181 @@ while ($ay = $ayQ->fetch_assoc()) {
     </div>
     <div id="roomBrowserList">
       <div class="room-browser-empty">Select a term to load the room browser.</div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="scheduleGuideModal" tabindex="-1" aria-labelledby="scheduleGuideModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-lg modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0" id="scheduleGuideModalLabel">Class Scheduling Guide</h5>
+          <div class="schedule-hint mt-1">Plain text guide for scheduling, merging, and using this page.</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="schedule-guide-plain">Class Scheduling Page Guide
+
+1. Select the working view.
+Choose Program, Academic Year, and Semester. The Program filter controls which offerings are shown on the page. Saved Schedule Sets are managed by college, Academic Year, and Semester.
+
+2. Group View.
+Year Level groups offerings by year/section progression so you can work through the normal scheduling flow. Subject groups matching subjects together so you can compare sections of the same course, check consistency, and manage merge choices more easily.
+
+3. Search Subjects.
+Search filters the visible offerings inside the current Program, Academic Year, Semester, and Group View. It does not change the saved set scope.
+
+4. Schedule a class.
+Open the schedule action for an offering, then define the required day, time, and room. Lecture-only subjects need lecture blocks. Subjects with laboratory units need lecture and laboratory blocks unless one of those parts is inherited through merge.
+
+5. Merge type: Whole Subject.
+Whole Subject merge lets the current offering inherit the full saved schedule from another scheduled offering. The source can be any scheduled subject in the same college, academic year, and semester as long as the required lecture/laboratory hours match. This is the subject-to-subject merge option.
+
+6. Merge type: Lecture Only.
+Lecture Only merge lets the current offering inherit only the lecture schedule from another saved section/offering of the same subject. The laboratory schedule stays local unless you also choose a laboratory source. This is the lecture-to-lecture merge option for matching sections of the same subject.
+
+7. Merge type: Laboratory Only.
+Laboratory Only merge lets the current offering inherit only the laboratory schedule from another saved section/offering of the same subject. The lecture schedule stays local unless you also choose a lecture source.
+
+8. How merge works after saving.
+The source offering keeps the real day, time, and room schedule rows. The current offering stores a merge setting and displays inherited blocks from the selected source. Inherited blocks are not edited directly on the target offering. To change them, open Manage Schedule Merge again and change or clear the merge setting.
+
+9. What gets cleared when saving merge.
+If Whole Subject is selected, local lecture and laboratory schedule rows for the current offering are cleared because the full schedule is inherited. If Lecture Only is selected, only local lecture rows are cleared. If Laboratory Only is selected, only local laboratory rows are cleared.
+
+10. Merge restrictions.
+Merge settings cannot be changed for locked offerings, offerings already assigned in Faculty Workload, or offerings that are currently used as a merge source by other offerings. The system also prevents circular dependencies and checks that the inherited lecture/laboratory blocks do not conflict with each other.
+
+11. Saved Schedule Sets.
+Saved Schedule Sets preserve the live day, time, and room schedule rows for the selected college term. New saved sets include all scheduled programs under the college for the selected Academic Year and Semester. The Program filter only changes the page view; it does not limit the new saved set.
+
+12. Saving workload inside a set.
+When saving a set, choose Include current Faculty Workload assignments if you also want to preserve assigned faculty for the saved schedule rows. The workload snapshot is matched to the saved schedule rows, not to the temporary live schedule IDs.
+
+13. Loading a saved set.
+Loading a saved set replaces the live schedules inside that set scope. A college-term set replaces live schedules for the selected college term. A legacy program set replaces only its original program term. The page asks whether to save the current live workspace first before replacing it.
+
+14. Restoring workload from a set.
+If the selected set includes workload rows, choose Restore saved Faculty Workload assignments while loading. The system clears affected live workload rows, recreates the live schedule rows, then attaches the saved faculty assignments to the new schedule rows. Faculty conflicts are checked before the load is applied.
+
+15. Managing saved sets.
+Use Manage Sets to rename a saved set or delete a saved snapshot. Rename and delete do not touch live schedules, generated offerings, merge settings, or Faculty Workload. Delete removes only the saved set record and its saved snapshot rows.
+
+16. Why merges can block saved sets.
+Saved sets currently store real schedule rows, not merge relationships. If merged schedule groups exist, an offering may be displaying inherited rows that it does not own locally. Saving or loading while those merge rows exist can lose the relationship, so the system asks you to unmerge first.
+
+17. Why workload can block loading.
+If you load schedule-only, existing Faculty Workload assignments can block the load because workload rows point to live schedule rows that will be replaced. If the saved set includes workload and you choose Restore saved Faculty Workload assignments, the affected workload rows are replaced safely during the load.</div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="modal fade" id="scheduleSetManagerModal" tabindex="-1" aria-labelledby="scheduleSetManagerModalLabel" aria-hidden="true">
+  <div class="modal-dialog modal-xl modal-dialog-centered modal-dialog-scrollable">
+    <div class="modal-content">
+      <div class="modal-header">
+        <div>
+          <h5 class="modal-title mb-0" id="scheduleSetManagerModalLabel">Manage Saved Schedule Sets</h5>
+          <div class="schedule-hint mt-1">Rename or delete saved snapshots for the selected college term.</div>
+        </div>
+        <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+      </div>
+
+      <div class="modal-body">
+        <div class="d-flex flex-wrap justify-content-between align-items-start gap-3 mb-3">
+          <div class="schedule-set-manager-summary" id="scheduleSetManagerSummary">
+            Select Academic Year and Semester first to manage saved sets.
+          </div>
+          <button type="button" class="btn btn-outline-secondary btn-sm" id="btnScheduleSetManagerRefresh">
+            <i class="bx bx-refresh"></i> Refresh
+          </button>
+        </div>
+
+        <div class="alert schedule-set-manager-status d-none" id="scheduleSetManagerStatus" role="alert"></div>
+
+        <form class="schedule-set-editor-panel d-none" id="scheduleSetEditorForm" autocomplete="off">
+          <input type="hidden" id="scheduleSetEditorId">
+          <div class="schedule-set-editor-heading">
+            <div>
+              <div class="schedule-set-editor-title">Edit Saved Set</div>
+              <div class="schedule-set-editor-subtitle" id="scheduleSetEditorScope">Rename the saved snapshot without changing live schedules.</div>
+            </div>
+            <button type="button" class="btn btn-outline-secondary btn-sm" id="btnCancelScheduleSetEditor">
+              Cancel
+            </button>
+          </div>
+
+          <div class="row g-3">
+            <div class="col-lg-5">
+              <label class="form-label" for="scheduleSetEditorName">Set Name</label>
+              <input
+                type="text"
+                class="form-control"
+                id="scheduleSetEditorName"
+                maxlength="120"
+                autocomplete="off"
+              >
+              <div class="invalid-feedback">Provide a name for this saved schedule set.</div>
+            </div>
+            <div class="col-lg-7">
+              <label class="form-label" for="scheduleSetEditorRemarks">Note</label>
+              <textarea
+                class="form-control"
+                id="scheduleSetEditorRemarks"
+                maxlength="255"
+                rows="3"
+              ></textarea>
+            </div>
+          </div>
+
+          <div class="schedule-set-editor-actions">
+            <button type="button" class="btn btn-outline-secondary" id="btnCancelScheduleSetEditorBottom">
+              Cancel
+            </button>
+            <button type="submit" class="btn btn-primary" id="btnSaveScheduleSetEditor">
+              <i class="bx bx-save"></i> Save Changes
+            </button>
+          </div>
+        </form>
+
+        <div class="table-responsive schedule-set-manager-table-wrap">
+          <table class="table table-sm align-middle schedule-set-manager-table">
+            <thead>
+              <tr>
+                <th>Set Name</th>
+                <th>Scope</th>
+                <th>Rows</th>
+                <th>Offerings</th>
+                <th>Programs</th>
+                <th>Workload</th>
+                <th>Updated</th>
+                <th class="text-end">Actions</th>
+              </tr>
+            </thead>
+            <tbody id="scheduleSetManagerRows">
+              <tr>
+                <td colspan="8" class="text-center text-muted py-4">No saved sets loaded.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+
+        <div class="schedule-set-manager-note mt-3">
+          Rename and delete only affect saved set records and saved snapshots. They do not change live schedules, generated offerings, merge settings, or current faculty workload assignments.
+        </div>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">Close</button>
+      </div>
     </div>
   </div>
 </div>
@@ -4000,7 +4525,7 @@ while ($ay = $ayQ->fetch_assoc()) {
           <h5 class="modal-title mb-0">
             <i class="bx bx-building me-1"></i> Room-Time Matrix
           </h5>
-          <div class="small text-muted mt-1">
+          <div class="small text-muted mt-1" id="matrixHeaderNote">
             Follows <?= htmlspecialchars($schedulePolicy['source_label'] ?? 'Scheduling policy') ?>:
             <?= htmlspecialchars($schedulePolicy['window_label'] ?? '') ?> | 12-hour time labels
           </div>
@@ -4242,6 +4767,52 @@ while ($ay = $ayQ->fetch_assoc()) {
         return String(SCHEDULE_POLICY.window_label || `${formatPolicyTimeLabel(SUPPORTED_TIME_START)} to ${formatPolicyTimeLabel(SUPPORTED_TIME_END)}`);
     }
 
+    function currentMatrixWorkspaceLabel() {
+        if (!hasScheduleSetScope()) {
+            return "Live workspace: select academic year and semester";
+        }
+
+        if (scheduleSetListLoading) {
+            return "Live workspace: checking current live schedules";
+        }
+
+        const activeSet = getWorkspaceActiveScheduleSet();
+        const activeSetId = Number((activeSet && activeSet.schedule_set_id) || scheduleSetLiveStatus.active_schedule_set_id || 0);
+        const activeSetName = getScheduleSetDisplayName(
+            activeSet,
+            scheduleSetLiveStatus.active_schedule_set_name,
+            scheduleSetLiveStatus.active_schedule_set_id
+        );
+        if (activeSetId > 0 || String(scheduleSetLiveStatus.active_schedule_set_name || "").trim() !== "") {
+            return `Live workspace: ${activeSetName}`;
+        }
+
+        const lastLoadedSet = getWorkspaceLastLoadedScheduleSet();
+        const lastLoadedSetId = Number((lastLoadedSet && lastLoadedSet.schedule_set_id) || scheduleSetLiveStatus.last_loaded_schedule_set_id || 0);
+        const lastLoadedSetName = getScheduleSetDisplayName(
+            lastLoadedSet,
+            scheduleSetLiveStatus.last_loaded_schedule_set_name,
+            scheduleSetLiveStatus.last_loaded_schedule_set_id
+        );
+        if (lastLoadedSetId > 0 || String(scheduleSetLiveStatus.last_loaded_schedule_set_name || "").trim() !== "") {
+            return `Live workspace: loaded from ${lastLoadedSetName} (modified in live)`;
+        }
+
+        return scheduleSetList.length === 0
+            ? "Live workspace: current live schedules"
+            : "Live workspace: current unsaved schedules";
+    }
+
+    function updateMatrixHeaderNote() {
+        const header = $("#matrixHeaderNote");
+        if (header.length === 0) {
+            return;
+        }
+
+        const sourceLabel = String(SCHEDULE_POLICY.source_label || "Scheduling policy").trim() || "Scheduling policy";
+        header.text(`${sourceLabel}: ${scheduleWindowLabel()} | ${currentMatrixWorkspaceLabel()} | 12-hour time labels`);
+    }
+
     function blockedTimeRangeLabel(range) {
         if (!range) {
             return "";
@@ -4396,6 +4967,10 @@ while ($ay = $ayQ->fetch_assoc()) {
     let scheduleMergeState = null;
     let scheduleSetListRequest = null;
     let scheduleSetList = [];
+    let scheduleSetListLoading = false;
+    let scheduleSetLiveStatus = {};
+    let pendingLoadedScheduleSetId = "";
+    let scheduleSetEditorActiveId = "";
     let scheduleAutoLoadTimer = null;
     let singleSuggestionTimer = null;
     let dualSuggestionTimer = null;
@@ -4409,6 +4984,7 @@ while ($ay = $ayQ->fetch_assoc()) {
     let currentSectionScheduleMatrixState = null;
     let facultyScheduleMatrixModalInstance = null;
     let schedulerFacultyWorkloadModalInstance = null;
+    let scheduleSetManagerModalInstance = null;
     let schedulerFacultyWorkloadRequest = null;
     let schedulerFacultyWorkloadState = null;
     let scheduleBlockFacultyOptionsRequest = null;
@@ -5030,6 +5606,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function normalizeSectionMatrixEntry(entry) {
         return {
+            offering_id: parseInt(entry?.offering_id ?? entry?.effective_offering_id, 10) || 0,
+            source_offering_id: parseInt(entry?.source_offering_id ?? entry?.offering_id ?? entry?.effective_offering_id, 10) || 0,
             schedule_id: parseInt(entry?.schedule_id, 10) || 0,
             schedule_type: String(entry?.schedule_type || "LEC").toUpperCase() === "LAB" ? "LAB" : "LEC",
             time_start: normalizeMatrixTimeInput(entry?.time_start || ""),
@@ -5037,7 +5615,13 @@ while ($ay = $ayQ->fetch_assoc()) {
             days: normalizeScheduleDays(Array.isArray(entry?.days) ? entry.days : []),
             subject_code: String(entry?.subject_code || ""),
             subject_description: String(entry?.subject_description || ""),
-            room_label: String(entry?.room_label || "TBA")
+            room_label: String(entry?.room_label || "TBA"),
+            preview_label: String(entry?.preview_label || "").trim(),
+            preview_status_note: String(entry?.preview_status_note || "").trim(),
+            is_current_offering: Boolean(entry?.is_current_offering),
+            is_preview_block: Boolean(entry?.is_preview_block),
+            is_preview_conflict: Boolean(entry?.is_preview_conflict),
+            is_inherited: Boolean(entry?.is_inherited)
         };
     }
 
@@ -5174,14 +5758,16 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
-        const sections = Array.isArray(sectionScheduleMatrixState.sections) ? sectionScheduleMatrixState.sections : [];
+        const rawSections = Array.isArray(sectionScheduleMatrixState.sections) ? sectionScheduleMatrixState.sections : [];
+        const sections = getSectionMatrixDisplaySections(rawSections);
         const selectedDay = String(sectionScheduleMatrixState.selectedDay || getSectionMatrixDefaultDay(sections));
         const timeSlots = buildSectionMatrixTimeSlots();
+        const hasDraftPreview = hasScheduleBlockPreviewChanges();
 
         $("#sectionScheduleMatrixHeaderNote").text(
             sections.length > 1
-                ? `${sectionScheduleMatrixState.subjectLabel || "Subject"} across ${sections.length} peer sections, shown in 30-minute intervals.`
-                : `Only one section offering is currently available for ${sectionScheduleMatrixState.subjectLabel || "this subject"}, shown in 30-minute intervals.`
+                ? `${sectionScheduleMatrixState.subjectLabel || "Subject"} across ${sections.length} peer sections, shown in 30-minute intervals.${hasDraftPreview ? " Draft changes from the open editor replace the current section's saved rows." : ""}`
+                : `Only one section offering is currently available for ${sectionScheduleMatrixState.subjectLabel || "this subject"}, shown in 30-minute intervals.${hasDraftPreview ? " Draft changes from the open editor replace the current section's saved rows." : ""}`
         );
 
         if (sections.length === 0) {
@@ -5200,17 +5786,25 @@ while ($ay = $ayQ->fetch_assoc()) {
         `).join("");
 
         const sectionColumnStates = sections.map(section => buildSectionMatrixColumnState(section, selectedDay, timeSlots));
+        const sectionMergeFlags = sections.map(section => (
+            Array.isArray(section?.entries) && section.entries.some(entry => Boolean(entry?.is_inherited))
+        ));
 
         const rowsHtml = timeSlots.map((slot, slotIndex) => {
-            const cellsHtml = sectionColumnStates.map(columnState => {
+            const cellsHtml = sectionColumnStates.map((columnState, columnIndex) => {
                 const cellState = columnState[slotIndex];
                 if (!cellState || cellState.skip) {
                     return "";
                 }
 
+                const baseCellClasses = ["section-matrix-cell"];
+                if (sectionMergeFlags[columnIndex]) {
+                    baseCellClasses.push("has-merge-column");
+                }
+
                 if (!Array.isArray(cellState.items) || cellState.items.length === 0) {
                     return `
-                        <td class="section-matrix-cell is-vacant">
+                        <td class="${baseCellClasses.concat("is-vacant").join(" ")}">
                             <div class="section-matrix-vacant"></div>
                         </td>
                     `;
@@ -5218,11 +5812,16 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                 const entryHtml = cellState.items.map(entry => {
                     const isFocus = String(entry.subject_code || "").toUpperCase() === String(sectionScheduleMatrixState.subjectCode || "").toUpperCase();
+                    const isMerged = Boolean(entry?.is_inherited);
+                    const typeLabel = `${entry.schedule_type || "LEC"}${entry?.is_preview_block ? " | Draft" : ""}`;
                     return `
-                        <div class="section-matrix-entry ${isFocus ? "is-focus" : ""}">
+                        <div class="section-matrix-entry ${isFocus ? "is-focus" : ""} ${isMerged ? "is-merged" : ""}">
                             <div class="section-matrix-entry-title">
                                 <span>${escapeHtml(entry.subject_code || "TBA")}</span>
-                                <span class="suggestion-chip">${escapeHtml(entry.schedule_type || "LEC")}</span>
+                                <div class="section-matrix-entry-badges">
+                                    ${isMerged ? '<span class="section-matrix-merge-pill">Merged</span>' : ""}
+                                    <span class="suggestion-chip">${escapeHtml(typeLabel)}</span>
+                                </div>
                             </div>
                             <div class="section-matrix-entry-meta">
                                 <div>${escapeHtml(entry.room_label || "TBA")}</div>
@@ -5233,7 +5832,12 @@ while ($ay = $ayQ->fetch_assoc()) {
                 }).join("");
 
                 const rowspanAttr = cellState.rowspan > 1 ? ` rowspan="${cellState.rowspan}"` : "";
-                return `<td class="section-matrix-cell ${cellState.cellClass}"${rowspanAttr}>${entryHtml}</td>`;
+                const hasMergedEntry = Array.isArray(cellState.items) && cellState.items.some(entry => Boolean(entry?.is_inherited));
+                const cellClasses = baseCellClasses.concat(cellState.cellClass);
+                if (hasMergedEntry) {
+                    cellClasses.push("has-merged-entry");
+                }
+                return `<td class="${cellClasses.join(" ")}"${rowspanAttr}>${entryHtml}</td>`;
             }).join("");
 
             return `
@@ -5249,10 +5853,11 @@ while ($ay = $ayQ->fetch_assoc()) {
             `;
         }).join("");
 
-        const sectionHeaders = sections.map(section => `
-            <th class="section-matrix-section ${section.is_current ? "is-current" : ""}">
+        const sectionHeaders = sections.map((section, sectionIndex) => `
+            <th class="section-matrix-section ${section.is_current ? "is-current" : ""} ${sectionMergeFlags[sectionIndex] ? "is-merged" : ""}">
                 <div>${escapeHtml(section.label || "Section")}</div>
-                <div class="small text-muted mt-1">${escapeHtml(String(section.entry_count || 0))} scheduled block(s)</div>
+                <div class="small ${sectionMergeFlags[sectionIndex] ? "" : "text-muted"} mt-1">${escapeHtml(String(section.entry_count || 0))} scheduled block(s)</div>
+                ${sectionMergeFlags[sectionIndex] ? '<div class="small mt-1">Contains merged schedule block(s)</div>' : ""}
             </th>
         `).join("");
 
@@ -5499,9 +6104,15 @@ while ($ay = $ayQ->fetch_assoc()) {
             if (entry?.is_current_offering) {
                 chips.push('<span class="faculty-schedule-block-chip is-current">Current Subject</span>');
             }
+            if (entry?.is_preview_block) {
+                chips.push('<span class="faculty-schedule-block-chip is-preview">Draft</span>');
+            }
+            if (entry?.preview_status_note) {
+                chips.push(`<span class="faculty-schedule-block-chip is-ready">${escapeHtml(entry.preview_status_note)}</span>`);
+            }
 
             return `
-                <div class="current-section-board-entry ${entry?.is_current_offering ? "is-current" : ""}">
+                <div class="current-section-board-entry ${entry?.is_current_offering ? "is-current" : ""} ${entry?.is_preview_block ? "is-preview" : ""}">
                     ${subjectCode ? `<div class="faculty-schedule-subject-code">${escapeHtml(subjectCode)}</div>` : ""}
                     ${subjectDescription ? `<div class="faculty-schedule-subject-description">${escapeHtml(subjectDescription)}</div>` : ""}
                     <div class="faculty-schedule-block-line">${escapeHtml(roomLabel)}</div>
@@ -5524,9 +6135,10 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
-        const entries = Array.isArray(currentSectionScheduleMatrixState.entries)
+        const baseEntries = Array.isArray(currentSectionScheduleMatrixState.entries)
             ? currentSectionScheduleMatrixState.entries
             : [];
+        const entries = getCurrentSectionScheduleDisplayEntries(baseEntries);
         const board = buildCurrentSectionScheduleBoard(entries);
         const slots = Array.isArray(board.slots) ? board.slots : [];
         const sectionLabel = String(currentSectionScheduleMatrixState.fullSection || currentSectionScheduleMatrixState.sectionName || "Section").trim() || "Section";
@@ -5536,13 +6148,16 @@ while ($ay = $ayQ->fetch_assoc()) {
             sectionLabel
         ].filter(Boolean);
         const contextLabel = contextParts.join(" | ") || sectionLabel;
+        const hasDraftPreview = hasScheduleBlockPreviewChanges();
         const currentEntryCount = entries.filter(entry => entry?.is_current_offering).length;
-        const scheduledSubjectCount = parseInt(currentSectionScheduleMatrixState.scheduledSubjectCount, 10) || 0;
-        const scheduledBlockCount = parseInt(currentSectionScheduleMatrixState.scheduledBlockCount, 10) || entries.length;
+        const scheduledSubjectCount = new Set(entries.map(entry => (
+            `${parseInt(entry?.offering_id, 10) || 0}|${String(entry?.subject_code || "").trim()}`
+        ))).size;
+        const scheduledBlockCount = entries.length;
 
         $("#currentSectionScheduleMatrixHeaderNote").text(
             entries.length > 0
-                ? `${contextLabel} weekly class board for the selected term. The current subject is highlighted.`
+                ? `${contextLabel} weekly class board for the selected term. The current subject is highlighted.${hasDraftPreview ? " Draft changes from the open editor are reflected here until you save." : ""}`
                 : `${contextLabel} has no saved class blocks yet in the selected term.`
         );
 
@@ -5550,7 +6165,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             <div class="faculty-schedule-summary">
                 <div>
                     <div class="fw-semibold">${escapeHtml(contextLabel)}</div>
-                    <div class="text-muted small">${escapeHtml(String(currentSectionScheduleMatrixState.subjectLabel || "Current subject"))} stays highlighted so you can place blocks with the full section schedule in view.</div>
+                    <div class="text-muted small">${escapeHtml(String(currentSectionScheduleMatrixState.subjectLabel || "Current subject"))} stays highlighted so you can place blocks with the full section schedule in view.${hasDraftPreview ? " Draft changes reflect the current unsaved block editor state." : ""}</div>
                 </div>
                 <div class="faculty-helper-metrics">
                     <span class="faculty-helper-metric">${escapeHtml(String(scheduledBlockCount))} block(s)</span>
@@ -5561,6 +6176,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             <div class="faculty-schedule-legend">
                 <span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch"></span>Scheduled class</span>
                 <span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-current"></span>Current subject</span>
+                ${hasDraftPreview ? '<span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-draft"></span>Draft preview</span>' : ""}
                 <span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-occupied"></span>Conflict block</span>
             </div>
         `;
@@ -5600,6 +6216,8 @@ while ($ay = $ayQ->fetch_assoc()) {
                     const cellClasses = ["faculty-schedule-class-cell"];
                     if (sectionEntry.block.is_conflict) {
                         cellClasses.push("is-conflict");
+                    } else if (sectionEntry.block.entries.some(entry => entry?.is_preview_block)) {
+                        cellClasses.push("is-preview");
                     } else if (sectionEntry.block.is_current_offering) {
                         cellClasses.push("is-current");
                     }
@@ -5704,6 +6322,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             assignedFacultyIds: [],
             selectedFacultyId: 0,
             selectedFacultySchedule: null,
+            previewSignature: "",
             optionsLoading: false,
             detailLoading: false,
             optionError: "",
@@ -5964,7 +6583,8 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
-        const entries = Array.isArray(schedule.entries) ? schedule.entries.slice() : [];
+        const entries = getFacultyScheduleDisplayEntries(schedule).slice();
+        const hasDraftPreview = hasScheduleBlockPreviewChanges();
         const availability = buildFacultyAvailabilitySnapshot(entries);
         const openDays = availability.filter(item => Array.isArray(item.free_ranges) && item.free_ranges.length > 0).length;
         const sortedEntries = entries.slice().sort((left, right) => {
@@ -6022,7 +6642,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                 <div>
                     <div class="faculty-helper-title">${escapeHtml(schedule.faculty_name || "Faculty")}</div>
                     <div class="faculty-helper-note">
-                        Selected faculty workload for the current college term. Use Show Workload to see warning-only red awareness blocks for time slots already occupied by other faculty.
+                        Selected faculty workload for the current college term. Use Show Workload to see warning-only red awareness blocks for time slots already occupied by other faculty.${hasDraftPreview ? " Draft changes below reflect the current unsaved block editor state." : ""}
                     </div>
                 </div>
                 ${schedule.is_assigned
@@ -6055,6 +6675,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         helper.assignedFacultyIds = [];
         helper.selectedFacultyId = 0;
         helper.selectedFacultySchedule = null;
+        helper.previewSignature = "";
         renderScheduleBlockFacultyOptions();
         renderScheduleBlockFacultySummary();
 
@@ -6130,6 +6751,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         const normalizedFacultyId = parseInt(facultyId, 10) || 0;
         const shouldOpenMatrix = Boolean(options.openMatrix);
         const shouldForceReload = Boolean(options.forceReload);
+        const previewBlocks = buildScheduleBlockDraftPreviewPayload();
+        const previewSignature = buildScheduleBlockDraftPreviewSignature(previewBlocks);
 
         helper.selectedFacultyId = normalizedFacultyId;
         helper.detailError = "";
@@ -6137,6 +6760,7 @@ while ($ay = $ayQ->fetch_assoc()) {
         if (!normalizedFacultyId) {
             helper.detailLoading = false;
             helper.selectedFacultySchedule = null;
+            helper.previewSignature = "";
             renderScheduleBlockFacultyOptions();
             renderScheduleBlockFacultySummary();
             return;
@@ -6147,6 +6771,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             && helper.selectedFacultySchedule
             && helper.selectedFacultySchedule.faculty_id === normalizedFacultyId
             && !helper.detailLoading
+            && helper.previewSignature === previewSignature
         ) {
             renderScheduleBlockFacultyOptions();
             renderScheduleBlockFacultySummary();
@@ -6177,7 +6802,8 @@ while ($ay = $ayQ->fetch_assoc()) {
             data: {
                 load_faculty_schedule_overview: 1,
                 offering_id: scheduleBlockState.offeringId,
-                faculty_id: normalizedFacultyId
+                faculty_id: normalizedFacultyId,
+                blocks: previewBlocks
             },
             success: function (res) {
                 if (!scheduleBlockState || !scheduleBlockState.facultyHelper || helper.selectedFacultyId !== normalizedFacultyId) {
@@ -6201,7 +6827,10 @@ while ($ay = $ayQ->fetch_assoc()) {
                     ? res.other_assigned_entries.map(normalizeFacultyScheduleEntry)
                     : [];
                 facultySchedule.draft_entries = Array.isArray(res.draft_entries)
-                    ? res.draft_entries.map(normalizeFacultyScheduleEntry)
+                    ? res.draft_entries.map(entry => normalizeFacultyScheduleEntry({
+                        ...entry,
+                        is_current_offering: true
+                    }))
                     : [];
                 facultySchedule.preview_issues = Array.isArray(res.preview_issues)
                     ? res.preview_issues.map(item => String(item || "").trim()).filter(Boolean)
@@ -6209,7 +6838,9 @@ while ($ay = $ayQ->fetch_assoc()) {
                 facultySchedule.draft_block_count = parseInt(res?.draft_block_count, 10) || facultySchedule.draft_entries.length;
                 facultySchedule.draft_conflict_count = parseInt(res?.draft_conflict_count, 10) || 0;
                 facultySchedule.draft_ready_count = parseInt(res?.draft_ready_count, 10) || 0;
+                facultySchedule.preview_signature = previewSignature;
                 helper.selectedFacultySchedule = facultySchedule;
+                helper.previewSignature = previewSignature;
                 helper.detailLoading = false;
                 helper.detailError = "";
                 helper.options = helper.options.map(option => (
@@ -6278,7 +6909,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         block.days = Array.isArray(days) ? days.filter(day => SCHEDULE_DAY_ORDER.includes(day)) : [];
         block.suggestionsVisible = false;
         renderScheduleBlocks();
-        refreshFacultyAwarenessModalIfOpen();
+        queueScheduleBlockFacultyPreviewRefresh();
+        refreshScheduleBlockPreviewHelpersIfOpen();
     }
 
     function queueScheduleBlockFacultyPreviewRefresh() {
@@ -6307,6 +6939,16 @@ while ($ay = $ayQ->fetch_assoc()) {
                 openMatrix: $("#facultyScheduleMatrixModal").hasClass("show")
             });
         }, 260);
+    }
+
+    function refreshScheduleBlockPreviewHelpersIfOpen() {
+        if ($("#sectionScheduleMatrixModal").hasClass("show")) {
+            renderSectionScheduleMatrix();
+        }
+
+        if ($("#currentSectionScheduleMatrixModal").hasClass("show")) {
+            renderCurrentSectionScheduleMatrix();
+        }
     }
 
     function sortFacultyScheduleBoardEntries(entries) {
@@ -7063,7 +7705,7 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
-        const entries = Array.isArray(schedule.entries) ? schedule.entries : [];
+        const entries = getFacultyScheduleDisplayEntries(schedule);
         const otherAssignedEntries = Array.isArray(schedule.other_assigned_entries) ? schedule.other_assigned_entries : [];
         const facultyBoard = buildFacultyScheduleBoard(entries);
         const awarenessBoard = buildOtherFacultyScheduleBoard(otherAssignedEntries, facultyBoard.slots);
@@ -7071,10 +7713,12 @@ while ($ay = $ayQ->fetch_assoc()) {
         const slots = facultyBoard.slots.length > 0 ? facultyBoard.slots : awarenessBoard.slots;
         const hasCurrentOffering = entries.some(entry => entry.is_current_offering);
         const awarenessBlockCount = countFacultyScheduleBoardBlocks(awarenessBoard);
+        const hasDraftPreview = hasScheduleBlockPreviewChanges();
+        const previewIssues = Array.isArray(schedule.preview_issues) ? schedule.preview_issues.filter(Boolean) : [];
 
         $("#facultyScheduleMatrixHeaderNote").text(
             entries.length > 0 || awarenessBlockCount > 0
-                ? `${facultyName} schedule with awareness of other faculty workload occupancy for the current college term.`
+                ? `${facultyName} schedule with awareness of other faculty workload occupancy for the current college term.${hasDraftPreview ? " Draft changes from the open editor are reflected here until you save." : ""}`
                 : `${facultyName} has no scheduled workload blocks in the current college term.`
         );
 
@@ -7086,6 +7730,9 @@ while ($ay = $ayQ->fetch_assoc()) {
         if (hasCurrentOffering) {
             summaryNotes.push("Current subject blocks are marked.");
         }
+        if (hasDraftPreview) {
+            summaryNotes.push("Draft changes from Define Class Schedule Blocks are reflected here.");
+        }
         if (awarenessBlockCount > 0) {
             summaryNotes.push("Red blocks are awareness only and show time slots already occupied by other faculty workload in the current college term.");
         }
@@ -7096,6 +7743,9 @@ while ($ay = $ayQ->fetch_assoc()) {
         ];
         if (hasCurrentOffering) {
             legendItems.push('<span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-current"></span>Current subject block</span>');
+        }
+        if (hasDraftPreview) {
+            legendItems.push('<span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-draft"></span>Draft preview</span>');
         }
         if (awarenessBlockCount > 0) {
             legendItems.push('<span class="faculty-schedule-legend-item"><span class="faculty-schedule-legend-swatch is-occupied"></span>Occupied by other faculty (warning only)</span>');
@@ -7110,6 +7760,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                 <div class="faculty-helper-metrics">
                     <span class="faculty-helper-metric">${escapeHtml(String(schedule.scheduled_block_count || entries.length))} block(s)</span>
                     <span class="faculty-helper-metric">${escapeHtml(String(schedule.scheduled_class_count || 0))} class(es)</span>
+                    ${hasDraftPreview ? `<span class="faculty-helper-metric">${escapeHtml(String(schedule.draft_ready_count || 0))} draft block(s)</span>` : ""}
                     ${awarenessBlockCount > 0 ? `<span class="faculty-helper-metric">${escapeHtml(String(awarenessBlockCount))} occupied time block${awarenessBlockCount === 1 ? "" : "s"}</span>` : ""}
                 </div>
             </div>
@@ -7119,6 +7770,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         const warningItems = []
             .concat(awarenessBlockCount > 0 ? ["Red occupied blocks are warning-only awareness and do not automatically mean the selected faculty cannot be scheduled there."] : [])
+            .concat(previewIssues)
             .concat(Array.isArray(facultyBoard.warnings) ? facultyBoard.warnings : []);
 
         if (warningItems.length > 0) {
@@ -7962,6 +8614,219 @@ while ($ay = $ayQ->fetch_assoc()) {
         }));
     }
 
+    function getScheduleBlockEditablePreviewTypes(drafts = null) {
+        const source = Array.isArray(drafts) ? drafts : collectScheduleBlockDrafts();
+        const typeSet = new Set();
+
+        source.forEach(block => {
+            if (block?.is_inherited) {
+                return;
+            }
+
+            typeSet.add(normalizeScheduleBlockType(block?.type));
+        });
+
+        return Array.from(typeSet);
+    }
+
+    function getScheduleBlockRoomLabelById(roomId) {
+        const normalizedRoomId = parseInt(roomId, 10) || 0;
+        if (!normalizedRoomId) {
+            return "TBA";
+        }
+
+        const room = (Array.isArray(termRoomCache) ? termRoomCache : []).find(item => (
+            (parseInt(item?.room_id, 10) || 0) === normalizedRoomId
+        ));
+
+        return String(room?.label || room?.room_code || room?.room_name || "TBA").trim() || "TBA";
+    }
+
+    function buildScheduleBlockDraftPreviewPayload(drafts = null) {
+        const source = Array.isArray(drafts) ? drafts : collectScheduleBlockDrafts();
+        return source
+            .filter(block => !block?.is_inherited)
+            .map(block => ({
+                block_key: String(block?.block_key || ""),
+                schedule_id: parseInt(block?.schedule_id, 10) || 0,
+                type: normalizeScheduleBlockType(block?.type),
+                room_id: String(block?.room_id || ""),
+                time_start: String(block?.time_start || ""),
+                time_end: String(block?.time_end || ""),
+                days_json: JSON.stringify(normalizeScheduleDays(Array.isArray(block?.days) ? block.days : []))
+            }));
+    }
+
+    function buildScheduleBlockDraftPreviewSignature(blocks = null) {
+        const source = Array.isArray(blocks) ? blocks : buildScheduleBlockDraftPreviewPayload();
+        return JSON.stringify(source.map(block => ({
+            block_key: String(block?.block_key || ""),
+            schedule_id: parseInt(block?.schedule_id, 10) || 0,
+            type: normalizeScheduleBlockType(block?.type),
+            room_id: String(block?.room_id || ""),
+            time_start: String(block?.time_start || ""),
+            time_end: String(block?.time_end || ""),
+            days_json: String(block?.days_json || "[]")
+        })));
+    }
+
+    function hasScheduleBlockPreviewChanges() {
+        if (!scheduleBlockState) {
+            return false;
+        }
+
+        return buildScheduleBlockDraftPreviewSignature() !== String(scheduleBlockState.baselineDraftSignature || "");
+    }
+
+    function buildScheduleBlockLocalPreviewEntries() {
+        if (!scheduleBlockState || !hasScheduleBlockPreviewChanges()) {
+            return [];
+        }
+
+        const subjectCode = String(scheduleBlockState.subjectCode || "").trim();
+        const subjectDescription = String(scheduleBlockState.subjectDescription || "").trim();
+        const sectionLabel = String(
+            scheduleBlockState.fullSection
+            || scheduleBlockState.sectionLabel
+            || scheduleBlockState.sectionName
+            || "Section"
+        ).trim() || "Section";
+        const labelIndexMap = { LEC: 0, LAB: 0 };
+
+        return buildScheduleBlockDraftPreviewPayload().reduce((entries, block) => {
+            let days = [];
+            try {
+                days = JSON.parse(String(block?.days_json || "[]"));
+            } catch (error) {
+                days = [];
+            }
+
+            const normalizedDays = normalizeScheduleDays(Array.isArray(days) ? days : []);
+            const timeStart = normalizeMatrixTimeInput(block?.time_start || "");
+            const timeEnd = normalizeMatrixTimeInput(block?.time_end || "");
+            const roomId = parseInt(block?.room_id, 10) || 0;
+            const startMinutes = matrixTimeToMinutes(timeStart);
+            const endMinutes = matrixTimeToMinutes(timeEnd);
+
+            if (!roomId || !timeStart || !timeEnd || normalizedDays.length === 0) {
+                return entries;
+            }
+
+            if (startMinutes === null || endMinutes === null || endMinutes <= startMinutes) {
+                return entries;
+            }
+
+            entries.push(normalizeFacultyScheduleEntry({
+                offering_id: parseInt(scheduleBlockState.offeringId, 10) || 0,
+                schedule_id: 0,
+                schedule_type: normalizeScheduleBlockType(block?.type),
+                time_start: timeStart,
+                time_end: timeEnd,
+                days: normalizedDays,
+                subject_code: subjectCode,
+                subject_description: subjectDescription,
+                section_label: sectionLabel,
+                room_label: getScheduleBlockRoomLabelById(roomId),
+                preview_label: getScheduleBlockLabel(block, labelIndexMap),
+                preview_status_note: "Draft preview",
+                is_current_offering: true,
+                is_preview_block: true
+            }));
+
+            return entries;
+        }, []);
+    }
+
+    function replaceCurrentOfferingEntriesWithPreview(entries, previewEntries, replaceTypes) {
+        const currentOfferingId = parseInt(scheduleBlockState?.offeringId, 10) || 0;
+        const liveEntries = Array.isArray(entries) ? entries.slice() : [];
+        const draftEntries = Array.isArray(previewEntries) ? previewEntries.slice() : [];
+        const typeSet = new Set((Array.isArray(replaceTypes) ? replaceTypes : []).map(type => normalizeScheduleBlockType(type)));
+
+        if (!currentOfferingId || typeSet.size === 0) {
+            return liveEntries;
+        }
+
+        const keptEntries = liveEntries.filter(entry => {
+            const isCurrentEntry = Boolean(entry?.is_current_offering)
+                || (parseInt(entry?.offering_id, 10) || 0) === currentOfferingId;
+            if (!isCurrentEntry) {
+                return true;
+            }
+
+            return !typeSet.has(normalizeScheduleBlockType(entry?.schedule_type || entry?.type));
+        });
+
+        return keptEntries.concat(draftEntries);
+    }
+
+    function getSectionMatrixDisplaySections(sections) {
+        const baseSections = Array.isArray(sections) ? sections : [];
+        if (!hasScheduleBlockPreviewChanges()) {
+            return baseSections;
+        }
+
+        const replaceTypes = getScheduleBlockEditablePreviewTypes();
+        const previewEntries = buildScheduleBlockLocalPreviewEntries().map(entry => normalizeSectionMatrixEntry(entry));
+
+        if (replaceTypes.length === 0) {
+            return baseSections;
+        }
+
+        return baseSections.map(section => {
+            if (!section?.is_current) {
+                return section;
+            }
+
+            const mergedEntries = sortSectionMatrixEntries(replaceCurrentOfferingEntriesWithPreview(
+                Array.isArray(section?.entries) ? section.entries : [],
+                previewEntries,
+                replaceTypes
+            ));
+
+            return {
+                ...section,
+                entries: mergedEntries,
+                entry_count: mergedEntries.length
+            };
+        });
+    }
+
+    function getCurrentSectionScheduleDisplayEntries(entries) {
+        if (!hasScheduleBlockPreviewChanges()) {
+            return Array.isArray(entries) ? entries : [];
+        }
+
+        const replaceTypes = getScheduleBlockEditablePreviewTypes();
+        if (replaceTypes.length === 0) {
+            return Array.isArray(entries) ? entries : [];
+        }
+
+        return replaceCurrentOfferingEntriesWithPreview(
+            entries,
+            buildScheduleBlockLocalPreviewEntries(),
+            replaceTypes
+        );
+    }
+
+    function getFacultyScheduleDisplayEntries(schedule) {
+        const liveEntries = Array.isArray(schedule?.entries) ? schedule.entries : [];
+        if (!hasScheduleBlockPreviewChanges()) {
+            return liveEntries;
+        }
+
+        const replaceTypes = getScheduleBlockEditablePreviewTypes();
+        if (replaceTypes.length === 0) {
+            return liveEntries;
+        }
+
+        return replaceCurrentOfferingEntriesWithPreview(
+            liveEntries,
+            Array.isArray(schedule?.draft_entries) ? schedule.draft_entries : [],
+            replaceTypes
+        );
+    }
+
     function addScheduleBlock(type) {
         if (!scheduleBlockState) {
             return;
@@ -7969,7 +8834,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         scheduleBlockState.blocks.push(createScheduleBlock(type));
         renderScheduleBlocks();
-        refreshFacultyAwarenessModalIfOpen();
+        queueScheduleBlockFacultyPreviewRefresh();
+        refreshScheduleBlockPreviewHelpersIfOpen();
     }
 
     function removeScheduleBlock(blockKey) {
@@ -7979,7 +8845,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         scheduleBlockState.blocks = scheduleBlockState.blocks.filter(block => block.block_key !== blockKey);
         renderScheduleBlocks();
-        refreshFacultyAwarenessModalIfOpen();
+        queueScheduleBlockFacultyPreviewRefresh();
+        refreshScheduleBlockPreviewHelpersIfOpen();
     }
 
     function formatYearLevelLabel(yearLevel) {
@@ -8066,6 +8933,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         const labUnits = Number(button.data("labUnits")) || 0;
         const lecUnits = Number(button.data("lecUnits")) || 0;
         const totalUnits = Number(button.data("totalUnits")) || 0;
+        const subjectCode = String(button.data("subCode") || "").trim();
+        const subjectDescription = String(button.data("subDesc") || "").trim();
         const subjectLabel = `${button.data("subCode")} - ${button.data("subDesc")}`;
         const sectionLabel = String(button.data("sectionLabel") || `Section: ${button.data("section")}`);
 
@@ -8117,6 +8986,8 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                     scheduleBlockState = {
                         offeringId,
+                        subjectCode,
+                        subjectDescription,
                         subjectLabel,
                         sectionLabel,
                         sectionName: String(res.section_name || button.data("section") || "").trim(),
@@ -8128,6 +8999,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         editableTypes,
                         inheritedTypes: Array.isArray(res.inherited_types) ? res.inherited_types : [],
                         blocks,
+                        baselineDraftSignature: buildScheduleBlockDraftPreviewSignature(buildScheduleBlockDraftPreviewPayload(blocks)),
                         facultyHelper: createScheduleBlockFacultyHelperState()
                     };
 
@@ -8487,6 +9359,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                         $("#scheduleMergeModal").modal("hide");
                         setTimeout(function () {
+                            refreshScheduleSetLiveState();
                             loadScheduleTable();
                         }, 300);
                         return;
@@ -9168,6 +10041,8 @@ while ($ay = $ayQ->fetch_assoc()) {
         const ay = $("#ay_id").val();
         const sem = $("#semester").val();
 
+        updateMatrixHeaderNote();
+
         if (!ay || !sem) {
             if (openModal) {
                 Swal.fire(
@@ -9189,7 +10064,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
         $("#matrixContainer").html(`
             <div class="text-center text-muted py-5">
-              Loading room utilization for ${escapeHtml(scheduleWindowLabel())}...
+              Loading current live room utilization for ${escapeHtml(scheduleWindowLabel())}...
             </div>
         `);
 
@@ -9337,6 +10212,17 @@ while ($ay = $ayQ->fetch_assoc()) {
         };
     }
 
+    function getScheduleSetScope() {
+        return {
+            ay_id: $("#ay_id").val(),
+            semester: $("#semester").val()
+        };
+    }
+
+    function hasScheduleSetScope(scope = getScheduleSetScope()) {
+        return Boolean(scope.ay_id && scope.semester);
+    }
+
     function abortScheduleSetListRequest() {
         if (scheduleSetListRequest && scheduleSetListRequest.readyState !== 4) {
             scheduleSetListRequest.abort();
@@ -9349,6 +10235,83 @@ while ($ay = $ayQ->fetch_assoc()) {
 
     function renderScheduleSetDetailText(message) {
         renderScheduleSetDetailHtml(escapeHtml(message || ""));
+    }
+
+    function renderScheduleSetActiveState() {
+        updateMatrixHeaderNote();
+        const scope = getScheduleSetScope();
+        const hasScope = hasScheduleSetScope(scope);
+        const setCount = scheduleSetList.length;
+        const activeSet = getWorkspaceActiveScheduleSet();
+        const activeSetId = Number((activeSet && activeSet.schedule_set_id) || scheduleSetLiveStatus.active_schedule_set_id || 0);
+        const activeSetName = getScheduleSetDisplayName(
+            activeSet,
+            scheduleSetLiveStatus.active_schedule_set_name,
+            scheduleSetLiveStatus.active_schedule_set_id
+        );
+        const activeScope = String((activeSet && activeSet.scope_label) || scheduleSetLiveStatus.active_scope_label || "").trim();
+        const lastLoadedSet = getWorkspaceLastLoadedScheduleSet();
+        const lastLoadedSetId = Number((lastLoadedSet && lastLoadedSet.schedule_set_id) || scheduleSetLiveStatus.last_loaded_schedule_set_id || 0);
+        const lastLoadedSetName = getScheduleSetDisplayName(
+            lastLoadedSet,
+            scheduleSetLiveStatus.last_loaded_schedule_set_name,
+            scheduleSetLiveStatus.last_loaded_schedule_set_id
+        );
+        const lastLoadedScope = String((lastLoadedSet && lastLoadedSet.scope_label) || scheduleSetLiveStatus.last_loaded_scope_label || "").trim();
+        const $state = $("#scheduleSetActiveState");
+
+        if (!hasScope) {
+            $state
+                .removeClass("is-active is-unsaved is-modified")
+                .addClass("is-live")
+                .html('<i class="bx bx-radio-circle"></i><span>Select term (current: live)</span>');
+            return;
+        }
+
+        if (scheduleSetListLoading) {
+            $state
+                .removeClass("is-active is-unsaved is-modified")
+                .addClass("is-live")
+                .html('<i class="bx bx-loader-alt bx-spin"></i><span>Checking current live workspace...</span>');
+            return;
+        }
+
+        if (setCount === 0) {
+            $state
+                .removeClass("is-active is-unsaved is-modified")
+                .addClass("is-live")
+                .html('<i class="bx bx-radio-circle"></i><span>No set created (current: live)</span>');
+            return;
+        }
+
+        if (activeSetId > 0 || String(scheduleSetLiveStatus.active_schedule_set_name || "").trim() !== "") {
+            const parts = [`Active set: ${activeSetName}`];
+            if (activeScope !== "") {
+                parts.push(activeScope);
+            }
+            $state
+                .removeClass("is-live is-unsaved is-modified")
+                .addClass("is-active")
+                .html(`<i class="bx bx-check-circle"></i><span>${escapeHtml(parts.join(" - "))}</span>`);
+            return;
+        }
+
+        if (lastLoadedSetId > 0 || String(scheduleSetLiveStatus.last_loaded_schedule_set_name || "").trim() !== "") {
+            const parts = [`Loaded from: ${lastLoadedSetName} (modified in live)`];
+            if (lastLoadedScope !== "") {
+                parts.push(lastLoadedScope);
+            }
+            $state
+                .removeClass("is-active is-live is-unsaved")
+                .addClass("is-modified")
+                .html(`<i class="bx bx-history"></i><span>${escapeHtml(parts.join(" - "))}</span>`);
+            return;
+        }
+
+        $state
+            .removeClass("is-active is-live is-modified")
+            .addClass("is-unsaved")
+            .html('<i class="bx bx-edit"></i><span>Current: live (not saved as a set)</span>');
     }
 
     function formatScheduleSetTimestamp(value) {
@@ -9375,62 +10338,484 @@ while ($ay = $ayQ->fetch_assoc()) {
         return scheduleSetList.find(item => String(item.schedule_set_id) === selectedId) || null;
     }
 
+    function getScheduleSetById(scheduleSetId) {
+        const targetId = String(scheduleSetId || "");
+        if (targetId === "") {
+            return null;
+        }
+
+        return scheduleSetList.find(item => String(item.schedule_set_id) === targetId) || null;
+    }
+
+    function getScheduleSetDisplayName(item, fallbackName = "", fallbackId = 0) {
+        const name = String((item && item.set_name) || fallbackName || "").trim();
+        const id = Number((item && item.schedule_set_id) || fallbackId || 0);
+        if (name !== "") {
+            return name;
+        }
+        return id > 0 ? `Set ${id}` : "Saved Set";
+    }
+
+    function getWorkspaceActiveScheduleSet() {
+        const statusActiveSetId = Number(scheduleSetLiveStatus.active_schedule_set_id || 0);
+        if (statusActiveSetId > 0) {
+            const matched = getScheduleSetById(statusActiveSetId);
+            if (matched) {
+                return matched;
+            }
+        }
+
+        return scheduleSetList.find(item => Number(item.matches_live || 0) === 1) || null;
+    }
+
+    function getWorkspaceLastLoadedScheduleSetId() {
+        const statusLoadedSetId = Number(scheduleSetLiveStatus.last_loaded_schedule_set_id || 0);
+        if (statusLoadedSetId > 0) {
+            return String(statusLoadedSetId);
+        }
+        return String(pendingLoadedScheduleSetId || "");
+    }
+
+    function getWorkspaceLastLoadedScheduleSet() {
+        const loadedSetId = getWorkspaceLastLoadedScheduleSetId();
+        if (loadedSetId === "") {
+            return null;
+        }
+        return getScheduleSetById(loadedSetId);
+    }
+
+    function liveMatchesLastLoadedScheduleSet() {
+        if (Number(scheduleSetLiveStatus.live_matches_last_loaded || 0) === 1) {
+            return true;
+        }
+
+        const activeSet = getWorkspaceActiveScheduleSet();
+        const lastLoadedSet = getWorkspaceLastLoadedScheduleSet();
+        return Boolean(
+            activeSet &&
+            lastLoadedSet &&
+            String(activeSet.schedule_set_id || "") === String(lastLoadedSet.schedule_set_id || "")
+        );
+    }
+
+    function isScheduleSetActive(item) {
+        if (!item) {
+            return false;
+        }
+
+        const itemId = String(item.schedule_set_id || "");
+        if (itemId === "") {
+            return false;
+        }
+
+        const statusActiveId = String(scheduleSetLiveStatus.active_schedule_set_id || "");
+        return Number(item.matches_live || 0) === 1 ||
+            (statusActiveId !== "" && statusActiveId !== "0" && itemId === statusActiveId);
+    }
+
+    function isScheduleSetLoadedOrigin(item) {
+        if (!item) {
+            return false;
+        }
+
+        const itemId = String(item.schedule_set_id || "");
+        if (itemId === "") {
+            return false;
+        }
+
+        const loadedSetId = getWorkspaceLastLoadedScheduleSetId();
+        return loadedSetId !== "" && itemId === loadedSetId;
+    }
+
+    function isScheduleSetManagerVisible() {
+        return $("#scheduleSetManagerModal").hasClass("show");
+    }
+
+    function getScheduleSetTermLabel() {
+        const ayLabel = String($("#ay_id option:selected").text() || "").trim();
+        const semesterLabel = String($("#semester option:selected").text() || "").trim();
+        return [ayLabel, semesterLabel].filter(Boolean).join(" / ") || "selected college term";
+    }
+
+    function showScheduleSetManagerStatus(type, message) {
+        const normalizedType = ["success", "warning", "danger", "info"].includes(type) ? type : "info";
+        $("#scheduleSetManagerStatus")
+            .removeClass("d-none alert-success alert-warning alert-danger alert-info")
+            .addClass(`alert-${normalizedType}`)
+            .html(escapeHtml(message || ""));
+    }
+
+    function clearScheduleSetManagerStatus() {
+        $("#scheduleSetManagerStatus")
+            .addClass("d-none")
+            .removeClass("alert-success alert-warning alert-danger alert-info")
+            .empty();
+    }
+
+    function setScheduleSetEditorLoading(isLoading) {
+        const loading = Boolean(isLoading);
+        $("#scheduleSetEditorName, #scheduleSetEditorRemarks").prop("disabled", loading);
+        $("#btnCancelScheduleSetEditor, #btnCancelScheduleSetEditorBottom").prop("disabled", loading);
+        $("#btnSaveScheduleSetEditor")
+            .prop("disabled", loading)
+            .html(loading ? '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span> Saving...' : '<i class="bx bx-save"></i> Save Changes');
+    }
+
+    function resetScheduleSetEditor() {
+        scheduleSetEditorActiveId = "";
+        setScheduleSetEditorLoading(false);
+        $("#scheduleSetEditorForm").addClass("d-none");
+        $("#scheduleSetEditorId, #scheduleSetEditorName, #scheduleSetEditorRemarks").val("");
+        $("#scheduleSetEditorName").removeClass("is-invalid");
+        $("#scheduleSetEditorScope").text("Rename the saved snapshot without changing live schedules.");
+        $("#scheduleSetManagerRows tr").removeClass("is-editing");
+    }
+
+    function openScheduleSetEditor(scheduleSetId) {
+        const item = getScheduleSetById(scheduleSetId);
+        if (!item) {
+            showScheduleSetManagerStatus("warning", "Reload saved sets and try again.");
+            return;
+        }
+
+        clearScheduleSetManagerStatus();
+        scheduleSetEditorActiveId = String(item.schedule_set_id || scheduleSetId || "");
+        $("#scheduleSetEditorId").val(scheduleSetEditorActiveId);
+        $("#scheduleSetEditorName")
+            .val(item.set_name || "")
+            .removeClass("is-invalid");
+        $("#scheduleSetEditorRemarks").val(item.remarks || "");
+        $("#scheduleSetEditorScope").text(`Scope: ${item.scope_label || "College term"}. This edits only the saved set name and note.`);
+        $("#scheduleSetEditorForm").removeClass("d-none");
+        renderScheduleSetManager();
+
+        window.setTimeout(function () {
+            const input = document.getElementById("scheduleSetEditorName");
+            if (input) {
+                input.focus();
+                input.select();
+            }
+        }, 80);
+    }
+
+    function renderScheduleSetManager() {
+        const scope = getScheduleSetScope();
+        const hasScope = hasScheduleSetScope(scope);
+        const termLabel = getScheduleSetTermLabel();
+
+        $("#btnScheduleSetManagerRefresh").prop("disabled", !hasScope || scheduleSetListLoading);
+
+        if (!hasScope) {
+            $("#scheduleSetManagerSummary").html("Select Academic Year and Semester first to manage saved sets.");
+            $("#scheduleSetManagerRows").html(`
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">No college term selected.</td>
+                </tr>
+            `);
+            return;
+        }
+
+        if (scheduleSetListLoading) {
+            $("#scheduleSetManagerSummary").html(`Loading saved sets for <strong>${escapeHtml(termLabel)}</strong>...`);
+            $("#scheduleSetManagerRows").html(`
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">Loading saved sets...</td>
+                </tr>
+            `);
+            return;
+        }
+
+        const setCount = scheduleSetList.length;
+        $("#scheduleSetManagerSummary").html(`<strong>${escapeHtml(formatCountLabel(setCount, "saved set"))}</strong> available for <strong>${escapeHtml(termLabel)}</strong>.`);
+
+        if (setCount === 0) {
+            $("#scheduleSetManagerRows").html(`
+                <tr>
+                    <td colspan="8" class="text-center text-muted py-4">No saved schedule sets were found for this college term.</td>
+                </tr>
+            `);
+            return;
+        }
+
+        if (scheduleSetEditorActiveId !== "" && !scheduleSetList.some(item => String(item.schedule_set_id) === scheduleSetEditorActiveId)) {
+            resetScheduleSetEditor();
+        }
+
+        const rowsHtml = scheduleSetList.map(function (item) {
+            const id = Number(item.schedule_set_id || 0);
+            const remarks = String(item.remarks || "").trim();
+            const scopeKey = String(item.scope_key || "");
+            const programCount = Number(item.program_count || 0);
+            const programLabel = programCount > 0
+                ? formatCountLabel(programCount, "program")
+                : (scopeKey === "program" ? "1 legacy program" : "-");
+            const workloadRowCount = Number(item.workload_row_count || 0);
+            const workloadFacultyCount = Number(item.workload_faculty_count || 0);
+            const workloadLabel = workloadRowCount > 0
+                ? `${formatCountLabel(workloadRowCount, "row")} / ${formatCountLabel(workloadFacultyCount, "faculty", "faculty")}`
+                : "Not included";
+            const updatedLabel = formatScheduleSetTimestamp(item.date_updated || item.date_created);
+            const isEditing = String(id) === scheduleSetEditorActiveId;
+            const activeBadge = isScheduleSetActive(item)
+                ? '<span class="badge bg-label-success text-success ms-2">Active set</span>'
+                : "";
+
+            return `
+                <tr data-schedule-set-id="${escapeHtml(String(id))}" class="${isEditing ? "is-editing" : ""}">
+                    <td>
+                        <div class="schedule-set-manager-name">${escapeHtml(item.set_name || `Set ${id}`)}${activeBadge}</div>
+                        ${remarks !== "" ? `<div class="small text-muted">${escapeHtml(remarks)}</div>` : ""}
+                    </td>
+                    <td>${escapeHtml(item.scope_label || "College term")}</td>
+                    <td>${escapeHtml(String(Number(item.row_count || 0)))}</td>
+                    <td>${escapeHtml(String(Number(item.offering_count || 0)))}</td>
+                    <td>${escapeHtml(programLabel)}</td>
+                    <td>${escapeHtml(workloadLabel)}</td>
+                    <td>${escapeHtml(updatedLabel)}</td>
+                    <td>
+                        <div class="schedule-set-manager-actions">
+                            <button type="button" class="btn btn-outline-primary btn-sm btnEditScheduleSet" data-id="${escapeHtml(String(id))}">
+                                <i class="bx bx-edit-alt"></i> ${isEditing ? "Editing" : "Edit"}
+                            </button>
+                            <button type="button" class="btn btn-outline-danger btn-sm btnDeleteScheduleSet" data-id="${escapeHtml(String(id))}">
+                                <i class="bx bx-trash"></i> Delete
+                            </button>
+                        </div>
+                    </td>
+                </tr>
+            `;
+        }).join("");
+
+        $("#scheduleSetManagerRows").html(rowsHtml);
+    }
+
+    function openScheduleSetManager() {
+        const scope = getScheduleSetScope();
+        if (!hasScheduleSetScope(scope)) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        renderScheduleSetManager();
+        clearScheduleSetManagerStatus();
+        resetScheduleSetEditor();
+        if (scheduleSetManagerModalInstance) {
+            scheduleSetManagerModalInstance.show();
+        } else {
+            $("#scheduleSetManagerModal").modal("show");
+        }
+        loadScheduleSets(String($("#scheduleSetSelect").val() || ""));
+    }
+
+    function updateScheduleSetMeta(scheduleSetId, setName, remarks) {
+        setScheduleSetEditorLoading(true);
+        clearScheduleSetManagerStatus();
+
+        $.ajax({
+            url: "../backend/query_class_schedule.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+                update_schedule_set_meta: 1,
+                schedule_set_id: scheduleSetId,
+                set_name: setName,
+                remarks: remarks
+            },
+            success: function (res) {
+                if (res && res.status === "ok") {
+                    resetScheduleSetEditor();
+                    showScheduleSetManagerStatus("success", res.message || "Saved schedule set updated.");
+                    loadScheduleSets(String(res.schedule_set_id || scheduleSetId || ""));
+                    return;
+                }
+
+                setScheduleSetEditorLoading(false);
+                showScheduleSetManagerStatus("danger", (res && res.message) ? res.message : "Failed to update the saved schedule set.");
+            },
+            error: function (xhr) {
+                setScheduleSetEditorLoading(false);
+                showScheduleSetManagerStatus("danger", xhr.responseText || "Failed to update the saved schedule set.");
+            }
+        });
+    }
+
+    function promptEditScheduleSet(scheduleSetId) {
+        openScheduleSetEditor(scheduleSetId);
+    }
+
+    function deleteScheduleSet(scheduleSetId) {
+        const item = getScheduleSetById(scheduleSetId);
+        if (!item) {
+            Swal.fire("Unavailable", "Reload saved sets and try again.", "info");
+            return;
+        }
+
+        Swal.fire({
+            icon: "warning",
+            title: "Delete Saved Set?",
+            html: `Delete <b>${escapeHtml(item.set_name || "this saved set")}</b>?<br><br>This removes only the saved snapshot. Live schedules, offerings, merge settings, and Faculty Workload are not changed.`,
+            showCancelButton: true,
+            confirmButtonText: "Delete Set",
+            cancelButtonText: "Cancel",
+            confirmButtonColor: "#dc3545",
+            allowOutsideClick: false,
+            customClass: { popup: "swal-top" }
+        }).then(function (result) {
+            if (!result.isConfirmed) {
+                return;
+            }
+
+            Swal.fire({
+                title: "Deleting Saved Set...",
+                html: "Please wait while the saved set snapshot is removed.",
+                allowOutsideClick: false,
+                allowEscapeKey: false,
+                customClass: { popup: "swal-top" },
+                didOpen: function () {
+                    Swal.showLoading();
+                }
+            });
+
+            $.ajax({
+                url: "../backend/query_class_schedule.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    delete_schedule_set: 1,
+                    schedule_set_id: scheduleSetId
+                },
+                success: function (res) {
+                    Swal.close();
+
+                    if (res && res.status === "ok") {
+                        Swal.fire({
+                            icon: "success",
+                            title: "Saved Set Deleted",
+                            text: res.message || "Saved schedule set deleted.",
+                            timer: 1300,
+                            showConfirmButton: false,
+                            customClass: { popup: "swal-top" }
+                        });
+                        if (String(scheduleSetId || "") === scheduleSetEditorActiveId) {
+                            resetScheduleSetEditor();
+                        }
+                        loadScheduleSets("");
+                        return;
+                    }
+
+                    Swal.fire("Error", (res && res.message) ? res.message : "Failed to delete the saved schedule set.", "error");
+                },
+                error: function (xhr) {
+                    Swal.close();
+                    Swal.fire("Error", xhr.responseText || "Failed to delete the saved schedule set.", "error");
+                }
+            });
+        });
+    }
+
     function updateScheduleSetControls() {
-        const filters = getCurrentScheduleFilters();
-        const hasFilters = Boolean(filters.program_id && filters.ay_id && filters.semester);
+        const scope = getScheduleSetScope();
+        const hasScope = hasScheduleSetScope(scope);
         const hasSets = scheduleSetList.length > 0;
         const hasSelection = Boolean(getSelectedScheduleSet());
 
-        $("#scheduleSetSelect").prop("disabled", !hasFilters || !hasSets);
-        $("#btnRefreshScheduleSets, #btnSaveScheduleSet").prop("disabled", !hasFilters);
-        $("#btnLoadScheduleSet").prop("disabled", !hasFilters || !hasSelection);
+        $("#scheduleSetSelect").prop("disabled", !hasScope || !hasSets);
+        $("#btnRefreshScheduleSets, #btnSaveScheduleSet, #btnManageScheduleSets").prop("disabled", !hasScope);
+        $("#btnLoadScheduleSet").prop("disabled", !hasScope || !hasSelection);
     }
 
     function updateScheduleSetDetails() {
-        const filters = getCurrentScheduleFilters();
-        const hasFilters = Boolean(filters.program_id && filters.ay_id && filters.semester);
+        const scope = getScheduleSetScope();
+        const hasScope = hasScheduleSetScope(scope);
         const selectedSet = getSelectedScheduleSet();
+        const activeSet = getWorkspaceActiveScheduleSet();
+        const activeSetId = Number((activeSet && activeSet.schedule_set_id) || scheduleSetLiveStatus.active_schedule_set_id || 0);
+        const activeSetName = getScheduleSetDisplayName(
+            activeSet,
+            scheduleSetLiveStatus.active_schedule_set_name,
+            scheduleSetLiveStatus.active_schedule_set_id
+        );
+        const lastLoadedSet = getWorkspaceLastLoadedScheduleSet();
+        const lastLoadedSetId = Number((lastLoadedSet && lastLoadedSet.schedule_set_id) || scheduleSetLiveStatus.last_loaded_schedule_set_id || 0);
+        const lastLoadedSetName = getScheduleSetDisplayName(
+            lastLoadedSet,
+            scheduleSetLiveStatus.last_loaded_schedule_set_name,
+            scheduleSetLiveStatus.last_loaded_schedule_set_id
+        );
 
-        if (!hasFilters) {
-            renderScheduleSetDetailText("Live schedules remain the active workspace. Select Program, Academic Year, and Semester first to manage saved sets for this program term.");
+        if (!hasScope) {
+            renderScheduleSetDetailText("Live schedules remain the active workspace. Select Academic Year and Semester first to manage saved sets for this college term.");
             updateScheduleSetControls();
+            renderScheduleSetActiveState();
             return;
         }
 
         if (!selectedSet) {
             if (scheduleSetList.length === 0) {
-                renderScheduleSetDetailText("No saved schedule sets were found for this program term yet. Save the current live workspace to keep a reusable version for this program.");
+                renderScheduleSetDetailText("No set created (current: live). Save the current live workspace to keep a reusable version for all programs under this college.");
+            } else if (activeSetId > 0 || String(scheduleSetLiveStatus.active_schedule_set_name || "").trim() !== "") {
+                renderScheduleSetDetailHtml(`Current live workspace matches <strong>${escapeHtml(activeSetName)}</strong>. Select a saved schedule set to review its snapshot details or load another version into live.`);
+            } else if (lastLoadedSetId > 0 || String(scheduleSetLiveStatus.last_loaded_schedule_set_name || "").trim() !== "") {
+                renderScheduleSetDetailHtml(`Current live workspace was loaded from <strong>${escapeHtml(lastLoadedSetName)}</strong> and has been modified in live. Save this version as a new set when you want to keep the changes.`);
             } else {
-                renderScheduleSetDetailText("Select a saved schedule set to review its snapshot details and load it back into the live workspace for this program term.");
+                renderScheduleSetDetailText("Select a saved schedule set to review its snapshot details and load it back into the live workspace for this college term.");
             }
             updateScheduleSetControls();
+            renderScheduleSetActiveState();
             return;
         }
 
-        let html = `<strong>${escapeHtml(selectedSet.set_name || "Saved Set")}</strong> includes <strong>${escapeHtml(formatCountLabel(selectedSet.row_count, "row"))}</strong> across <strong>${escapeHtml(formatCountLabel(selectedSet.offering_count, "offering"))}</strong>.`;
+        const scopeLabel = String(selectedSet.scope_label || "College term").trim();
+        const programCount = Number(selectedSet.program_count || 0);
+        const workloadRowCount = Number(selectedSet.workload_row_count || 0);
+        const workloadFacultyCount = Number(selectedSet.workload_faculty_count || 0);
+        let html = `<strong>${escapeHtml(selectedSet.set_name || "Saved Set")}</strong> includes <strong>${escapeHtml(formatCountLabel(selectedSet.row_count, "row"))}</strong> across <strong>${escapeHtml(formatCountLabel(selectedSet.offering_count, "offering"))}</strong>`;
+        if (programCount > 0) {
+            html += ` in <strong>${escapeHtml(formatCountLabel(programCount, "program"))}</strong>`;
+        }
+        if (workloadRowCount > 0) {
+            html += ` with <strong>${escapeHtml(formatCountLabel(workloadRowCount, "workload row"))}</strong> for <strong>${escapeHtml(formatCountLabel(workloadFacultyCount, "faculty", "faculty"))}</strong>`;
+        } else {
+            html += ` with <strong>no saved workload assignments</strong>`;
+        }
+        html += `. Scope: <strong>${escapeHtml(scopeLabel)}</strong>.`;
         html += ` Updated ${escapeHtml(formatScheduleSetTimestamp(selectedSet.date_updated || selectedSet.date_created))}.`;
 
         if (String(selectedSet.remarks || "").trim() !== "") {
             html += ` ${escapeHtml(String(selectedSet.remarks || "").trim())}`;
         }
 
-        html += " Loading this set will replace the current live schedules for the selected program term.";
+        html += selectedSet.scope_key === "program"
+            ? " Loading this legacy set will replace the current live schedules for its original program term."
+            : " Loading this set will replace the current live schedules for the selected college term.";
+        if (isScheduleSetActive(selectedSet)) {
+            html += " This set currently matches the live workspace.";
+        } else if (isScheduleSetLoadedOrigin(selectedSet) && !liveMatchesLastLoadedScheduleSet()) {
+            html += " Live workspace was last loaded from this set, but it has been modified since then.";
+        }
         renderScheduleSetDetailHtml(html);
         updateScheduleSetControls();
+        renderScheduleSetActiveState();
     }
 
     function loadScheduleSets(selectedId = null) {
-        const filters = getCurrentScheduleFilters();
-        const hasFilters = Boolean(filters.program_id && filters.ay_id && filters.semester);
+        const scope = getScheduleSetScope();
+        const hasScope = hasScheduleSetScope(scope);
 
         abortScheduleSetListRequest();
 
-        if (!hasFilters) {
+        if (!hasScope) {
             scheduleSetList = [];
+            scheduleSetListLoading = false;
+            scheduleSetLiveStatus = {};
+            pendingLoadedScheduleSetId = "";
+            resetScheduleSetEditor();
+            clearScheduleSetManagerStatus();
             $("#scheduleSetSelect")
-                .html('<option value="">Select Program, Academic Year, and Semester first</option>')
+                .html('<option value="">Select Academic Year and Semester first</option>')
                 .val("");
             updateScheduleSetDetails();
+            renderScheduleSetManager();
             return;
         }
 
@@ -9439,11 +10824,15 @@ while ($ay = $ayQ->fetch_assoc()) {
             : String(selectedId || "");
 
         scheduleSetList = [];
+        scheduleSetListLoading = true;
+        scheduleSetLiveStatus = {};
         $("#scheduleSetSelect")
             .html('<option value="">Loading saved sets...</option>')
             .prop("disabled", true);
         renderScheduleSetDetailText("Loading saved schedule sets...");
         updateScheduleSetControls();
+        renderScheduleSetActiveState();
+        renderScheduleSetManager();
 
         scheduleSetListRequest = $.ajax({
             url: "../backend/query_class_schedule.php",
@@ -9451,58 +10840,98 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 load_schedule_sets: 1,
-                program_id: filters.program_id,
-                ay_id: filters.ay_id,
-                semester: filters.semester
+                ay_id: scope.ay_id,
+                semester: scope.semester
             },
             success: function (res) {
+                scheduleSetListLoading = false;
                 if (!res || res.status !== "ok") {
                     scheduleSetList = [];
+                    scheduleSetLiveStatus = {};
                     $("#scheduleSetSelect")
                         .html('<option value="">Unable to load saved sets</option>')
                         .val("");
                     renderScheduleSetDetailText((res && res.message) ? res.message : "Failed to load saved schedule sets.");
                     updateScheduleSetControls();
+                    renderScheduleSetActiveState();
+                    renderScheduleSetManager();
                     return;
                 }
 
                 scheduleSetList = Array.isArray(res.sets) ? res.sets : [];
+                scheduleSetLiveStatus = res.live_status && typeof res.live_status === "object" ? res.live_status : {};
+                pendingLoadedScheduleSetId = String(scheduleSetLiveStatus.last_loaded_schedule_set_id || "");
 
                 if (scheduleSetList.length === 0) {
                     $("#scheduleSetSelect")
                         .html('<option value="">No saved sets yet</option>')
                         .val("");
+                    pendingLoadedScheduleSetId = "";
                     updateScheduleSetDetails();
+                    renderScheduleSetManager();
                     return;
                 }
 
                 const optionsHtml = ['<option value="">Select a saved set...</option>']
-                    .concat(scheduleSetList.map(item => (
-                        `<option value="${escapeHtml(item.schedule_set_id)}">${escapeHtml(item.set_name || `Set ${item.schedule_set_id}`)}</option>`
-                    )))
+                    .concat(scheduleSetList.map(item => {
+                        const workloadSuffix = Number(item.workload_row_count || 0) > 0
+                            ? ` - Workload: ${formatCountLabel(item.workload_row_count, "row")}`
+                            : "";
+                        const statusSuffixes = [];
+                        if (isScheduleSetActive(item)) {
+                            statusSuffixes.push("Active");
+                        } else if (isScheduleSetLoadedOrigin(item) && !liveMatchesLastLoadedScheduleSet()) {
+                            statusSuffixes.push("Loaded Origin");
+                        }
+                        const statusSuffix = statusSuffixes.length > 0 ? ` - ${statusSuffixes.join(", ")}` : "";
+                        return `<option value="${escapeHtml(item.schedule_set_id)}">${escapeHtml(item.set_name || `Set ${item.schedule_set_id}`)} - ${escapeHtml(item.scope_label || "College term")}${escapeHtml(workloadSuffix)}${escapeHtml(statusSuffix)}</option>`;
+                    }))
                     .join("");
 
                 $("#scheduleSetSelect").html(optionsHtml);
 
-                if (preferredId !== "" && scheduleSetList.some(item => String(item.schedule_set_id) === preferredId)) {
-                    $("#scheduleSetSelect").val(preferredId);
+                const fallbackPreferredId = String(
+                    scheduleSetLiveStatus.active_schedule_set_id ||
+                    scheduleSetLiveStatus.last_loaded_schedule_set_id ||
+                    ""
+                );
+                const effectivePreferredId = preferredId !== "" ? preferredId : fallbackPreferredId;
+                if (effectivePreferredId !== "" && scheduleSetList.some(item => String(item.schedule_set_id) === effectivePreferredId)) {
+                    $("#scheduleSetSelect").val(effectivePreferredId);
                 }
 
                 updateScheduleSetDetails();
+                renderScheduleSetManager();
             },
             error: function (xhr) {
                 if (xhr.statusText === "abort") {
                     return;
                 }
 
+                scheduleSetListLoading = false;
                 scheduleSetList = [];
+                scheduleSetLiveStatus = {};
                 $("#scheduleSetSelect")
                     .html('<option value="">Unable to load saved sets</option>')
                     .val("");
                 renderScheduleSetDetailText("Failed to load saved schedule sets.");
                 updateScheduleSetControls();
+                renderScheduleSetActiveState();
+                renderScheduleSetManager();
             }
         });
+    }
+
+    function refreshScheduleSetLiveState(selectedId = null) {
+        if (!hasScheduleSetScope()) {
+            updateScheduleSetDetails();
+            return;
+        }
+
+        const preferredId = selectedId === null
+            ? String($("#scheduleSetSelect").val() || "")
+            : String(selectedId || "");
+        loadScheduleSets(preferredId);
     }
 
     function suggestNextScheduleSetName() {
@@ -9510,16 +10939,17 @@ while ($ay = $ayQ->fetch_assoc()) {
     }
 
     function saveLiveScheduleAsSet(setName, overwriteExisting = false, options = {}) {
-        const filters = getCurrentScheduleFilters();
+        const scope = getScheduleSetScope();
         const afterSuccess = typeof options.afterSuccess === "function" ? options.afterSuccess : null;
-        if (!filters.program_id || !filters.ay_id || !filters.semester) {
-            Swal.fire("Missing Filters", "Select Program, Academic Year, and Semester first.", "warning");
+        const includeWorkload = Boolean(options.includeWorkload);
+        if (!hasScheduleSetScope(scope)) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
             return;
         }
 
         Swal.fire({
             title: overwriteExisting ? "Updating Saved Set..." : "Saving Set...",
-            html: "Please wait while the current live schedules for the selected program term are copied into the saved set.",
+            html: "Please wait while the current live schedules for the selected college term are copied into the saved set.",
             allowOutsideClick: false,
             allowEscapeKey: false,
             customClass: { popup: "swal-top" },
@@ -9534,11 +10964,11 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 save_schedule_set: 1,
-                program_id: filters.program_id,
-                ay_id: filters.ay_id,
-                semester: filters.semester,
+                ay_id: scope.ay_id,
+                semester: scope.semester,
                 set_name: setName,
-                overwrite_existing_set: overwriteExisting ? 1 : 0
+                overwrite_existing_set: overwriteExisting ? 1 : 0,
+                include_workload_assignments: includeWorkload ? 1 : 0
             },
             success: function (res) {
                 Swal.close();
@@ -9547,7 +10977,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     Swal.fire({
                         icon: "question",
                         title: "Overwrite Saved Set?",
-                        html: `<b>${escapeHtml(setName)}</b> already exists for this program term. Replace it with the current live schedules for this program?`,
+                        html: `<b>${escapeHtml(setName)}</b> already exists for this college term. Replace it with the current live schedules for this college?${includeWorkload ? "<br><br>This overwrite will also replace the saved workload snapshot." : "<br><br>This overwrite will remove any saved workload snapshot for that set."}`,
                         showCancelButton: true,
                         confirmButtonText: "Overwrite Set",
                         cancelButtonText: "Cancel",
@@ -9565,15 +10995,21 @@ while ($ay = $ayQ->fetch_assoc()) {
                 if (res && res.status === "ok") {
                     const rowCount = Number(res.row_count || 0);
                     const offeringCount = Number(res.offering_count || 0);
+                    const workloadRowCount = Number(res.workload_row_count || 0);
+                    const workloadFacultyCount = Number(res.workload_faculty_count || 0);
+                    const workloadHtml = includeWorkload
+                        ? `<br>Workload rows saved: <b>${escapeHtml(String(workloadRowCount))}</b>${workloadRowCount > 0 ? ` across <b>${escapeHtml(formatCountLabel(workloadFacultyCount, "faculty", "faculty"))}</b>` : ""}`
+                        : "<br>Workload assignments were not included in this saved set.";
 
                     Swal.fire({
                         icon: "success",
                         title: overwriteExisting ? "Set Updated" : "Set Saved",
-                        html: `<b>${escapeHtml(res.set_name || setName)}</b> now stores <b>${escapeHtml(String(rowCount))}</b> schedule row(s) across <b>${escapeHtml(String(offeringCount))}</b> offering(s) for the selected program term.`,
+                        html: `<b>${escapeHtml(res.set_name || setName)}</b> now stores <b>${escapeHtml(String(rowCount))}</b> schedule row(s) across <b>${escapeHtml(String(offeringCount))}</b> offering(s) for the selected college term.${workloadHtml}`,
                         allowOutsideClick: false,
                         customClass: { popup: "swal-top" },
                         confirmButtonText: afterSuccess ? "Continue" : "OK"
                     }).then(function () {
+                        pendingLoadedScheduleSetId = String(res.schedule_set_id || "");
                         loadScheduleSets(String(res.schedule_set_id || ""));
                         if (afterSuccess) {
                             afterSuccess(res);
@@ -9596,50 +11032,86 @@ while ($ay = $ayQ->fetch_assoc()) {
     }
 
     function promptSaveScheduleSet(options = {}) {
-        const filters = getCurrentScheduleFilters();
+        const scope = getScheduleSetScope();
         const title = String(options.title || "Save Live as Set");
         const inputLabel = String(options.inputLabel || "Set name");
         const inputPlaceholder = String(options.inputPlaceholder || "Enter a saved set name");
         const confirmButtonText = String(options.confirmButtonText || "Save Set");
         const afterSave = typeof options.afterSave === "function" ? options.afterSave : null;
-        if (!filters.program_id || !filters.ay_id || !filters.semester) {
-            Swal.fire("Missing Filters", "Select Program, Academic Year, and Semester first.", "warning");
+        const includeWorkloadDefault = Boolean(options.includeWorkloadDefault);
+        if (!hasScheduleSetScope(scope)) {
+            Swal.fire("Missing Filters", "Select Academic Year and Semester first.", "warning");
             return;
         }
 
         Swal.fire({
             title: title,
-            input: "text",
-            inputValue: suggestNextScheduleSetName(),
-            inputLabel: inputLabel,
-            inputPlaceholder: inputPlaceholder,
+            html: `
+                <div class="text-start">
+                    <label for="swalScheduleSetName" class="form-label">${escapeHtml(inputLabel)}</label>
+                    <input
+                        type="text"
+                        id="swalScheduleSetName"
+                        class="form-control"
+                        value="${escapeHtml(suggestNextScheduleSetName())}"
+                        placeholder="${escapeHtml(inputPlaceholder)}"
+                        maxlength="120"
+                        autocomplete="off"
+                    >
+                    <div class="form-check mt-3">
+                        <input class="form-check-input" type="checkbox" value="1" id="swalIncludeWorkload" ${includeWorkloadDefault ? "checked" : ""}>
+                        <label class="form-check-label" for="swalIncludeWorkload">
+                            Include current Faculty Workload assignments
+                        </label>
+                    </div>
+                    <div class="small text-muted mt-2">
+                        When included, the set can later restore assigned faculty after the schedule rows are loaded back.
+                    </div>
+                </div>
+            `,
             showCancelButton: true,
             confirmButtonText: confirmButtonText,
             cancelButtonText: "Cancel",
             allowOutsideClick: false,
             customClass: { popup: "swal-top" },
-            inputValidator: function (value) {
-                const normalized = String(value || "").trim();
-                if (normalized === "") {
-                    return "Provide a name for this saved schedule set.";
+            focusConfirm: false,
+            didOpen: function () {
+                const input = document.getElementById("swalScheduleSetName");
+                if (input) {
+                    input.focus();
+                    input.select();
                 }
-                return "";
+            },
+            preConfirm: function () {
+                const normalized = String($("#swalScheduleSetName").val() || "").trim();
+                if (normalized === "") {
+                    Swal.showValidationMessage("Provide a name for this saved schedule set.");
+                    return false;
+                }
+                return {
+                    setName: normalized,
+                    includeWorkload: $("#swalIncludeWorkload").is(":checked")
+                };
             }
         }).then(function (result) {
-            if (!result.isConfirmed) {
+            if (!result.isConfirmed || !result.value) {
                 return;
             }
 
-            saveLiveScheduleAsSet(String(result.value || "").trim(), false, {
+            saveLiveScheduleAsSet(String(result.value.setName || "").trim(), false, {
+                includeWorkload: Boolean(result.value.includeWorkload),
                 afterSuccess: afterSave
             });
         });
     }
 
-    function executeLoadScheduleSetIntoLive(selectedSet) {
+    function executeLoadScheduleSetIntoLive(selectedSet, options = {}) {
+        const restoreWorkload = Boolean(options.restoreWorkload);
         Swal.fire({
             title: "Loading Saved Set...",
-            html: "Please wait while the saved set replaces the current live schedules.",
+            html: restoreWorkload
+                ? "Please wait while the saved set replaces the current live schedules and restores saved workload assignments."
+                : "Please wait while the saved set replaces the current live schedules.",
             allowOutsideClick: false,
             allowEscapeKey: false,
             customClass: { popup: "swal-top" },
@@ -9654,8 +11126,8 @@ while ($ay = $ayQ->fetch_assoc()) {
             dataType: "json",
             data: {
                 load_schedule_set_into_live: 1,
-                program_id: getCurrentScheduleFilters().program_id,
-                schedule_set_id: selectedSet.schedule_set_id
+                schedule_set_id: selectedSet.schedule_set_id,
+                restore_workload_assignments: restoreWorkload ? 1 : 0
             },
             success: function (res) {
                 Swal.close();
@@ -9675,11 +11147,17 @@ while ($ay = $ayQ->fetch_assoc()) {
                     const affectedCount = Number(res.affected_offering_count || 0);
                     const loadedCount = Number(res.loaded_offering_count || 0);
                     const rowCount = Number(res.loaded_row_count || 0);
+                    const removedWorkloadCount = Number(res.removed_workload_row_count || 0);
+                    const restoredWorkloadCount = Number(res.restored_workload_row_count || 0);
+                    let resultHtml = `<b>${escapeHtml(res.set_name || selectedSet.set_name || "Saved Set")}</b> is now the live schedule workspace.<br><br>Affected offerings: <b>${escapeHtml(String(affectedCount))}</b><br>Offerings loaded from the set: <b>${escapeHtml(String(loadedCount))}</b><br>Schedule rows inserted: <b>${escapeHtml(String(rowCount))}</b>`;
+                    if (restoreWorkload) {
+                        resultHtml += `<br>Previous workload rows removed: <b>${escapeHtml(String(removedWorkloadCount))}</b><br>Saved workload rows restored: <b>${escapeHtml(String(restoredWorkloadCount))}</b>`;
+                    }
 
                     Swal.fire({
                         icon: "success",
                         title: "Set Loaded",
-                        html: `<b>${escapeHtml(res.set_name || selectedSet.set_name || "Saved Set")}</b> is now the live schedule workspace.<br><br>Affected offerings: <b>${escapeHtml(String(affectedCount))}</b><br>Offerings loaded from the set: <b>${escapeHtml(String(loadedCount))}</b><br>Schedule rows inserted: <b>${escapeHtml(String(rowCount))}</b>`,
+                        html: resultHtml,
                         allowOutsideClick: false,
                         customClass: { popup: "swal-top" }
                     });
@@ -9690,6 +11168,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     $("#autoDraftModal").modal("hide");
 
                     resetAutoDraftPreview();
+                    pendingLoadedScheduleSetId = String(res.schedule_set_id || selectedSet.schedule_set_id || "");
                     loadScheduleSets(String(res.schedule_set_id || selectedSet.schedule_set_id || ""));
                     loadScheduleTable();
                     refreshRoomTimeMatrixIfOpen();
@@ -9716,17 +11195,94 @@ while ($ay = $ayQ->fetch_assoc()) {
             return;
         }
 
+        const savedWorkloadCount = Number(selectedSet.workload_row_count || 0);
+        const savedFacultyCount = Number(selectedSet.workload_faculty_count || 0);
+        let restoreWorkload = savedWorkloadCount > 0;
+        const activeSet = getWorkspaceActiveScheduleSet();
+        const liveAlreadySaved = Number(scheduleSetLiveStatus.is_live_saved || 0) === 1 || Boolean(activeSet);
+        const activeSetLabel = getScheduleSetDisplayName(
+            activeSet,
+            scheduleSetLiveStatus.active_schedule_set_name,
+            scheduleSetLiveStatus.active_schedule_set_id
+        );
+        const lastLoadedSet = getWorkspaceLastLoadedScheduleSet();
+        const hasLoadedOrigin = Boolean(
+            lastLoadedSet ||
+            Number(scheduleSetLiveStatus.last_loaded_schedule_set_id || 0) > 0 ||
+            String(scheduleSetLiveStatus.last_loaded_schedule_set_name || "").trim() !== ""
+        );
+        const lastLoadedSetLabel = getScheduleSetDisplayName(
+            lastLoadedSet,
+            scheduleSetLiveStatus.last_loaded_schedule_set_name,
+            scheduleSetLiveStatus.last_loaded_schedule_set_id
+        );
+        const workloadOptionHtml = savedWorkloadCount > 0
+            ? `
+                <div class="form-check text-start mt-3">
+                    <input class="form-check-input" type="checkbox" id="swalRestoreSavedWorkload" ${restoreWorkload ? "checked" : ""}>
+                    <label class="form-check-label" for="swalRestoreSavedWorkload">
+                        Restore saved Faculty Workload assignments
+                    </label>
+                    <div class="small text-muted mt-1">
+                        This set includes ${escapeHtml(formatCountLabel(savedWorkloadCount, "workload row"))} for ${escapeHtml(formatCountLabel(savedFacultyCount, "faculty", "faculty"))}. Restoring replaces affected live workload rows after the schedules are loaded.
+                    </div>
+                </div>
+            `
+            : `
+                <div class="small text-muted mt-3">
+                    This saved set has no Faculty Workload snapshot. Loading remains schedule-only.
+                </div>
+            `;
+        const loadScopeText = selectedSet.scope_key === "program"
+            ? "the live schedules for its original legacy program term"
+            : "the current live schedules for this selected college term";
+        const modifiedOriginHtml = !liveAlreadySaved && hasLoadedOrigin
+            ? `Current live workspace was loaded from <b>${escapeHtml(lastLoadedSetLabel)}</b> and has been modified in live.<br><br>`
+            : "";
+
+        if (liveAlreadySaved) {
+            Swal.fire({
+                icon: "question",
+                title: isScheduleSetActive(selectedSet) ? "Active Set Selected" : "Load Saved Set?",
+                html: `Current live workspace is already saved as <b>${escapeHtml(activeSetLabel)}</b>, so no extra Save First step is needed.<br><br>You are about to load <b>${escapeHtml(selectedSet.set_name || "the selected set")}</b>, which will replace ${loadScopeText}.${workloadOptionHtml}`,
+                showCancelButton: true,
+                confirmButtonText: "Load Set",
+                cancelButtonText: "Cancel",
+                allowOutsideClick: false,
+                customClass: { popup: "swal-top" },
+                didOpen: function () {
+                    $("#swalRestoreSavedWorkload").on("change", function () {
+                        restoreWorkload = $(this).is(":checked");
+                    });
+                }
+            }).then(function (result) {
+                if (!result.isConfirmed) {
+                    return;
+                }
+
+                executeLoadScheduleSetIntoLive(selectedSet, {
+                    restoreWorkload: restoreWorkload
+                });
+            });
+            return;
+        }
+
         Swal.fire({
             icon: "question",
             title: "Save Current Live Workspace First?",
-            html: `You are about to load <b>${escapeHtml(selectedSet.set_name || "the selected set")}</b>, which will replace the current live schedules for this selected program term.<br><br>Do you want to save the current live workspace as a set first?`,
+            html: `${modifiedOriginHtml}You are about to load <b>${escapeHtml(selectedSet.set_name || "the selected set")}</b>, which will replace ${loadScopeText}.<br><br>Do you want to save the current live workspace as a set first?${workloadOptionHtml}`,
             showDenyButton: true,
             showCancelButton: true,
             confirmButtonText: "Save First",
             denyButtonText: "Load Without Saving",
             cancelButtonText: "Cancel",
             allowOutsideClick: false,
-            customClass: { popup: "swal-top" }
+            customClass: { popup: "swal-top" },
+            didOpen: function () {
+                $("#swalRestoreSavedWorkload").on("change", function () {
+                    restoreWorkload = $(this).is(":checked");
+                });
+            }
         }).then(function (result) {
             if (result.isConfirmed) {
                 promptSaveScheduleSet({
@@ -9734,15 +11290,20 @@ while ($ay = $ayQ->fetch_assoc()) {
                     inputLabel: "Set name for the current live workspace",
                     inputPlaceholder: "Enter a set name before loading",
                     confirmButtonText: "Save and Continue",
+                    includeWorkloadDefault: true,
                     afterSave: function () {
-                        executeLoadScheduleSetIntoLive(selectedSet);
+                        executeLoadScheduleSetIntoLive(selectedSet, {
+                            restoreWorkload: restoreWorkload
+                        });
                     }
                 });
                 return;
             }
 
             if (result.isDenied) {
-                executeLoadScheduleSetIntoLive(selectedSet);
+                executeLoadScheduleSetIntoLive(selectedSet, {
+                    restoreWorkload: restoreWorkload
+                });
             }
         });
     }
@@ -10085,6 +11646,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                         $("#autoDraftModal").modal("hide");
                         resetAutoDraftPreview();
+                        refreshScheduleSetLiveState();
                         loadScheduleTable();
                         return;
                     }
@@ -10133,9 +11695,16 @@ while ($ay = $ayQ->fetch_assoc()) {
                 },
                 success: function (res) {
                     if (res.status === "ok") {
+                        const hasDeletedInfo = res && Object.prototype.hasOwnProperty.call(res, "deleted");
+                        const deletedCount = Number(res?.deleted || 0);
+                        const resultIcon = hasDeletedInfo && deletedCount <= 0 ? "info" : "success";
+                        const resultTitle = hasDeletedInfo && deletedCount <= 0
+                            ? (options.emptyTitle || "Nothing To Clear")
+                            : successTitle;
                         Swal.fire({
-                            icon: "success",
-                            title: successTitle,
+                            icon: resultIcon,
+                            title: resultTitle,
+                            text: res.message || "",
                             timer: 1200,
                             showConfirmButton: false
                         });
@@ -10145,6 +11714,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                         $("#blockScheduleModal").modal("hide");
 
                         setTimeout(function () {
+                            refreshScheduleSetLiveState();
                             loadScheduleTable();
                             refreshRoomTimeMatrixIfOpen();
                             if (typeof options.afterSuccess === "function") {
@@ -10192,8 +11762,9 @@ while ($ay = $ayQ->fetch_assoc()) {
             title: "Clear All Schedules?",
             html: [
                 "This will remove all <b>live schedules</b> for <b>all programs in the selected college academic year and semester</b>.",
-                "Saved schedule sets will remain available to load later.",
-                "Locked offerings and workload-assigned offerings will be skipped."
+                "Connected <b>live Faculty Workload</b> assignments for those schedules will also be removed.",
+                "Saved schedule sets and their saved workload snapshots will remain available to load later.",
+                "Locked offerings will be skipped."
             ].join("<br><br>"),
             showCancelButton: true,
             confirmButtonText: "Yes, clear all",
@@ -10212,7 +11783,7 @@ while ($ay = $ayQ->fetch_assoc()) {
 
             Swal.fire({
                 title: "Clearing Schedules...",
-                html: "Please wait while all scheduled subjects in the selected college term are being reset.",
+                html: "Please wait while all scheduled subjects and connected live workload in the selected college term are being reset.",
                 allowOutsideClick: false,
                 allowEscapeKey: false,
                 customClass: { popup: "swal-top" },
@@ -10241,6 +11812,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     const scopedCount = Number(res?.scoped_offering_count || 0);
                     const clearableCount = Number(res?.clearable_offering_count || 0);
                     const clearedOfferingCount = Number(res?.cleared_offering_count || 0);
+                    const removedWorkloadRowCount = Number(res?.removed_workload_row_count || 0);
                     const deletedRowCount = Number(res?.deleted_schedule_row_count || 0);
                     const resetOfferingCount = Number(res?.reset_offering_count || 0);
                     const skippedCount = Number(res?.skipped_count || 0);
@@ -10258,6 +11830,7 @@ while ($ay = $ayQ->fetch_assoc()) {
                     let html = `Checked <b>${escapeHtml(String(scopedCount))}</b> offering(s) in the selected college term.`;
                     html += `<br><br>Eligible for clearing: <b>${escapeHtml(String(clearableCount))}</b>`;
                     html += `<br>Offerings with saved schedules removed: <b>${escapeHtml(String(clearedOfferingCount))}</b>`;
+                    html += `<br>Connected workload rows removed: <b>${escapeHtml(String(removedWorkloadRowCount))}</b>`;
                     html += `<br>Schedule rows deleted: <b>${escapeHtml(String(deletedRowCount))}</b>`;
                     html += `<br>Offerings reset to pending: <b>${escapeHtml(String(resetOfferingCount))}</b>`;
 
@@ -10270,6 +11843,12 @@ while ($ay = $ayQ->fetch_assoc()) {
 
                     let resultIcon = res.status === "ok" ? "success" : "warning";
                     let resultTitle = res.status === "ok" ? "Schedules Cleared" : "Schedules Cleared With Notes";
+
+                    if (removedWorkloadRowCount > 0) {
+                        resultTitle = res.status === "ok"
+                            ? "Schedules And Workload Cleared"
+                            : "Schedules And Workload Cleared With Notes";
+                    }
 
                     if (scopedCount === 0) {
                         resultIcon = "info";
@@ -10291,9 +11870,12 @@ while ($ay = $ayQ->fetch_assoc()) {
                     $("#dualScheduleModal").modal("hide");
                     $("#blockScheduleModal").modal("hide");
                     $("#autoDraftModal").modal("hide");
+                    $("#schedulerFacultyWorkloadModal").modal("hide");
 
                     resetAutoDraftPreview();
+                    refreshScheduleSetLiveState();
                     loadScheduleTable();
+                    refreshRoomTimeMatrixIfOpen();
                 },
                 error: function (xhr) {
                     Swal.close();
@@ -10338,11 +11920,20 @@ const schedulerFacultyWorkloadModalElement = document.getElementById("schedulerF
 if (schedulerFacultyWorkloadModalElement) {
   schedulerFacultyWorkloadModalInstance = bootstrap.Modal.getOrCreateInstance(schedulerFacultyWorkloadModalElement);
 }
+const scheduleSetManagerModalElement = document.getElementById("scheduleSetManagerModal");
+if (scheduleSetManagerModalElement) {
+  scheduleSetManagerModalInstance = bootstrap.Modal.getOrCreateInstance(scheduleSetManagerModalElement);
+}
 renderRoomBrowser();
 
 $("#program_id, #ay_id, #semester").on("change", function () {
   if (this.id === "ay_id" || this.id === "semester") {
+    pendingLoadedScheduleSetId = "";
     clearTermRoomOptions();
+    loadScheduleSets();
+    refreshRoomTimeMatrixIfOpen();
+  } else {
+    updateScheduleSetDetails();
   }
   if ($("#schedulerFacultyWorkloadModal").hasClass("show")) {
     if (schedulerFacultyWorkloadModalInstance) {
@@ -10352,7 +11943,6 @@ $("#program_id, #ay_id, #semester").on("change", function () {
     }
   }
   resetAutoDraftPreview();
-  loadScheduleSets();
   scheduleAutoLoad(true);
 });
 
@@ -10370,6 +11960,57 @@ $("#btnSaveScheduleSet").on("click", function () {
 
 $("#btnLoadScheduleSet").on("click", function () {
   loadSelectedScheduleSetIntoLive();
+});
+
+$("#btnManageScheduleSets").on("click", function () {
+  openScheduleSetManager();
+});
+
+$("#btnScheduleSetManagerRefresh").on("click", function () {
+  loadScheduleSets(String($("#scheduleSetSelect").val() || ""));
+});
+
+$("#scheduleSetEditorForm").on("submit", function (event) {
+  event.preventDefault();
+
+  const scheduleSetId = String($("#scheduleSetEditorId").val() || "").trim();
+  const setName = String($("#scheduleSetEditorName").val() || "").trim();
+  const remarks = String($("#scheduleSetEditorRemarks").val() || "").trim();
+
+  if (scheduleSetId === "") {
+    showScheduleSetManagerStatus("warning", "Select a saved set to edit first.");
+    return;
+  }
+
+  if (setName === "") {
+    $("#scheduleSetEditorName").addClass("is-invalid").trigger("focus");
+    return;
+  }
+
+  updateScheduleSetMeta(scheduleSetId, setName, remarks);
+});
+
+$("#scheduleSetEditorName").on("input", function () {
+  if (String($(this).val() || "").trim() !== "") {
+    $(this).removeClass("is-invalid");
+  }
+});
+
+$("#btnCancelScheduleSetEditor, #btnCancelScheduleSetEditorBottom").on("click", function () {
+  resetScheduleSetEditor();
+});
+
+$("#scheduleSetManagerModal").on("hidden.bs.modal", function () {
+  resetScheduleSetEditor();
+  clearScheduleSetManagerStatus();
+});
+
+$(document).on("click", ".btnEditScheduleSet", function () {
+  promptEditScheduleSet($(this).data("id"));
+});
+
+$(document).on("click", ".btnDeleteScheduleSet", function () {
+  deleteScheduleSet($(this).data("id"));
 });
 
 $("#scheduleSortMode").on("change", function () {
@@ -10666,17 +12307,21 @@ $(document).on("click", ".matrix-entry", function (event) {
   const sectionName = String(entry.data("sectionName") || "").trim();
   const typeLabel = String(entry.data("typeLabel") || "").trim();
   const collegeCode = String(entry.data("collegeCode") || "").trim();
+  const readonlyReason = String(entry.attr("data-readonly-reason") || entry.data("readonlyReason") || "").trim();
   const labelParts = [subCode, sectionName].filter(Boolean);
   const offeringLabel = labelParts.join(" - ") || "this offering";
 
   event.preventDefault();
 
   if (!removable || !offeringId) {
+    const message = readonlyReason !== ""
+      ? escapeHtml(readonlyReason)
+      : "This matrix entry cannot be removed from your scheduler account.";
     const ownerLine = collegeCode ? ` It belongs to <b>${escapeHtml(collegeCode)}</b>.` : "";
     Swal.fire({
       icon: "info",
       title: "View-Only Schedule",
-      html: `This matrix entry cannot be removed from your scheduler account.${ownerLine}`,
+      html: `${message}${ownerLine}`,
       customClass: { popup: "swal-top" }
     });
     return;
@@ -11013,6 +12658,7 @@ $(document).off("click", "#btnSaveSchedule").on("click", "#btnSaveSchedule", fun
                     $("#scheduleModal").modal("hide");
 
                     setTimeout(function () {
+                        refreshScheduleSetLiveState();
                         loadScheduleTable();
                     }, 300);
                     return;
@@ -11170,6 +12816,7 @@ success: function (res) {
         $("#dualScheduleModal").modal("hide");
 
         setTimeout(function () {
+            refreshScheduleSetLiveState();
             loadScheduleTable();
         }, 300);
         return;
@@ -11253,7 +12900,8 @@ $("#btnClearBlockSchedule").on("click", function () {
 $(document).on("input change", "#blockScheduleModal .schedule-block-day, #blockScheduleModal .schedule-block-time-start, #blockScheduleModal .schedule-block-time-end, #blockScheduleModal .schedule-block-room", function () {
     syncBlocksFromDom();
     renderScheduleBlockCoverageSummary();
-    refreshFacultyAwarenessModalIfOpen();
+    queueScheduleBlockFacultyPreviewRefresh();
+    refreshScheduleBlockPreviewHelpersIfOpen();
 });
 
 $(document).on("click", "#blockScheduleModal .btn-remove-schedule-block", function () {
@@ -11451,7 +13099,9 @@ $(document).off("click", "#btnSaveScheduleBlocks").on("click", "#btnSaveSchedule
 
                 $("#blockScheduleModal").modal("hide");
                 setTimeout(function () {
+                    refreshScheduleSetLiveState();
                     loadScheduleTable();
+                    refreshRoomTimeMatrixIfOpen();
                 }, 300);
                 return;
             }

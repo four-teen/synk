@@ -10,9 +10,30 @@ if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
 }
 
 $college_name = $_SESSION['college_name'] ?? '';
+$college_id = (int)($_SESSION['college_id'] ?? 0);
+$campus_name = '';
 $currentTerm = synk_fetch_current_academic_term($conn);
 $defaultAyLabel = (string)$currentTerm['ay_label'];
 $defaultSemesterUi = '';
+
+if ($college_id > 0) {
+    $campusStmt = $conn->prepare("
+        SELECT cp.campus_name
+        FROM tbl_college c
+        LEFT JOIN tbl_campus cp ON cp.campus_id = c.campus_id
+        WHERE c.college_id = ?
+        LIMIT 1
+    ");
+
+    if ($campusStmt) {
+        $campusStmt->bind_param("i", $college_id);
+        $campusStmt->execute();
+        $campusResult = $campusStmt->get_result();
+        $campusRow = $campusResult ? $campusResult->fetch_assoc() : null;
+        $campus_name = trim((string)($campusRow['campus_name'] ?? ''));
+        $campusStmt->close();
+    }
+}
 
 if ((int)$currentTerm['semester'] === 1) {
     $defaultSemesterUi = '1st';
@@ -186,13 +207,43 @@ if ((int)$currentTerm['semester'] === 1) {
         white-space: nowrap;
     }
 
+    .ru-print-form-background,
+    .ru-print-title,
+    .ru-print-field,
+    .ru-print-meta-line,
+    .ru-print-signature-area,
+    .ru-print-filler-row {
+        display: none;
+    }
+
+    .ru-print-overlay {
+        position: static;
+    }
+
+    .ru-print-table-area {
+        position: static;
+    }
+
+    @page {
+        size: A4 portrait;
+        margin: 0;
+    }
+
     @media print {
-        @page {
-            margin: 0.45in;
+        html,
+        body {
+            width: 210mm !important;
+            min-height: 0 !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            background: #fff !important;
+            -webkit-print-color-adjust: exact !important;
+            print-color-adjust: exact !important;
         }
 
-        body {
-            background: #fff !important;
+        body * {
+            visibility: hidden;
         }
 
         .layout-menu,
@@ -208,25 +259,195 @@ if ((int)$currentTerm['semester'] === 1) {
         .layout-page,
         .content-wrapper,
         .container-xxl {
+            display: block !important;
+            width: 100% !important;
+            max-width: 100% !important;
+            min-height: 0 !important;
+            height: auto !important;
             margin: 0 !important;
             padding: 0 !important;
+            overflow: visible !important;
             background: #fff !important;
         }
 
+        .container-xxl > :not(#roomTimetableCard) {
+            display: none !important;
+        }
+
+        #roomTimetableCard,
+        #roomTimetableCard * {
+            visibility: visible;
+        }
+
         #roomTimetableCard {
+            position: absolute;
+            left: 0;
+            top: 0;
+            width: 210mm;
+            min-height: 0;
+            max-width: 210mm;
             display: block !important;
             border: 0 !important;
             box-shadow: none !important;
             margin: 0 !important;
+            padding: 0 !important;
+            overflow: visible !important;
+            background: transparent !important;
         }
 
         #roomTimetableCard .card-header {
-            border: 0 !important;
-            padding: 0 0 12px !important;
+            display: none !important;
         }
 
         #roomTimetableCard .card-body {
             padding: 0 !important;
+            background: transparent !important;
+        }
+
+        #roomTimetableWrapper {
+            display: block !important;
+            width: 210mm !important;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            overflow: visible !important;
+        }
+
+        .ru-print-sheet {
+            display: block !important;
+            position: relative;
+            width: 210mm;
+            height: 296mm;
+            min-height: 296mm;
+            box-sizing: border-box;
+            margin: 0 !important;
+            padding: 0 !important;
+            background: transparent !important;
+            isolation: isolate;
+            overflow: hidden !important;
+            page-break-after: auto !important;
+            break-after: auto !important;
+            page-break-inside: auto !important;
+            break-inside: auto !important;
+        }
+
+        .ru-print-sheet + .ru-print-sheet {
+            page-break-before: always !important;
+            break-before: page !important;
+        }
+
+        .ru-print-form-background {
+            display: block !important;
+            position: absolute;
+            inset: 0;
+            width: 210mm;
+            height: 296mm;
+            object-fit: fill;
+            z-index: 0;
+        }
+
+        .ru-print-overlay {
+            position: relative;
+            z-index: 1;
+            width: 210mm;
+            min-height: 296mm;
+        }
+
+        .ru-print-field {
+            display: block !important;
+            position: absolute;
+            color: #000 !important;
+            font-family: Arial, sans-serif;
+            font-size: 9pt;
+            line-height: 1.05;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ru-print-title {
+            display: block !important;
+            position: absolute;
+            top: 43.6mm;
+            left: 58mm;
+            width: 112mm;
+            z-index: 1;
+            color: #000 !important;
+            font-family: Arial, sans-serif;
+            font-size: 14pt;
+            font-weight: 700;
+            line-height: 1;
+            text-align: center;
+            letter-spacing: 0.01em;
+        }
+
+        .ru-print-campus-field {
+            top: 50.8mm;
+            left: 80mm;
+            width: 68mm;
+            text-align: center;
+        }
+
+        .ru-print-term-field {
+            top: 56.7mm;
+            left: 75mm;
+            width: 72mm;
+            text-align: center;
+        }
+
+        .ru-print-meta-line {
+            display: flex !important;
+            align-items: flex-end;
+            position: absolute;
+            z-index: 1;
+            color: #000 !important;
+            font-family: Arial, sans-serif;
+            font-size: 10pt;
+            line-height: 1;
+        }
+
+        .ru-print-meta-label {
+            flex: 0 0 auto;
+            padding-right: 2mm;
+        }
+
+        .ru-print-meta-value {
+            flex: 1 1 auto;
+            min-height: 3.2mm;
+            padding: 0 1.5mm 0.35mm;
+            border-bottom: 0.45pt solid #000;
+            font-size: 8.2pt;
+            font-weight: 600;
+            line-height: 1;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+
+        .ru-print-college-line {
+            top: 65.2mm;
+            left: 24mm;
+            width: 73mm;
+        }
+
+        .ru-print-program-line {
+            top: 71.2mm;
+            left: 24mm;
+            width: 90mm;
+        }
+
+        .ru-print-room-line {
+            top: 82.2mm;
+            left: 24mm;
+            width: 105mm;
+        }
+
+        .ru-print-table-area {
+            position: absolute;
+            top: 95.2mm;
+            left: 25.3mm;
+            width: 171.6mm;
+            z-index: 1;
         }
 
         .ru-room-label,
@@ -238,16 +459,220 @@ if ((int)$currentTerm['semester'] === 1) {
             border: 0 !important;
             border-radius: 0 !important;
             box-shadow: none !important;
+            background: transparent !important;
+            overflow: visible !important;
+        }
+
+        .ru-sheet .table-responsive {
+            overflow: visible !important;
+        }
+
+        .ru-sheet-table {
+            width: 100% !important;
+            border-collapse: collapse !important;
+            table-layout: fixed !important;
+            background: transparent !important;
+            margin: 0 !important;
+        }
+
+        .ru-sheet-table th:nth-child(1),
+        .ru-sheet-table td:nth-child(1) {
+            width: 33.3% !important;
+        }
+
+        .ru-sheet-table th:nth-child(2),
+        .ru-sheet-table td:nth-child(2) {
+            width: 21.8% !important;
+        }
+
+        .ru-sheet-table th:nth-child(3),
+        .ru-sheet-table td:nth-child(3) {
+            width: 20.2% !important;
+        }
+
+        .ru-sheet-table th:nth-child(4),
+        .ru-sheet-table td:nth-child(4) {
+            width: 24.7% !important;
         }
 
         .ru-sheet-table thead th,
         .ru-sheet-table tbody td {
+            border: 0.6pt solid #000 !important;
+            background: transparent !important;
             color: #000 !important;
-            border-color: #000 !important;
+            box-shadow: none !important;
+            font-family: Arial, sans-serif;
+            font-size: 8.6pt !important;
+            line-height: 1.08 !important;
+            padding: 1.7mm 2.2mm !important;
+            vertical-align: middle !important;
+        }
+
+        .ru-sheet-table thead th {
+            height: 7.7mm !important;
+            padding: 0 !important;
+            color: #000 !important;
+            font-size: 9.6pt !important;
+            line-height: 1 !important;
+            font-weight: 700 !important;
+            text-align: center !important;
+        }
+
+        .ru-sheet-table tbody tr {
+            height: 9.8mm !important;
         }
 
         .ru-sheet-group td {
-            background: #fff !important;
+            height: 9.8mm !important;
+            padding: 1.6mm 2.2mm !important;
+            color: #000 !important;
+            background: transparent !important;
+            font-size: 8.8pt !important;
+            font-weight: 700 !important;
+            letter-spacing: 0 !important;
+            text-transform: uppercase !important;
+        }
+
+        .ru-time-cell,
+        .ru-day-cell,
+        .ru-subject-entry,
+        .ru-faculty-name {
+            color: #000 !important;
+            font-family: Arial, sans-serif;
+            font-size: 8.6pt !important;
+            line-height: 1.08 !important;
+            white-space: normal !important;
+        }
+
+        .ru-print-filler-row {
+            display: table-row !important;
+        }
+
+        .ru-print-signature-area {
+            display: block !important;
+            position: absolute;
+            inset: 0;
+            z-index: 1;
+            color: #000 !important;
+            font-family: Arial, sans-serif;
+            font-size: 8.6pt;
+            line-height: 1.1;
+        }
+
+        .ru-print-signature-label {
+            font-weight: 700;
+        }
+
+        .ru-print-prepared {
+            position: absolute;
+            top: 219mm;
+            left: 126mm;
+            width: 62mm;
+            text-align: center;
+        }
+
+        .ru-print-attested {
+            position: absolute;
+            top: 236.3mm;
+            left: 28mm;
+            width: 80mm;
+        }
+
+        .ru-print-sign-line {
+            border-bottom: 0.65pt solid #000;
+            display: flex;
+            align-items: flex-end;
+            justify-content: center;
+            height: 8mm;
+            margin: 2mm 0 1mm;
+            padding: 0 1mm 0.7mm;
+        }
+
+        .ru-print-prepared .ru-print-sign-line {
+            width: 56mm;
+            margin-left: auto;
+            margin-right: auto;
+        }
+
+        .ru-print-attested .ru-print-sign-line {
+            width: 64mm;
+        }
+
+        .ru-print-sign-caption {
+            font-size: 8.3pt;
+            text-align: center;
+        }
+
+        .ru-print-sign-name {
+            display: block;
+            width: 100%;
+            color: #000 !important;
+            font-size: 8.2pt;
+            font-weight: 700;
+            line-height: 1;
+            overflow: hidden;
+            text-align: center;
+            text-overflow: ellipsis;
+            text-transform: uppercase;
+            white-space: nowrap;
+        }
+
+        .ru-print-cc {
+            position: absolute;
+            top: 252.8mm;
+            left: 28mm;
+            font-size: 7.5pt;
+            line-height: 1.15;
+        }
+
+        .ru-print-cc-title {
+            margin-bottom: 1mm;
+            font-weight: 700;
+        }
+
+        .ru-print-cc-list {
+            margin-left: 18mm;
+        }
+
+        .ru-print-ack-box {
+            position: absolute;
+            top: 241.5mm;
+            left: 130mm;
+            width: 54mm;
+            min-height: 25mm;
+            border: 0.6pt dashed #000;
+            padding: 1.7mm 2mm;
+            font-size: 7.4pt;
+            line-height: 1.18;
+        }
+
+        .ru-print-ack-title {
+            font-weight: 500;
+            text-transform: uppercase;
+        }
+
+        .ru-print-ack-row {
+            margin-top: 2.1mm;
+        }
+
+        .ru-print-ack-sign {
+            width: 36mm;
+            margin: 0.5mm 0 0 auto;
+            border-bottom: 0.55pt solid #000;
+            height: 2.2mm;
+        }
+
+        .ru-print-ack-caption {
+            margin-left: 15mm;
+            font-size: 6.6pt;
+            line-height: 1;
+            text-align: center;
+        }
+
+        .ru-time-cell,
+        .ru-day-cell,
+        .ru-faculty-name {
+            font-weight: 700 !important;
         }
 
         .ru-print-trigger {
@@ -356,6 +781,8 @@ if ((int)$currentTerm['semester'] === 1) {
 
 <script>
 $(document).ready(function () {
+    const RU_CAMPUS_NAME = <?= json_encode($campus_name) ?>;
+    const RU_COLLEGE_NAME = <?= json_encode($college_name) ?>;
     const DAY_START_MINUTES = 7 * 60;
     const DAY_END_MINUTES = 18 * 60;
     const GROUP_ORDER = ["MWF", "TTH", "S", "OTHER"];
@@ -371,6 +798,8 @@ $(document).ready(function () {
         Th: 3,
         S: 1
     };
+    const PRINT_LAST_PAGE_BODY_ROWS = 11;
+    const PRINT_CONTINUATION_PAGE_BODY_ROWS = 14;
 
     let loaderCount = 0;
     let roomOptionsRequest = null;
@@ -415,6 +844,15 @@ $(document).ready(function () {
         }
 
         return semester === "Midyear" ? "Midyear" : semester + " Semester";
+    }
+
+    function formatPrintDate(value) {
+        const source = value instanceof Date ? value : new Date();
+        const month = String(source.getMonth() + 1).padStart(2, "0");
+        const day = String(source.getDate()).padStart(2, "0");
+        const year = String(source.getFullYear()).slice(-2);
+
+        return `${month}-${day}-${year}`;
     }
 
     function updateHeader(roomText, ay, semester) {
@@ -585,6 +1023,77 @@ $(document).ready(function () {
         return tailParts.length ? `<div class="ru-subject-entry">${tailParts.join(" ")}</div>` : "";
     }
 
+    function normalizeProgramCode(value) {
+        return String(value || "")
+            .trim()
+            .toUpperCase()
+            .replace(/\s+/g, "");
+    }
+
+    function addProgramCodesFromValue(target, value) {
+        String(value || "")
+            .split("/")
+            .map(normalizeProgramCode)
+            .filter(Boolean)
+            .forEach(function (programCode) {
+                target[programCode] = true;
+            });
+    }
+
+    function buildProgramLabel(rows) {
+        const programCodes = {};
+
+        (Array.isArray(rows) ? rows : []).forEach(function (row) {
+            addProgramCodesFromValue(programCodes, row.program_code);
+
+            if (Object.keys(programCodes).length > 0) {
+                return;
+            }
+
+            const sectionMatch = String(row.section_name || "").trim().match(/^([A-Za-z]{2,}[A-Za-z0-9]*)\b/);
+            if (sectionMatch) {
+                addProgramCodesFromValue(programCodes, sectionMatch[1]);
+            }
+        });
+
+        return Object.keys(programCodes)
+            .sort(function (left, right) {
+                return left.localeCompare(right);
+            })
+            .join("/");
+    }
+
+    function buildSignatoryNameHtml(value, dateText) {
+        const name = String(value || "").trim();
+        const signDate = String(dateText || "").trim();
+        const text = name !== "" && signDate !== ""
+            ? `${name.toUpperCase()}/${signDate}`
+            : name.toUpperCase();
+
+        return text !== "" ? `<span class="ru-print-sign-name">${escapeHtml(text)}</span>` : "";
+    }
+
+    function normalizeRoomScheduleResponse(payload) {
+        if (Array.isArray(payload)) {
+            return {
+                rows: payload,
+                signatories: {}
+            };
+        }
+
+        if (payload && Array.isArray(payload.rows)) {
+            return {
+                rows: payload.rows,
+                signatories: payload.signatories && typeof payload.signatories === "object" ? payload.signatories : {}
+            };
+        }
+
+        return {
+            rows: [],
+            signatories: {}
+        };
+    }
+
     function buildGroupedRows(data) {
         const groups = {
             MWF: [],
@@ -691,20 +1200,100 @@ $(document).ready(function () {
         return roomOptionsRequest;
     }
 
-    function renderRoomReport(data) {
-        const ay = $("#ru_ay").val();
-        const semester = $("#ru_semester").val();
-        const roomId = $("#ru_room_id").val();
-        const roomText = roomId ? $("#ru_room_id option:selected").text() : "";
-        const groups = buildGroupedRows(data);
-        const visibleGroups = GROUP_ORDER.filter(function (groupKey) {
-            return groupKey !== "OTHER" || groups.OTHER.length;
+    function buildReportRowItems(groups, visibleGroups) {
+        const rowItems = [];
+
+        visibleGroups.forEach(function (groupKey) {
+            const rows = groups[groupKey] || [];
+            const segments = buildTimeSegments(rows);
+            const label = groupKey === "OTHER" ? "OTHER" : groupKey;
+
+            rowItems.push({
+                type: "group",
+                html: `
+                    <tr class="ru-sheet-group">
+                        <td colspan="4">${escapeHtml(label)}</td>
+                    </tr>
+                `
+            });
+
+            segments.forEach(function (segment) {
+                if (segment.isBlank) {
+                    rowItems.push({
+                        type: "blank",
+                        html: `
+                            <tr>
+                                <td class="ru-time-cell">${escapeHtml(formatTimeRange(segment.start, segment.end))}</td>
+                                <td></td>
+                                <td></td>
+                                <td></td>
+                            </tr>
+                        `
+                    });
+                    return;
+                }
+
+                const facultyName = String(segment.row.faculty_name || "TBA").trim() || "TBA";
+
+                rowItems.push({
+                    type: "schedule",
+                    html: `
+                        <tr>
+                            <td class="ru-time-cell">${escapeHtml(formatTimeRange(segment.start, segment.end))}</td>
+                            <td class="ru-day-cell">${escapeHtml(segment.row._day_key)}</td>
+                            <td>${buildSubjectCell(segment.row)}</td>
+                            <td class="ru-faculty-name">${escapeHtml(facultyName)}</td>
+                        </tr>
+                    `
+                });
+            });
         });
 
-        $("#roomTimetableCard").show();
-        updateHeader(roomText, ay, semester);
-        setPrintState(Boolean(roomId));
+        return rowItems;
+    }
 
+    function splitPrintRowItems(rowItems) {
+        const remaining = Array.isArray(rowItems) ? rowItems.slice() : [];
+        const pages = [];
+
+        if (remaining.length <= PRINT_LAST_PAGE_BODY_ROWS) {
+            return [remaining];
+        }
+
+        while (remaining.length > PRINT_LAST_PAGE_BODY_ROWS) {
+            let takeCount = Math.min(PRINT_CONTINUATION_PAGE_BODY_ROWS, remaining.length - 1);
+
+            if (takeCount > 1 && remaining[takeCount - 1] && remaining[takeCount - 1].type === "group") {
+                takeCount -= 1;
+            }
+
+            if (takeCount <= 0) {
+                takeCount = Math.min(PRINT_CONTINUATION_PAGE_BODY_ROWS, remaining.length);
+            }
+
+            pages.push(remaining.splice(0, takeCount));
+        }
+
+        if (remaining.length) {
+            pages.push(remaining);
+        }
+
+        return pages;
+    }
+
+    function buildPrintFillerRowHtml() {
+        return `
+            <tr class="ru-print-filler-row">
+                <td>&nbsp;</td>
+                <td></td>
+                <td></td>
+                <td></td>
+            </tr>
+        `;
+    }
+
+    function buildPrintTableHtml(rowItems, fillerTarget) {
+        const rows = Array.isArray(rowItems) ? rowItems : [];
         let html = `
             <div class="ru-sheet">
                 <div class="table-responsive">
@@ -720,42 +1309,13 @@ $(document).ready(function () {
                         <tbody>
         `;
 
-        visibleGroups.forEach(function (groupKey) {
-            const rows = groups[groupKey] || [];
-            const segments = buildTimeSegments(rows);
-            const label = groupKey === "OTHER" ? "OTHER" : groupKey;
-
-            html += `
-                <tr class="ru-sheet-group">
-                    <td colspan="4">${escapeHtml(label)}</td>
-                </tr>
-            `;
-
-            segments.forEach(function (segment) {
-                if (segment.isBlank) {
-                    html += `
-                        <tr>
-                            <td class="ru-time-cell">${escapeHtml(formatTimeRange(segment.start, segment.end))}</td>
-                            <td></td>
-                            <td></td>
-                            <td></td>
-                        </tr>
-                    `;
-                    return;
-                }
-
-                const facultyName = String(segment.row.faculty_name || "TBA").trim() || "TBA";
-
-                html += `
-                    <tr>
-                        <td class="ru-time-cell">${escapeHtml(formatTimeRange(segment.start, segment.end))}</td>
-                        <td class="ru-day-cell">${escapeHtml(segment.row._day_key)}</td>
-                        <td>${buildSubjectCell(segment.row)}</td>
-                        <td class="ru-faculty-name">${escapeHtml(facultyName)}</td>
-                    </tr>
-                `;
-            });
+        rows.forEach(function (item) {
+            html += item.html || "";
         });
+
+        for (let rowCount = rows.length; rowCount < fillerTarget; rowCount += 1) {
+            html += buildPrintFillerRowHtml();
+        }
 
         html += `
                         </tbody>
@@ -763,6 +1323,117 @@ $(document).ready(function () {
                 </div>
             </div>
         `;
+
+        return html;
+    }
+
+    function buildPrintSignatureAreaHtml(preparedNameHtml, attestedNameHtml) {
+        return `
+            <div class="ru-print-signature-area" aria-hidden="true">
+                <div class="ru-print-prepared">
+                    <div class="ru-print-signature-label">Prepared by:</div>
+                    <div class="ru-print-sign-line">${preparedNameHtml}</div>
+                    <div class="ru-print-sign-caption">Program Chairman</div>
+                </div>
+                <div class="ru-print-attested">
+                    <div class="ru-print-signature-label">Attested by:</div>
+                    <div class="ru-print-sign-line">${attestedNameHtml}</div>
+                    <div>Dean</div>
+                </div>
+                <div class="ru-print-cc">
+                    <div class="ru-print-cc-title">cc:</div>
+                    <div class="ru-print-cc-list">
+                        <div>1 - VP AA</div>
+                        <div>1 - Registrar</div>
+                        <div>1 - Dean</div>
+                        <div>1 - Program Chairman</div>
+                    </div>
+                </div>
+                <div class="ru-print-ack-box">
+                    <div class="ru-print-ack-title">ACKNOWLEDGEMENT RECEIPT:</div>
+                    <div class="ru-print-ack-row">Date:</div>
+                    <div class="ru-print-ack-row">Time:</div>
+                    <div class="ru-print-ack-row">By:</div>
+                    <div class="ru-print-ack-sign"></div>
+                    <div class="ru-print-ack-caption">
+                        Name &amp; Signature of<br>Authorized Representative
+                    </div>
+                </div>
+            </div>
+        `;
+    }
+
+    function buildPrintSheetHtml(meta) {
+        return `
+            <div class="ru-print-sheet">
+                <img src="../assets/img/print/classroom-utilization-template.png" alt="" class="ru-print-form-background" aria-hidden="true">
+                <div class="ru-print-overlay">
+                    <div class="ru-print-title">CLASSROOM UTILIZATION</div>
+                    <div class="ru-print-field ru-print-campus-field">${escapeHtml(meta.campusName)}</div>
+                    <div class="ru-print-field ru-print-term-field">${escapeHtml(meta.termText)}</div>
+                    <div class="ru-print-meta-line ru-print-college-line">
+                        <span class="ru-print-meta-label">College:</span>
+                        <span class="ru-print-meta-value">${escapeHtml(meta.collegeName)}</span>
+                    </div>
+                    <div class="ru-print-meta-line ru-print-program-line">
+                        <span class="ru-print-meta-label">Program:</span>
+                        <span class="ru-print-meta-value">${escapeHtml(meta.programLabel)}</span>
+                    </div>
+                    <div class="ru-print-meta-line ru-print-room-line">
+                        <span class="ru-print-meta-label">Room number/name:</span>
+                        <span class="ru-print-meta-value">${escapeHtml(meta.roomText)}</span>
+                    </div>
+                    <div class="ru-print-table-area">
+                        ${meta.tableHtml}
+                    </div>
+                    ${meta.signatureHtml}
+                </div>
+            </div>
+        `;
+    }
+
+    function renderRoomReport(data, signatories) {
+        const ay = $("#ru_ay").val();
+        const semester = $("#ru_semester").val();
+        const roomId = $("#ru_room_id").val();
+        const roomText = roomId ? $("#ru_room_id option:selected").text() : "";
+        const termText = semester ? `${formatSemesterLabel(semester)} | AY ${ay || ""}`.trim() : (ay ? `AY ${ay}` : "");
+        const programLabel = buildProgramLabel(data);
+        const printSignatories = signatories && typeof signatories === "object" ? signatories : {};
+        const preparedBy = printSignatories.prepared_by && typeof printSignatories.prepared_by === "object"
+            ? printSignatories.prepared_by
+            : {};
+        const attestedBy = printSignatories.attested_by && typeof printSignatories.attested_by === "object"
+            ? printSignatories.attested_by
+            : {};
+        const printDate = formatPrintDate(new Date());
+        const preparedNameHtml = buildSignatoryNameHtml(preparedBy.name, printDate);
+        const attestedNameHtml = buildSignatoryNameHtml(attestedBy.name, printDate);
+        const groups = buildGroupedRows(data);
+        const visibleGroups = GROUP_ORDER.filter(function (groupKey) {
+            return groupKey !== "OTHER" || groups.OTHER.length;
+        });
+        const rowItems = buildReportRowItems(groups, visibleGroups);
+        const printPages = splitPrintRowItems(rowItems);
+
+        $("#roomTimetableCard").show();
+        updateHeader(roomText, ay, semester);
+        setPrintState(Boolean(roomId));
+
+        const html = printPages.map(function (pageRows, pageIndex) {
+            const isLastPage = pageIndex === printPages.length - 1;
+            const fillerTarget = isLastPage ? PRINT_LAST_PAGE_BODY_ROWS : PRINT_CONTINUATION_PAGE_BODY_ROWS;
+
+            return buildPrintSheetHtml({
+                campusName: RU_CAMPUS_NAME,
+                termText: termText,
+                collegeName: RU_COLLEGE_NAME,
+                programLabel: programLabel,
+                roomText: roomText,
+                tableHtml: buildPrintTableHtml(pageRows, fillerTarget),
+                signatureHtml: isLastPage ? buildPrintSignatureAreaHtml(preparedNameHtml, attestedNameHtml) : ""
+            });
+        }).join("");
 
         $("#roomTimetableWrapper").html(html);
     }
@@ -794,7 +1465,8 @@ $(document).ready(function () {
                 room_id: roomId
             }
         }).done(function (data) {
-            renderRoomReport(Array.isArray(data) ? data : []);
+            const normalized = normalizeRoomScheduleResponse(data);
+            renderRoomReport(normalized.rows, normalized.signatories);
         }).fail(function (_, textStatus) {
             if (textStatus === "abort") {
                 return;

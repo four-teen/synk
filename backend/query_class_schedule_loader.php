@@ -5,6 +5,7 @@ require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 require_once __DIR__ . '/schedule_merge_helper.php';
+require_once __DIR__ . '/faculty_need_helper.php';
 
 header('Content-Type: application/json');
 
@@ -126,6 +127,7 @@ function class_schedule_loader_merge_note(array $scopeDisplay): string
 $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+synk_faculty_need_ensure_tables($conn);
 
 $selectParts = [
     'cs.schedule_id',
@@ -159,7 +161,11 @@ $joinParts = [
     'LEFT JOIN tbl_faculty_workload_sched assigned_fw',
     '    ON assigned_fw.schedule_id = cs.schedule_id',
     '   AND assigned_fw.ay_id = ?',
-    '   AND assigned_fw.semester = ?'
+    '   AND assigned_fw.semester = ?',
+    'LEFT JOIN `' . synk_faculty_need_workload_table_name() . '` assigned_need',
+    '    ON assigned_need.schedule_id = cs.schedule_id',
+    '   AND assigned_need.ay_id = ?',
+    '   AND assigned_need.semester = ?'
 ];
 
 $sql = "
@@ -171,6 +177,7 @@ WHERE
 AND o.semester = ?
 AND p.college_id = ?
 AND assigned_fw.schedule_id IS NULL
+AND assigned_need.schedule_id IS NULL
 ORDER BY
     sec.section_name,
     sm.sub_code,
@@ -179,8 +186,8 @@ ORDER BY
 ";
 
 $stmt = $conn->prepare($sql);
-$bindTypes = 'ii';
-$bindParams = [$ay_id, $semester];
+$bindTypes = 'iiii';
+$bindParams = [$ay_id, $semester, $ay_id, $semester];
 
 $bindTypes .= 'iii';
 $bindParams[] = $ay_id;
