@@ -248,7 +248,7 @@ $professorPortalFacultyStatusLabel = $facultyStatusLabel;
               <?php if (!$facultyIsLinked): ?>
                 <div class="card professor-dashboard-note mb-4">
                   <div class="card-body p-3">
-                    Link this professor account to a faculty record so the dashboard and workload page can load the correct enrolled subject records.
+                    Link this professor account to a faculty record so the dashboard and workload page can load the correct scheduler workload assignments.
                   </div>
                 </div>
               <?php endif; ?>
@@ -337,7 +337,7 @@ $professorPortalFacultyStatusLabel = $facultyStatusLabel;
                       <?php if (!$facultyIsLinked): ?>
                         No preview can be shown until the account is linked to a faculty record.
                       <?php else: ?>
-                        No enrolled subject workload is available yet for the current or latest term.
+                        No scheduler workload is available yet for the current or latest term.
                       <?php endif; ?>
                     </div>
                   <?php else: ?>

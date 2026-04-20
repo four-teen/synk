@@ -195,6 +195,15 @@ $sidebarSections = [
                 'badge' => 'Reports',
                 'items' => [
                     [
+                        'key' => 'faculty_load_monitoring',
+                        'href' => 'monitoring-faculty-load.php',
+                        'icon_bg' => 'bg-label-info',
+                        'icon' => 'bx-user-pin',
+                        'title' => 'Faculty Load Monitoring',
+                        'description' => 'Track faculty load, units, and preparations by campus and college',
+                        'pages' => ['monitoring-faculty-load.php'],
+                    ],
+                    [
                         'key' => 'alphabetical_courses',
                         'href' => 'report_alphabetical_courses.php',
                         'icon_bg' => 'bg-label-primary',

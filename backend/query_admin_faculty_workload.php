@@ -8,6 +8,7 @@ require_once __DIR__ . '/offering_enrollee_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 require_once __DIR__ . '/schedule_merge_helper.php';
+require_once __DIR__ . '/faculty_need_helper.php';
 
 header('Content-Type: application/json');
 
@@ -17,22 +18,42 @@ if (!isset($_SESSION['user_id']) || (string)($_SESSION['role'] ?? '') !== 'admin
         'status' => 'error',
         'message' => 'Administrator session required.',
         'rows' => [],
+        'external_rows' => [],
         'meta' => [],
     ]);
     exit;
 }
 
+$assigneeType = strtolower(trim((string)($_POST['assignee_type'] ?? 'faculty')));
+$isFacultyNeed = $assigneeType === 'faculty_need';
+$assigneeType = $isFacultyNeed ? 'faculty_need' : 'faculty';
 $facultyId = (int)($_POST['faculty_id'] ?? 0);
+$facultyNeedId = (int)($_POST['faculty_need_id'] ?? 0);
 $scopeCollegeId = (int)($_POST['college_id'] ?? 0);
 $scopeCampusId = (int)($_POST['campus_id'] ?? 0);
+$includeExternal = (int)($_POST['include_external'] ?? 0) === 1;
 $currentTerm = synk_fetch_current_academic_term($conn);
 $ayId = (int)($currentTerm['ay_id'] ?? 0);
 $semester = (int)($currentTerm['semester'] ?? 0);
+$targetId = $isFacultyNeed ? $facultyNeedId : $facultyId;
+$facultyNeed = null;
+$workloadTable = $isFacultyNeed ? synk_faculty_need_workload_table_name() : 'tbl_faculty_workload_sched';
+$workloadIdSelect = $isFacultyNeed ? 'fw.need_workload_id AS workload_id' : 'fw.workload_id';
+$workloadTargetColumn = $isFacultyNeed ? 'fw.faculty_need_id' : 'fw.faculty_id';
+$workloadSourceReady = $ayId > 0 && $semester > 0 && synk_table_exists($conn, $workloadTable);
 
-if ($facultyId <= 0 || $ayId <= 0 || $semester <= 0) {
+function admin_faculty_workload_emit_empty_response(
+    array $currentTerm,
+    int $ayId,
+    int $semester,
+    string $assigneeType,
+    string $assigneeLabel = '',
+    bool $analyticsReady = false
+): void {
     echo json_encode([
         'status' => 'ok',
         'rows' => [],
+        'external_rows' => [],
         'meta' => [
             'ay_id' => $ayId,
             'semester' => $semester,
@@ -40,9 +61,38 @@ if ($facultyId <= 0 || $ayId <= 0 || $semester <= 0) {
             'row_count' => 0,
             'total_load' => 0,
             'total_preparations' => 0,
+            'assignee_type' => $assigneeType === 'faculty_need' ? 'faculty_need' : 'faculty',
+            'assignee_label' => $assigneeLabel,
+            'analytics_ready' => $analyticsReady,
         ],
     ]);
     exit;
+}
+
+if ($targetId <= 0 || $ayId <= 0 || $semester <= 0) {
+    admin_faculty_workload_emit_empty_response($currentTerm, $ayId, $semester, $assigneeType, '', $workloadSourceReady);
+}
+
+if ($isFacultyNeed) {
+    if ($scopeCollegeId <= 0 || !synk_table_exists($conn, synk_faculty_need_table_name())) {
+        admin_faculty_workload_emit_empty_response($currentTerm, $ayId, $semester, $assigneeType, '', false);
+    }
+
+    $facultyNeed = synk_faculty_need_find($conn, $scopeCollegeId, $ayId, $semester, $facultyNeedId);
+    if (!is_array($facultyNeed)) {
+        admin_faculty_workload_emit_empty_response($currentTerm, $ayId, $semester, $assigneeType, '', false);
+    }
+}
+
+if (!$workloadSourceReady) {
+    admin_faculty_workload_emit_empty_response(
+        $currentTerm,
+        $ayId,
+        $semester,
+        $assigneeType,
+        $isFacultyNeed ? (string)($facultyNeed['need_label'] ?? '') : '',
+        false
+    );
 }
 
 function admin_faculty_workload_context_key(int $groupId, int $scheduleId, int $offeringId): string
@@ -195,9 +245,28 @@ function admin_faculty_workload_time_label(string $start, string $end): string
 $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+$splitExternalRows = false;
+
+if ($includeExternal && $scopeCollegeId > 0 && $scopeCampusId <= 0 && synk_table_exists($conn, 'tbl_college')) {
+    $campusLookupStmt = $conn->prepare("
+        SELECT campus_id
+        FROM tbl_college
+        WHERE college_id = ?
+        LIMIT 1
+    ");
+
+    if ($campusLookupStmt instanceof mysqli_stmt) {
+        $campusLookupStmt->bind_param('i', $scopeCollegeId);
+        $campusLookupStmt->execute();
+        $campusLookupResult = $campusLookupStmt->get_result();
+        $campusLookupRow = $campusLookupResult instanceof mysqli_result ? $campusLookupResult->fetch_assoc() : null;
+        $scopeCampusId = (int)($campusLookupRow['campus_id'] ?? 0);
+        $campusLookupStmt->close();
+    }
+}
 
 $selectParts = [
-    'fw.workload_id',
+    $workloadIdSelect,
     'cs.schedule_id',
     'o.offering_id',
     $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
@@ -236,7 +305,12 @@ $orderParts[] = 'cs.time_start';
 $scopeSql = '';
 $scopeTypes = '';
 $scopeParams = [];
-if ($scopeCollegeId > 0) {
+if ($includeExternal && $scopeCollegeId > 0 && $scopeCampusId > 0) {
+    $scopeSql .= ' AND cp.campus_id = ?';
+    $scopeTypes .= 'i';
+    $scopeParams[] = $scopeCampusId;
+    $splitExternalRows = true;
+} elseif ($scopeCollegeId > 0) {
     $scopeSql .= ' AND p.college_id = ?';
     $scopeTypes .= 'i';
     $scopeParams[] = $scopeCollegeId;
@@ -249,7 +323,7 @@ if ($scopeCollegeId > 0) {
 $sql = "
     SELECT
         " . implode(",\n        ", $selectParts) . "
-    FROM tbl_faculty_workload_sched fw
+    FROM `{$workloadTable}` fw
     INNER JOIN tbl_class_schedule cs
         ON cs.schedule_id = fw.schedule_id
     INNER JOIN tbl_prospectus_offering o
@@ -265,7 +339,7 @@ $sql = "
         ON sm.sub_id = ps.sub_id
     LEFT JOIN tbl_rooms r
         ON r.room_id = cs.room_id
-    WHERE fw.faculty_id = ?
+    WHERE {$workloadTargetColumn} = ?
       AND fw.ay_id = ?
       AND fw.semester = ?
       {$scopeSql}
@@ -280,13 +354,14 @@ if (!($stmt instanceof mysqli_stmt)) {
         'status' => 'error',
         'message' => 'Unable to prepare workload query.',
         'rows' => [],
+        'external_rows' => [],
         'meta' => [],
     ]);
     exit;
 }
 
 $types = 'iii' . $scopeTypes;
-$params = array_merge([$facultyId, $ayId, $semester], $scopeParams);
+$params = array_merge([$targetId, $ayId, $semester], $scopeParams);
 synk_bind_dynamic_params($stmt, $types, $params);
 $stmt->execute();
 $result = $stmt->get_result();
@@ -531,6 +606,7 @@ if (!empty($offeringIds)) {
             'is_scope_merged' => !empty($scopeDisplay['is_merged']),
             'merge_scope_mode' => (string)($scopeDisplay['mode'] ?? 'local'),
             'program_code' => admin_faculty_workload_program_label($programScope) ?: (string)($rawRow['program_code'] ?? ''),
+            'schedule_college_id' => (int)($rawRow['schedule_college_id'] ?? 0),
             'schedule_college_name' => (string)($rawRow['schedule_college_name'] ?? ''),
             'schedule_campus_name' => (string)($rawRow['schedule_campus_name'] ?? ''),
             'days_arr' => array_values((array)($rawRow['days_arr'] ?? [])),
@@ -550,9 +626,29 @@ if (!empty($offeringIds)) {
     }
 }
 
+$payloadRows = $rows;
+$externalRows = [];
+
+if ($splitExternalRows && $scopeCollegeId > 0) {
+    $payloadRows = [];
+
+    foreach ($rows as $row) {
+        $isExternal = (int)($row['schedule_college_id'] ?? 0) !== $scopeCollegeId;
+        $row['is_external'] = $isExternal;
+
+        if ($isExternal) {
+            $externalRows[] = $row;
+            continue;
+        }
+
+        $payloadRows[] = $row;
+    }
+}
+
 echo json_encode([
     'status' => 'ok',
-    'rows' => $rows,
+    'rows' => $payloadRows,
+    'external_rows' => $externalRows,
     'meta' => [
         'ay_id' => $ayId,
         'semester' => $semester,
@@ -560,6 +656,9 @@ echo json_encode([
         'row_count' => count($rows),
         'total_load' => round($totalLoad, 2),
         'total_preparations' => count($preparations),
+        'assignee_type' => $assigneeType,
+        'assignee_label' => $isFacultyNeed ? (string)($facultyNeed['need_label'] ?? '') : '',
+        'analytics_ready' => $workloadSourceReady,
     ],
 ]);
 exit;

@@ -274,7 +274,7 @@ $professorPortalFacultyStatusLabel = $facultyIsLinked
               <?php if (!$facultyIsLinked): ?>
                 <div class="card professor-workload-alert mb-4">
                   <div class="card-body p-4">
-                    Link this professor account to a faculty record first so workload data can be loaded from enrolled subject records.
+                    Link this professor account to a faculty record first so workload data can be loaded from scheduler workload assignments.
                   </div>
                 </div>
               <?php endif; ?>
@@ -287,9 +287,9 @@ $professorPortalFacultyStatusLabel = $facultyIsLinked
                         <i class="bx bx-briefcase-alt"></i>
                         Workload
                       </span>
-                      <h4 class="mt-3 mb-2">Faculty workload from enrolled subjects</h4>
+                      <h4 class="mt-3 mb-2">Faculty workload from scheduler assignments</h4>
                       <p class="mb-3 text-muted">
-                        This page reads directly from <code>tbl_student_management_enrolled_subjects</code> so the professor can review actual assigned subjects by academic year and semester.
+                        This page reads from the scheduler-assigned workload records so the professor can review classes assigned by academic year and semester.
                       </p>
                       <div class="d-flex flex-wrap gap-2">
                         <span class="badge bg-label-primary"><?php echo synk_professor_h($selectedTermLabel !== '' ? $selectedTermLabel : ($currentTerm['term_text'] ?? 'Current academic term')); ?></span>
@@ -327,7 +327,7 @@ $professorPortalFacultyStatusLabel = $facultyIsLinked
                       </span>
                       <h5 class="mt-3 mb-1">Select academic year and semester</h5>
                       <p class="text-muted mb-0">
-                        Filter the professor workload using the enrolled subject records currently assigned to the linked faculty.
+                        Filter the professor workload using the classes currently assigned to the linked faculty in scheduler.
                       </p>
                     </div>
                   </div>
@@ -392,7 +392,7 @@ $professorPortalFacultyStatusLabel = $facultyIsLinked
                         <?php if (!$facultyIsLinked): ?>
                           Link the professor account first so the workload can be matched to a faculty record.
                         <?php else: ?>
-                          No enrolled subject rows are assigned to this faculty for the selected academic year and semester.
+                          No scheduler workload is assigned to this faculty for the selected academic year and semester.
                         <?php endif; ?>
                       </div>
                     </div>

@@ -414,27 +414,27 @@ function synk_professor_workload_identity_sql(string $alias = 'es'): string
 
 function synk_professor_fetch_workload_term_options(mysqli $conn, int $facultyId): array
 {
-    $tableName = synk_professor_enrollment_table_name();
-    if ($facultyId <= 0 || !synk_table_exists($conn, $tableName)) {
+    if (
+        $facultyId <= 0
+        || !synk_table_exists($conn, 'tbl_faculty_workload_sched')
+        || !synk_table_exists($conn, 'tbl_class_schedule')
+        || !synk_table_exists($conn, 'tbl_prospectus_offering')
+    ) {
         return [];
     }
 
-    $workloadIdentitySql = synk_professor_workload_identity_sql('es');
     $stmt = $conn->prepare("
         SELECT
-            es.ay_id,
-            es.semester,
+            fw.ay_id,
+            fw.semester,
             COALESCE(ay.ay, '') AS academic_year_label,
-            COUNT(DISTINCT {$workloadIdentitySql}) AS workload_count,
-            COUNT(DISTINCT es.student_id) AS student_count,
-            MAX(es.updated_at) AS latest_activity_at
-        FROM `{$tableName}` es
+            MAX(fw.schedule_id) AS latest_schedule_id
+        FROM tbl_faculty_workload_sched fw
         LEFT JOIN tbl_academic_years ay
-            ON ay.ay_id = es.ay_id
-        WHERE es.faculty_id = ?
-          AND es.is_active = 1
-        GROUP BY es.ay_id, es.semester, ay.ay
-        ORDER BY es.ay_id DESC, es.semester DESC, latest_activity_at DESC
+            ON ay.ay_id = fw.ay_id
+        WHERE fw.faculty_id = ?
+        GROUP BY fw.ay_id, fw.semester, ay.ay
+        ORDER BY fw.ay_id DESC, fw.semester DESC, latest_schedule_id DESC
     ");
 
     if (!$stmt) {
@@ -448,21 +448,31 @@ function synk_professor_fetch_workload_term_options(mysqli $conn, int $facultyId
 
     if ($result instanceof mysqli_result) {
         while ($row = $result->fetch_assoc()) {
+            $ayId = (int)($row['ay_id'] ?? 0);
             $semester = (int)($row['semester'] ?? 0);
+            $workloadRows = ($ayId > 0 && $semester > 0)
+                ? synk_professor_fetch_subject_rows_by_academic_year($conn, $facultyId, $ayId, $semester)
+                : [];
+            $studentCount = 0;
+
+            foreach ($workloadRows as $workloadRow) {
+                $studentCount += max(0, (int)($workloadRow['student_count'] ?? 0));
+            }
+
             $academicYearLabel = (string)($row['academic_year_label'] ?? '');
             $semesterLabel = function_exists('synk_semester_label')
                 ? synk_semester_label($semester)
                 : '';
 
             $rows[] = [
-                'term_key' => (int)($row['ay_id'] ?? 0) . '-' . $semester,
-                'ay_id' => (int)($row['ay_id'] ?? 0),
+                'term_key' => $ayId . '-' . $semester,
+                'ay_id' => $ayId,
                 'semester' => $semester,
                 'academic_year_label' => $academicYearLabel,
                 'semester_label' => $semesterLabel,
                 'term_label' => trim($academicYearLabel . ($semesterLabel !== '' ? ' - ' . $semesterLabel : '')),
-                'workload_count' => (int)($row['workload_count'] ?? 0),
-                'student_count' => (int)($row['student_count'] ?? 0),
+                'workload_count' => count($workloadRows),
+                'student_count' => $studentCount,
             ];
         }
 
@@ -475,114 +485,7 @@ function synk_professor_fetch_workload_term_options(mysqli $conn, int $facultyId
 
 function synk_professor_fetch_workload_rows(mysqli $conn, int $facultyId, int $ayId, int $semester): array
 {
-    $tableName = synk_professor_enrollment_table_name();
-    if ($facultyId <= 0 || $ayId <= 0 || $semester <= 0 || !synk_table_exists($conn, $tableName)) {
-        return [];
-    }
-
-    $stmt = $conn->prepare("
-        SELECT
-            es.ay_id,
-            COALESCE(ay.ay, '') AS academic_year_label,
-            es.semester,
-            es.year_level,
-            COALESCE(NULLIF(TRIM(sec.full_section), ''), NULLIF(TRIM(es.section_text), ''), NULLIF(TRIM(sec.section_name), ''), 'Section not assigned') AS section_display,
-            COALESCE(NULLIF(TRIM(es.subject_code), ''), NULLIF(TRIM(sm.sub_code), ''), 'NO CODE') AS subject_code,
-            COALESCE(NULLIF(TRIM(es.descriptive_title), ''), NULLIF(TRIM(sm.sub_description), ''), 'Untitled subject') AS descriptive_title,
-            COALESCE(NULLIF(TRIM(es.schedule_text), ''), 'Schedule not available') AS schedule_text,
-            CASE
-                WHEN NULLIF(TRIM(es.room_text), '') IS NOT NULL THEN TRIM(es.room_text)
-                WHEN es.room_id > 0 THEN TRIM(CONCAT_WS(' - ', NULLIF(r.room_code, ''), NULLIF(r.room_name, '')))
-                ELSE 'Room not assigned'
-            END AS room_name,
-            COALESCE(p.program_code, '') AS program_code,
-            COALESCE(p.program_name, '') AS program_name,
-            COALESCE(p.major, '') AS program_major,
-            COALESCE(col_direct.college_name, col_program.college_name, '') AS college_name,
-            COALESCE(cam_direct.campus_name, cam_program.campus_name, '') AS campus_name,
-            COUNT(DISTINCT es.student_id) AS student_count
-        FROM `{$tableName}` es
-        LEFT JOIN tbl_academic_years ay
-            ON ay.ay_id = es.ay_id
-        LEFT JOIN tbl_sections sec
-            ON sec.section_id = es.section_id
-        LEFT JOIN tbl_subject_masterlist sm
-            ON sm.sub_id = es.subject_id
-        LEFT JOIN tbl_rooms r
-            ON r.room_id = es.room_id
-        LEFT JOIN tbl_program p
-            ON p.program_id = es.program_id
-        LEFT JOIN tbl_college col_program
-            ON col_program.college_id = p.college_id
-        LEFT JOIN tbl_college col_direct
-            ON col_direct.college_id = es.college_id
-        LEFT JOIN tbl_campus cam_program
-            ON cam_program.campus_id = col_program.campus_id
-        LEFT JOIN tbl_campus cam_direct
-            ON cam_direct.campus_id = es.campus_id
-        WHERE es.faculty_id = ?
-          AND es.ay_id = ?
-          AND es.semester = ?
-          AND es.is_active = 1
-        GROUP BY
-            es.ay_id,
-            ay.ay,
-            es.semester,
-            es.year_level,
-            sec.full_section,
-            sec.section_name,
-            es.section_text,
-            es.subject_code,
-            sm.sub_code,
-            es.descriptive_title,
-            sm.sub_description,
-            es.schedule_text,
-            es.room_text,
-            es.room_id,
-            r.room_code,
-            r.room_name,
-            p.program_code,
-            p.program_name,
-            p.major,
-            col_direct.college_name,
-            col_program.college_name,
-            cam_direct.campus_name,
-            cam_program.campus_name
-        ORDER BY
-            subject_code ASC,
-            section_display ASC,
-            schedule_text ASC,
-            descriptive_title ASC
-    ");
-
-    if (!$stmt) {
-        return [];
-    }
-
-    $stmt->bind_param('iii', $facultyId, $ayId, $semester);
-    $stmt->execute();
-    $result = $stmt->get_result();
-    $rows = [];
-
-    if ($result instanceof mysqli_result) {
-        while ($row = $result->fetch_assoc()) {
-            $semesterValue = (int)($row['semester'] ?? 0);
-            $row['ay_id'] = (int)($row['ay_id'] ?? 0);
-            $row['semester'] = $semesterValue;
-            $row['semester_label'] = function_exists('synk_semester_label')
-                ? synk_semester_label($semesterValue)
-                : '';
-            $row['year_level'] = (int)($row['year_level'] ?? 0);
-            $row['student_count'] = (int)($row['student_count'] ?? 0);
-            $row['program_label'] = synk_professor_program_label($row);
-            $rows[] = $row;
-        }
-
-        $result->close();
-    }
-    $stmt->close();
-
-    return $rows;
+    return synk_professor_fetch_subject_rows_by_academic_year($conn, $facultyId, $ayId, $semester);
 }
 
 function synk_professor_fetch_subject_year_options(mysqli $conn, int $facultyId): array
@@ -691,9 +594,20 @@ function synk_professor_fetch_subject_rows_by_academic_year(mysqli $conn, int $f
     $semesterWhereSql = $semester > 0 ? " AND fw.semester = ?" : "";
     $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('po', 'sec', 'sc', 'ps', 'pys', 'ph');
     $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
+    $sectionHasYearLevel = synk_table_has_column($conn, 'tbl_sections', 'year_level');
+    $offeringHasYearLevel = synk_table_has_column($conn, 'tbl_prospectus_offering', 'year_level');
     $scheduleTypeSelect = $classScheduleHasType
         ? "COALESCE(cs.schedule_type, 'LEC') AS schedule_type"
         : "'LEC' AS schedule_type";
+    $yearLevelSelect = '0 AS year_level';
+
+    if ($sectionHasYearLevel && $offeringHasYearLevel) {
+        $yearLevelSelect = 'COALESCE(sec.year_level, po.year_level, 0) AS year_level';
+    } elseif ($sectionHasYearLevel) {
+        $yearLevelSelect = 'COALESCE(sec.year_level, 0) AS year_level';
+    } elseif ($offeringHasYearLevel) {
+        $yearLevelSelect = 'COALESCE(po.year_level, 0) AS year_level';
+    }
 
     $stmt = $conn->prepare("
         SELECT
@@ -702,6 +616,7 @@ function synk_professor_fetch_subject_rows_by_academic_year(mysqli $conn, int $f
             COALESCE(ay.ay, '') AS academic_year_label,
             fw.semester,
             po.offering_id,
+            {$yearLevelSelect},
             COALESCE(NULLIF(sec.full_section, ''), CONCAT_WS(' ', NULLIF(TRIM(p.program_code), ''), NULLIF(TRIM(sec.section_name), ''))) AS section_display,
             sm.sub_code AS subject_code,
             sm.sub_description AS descriptive_title,
@@ -809,6 +724,7 @@ function synk_professor_fetch_subject_rows_by_academic_year(mysqli $conn, int $f
                 'academic_year_label' => (string)($row['academic_year_label'] ?? ''),
                 'semester' => (int)($row['semester'] ?? 0),
                 'semester_label' => function_exists('synk_semester_label') ? synk_semester_label((int)($row['semester'] ?? 0)) : '',
+                'year_level' => (int)($row['year_level'] ?? 0),
                 'section_display' => trim((string)($mergeInfo['group_course_label'] ?? (string)($row['section_display'] ?? ''))),
                 'subject_code' => (string)($row['subject_code'] ?? ''),
                 'descriptive_title' => (string)($row['descriptive_title'] ?? ''),
