@@ -69,6 +69,53 @@ function admin_monitoring_context_key(int $groupId, int $scheduleId, int $offeri
     return 'offering:' . $offeringId;
 }
 
+function admin_monitoring_unique_label_values(array $labels): array
+{
+    $unique = [];
+
+    foreach ($labels as $label) {
+        $text = trim((string)$label);
+        if ($text === '') {
+            continue;
+        }
+
+        $unique[strtolower($text)] = $text;
+    }
+
+    $values = array_values($unique);
+    natcasesort($values);
+
+    return array_values($values);
+}
+
+function admin_monitoring_join_label_values(array $labels, string $fallback = ''): string
+{
+    $values = admin_monitoring_unique_label_values($labels);
+    if (empty($values)) {
+        return $fallback;
+    }
+
+    return implode(' | ', $values);
+}
+
+function admin_monitoring_apply_faculty_scope_summary(array &$row): void
+{
+    if ((string)($row['assignee_type'] ?? '') !== 'faculty') {
+        return;
+    }
+
+    $campusValues = admin_monitoring_unique_label_values((array)($row['campus_labels_map'] ?? []));
+    $collegeValues = admin_monitoring_unique_label_values((array)($row['college_labels_map'] ?? []));
+    $scopeValues = admin_monitoring_unique_label_values((array)($row['scope_labels_map'] ?? []));
+
+    $row['campus_label'] = !empty($campusValues) ? implode(' | ', $campusValues) : 'Unassigned campus';
+    $row['college_label'] = !empty($collegeValues) ? implode(' | ', $collegeValues) : 'Unassigned college';
+    $row['campus_college_label'] = !empty($scopeValues)
+        ? implode(' | ', $scopeValues)
+        : trim($row['campus_label'] . ' - ' . $row['college_label'], ' -');
+    $row['scope_count'] = count($scopeValues);
+}
+
 function admin_monitoring_load_status(float $loadValue, int $preparationCount, bool $analyticsReady): array
 {
     if (!$analyticsReady) {
@@ -234,39 +281,52 @@ if (
                 }
 
                 $designationName = trim((string)($row['designation_name'] ?? ''));
-                $assignmentKey = $facultyId . ':' . $collegeId;
+                $campusLabel = trim((string)($row['campus_name'] ?? ''));
+                $collegeLabel = trim((string)($row['college_name'] ?? ''));
+                $assignmentKey = 'faculty:' . $facultyId;
 
-                $monitorRowsByKey[$assignmentKey] = [
-                    'assignment_key' => $assignmentKey,
-                    'assignee_type' => 'faculty',
-                    'assignee_type_label' => 'Faculty',
-                    'faculty_id' => $facultyId,
-                    'faculty_need_id' => 0,
-                    'college_id' => $collegeId,
-                    'campus_id' => $campusId,
-                    'full_name' => admin_monitoring_format_faculty_name($row),
-                    'last_name' => trim((string)($row['last_name'] ?? '')),
-                    'first_name' => trim((string)($row['first_name'] ?? '')),
-                    'middle_name' => trim((string)($row['middle_name'] ?? '')),
-                    'ext_name' => trim((string)($row['ext_name'] ?? '')),
-                    'campus_label' => trim((string)($row['campus_name'] ?? '')),
-                    'college_label' => trim((string)($row['college_name'] ?? '')),
-                    'campus_college_label' => trim((string)($row['campus_name'] ?? '')) . ' - ' . trim((string)($row['college_name'] ?? '')),
-                    'designation_id' => (int)($row['designation_id'] ?? 0),
-                    'designation_name' => $designationName,
-                    'designation_label' => admin_monitoring_title_case($designationName),
-                    'designation_units' => round((float)($row['designation_units'] ?? 0), 2),
-                    'need_notes' => '',
-                    'workload_units' => 0.0,
-                    'workload_load' => 0.0,
-                    'total_units' => round((float)($row['designation_units'] ?? 0), 2),
-                    'total_load' => round((float)($row['designation_units'] ?? 0), 2),
-                    'total_preparations' => 0,
-                    'status_ready' => $facultyWorkloadSourceReady,
-                    'status_key' => 'pending',
-                    'status_label' => 'Pending term',
-                    'status_badge_class' => 'is-pending',
-                ];
+                if (!isset($monitorRowsByKey[$assignmentKey])) {
+                    $monitorRowsByKey[$assignmentKey] = [
+                        'assignment_key' => $assignmentKey,
+                        'assignee_type' => 'faculty',
+                        'assignee_type_label' => 'Faculty',
+                        'faculty_id' => $facultyId,
+                        'faculty_need_id' => 0,
+                        'college_id' => 0,
+                        'campus_id' => 0,
+                        'full_name' => admin_monitoring_format_faculty_name($row),
+                        'last_name' => trim((string)($row['last_name'] ?? '')),
+                        'first_name' => trim((string)($row['first_name'] ?? '')),
+                        'middle_name' => trim((string)($row['middle_name'] ?? '')),
+                        'ext_name' => trim((string)($row['ext_name'] ?? '')),
+                        'campus_label' => $campusLabel,
+                        'college_label' => $collegeLabel,
+                        'campus_college_label' => trim($campusLabel . ' - ' . $collegeLabel, ' -'),
+                        'designation_id' => (int)($row['designation_id'] ?? 0),
+                        'designation_name' => $designationName,
+                        'designation_label' => admin_monitoring_title_case($designationName),
+                        'designation_units' => round((float)($row['designation_units'] ?? 0), 2),
+                        'need_notes' => '',
+                        'workload_units' => 0.0,
+                        'workload_load' => 0.0,
+                        'total_units' => round((float)($row['designation_units'] ?? 0), 2),
+                        'total_load' => round((float)($row['designation_units'] ?? 0), 2),
+                        'total_preparations' => 0,
+                        'status_ready' => $facultyWorkloadSourceReady,
+                        'status_key' => 'pending',
+                        'status_label' => 'Pending term',
+                        'status_badge_class' => 'is-pending',
+                        'campus_labels_map' => [],
+                        'college_labels_map' => [],
+                        'scope_labels_map' => [],
+                        'scope_count' => 0,
+                    ];
+                }
+
+                $monitorRowsByKey[$assignmentKey]['campus_labels_map'][$campusId] = $campusLabel;
+                $monitorRowsByKey[$assignmentKey]['college_labels_map'][$collegeId] = $collegeLabel;
+                $monitorRowsByKey[$assignmentKey]['scope_labels_map'][$campusId . ':' . $collegeId] = trim($campusLabel . ' - ' . $collegeLabel, ' -');
+                admin_monitoring_apply_faculty_scope_summary($monitorRowsByKey[$assignmentKey]);
             }
         }
 
@@ -277,20 +337,17 @@ if (
 
     if (!empty($monitorRowsByKey) && $facultyWorkloadSourceReady) {
         $facultyIds = [];
-        $campusIds = [];
         foreach ($monitorRowsByKey as $row) {
             if ((string)($row['assignee_type'] ?? 'faculty') !== 'faculty') {
                 continue;
             }
 
             $facultyIds[(int)$row['faculty_id']] = true;
-            $campusIds[(int)$row['campus_id']] = true;
         }
 
-        if (!empty($facultyIds) && !empty($campusIds)) {
+        if (!empty($facultyIds)) {
             $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
             $facultyIdList = implode(',', array_map('intval', array_keys($facultyIds)));
-            $campusIdList = implode(',', array_map('intval', array_keys($campusIds)));
 
             $workloadSql = "
                 SELECT
@@ -299,7 +356,6 @@ if (
                     o.offering_id,
                     " . ($classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id') . ",
                     " . ($classScheduleHasType ? 'cs.schedule_type AS schedule_type' : "'LEC' AS schedule_type") . ",
-                    camp.campus_id AS schedule_campus_id,
                     sm.sub_code,
                     ps.lec_units,
                     ps.lab_units,
@@ -323,15 +379,13 @@ if (
                   AND o.ay_id = ?
                   AND o.semester = ?
                   AND fw.faculty_id IN ({$facultyIdList})
-                  AND camp.campus_id IN ({$campusIdList})
                 ORDER BY
                     fw.faculty_id ASC,
-                    camp.campus_id ASC,
                     cs.schedule_id ASC
             ";
 
             $workloadStmt = $conn->prepare($workloadSql);
-            $rowsByFacultyCampusContext = [];
+            $rowsByFacultyContext = [];
             $preparationMap = [];
             $offeringIds = [];
 
@@ -343,10 +397,9 @@ if (
                 if ($workloadResult instanceof mysqli_result) {
                     while ($workloadRow = $workloadResult->fetch_assoc()) {
                         $facultyId = (int)($workloadRow['faculty_id'] ?? 0);
-                        $campusId = (int)($workloadRow['schedule_campus_id'] ?? 0);
                         $scheduleId = (int)($workloadRow['schedule_id'] ?? 0);
                         $offeringId = (int)($workloadRow['offering_id'] ?? 0);
-                        if ($facultyId <= 0 || $campusId <= 0) {
+                        if ($facultyId <= 0) {
                             continue;
                         }
 
@@ -356,7 +409,7 @@ if (
                             $offeringId
                         );
 
-                        $rowsByFacultyCampusContext[$facultyId][$campusId][$contextKey][] = [
+                        $rowsByFacultyContext[$facultyId][$contextKey][] = [
                             'schedule_type' => (string)($workloadRow['schedule_type'] ?? 'LEC'),
                             'lec_units' => (float)($workloadRow['lec_units'] ?? 0),
                             'lab_units' => (float)($workloadRow['lab_units'] ?? 0),
@@ -365,7 +418,7 @@ if (
 
                         $subCode = trim((string)($workloadRow['sub_code'] ?? ''));
                         if ($subCode !== '') {
-                            $preparationMap[$facultyId][$campusId][$subCode] = true;
+                            $preparationMap[$facultyId][$subCode] = true;
                         }
 
                         if ($offeringId > 0) {
@@ -419,43 +472,44 @@ if (
                 }
             }
 
-            $campusTotalsByKey = [];
-            foreach ($rowsByFacultyCampusContext as $facultyId => $campusContexts) {
-                foreach ($campusContexts as $campusId => $contextRowsByKey) {
-                    $workloadUnits = 0.0;
-                    $workloadLoad = 0.0;
+            $facultyTotalsById = [];
+            foreach ($rowsByFacultyContext as $facultyId => $contextRowsByKey) {
+                $workloadUnits = 0.0;
+                $workloadLoad = 0.0;
 
-                    foreach ($contextRowsByKey as $contextKey => $contextRows) {
-                        $metrics = synk_schedule_sum_display_metrics($contextRows, $contextTotals[$contextKey] ?? []);
-                        $workloadUnits += (float)($metrics['units'] ?? 0);
-                        $workloadLoad += (float)($metrics['faculty_load'] ?? 0);
-                    }
-
-                    $campusTotalsByKey[$facultyId . ':' . $campusId] = [
-                        'workload_units' => round($workloadUnits, 2),
-                        'workload_load' => round($workloadLoad, 2),
-                        'total_preparations' => count($preparationMap[$facultyId][$campusId] ?? []),
-                    ];
+                foreach ($contextRowsByKey as $contextKey => $contextRows) {
+                    $metrics = synk_schedule_sum_display_metrics($contextRows, $contextTotals[$contextKey] ?? []);
+                    $workloadUnits += (float)($metrics['units'] ?? 0);
+                    $workloadLoad += (float)($metrics['faculty_load'] ?? 0);
                 }
+
+                $facultyTotalsById[$facultyId] = [
+                    'workload_units' => round($workloadUnits, 2),
+                    'workload_load' => round($workloadLoad, 2),
+                    'total_preparations' => count($preparationMap[$facultyId] ?? []),
+                ];
             }
 
             foreach ($monitorRowsByKey as $assignmentKey => $row) {
-                $campusKey = (int)$row['faculty_id'] . ':' . (int)$row['campus_id'];
-                $campusTotals = $campusTotalsByKey[$campusKey] ?? [
+                if ((string)($row['assignee_type'] ?? 'faculty') !== 'faculty') {
+                    continue;
+                }
+
+                $facultyTotals = $facultyTotalsById[(int)$row['faculty_id']] ?? [
                     'workload_units' => 0.0,
                     'workload_load' => 0.0,
                     'total_preparations' => 0,
                 ];
 
-                $monitorRowsByKey[$assignmentKey]['workload_units'] = round((float)$campusTotals['workload_units'], 2);
-                $monitorRowsByKey[$assignmentKey]['workload_load'] = round((float)$campusTotals['workload_load'], 2);
-                $monitorRowsByKey[$assignmentKey]['total_preparations'] = (int)$campusTotals['total_preparations'];
+                $monitorRowsByKey[$assignmentKey]['workload_units'] = round((float)$facultyTotals['workload_units'], 2);
+                $monitorRowsByKey[$assignmentKey]['workload_load'] = round((float)$facultyTotals['workload_load'], 2);
+                $monitorRowsByKey[$assignmentKey]['total_preparations'] = (int)$facultyTotals['total_preparations'];
                 $monitorRowsByKey[$assignmentKey]['total_units'] = round(
-                    (float)$campusTotals['workload_units'] + (float)$row['designation_units'],
+                    (float)$facultyTotals['workload_units'] + (float)$row['designation_units'],
                     2
                 );
                 $monitorRowsByKey[$assignmentKey]['total_load'] = round(
-                    (float)$campusTotals['workload_load'] + (float)$row['designation_units'],
+                    (float)$facultyTotals['workload_load'] + (float)$row['designation_units'],
                     2
                 );
             }
@@ -754,6 +808,10 @@ if (!empty($monitorRowsByKey) && $facultyNeedWorkloadSourceReady) {
 
 $monitorRows = array_values($monitorRowsByKey);
 foreach ($monitorRows as &$monitorRow) {
+    if ((string)($monitorRow['assignee_type'] ?? '') === 'faculty') {
+        admin_monitoring_apply_faculty_scope_summary($monitorRow);
+    }
+
     $status = admin_monitoring_load_status(
         (float)($monitorRow['total_load'] ?? 0),
         (int)($monitorRow['total_preparations'] ?? 0),
@@ -762,6 +820,11 @@ foreach ($monitorRows as &$monitorRow) {
     $monitorRow['status_key'] = (string)$status['key'];
     $monitorRow['status_label'] = (string)$status['label'];
     $monitorRow['status_badge_class'] = (string)$status['badge_class'];
+    unset(
+        $monitorRow['campus_labels_map'],
+        $monitorRow['college_labels_map'],
+        $monitorRow['scope_labels_map']
+    );
 }
 unset($monitorRow);
 
@@ -1246,6 +1309,7 @@ if ($pagePayloadJson === false) {
 
         .schedule-partner-note,
         .workload-merge-note,
+        .workload-source-note,
         .workload-external-note {
             display: block;
             margin-top: 0.22rem;
@@ -1254,6 +1318,11 @@ if ($pagePayloadJson === false) {
 
         .workload-merge-note {
             color: #7a6b40;
+            font-weight: 600;
+        }
+
+        .workload-source-note {
+            color: #536f88;
             font-weight: 600;
         }
 
@@ -1316,9 +1385,9 @@ if ($pagePayloadJson === false) {
                         <i class="bx bx-user-pin me-2"></i> Faculty Load Monitoring
                     </h4>
                     <p class="monitoring-subcopy mb-0">
-                        Review active faculty-college assignments across all campuses. Each row reflects one college assignment,
-                        while <strong>Show Workload</strong> opens the scheduler-style view for that college and keeps other loads
-                        from the same campus visible as view-only rows.
+                        Review active faculty workload across all campuses. Each faculty now appears once with fused totals across
+                        all assigned colleges and campuses, while <strong>Show Workload</strong> marks every subject with its
+                        source campus and college.
                     </p>
                 </div>
                 <div class="d-flex flex-column align-items-start align-items-lg-end gap-2">
@@ -1868,6 +1937,7 @@ if ($pagePayloadJson === false) {
             const normalizedType = String(row && (row.type || row.schedule_type) || "").toUpperCase();
             const typeLabel = normalizedType === "LAB" ? "Lab" : (normalizedType === "LEC" ? "Lec" : "");
             const noteParts = [];
+            const sourceLabel = getWorkloadSourceLabel(row);
             let html = description;
 
             if (isPaired) {
@@ -1887,8 +1957,11 @@ if ($pagePayloadJson === false) {
                 html += '<span class="workload-merge-note">' + escapeHtml(mergeNote) + '</span>';
             }
 
+            if (sourceLabel && !(row && row.is_external)) {
+                html += '<span class="workload-source-note">Source: ' + escapeHtml(sourceLabel) + '</span>';
+            }
+
             if (row && row.is_external) {
-                const sourceLabel = getWorkloadSourceLabel(row);
                 html += '<span class="workload-external-note">View-only workload' + (sourceLabel ? ' from ' + escapeHtml(sourceLabel) : '') + '</span>';
             }
 
@@ -2003,12 +2076,15 @@ if ($pagePayloadJson === false) {
             const emptyMessage = entryAnalyticsReady
                 ? "No workload assigned yet."
                 : "Workload source is pending for this term.";
+            const emptyTableMessage = assigneeType === "faculty_need"
+                ? "No workload assigned in the selected college."
+                : "No workload assigned for this faculty.";
             let tableBody = "";
 
             if (rows.length > 0) {
                 tableBody += buildGroupedWorkloadRows(rows, "");
             } else {
-                tableBody += '<tr><td colspan="11" class="text-center text-muted">No workload assigned in the selected college.</td></tr>';
+                tableBody += '<tr><td colspan="11" class="text-center text-muted">' + escapeHtml(emptyTableMessage) + '</td></tr>';
             }
 
             tableBody += renderExternalWorkloadRows(externalRows);
@@ -2108,12 +2184,15 @@ if ($pagePayloadJson === false) {
         }
 
         function loadFacultyWorkload(item) {
+            const assigneeType = String(item && item.assignee_type || "faculty");
+            const requestCollegeId = assigneeType === "faculty" ? 0 : (Number(item && item.college_id) || 0);
+            const requestCampusId = assigneeType === "faculty" ? 0 : (Number(item && item.campus_id) || 0);
             const requestKey = [
-                String(item && item.assignee_type || "faculty"),
+                assigneeType,
                 Number(item && item.faculty_id) || 0,
                 Number(item && item.faculty_need_id) || 0,
-                Number(item && item.college_id) || 0,
-                Number(item && item.campus_id) || 0
+                requestCollegeId,
+                requestCampusId
             ].join(":");
 
             if (!workloadModalBody || !item) {
@@ -2136,11 +2215,11 @@ if ($pagePayloadJson === false) {
                 type: "POST",
                 dataType: "json",
                 data: {
-                    assignee_type: String(item && item.assignee_type || "faculty"),
+                    assignee_type: assigneeType,
                     faculty_id: Number(item.faculty_id) || 0,
                     faculty_need_id: Number(item.faculty_need_id) || 0,
-                    college_id: Number(item.college_id) || 0,
-                    campus_id: Number(item.campus_id) || 0,
+                    college_id: requestCollegeId,
+                    campus_id: requestCampusId,
                     include_external: 1
                 }
             }).done(function (response) {
