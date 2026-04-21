@@ -152,6 +152,19 @@
         letter-spacing: 0.02em;
       }
 
+      .faculty-classification-pill {
+        display: inline-flex;
+        align-items: center;
+        border-radius: 999px;
+        font-size: 0.75rem;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid #b7e2ee;
+        background: #e9f7fb;
+        color: #166578;
+        font-weight: 700;
+        letter-spacing: 0.02em;
+      }
+
       .faculty-empty-state {
         border: 1px dashed rgba(67, 89, 113, 0.2);
         border-radius: 1rem;
@@ -256,7 +269,7 @@
                     type="search"
                     id="facultySearchInput"
                     class="form-control"
-                    placeholder="Search by faculty name, designation, or status"
+                    placeholder="Search by faculty name, designation, classification, or status"
                     autocomplete="off"
                   >
                   <button class="btn btn-outline-secondary" type="button" id="btnClearFacultySearch">Clear</button>
@@ -272,6 +285,7 @@
                         <th style="width:60px;">#</th>
                         <th>Name</th>
                         <th>Designation</th>
+                        <th>Employment Classification</th>
                         <th style="width:120px;">Status</th>
                         <th class="text-end" style="width:120px;">Actions</th>
                       </tr>
@@ -308,7 +322,7 @@
 <!-- ADD FACULTY MODAL         -->
 <!-- ========================= -->
 <div class="modal fade" id="addFacultyModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
@@ -320,34 +334,45 @@
         <form id="addFacultyForm">
           <div class="row g-3">
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Last Name <span class="text-danger">*</span></label>
               <input type="text" name="last_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">First Name <span class="text-danger">*</span></label>
               <input type="text" name="first_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Middle Name</label>
               <input type="text" name="middle_name" class="form-control">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Extension</label>
               <input type="text" name="ext_name" class="form-control" placeholder="Jr., III">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-12">
               <label class="form-label">Designation</label>
               <select name="designation_id" id="add_designation_id" class="form-select">
                 <option value="">No Designation</option>
               </select>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-12">
+              <label class="form-label">Employment Classification</label>
+              <select name="employment_classification" id="add_employment_classification" class="form-select">
+                <option value="">No Classification</option>
+                <option value="permanent">Permanent</option>
+                <option value="temporary">Temporary</option>
+                <option value="contract_of_service">Contract of Service</option>
+                <option value="part_time">Part Time</option>
+              </select>
+            </div>
+
+            <div class="col-12">
               <label class="form-label">Status</label>
               <select name="status" class="form-select">
                 <option value="active">Active</option>
@@ -372,7 +397,7 @@
 <!-- EDIT FACULTY MODAL        -->
 <!-- ========================= -->
 <div class="modal fade" id="editFacultyModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
@@ -386,34 +411,45 @@
 
           <div class="row g-3">
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Last Name</label>
               <input type="text" name="last_name" id="edit_last_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">First Name</label>
               <input type="text" name="first_name" id="edit_first_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Middle Name</label>
               <input type="text" name="middle_name" id="edit_middle_name" class="form-control">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Extension</label>
               <input type="text" name="ext_name" id="edit_ext_name" class="form-control">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-12">
               <label class="form-label">Designation</label>
               <select name="designation_id" id="edit_designation_id" class="form-select">
                 <option value="">No Designation</option>
               </select>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-12">
+              <label class="form-label">Employment Classification</label>
+              <select name="employment_classification" id="edit_employment_classification" class="form-select">
+                <option value="">No Classification</option>
+                <option value="permanent">Permanent</option>
+                <option value="temporary">Temporary</option>
+                <option value="contract_of_service">Contract of Service</option>
+                <option value="part_time">Part Time</option>
+              </select>
+            </div>
+
+            <div class="col-12">
               <label class="form-label">Status</label>
               <select name="status" id="edit_status" class="form-select">
                 <option value="active">Active</option>
@@ -485,7 +521,9 @@ function buildFacultyDataAttributes(item) {
     ' data-status="' + escapeHtml(item.status) + '"' +
     ' data-designation="' + escapeHtml(item.designationId) + '"' +
     ' data-designation-name="' + escapeHtml(item.designationName) + '"' +
-    ' data-designation-style="' + escapeHtml(item.designationStyle) + '"'
+    ' data-designation-style="' + escapeHtml(item.designationStyle) + '"' +
+    ' data-employment-classification="' + escapeHtml(item.employmentClassification) + '"' +
+    ' data-employment-classification-label="' + escapeHtml(item.employmentClassificationLabel) + '"'
   );
 }
 
@@ -501,6 +539,14 @@ function buildFacultyDesignationHtml(item) {
   }
 
   return '<span class="faculty-designation-pill"' + styleAttr + '>' + escapeHtml(item.designationName) + '</span>';
+}
+
+function buildFacultyClassificationHtml(item) {
+  if (item.employmentClassificationLabel === "") {
+    return '<span class="text-muted">Not Set</span>';
+  }
+
+  return '<span class="faculty-classification-pill">' + escapeHtml(item.employmentClassificationLabel) + '</span>';
 }
 
 function buildFacultyActionButtonsHtml(item, isCard) {
@@ -529,6 +575,7 @@ function buildFacultyRowHtml(item, displayIndex) {
       "<td>" + displayIndex + ".</td>" +
       "<td>" + escapeHtml(item.fullName) + "</td>" +
       "<td>" + buildFacultyDesignationHtml(item) + "</td>" +
+      "<td>" + buildFacultyClassificationHtml(item) + "</td>" +
       "<td>" + item.statusHtml + "</td>" +
       '<td class="text-end">' + buildFacultyActionButtonsHtml(item, false) + "</td>" +
     "</tr>"
@@ -556,6 +603,10 @@ function buildFacultyCardHtml(item, displayIndex) {
             '<span class="faculty-mobile-meta-label">Status</span>' +
             '<span class="faculty-mobile-meta-value">' + escapeHtml(item.statusText) + '</span>' +
           '</div>' +
+          '<div>' +
+            '<span class="faculty-mobile-meta-label">Classification</span>' +
+            '<span class="faculty-mobile-meta-value">' + escapeHtml(item.employmentClassificationLabel || "Not Set") + '</span>' +
+          '</div>' +
         '</div>' +
         '<div class="faculty-mobile-actions">' + buildFacultyActionButtonsHtml(item, true) + '</div>' +
       '</div>' +
@@ -575,7 +626,7 @@ function parseFacultyPayload(payload) {
     var $editButton = $row.find(".btnEditFaculty").first();
     var record = null;
 
-    if ($cells.length < 5 || $editButton.length === 0) {
+    if ($cells.length < 6 || $editButton.length === 0) {
       return;
     }
 
@@ -589,9 +640,11 @@ function parseFacultyPayload(payload) {
       designationId: String($editButton.attr("data-designation") || ""),
       designationName: $.trim(String($editButton.attr("data-designation-name") || $cells.eq(2).text() || "")),
       designationStyle: String($editButton.attr("data-designation-style") || ""),
+      employmentClassification: String($editButton.attr("data-employment-classification") || ""),
+      employmentClassificationLabel: $.trim(String($editButton.attr("data-employment-classification-label") || "")),
       fullName: $.trim($cells.eq(1).text()),
-      statusHtml: $.trim($cells.eq(3).html() || ""),
-      statusText: $.trim($cells.eq(3).text() || "")
+      statusHtml: $.trim($cells.eq(4).html() || ""),
+      statusText: $.trim($cells.eq(4).text() || "")
     };
 
     if (record.statusHtml === "") {
@@ -606,6 +659,7 @@ function parseFacultyPayload(payload) {
         record.mname,
         record.ext,
         record.designationName,
+        record.employmentClassificationLabel,
         record.statusText
       ].join(" ")
     );
@@ -661,7 +715,7 @@ function showFacultyLoadMessage(message) {
   var safeMessage = escapeHtml(message || "No faculty records found.");
 
   $("#facultyTable tbody").html(
-    '<tr><td colspan="5" class="text-center text-muted py-3">' + safeMessage + "</td></tr>"
+    '<tr><td colspan="6" class="text-center text-muted py-3">' + safeMessage + "</td></tr>"
   );
   $("#facultyMobileList").html('<div class="faculty-empty-state">' + safeMessage + '</div>');
   $("#facultyLoadHint").addClass("d-none").text("");
@@ -889,8 +943,13 @@ $("#btnSaveFaculty").click(function (e) {
         return;
       }
 
+      if (res === "invalid_classification") {
+        Swal.fire("Invalid Classification", "Please choose a valid employment classification or leave it blank.", "warning");
+        return;
+      }
+
       if (res === "schema_update_required") {
-        Swal.fire("Update Needed", "Please check the faculty and designation table structure.", "warning");
+        Swal.fire("Update Needed", "Please check the faculty, designation, and employment classification table structure.", "warning");
         return;
       }
 
@@ -915,6 +974,7 @@ $("#btnSaveFaculty").click(function (e) {
       // SET FOCUS BACK TO FIRST NAME OR LAST NAME
       loadDesignationOptions($("#add_designation_id"));
       $("#add_designation_id").val("");
+      $("#add_employment_classification").val("");
       $("input[name='last_name']").focus();
 
       // REFRESH TABLE
@@ -943,6 +1003,7 @@ $("#addFacultyForm input").on("keypress", function(e) {
   $("#edit_middle_name").val($(this).data("mname"));
   $("#edit_ext_name").val($(this).data("ext"));
   $("#edit_status").val($(this).data("status"));
+  $("#edit_employment_classification").val($(this).data("employmentClassification") || "");
   loadDesignationOptions($("#edit_designation_id"), String($(this).data("designation") || ""));
 
   $("#editFacultyModal").modal("show");
@@ -970,8 +1031,13 @@ $("#btnUpdateFaculty").click(function (e) {
         return;
       }
 
+      if (res === "invalid_classification") {
+        Swal.fire("Invalid Classification", "Please choose a valid employment classification or leave it blank.", "warning");
+        return;
+      }
+
       if (res === "schema_update_required") {
-        Swal.fire("Update Needed", "Please check the faculty and designation table structure.", "warning");
+        Swal.fire("Update Needed", "Please check the faculty, designation, and employment classification table structure.", "warning");
         return;
       }
 

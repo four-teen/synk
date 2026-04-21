@@ -86,6 +86,8 @@
                   <tr>
                     <th style="width:60px;">#</th>
                     <th>Name</th>
+                    <th>Designation</th>
+                    <th>Employment Classification</th>
                     <th style="width:120px;">Status</th>
                     <th class="text-end" style="width:120px;">Actions</th>
                   </tr>
@@ -117,7 +119,7 @@
 <!-- ADD FACULTY MODAL         -->
 <!-- ========================= -->
 <div class="modal fade" id="addFacultyModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
@@ -129,27 +131,38 @@
         <form id="addFacultyForm">
           <div class="row g-3">
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Last Name <span class="text-danger">*</span></label>
               <input type="text" name="last_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">First Name <span class="text-danger">*</span></label>
               <input type="text" name="first_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Middle Name</label>
               <input type="text" name="middle_name" class="form-control">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Extension</label>
               <input type="text" name="ext_name" class="form-control" placeholder="Jr., III">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-12">
+              <label class="form-label">Employment Classification</label>
+              <select name="employment_classification" id="add_employment_classification" class="form-select">
+                <option value="">No Classification</option>
+                <option value="permanent">Permanent</option>
+                <option value="temporary">Temporary</option>
+                <option value="contract_of_service">Contract of Service</option>
+                <option value="part_time">Part Time</option>
+              </select>
+            </div>
+
+            <div class="col-12">
               <label class="form-label">Status</label>
               <select name="status" class="form-select">
                 <option value="active">Active</option>
@@ -174,7 +187,7 @@
 <!-- EDIT FACULTY MODAL        -->
 <!-- ========================= -->
 <div class="modal fade" id="editFacultyModal" tabindex="-1">
-  <div class="modal-dialog modal-md modal-dialog-centered">
+  <div class="modal-dialog modal-lg modal-dialog-centered">
     <div class="modal-content">
 
       <div class="modal-header">
@@ -188,27 +201,38 @@
 
           <div class="row g-3">
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Last Name</label>
               <input type="text" name="last_name" id="edit_last_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">First Name</label>
               <input type="text" name="first_name" id="edit_first_name" class="form-control" required>
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Middle Name</label>
               <input type="text" name="middle_name" id="edit_middle_name" class="form-control">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-lg-3 col-md-6">
               <label class="form-label">Extension</label>
               <input type="text" name="ext_name" id="edit_ext_name" class="form-control">
             </div>
 
-            <div class="col-md-4">
+            <div class="col-12">
+              <label class="form-label">Employment Classification</label>
+              <select name="employment_classification" id="edit_employment_classification" class="form-select">
+                <option value="">No Classification</option>
+                <option value="permanent">Permanent</option>
+                <option value="temporary">Temporary</option>
+                <option value="contract_of_service">Contract of Service</option>
+                <option value="part_time">Part Time</option>
+              </select>
+            </div>
+
+            <div class="col-12">
               <label class="form-label">Status</label>
               <select name="status" id="edit_status" class="form-select">
                 <option value="active">Active</option>
@@ -262,9 +286,25 @@ $("#btnSaveFaculty").click(function () {
     "../backend/query_faculty.php",
     $("#addFacultyForm").serialize() + "&save_faculty=1",
     function(res) {
+      res = $.trim(res);
 
       if (res === "missing") {
         Swal.fire("Missing Data", "Please fill out required fields.", "warning");
+        return;
+      }
+
+      if (res === "invalid_classification") {
+        Swal.fire("Invalid Classification", "Please choose a valid employment classification or leave it blank.", "warning");
+        return;
+      }
+
+      if (res === "schema_update_required") {
+        Swal.fire("Update Needed", "Please check the faculty table structure.", "warning");
+        return;
+      }
+
+      if (res !== "success") {
+        Swal.fire("Save Failed", "Could not add faculty. Please refresh and try again.", "error");
         return;
       }
 
@@ -277,11 +317,12 @@ $("#btnSaveFaculty").click(function () {
         showConfirmButton: false
       });
 
-      // DO NOT CLOSE MODAL ❌
-      // $("#addFacultyModal").modal("hide");  ← remove this
+      // DO NOT CLOSE MODAL
+      // $("#addFacultyModal").modal("hide"); remove this
 
       // RESET FORM FOR NEXT ENTRY
       $("#addFacultyForm")[0].reset();
+      $("#add_employment_classification").val("");
 
       // SET FOCUS BACK TO FIRST NAME OR LAST NAME
       $("input[name='last_name']").focus();
@@ -312,6 +353,7 @@ $(document).on("click", ".btnEditFaculty", function () {
   $("#edit_middle_name").val($(this).data("mname"));
   $("#edit_ext_name").val($(this).data("ext"));
   $("#edit_status").val($(this).data("status"));
+  $("#edit_employment_classification").val($(this).data("employmentClassification") || "");
 
   $("#editFacultyModal").modal("show");
 });
@@ -325,9 +367,25 @@ $("#btnUpdateFaculty").click(function () {
     "../backend/query_faculty.php",
     $("#editFacultyForm").serialize() + "&update_faculty=1",
     function(res) {
+      res = $.trim(res);
 
       if (res === "missing") {
         Swal.fire("Missing Data", "Please fill out required fields.", "warning");
+        return;
+      }
+
+      if (res === "invalid_classification") {
+        Swal.fire("Invalid Classification", "Please choose a valid employment classification or leave it blank.", "warning");
+        return;
+      }
+
+      if (res === "schema_update_required") {
+        Swal.fire("Update Needed", "Please check the faculty table structure.", "warning");
+        return;
+      }
+
+      if (res !== "success") {
+        Swal.fire("Update Failed", "Could not update faculty. Please refresh and try again.", "error");
         return;
       }
 

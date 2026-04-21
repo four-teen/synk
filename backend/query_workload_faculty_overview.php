@@ -62,6 +62,7 @@ $liveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 
 $classScheduleHasGroupId = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_group_id');
 $classScheduleHasType = synk_table_has_column($conn, 'tbl_class_schedule', 'schedule_type');
 $facultyHasDesignationId = synk_table_has_column($conn, 'tbl_faculty', 'designation_id');
+$facultyHasEmploymentClassification = synk_table_has_column($conn, 'tbl_faculty', 'employment_classification');
 $designationTableExists = synk_table_exists($conn, 'tbl_designation');
 $designationHasStatus = $designationTableExists && synk_table_has_column($conn, 'tbl_designation', 'status');
 $facultyIdList = implode(',', array_map('intval', $facultyIds));
@@ -73,6 +74,7 @@ foreach ($facultyIds as $facultyId) {
         'designation_name' => '',
         'designation_label' => '',
         'designation_units' => 0.0,
+        'employment_classification' => '',
         'workload_load' => 0.0,
         'total_load' => 0.0,
         'total_preparations' => 0
@@ -107,6 +109,31 @@ if ($facultyHasDesignationId && $designationTableExists) {
             $summaries[$facultyId]['designation_units'] = round($designationUnits, 2);
         }
         $designationRes->free();
+    }
+}
+
+if ($facultyHasEmploymentClassification) {
+    $classificationSql = "
+        SELECT
+            faculty_id,
+            COALESCE(NULLIF(TRIM(employment_classification), ''), '') AS employment_classification
+        FROM tbl_faculty
+        WHERE faculty_id IN ({$facultyIdList})
+    ";
+
+    $classificationRes = $conn->query($classificationSql);
+    if ($classificationRes instanceof mysqli_result) {
+        while ($classificationRow = $classificationRes->fetch_assoc()) {
+            $facultyId = (int)($classificationRow['faculty_id'] ?? 0);
+            if (!isset($summaries[$facultyId])) {
+                continue;
+            }
+
+            $summaries[$facultyId]['employment_classification'] = strtolower(
+                trim((string)($classificationRow['employment_classification'] ?? ''))
+            );
+        }
+        $classificationRes->free();
     }
 }
 

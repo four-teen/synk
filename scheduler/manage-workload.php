@@ -11,7 +11,7 @@ require_once '../backend/signatory_settings_helper.php';
    WORKLOAD COMPUTATION CONFIG
    NOTE:
    - 1 LAB unit = 3 contact hours
-   - Each contact hour × LAB_LOAD_MULTIPLIER
+   - Each contact hour x LAB_LOAD_MULTIPLIER
    - This is intentionally hardcoded for now
    - Future: move to settings table
 ===================================================== */
@@ -993,7 +993,7 @@ $consolidatedReportSignatories = [
             display: grid;
             grid-template-columns: repeat(3, minmax(0, 1fr));
             gap: 0.75rem;
-            margin-bottom: 1rem;
+            margin-bottom: 0.7rem;
         }
 
         .faculty-browser-metric {
@@ -1020,6 +1020,56 @@ $consolidatedReportSignatories = [
             font-weight: 800;
             line-height: 1;
             color: #22304c;
+        }
+
+        .faculty-browser-classification-summary {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 0.4rem;
+            margin: 0 0 1rem;
+            color: #6f7f9b;
+            font-size: 0.78rem;
+        }
+
+        .faculty-browser-classification-badge {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            gap: 0.25rem;
+            border: 1px solid #dde7f7;
+            border-radius: 999px;
+            background: rgba(255, 255, 255, 0.86);
+            padding: 0.24rem 0.55rem;
+            line-height: 1.2;
+            box-shadow: 0 8px 18px rgba(29, 43, 88, 0.04);
+            min-width: 0;
+            white-space: nowrap;
+        }
+
+        .faculty-browser-classification-badge.is-permanent {
+            border-color: #cdebd9;
+            background: #eefaf3;
+            color: #1f6d44;
+        }
+
+        .faculty-browser-classification-badge.is-cos {
+            border-color: #d7e4ff;
+            background: #f1f6ff;
+            color: #315fa8;
+        }
+
+        .faculty-browser-classification-badge.is-part-time {
+            border-color: #f7dfb1;
+            background: #fff8e8;
+            color: #815c07;
+        }
+
+        .faculty-browser-classification-label {
+            font-weight: 700;
+        }
+
+        .faculty-browser-classification-value {
+            font-weight: 800;
         }
 
         .faculty-browser-note {
@@ -2325,7 +2375,7 @@ $consolidatedReportSignatories = [
         </small>
     </div>
 
-    <!-- ✅ PRINT BUTTON (VISIBLE NOW) -->
+    <!-- PRINT BUTTON (VISIBLE NOW) -->
     <button class="btn btn-outline-secondary btn-sm" onclick="window.print()">
         <i class="bx bx-printer me-1"></i> Print Workload
     </button>
@@ -2578,7 +2628,7 @@ $consolidatedReportSignatories = [
     class="faculty-browser-launcher screen-only"
     id="btnOpenFacultyBrowser"
     aria-controls="facultyBrowserDrawer"
-    aria-label="Open faculty workload overview"
+    aria-label="Open faculty load overview"
 >
     <span class="faculty-browser-launcher-icon">
         <i class="bx bx-user-pin"></i>
@@ -2600,18 +2650,19 @@ $consolidatedReportSignatories = [
             </span>
             <div>
                 <h5 id="facultyBrowserDrawerLabel">Faculty Load Overview</h5>
-                <p>Browse university-wide faculty totals for the selected term and jump straight into any workload profile.</p>
+                <p>Browse faculty load totals for the selected term, then open any faculty workload profile.</p>
             </div>
         </div>
         <button type="button" class="btn-close text-reset" data-bs-dismiss="offcanvas" aria-label="Close"></button>
     </div>
     <div class="offcanvas-body">
         <div class="faculty-browser-summary" id="facultyBrowserSummary"></div>
+        <div class="faculty-browser-classification-summary" id="facultyBrowserClassificationSummary"></div>
         <div class="faculty-browser-note">
-            Uses actual assigned workload across colleges/campuses for the current A.Y. and semester. Click a faculty card to load that faculty into the main workload panels.
+            Shows assigned workload from all colleges and campuses for the current A.Y. and semester. Click a faculty card to open that faculty in the workload panel.
         </div>
         <div id="facultyBrowserList">
-            <div class="faculty-browser-empty">Loading faculty workload overview...</div>
+            <div class="faculty-browser-empty">Loading faculty load overview...</div>
         </div>
     </div>
 </div>
@@ -3133,8 +3184,39 @@ $(document).ready(function () {
         `;
     }
 
+    function normalizeFacultyBrowserClassification(value) {
+        const normalized = String(value || "").trim().toLowerCase().replace(/[\s-]+/g, "_");
+        if (normalized === "cos" || normalized === "contract_service" || normalized === "contract_of_services") {
+            return "contract_of_service";
+        }
+
+        if (normalized === "parttime") {
+            return "part_time";
+        }
+
+        return normalized;
+    }
+
+    function buildFacultyBrowserClassificationSummary(counts) {
+        const items = [
+            { key: "permanent", label: "Permanent", className: "is-permanent" },
+            { key: "contract_of_service", label: "COS", className: "is-cos" },
+            { key: "part_time", label: "Part-time", className: "is-part-time" }
+        ];
+
+        return items.map(function (item) {
+            return `
+                <span class="faculty-browser-classification-badge ${escapeHtml(item.className)}">
+                    <span class="faculty-browser-classification-label">${escapeHtml(item.label)}:</span>
+                    <span class="faculty-browser-classification-value">${escapeHtml(String(counts[item.key] || 0))}</span>
+                </span>
+            `;
+        }).join("");
+    }
+
     function setFacultyBrowserMessage(message, isLoading = false) {
         $("#facultyBrowserSummary").html("");
+        $("#facultyBrowserClassificationSummary").html("");
         $("#facultyBrowserList").html(`
             <div class="faculty-browser-empty">
                 ${isLoading ? '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>' : ''}
@@ -3164,11 +3246,11 @@ $(document).ready(function () {
 
         if (facultyOverviewCacheKey === "" && facultyOverviewCache.length === 0) {
             if (facultyOverviewRequest && facultyOverviewRequest.readyState !== 4) {
-                setFacultyBrowserMessage("Loading faculty workload overview...", true);
+                setFacultyBrowserMessage("Loading faculty load overview...", true);
                 return;
             }
 
-            setFacultyBrowserMessage("Open the drawer to load faculty workload overview.");
+            setFacultyBrowserMessage("Open the drawer to load the faculty load overview.");
             return;
         }
 
@@ -3192,6 +3274,7 @@ $(document).ready(function () {
                 designation_units: designationUnits,
                 total_preparations: totalPreparations,
                 designation_label: String(summaryRow.designation_label || "").trim(),
+                employment_classification: normalizeFacultyBrowserClassification(summaryRow.employment_classification || ""),
                 load_status: loadStatus
             };
         });
@@ -3200,7 +3283,7 @@ $(document).ready(function () {
             {
                 key: "overload",
                 title: "Overload",
-                subtitle: "Faculty above the prep-based normal load for the selected term."
+                subtitle: "Faculty above the normal load for the selected term."
             },
             {
                 key: "normal",
@@ -3210,7 +3293,7 @@ $(document).ready(function () {
             {
                 key: "underload",
                 title: "Underload",
-                subtitle: "Faculty below the prep-based normal load for the selected term."
+                subtitle: "Faculty below the normal load for the selected term."
             }
         ];
 
@@ -3219,12 +3302,25 @@ $(document).ready(function () {
             normal: merged.filter(item => item.load_status.className === "normal").length,
             underload: merged.filter(item => item.load_status.className === "underload").length
         };
+        const classificationCounts = merged.reduce(function (accumulator, item) {
+            const classification = normalizeFacultyBrowserClassification(item.employment_classification);
+            if (Object.prototype.hasOwnProperty.call(accumulator, classification)) {
+                accumulator[classification]++;
+            }
+
+            return accumulator;
+        }, {
+            permanent: 0,
+            contract_of_service: 0,
+            part_time: 0
+        });
 
         summary.html(
             buildFacultyBrowserMetric("Overload", counts.overload) +
             buildFacultyBrowserMetric("Normal", counts.normal) +
             buildFacultyBrowserMetric("Underload", counts.underload)
         );
+        $("#facultyBrowserClassificationSummary").html(buildFacultyBrowserClassificationSummary(classificationCounts));
 
         const sectionsHtml = sections.map(section => {
             const rows = merged
@@ -3334,8 +3430,8 @@ $(document).ready(function () {
         }
 
         abortPendingRequest(facultyOverviewRequest);
-        setFacultyBrowserMessage("Loading faculty workload overview...", true);
-        const busyToken = beginSchedulerActivity("Loading faculty workload overview...");
+        setFacultyBrowserMessage("Loading faculty load overview...", true);
+        const busyToken = beginSchedulerActivity("Loading faculty load overview...");
 
         facultyOverviewRequest = $.ajax({
             url: "../backend/query_workload_faculty_overview.php",
@@ -3349,7 +3445,7 @@ $(document).ready(function () {
         }).done(function (response) {
             if (!response || response.status !== "ok" || !Array.isArray(response.faculty)) {
                 clearFacultyOverviewCache();
-                setFacultyBrowserMessage((response && response.message) ? response.message : "Failed to load faculty workload overview.");
+                setFacultyBrowserMessage((response && response.message) ? response.message : "Failed to load faculty load overview.");
                 dfd.reject("invalid");
                 return;
             }
@@ -3365,7 +3461,7 @@ $(document).ready(function () {
             }
 
             clearFacultyOverviewCache();
-            setFacultyBrowserMessage("Failed to load faculty workload overview.");
+            setFacultyBrowserMessage("Failed to load faculty load overview.");
             dfd.reject(xhr);
         }).always(function () {
             endSchedulerActivity(busyToken);
@@ -4438,7 +4534,7 @@ $(document).ready(function () {
         }
 
         consolidatedReportIsBuilding = true;
-        showConsolidatedReportLoading("Loading faculty workload overview...", 5);
+        showConsolidatedReportLoading("Loading faculty load overview...", 5);
         $("#btnRefreshConsolidatedReport").prop("disabled", true);
 
         try {
@@ -5422,7 +5518,7 @@ $(document).ready(function () {
     });
 
     $("#btnOpenFacultyBrowser").on("click", function () {
-        setFacultyBrowserMessage("Loading faculty workload overview...", true);
+        setFacultyBrowserMessage("Loading faculty load overview...", true);
         if (facultyBrowserDrawerInstance) {
             facultyBrowserDrawerInstance.show();
         }

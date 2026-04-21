@@ -4,7 +4,8 @@ Live DB import order
 2. If your live DB does not yet have designation support, run:
    - `backend/sql/phase5_designation_units.sql`
    - `backend/sql/phase6_faculty_designation_fk.sql`
-3. Run `backend/sql/live_performance_patch_no_views.sql`.
+3. Run `backend/sql/phase15_faculty_employment_classification.sql`.
+4. Run `backend/sql/live_performance_patch_no_views.sql`.
 
 Notes
 - The current runtime does not use `vw_faculty_workload`.

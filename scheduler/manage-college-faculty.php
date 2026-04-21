@@ -213,6 +213,22 @@ if ($myCollege > 0) {
         overflow-wrap: anywhere;
       }
 
+      .faculty-classification-pill {
+        display: inline-block;
+        max-width: 100%;
+        padding: 0.3rem 0.65rem;
+        border: 1px solid #b7e2ee;
+        border-radius: 0.9rem;
+        background: #e9f7fb;
+        color: #166578;
+        font-size: 0.76rem;
+        font-weight: 700;
+        line-height: 1.35;
+        white-space: normal;
+        word-break: break-word;
+        overflow-wrap: anywhere;
+      }
+
       .faculty-assigned-pill {
         display: inline-flex;
         align-items: center;
@@ -244,25 +260,45 @@ if ($myCollege > 0) {
         display: inline-flex;
         align-items: center;
         justify-content: flex-end;
-        flex-wrap: wrap;
-        gap: 0.35rem;
-        white-space: normal;
+        flex-wrap: nowrap;
+        white-space: nowrap;
         max-width: 100%;
       }
 
       .faculty-action-group > .btn {
-        padding: 0.42rem 0.65rem;
-        border-radius: 0.55rem !important;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 0.25rem;
+        padding: 0.38rem 0.48rem;
+        border-radius: 0 !important;
         margin-left: 0 !important;
+        font-size: 0.72rem;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .faculty-action-group > .btn:first-child {
+        border-top-left-radius: 0.45rem !important;
+        border-bottom-left-radius: 0.45rem !important;
+      }
+
+      .faculty-action-group > .btn:last-child {
+        border-top-right-radius: 0.45rem !important;
+        border-bottom-right-radius: 0.45rem !important;
+      }
+
+      .faculty-action-group > .btn + .btn {
+        margin-left: -1px !important;
       }
 
       .faculty-action-label {
-        margin-left: 0.3rem;
+        margin-left: 0;
         line-height: 1;
       }
 
       .faculty-action-icon {
-        font-size: 1rem;
+        font-size: 0.95rem;
       }
 
       .faculty-mobile-list {
@@ -430,7 +466,7 @@ if ($myCollege > 0) {
               </p>
               <div class="faculty-page-note">
                 <i class="bx bx-shield-quarter"></i>
-                <span>Only designation can be edited from this page. Manage the prepared-by signatory from Report Signatories.</span>
+                <span>Designation and employment classification can be edited from this page. Manage the prepared-by signatory from Report Signatories.</span>
               </div>
             </div>
 
@@ -477,7 +513,7 @@ if ($myCollege > 0) {
                         type="search"
                         id="facultySearch"
                         class="form-control"
-                        placeholder="Search by faculty name, designation, or status"
+                        placeholder="Search by faculty name, designation, classification, or status"
                         autocomplete="off"
                       >
                     </div>
@@ -502,11 +538,12 @@ if ($myCollege > 0) {
                   <thead>
                     <tr>
                       <th style="width:5%;">#</th>
-                      <th style="width:24%;">Faculty Name</th>
-                      <th style="width:32%;">Designation</th>
-                      <th style="width:12%;">Assigned</th>
-                      <th style="width:10%;">Status</th>
-                      <th class="text-end" style="width:17%;">Actions</th>
+                      <th style="width:21%;">Faculty Name</th>
+                      <th style="width:20%;">Designation</th>
+                      <th style="width:15%;">Employment Classification</th>
+                      <th style="width:10%;">Assigned</th>
+                      <th style="width:9%;">Status</th>
+                      <th class="text-end" style="width:20%;">Actions</th>
                     </tr>
                   </thead>
                   <tbody id="collegeFacultyTableBody"></tbody>
@@ -550,6 +587,17 @@ if ($myCollege > 0) {
             <label class="form-label">Faculty</label>
             <select id="faculty_id" class="form-select" style="width: 100%;">
               <option value="">Select Faculty...</option>
+            </select>
+          </div>
+
+          <div class="mb-0">
+            <label class="form-label">Employment Classification</label>
+            <select id="add_employment_classification" class="form-select">
+              <option value="">Select Classification...</option>
+              <option value="permanent">Permanent</option>
+              <option value="temporary">Temporary</option>
+              <option value="contract_of_service">Contract of Service</option>
+              <option value="part_time">Part Time</option>
             </select>
           </div>
 
@@ -615,6 +663,52 @@ if ($myCollege > 0) {
   </div>
 </div>
 
+<div class="modal fade" id="classificationModal" tabindex="-1" aria-hidden="true">
+  <div class="modal-dialog modal-md modal-dialog-centered">
+    <div class="modal-content">
+
+      <div class="modal-header">
+        <h5 class="modal-title" id="classificationModalTitle">Update Employment Classification</h5>
+      </div>
+
+      <div class="modal-body">
+        <form id="classificationForm">
+          <input type="hidden" id="classification_faculty_id">
+          <input type="hidden" id="classification_college_id" value="<?= $myCollege ?>">
+
+          <div class="mb-3">
+            <label class="form-label">Faculty</label>
+            <input type="text" id="classification_faculty_name" class="form-control" readonly>
+          </div>
+
+          <div class="mb-0">
+            <label class="form-label">Employment Classification</label>
+            <select id="employment_classification" class="form-select">
+              <option value="">Select Classification...</option>
+              <option value="permanent">Permanent</option>
+              <option value="temporary">Temporary</option>
+              <option value="contract_of_service">Contract of Service</option>
+              <option value="part_time">Part Time</option>
+            </select>
+          </div>
+
+          <button type="submit" hidden></button>
+        </form>
+      </div>
+
+      <div class="modal-footer">
+        <button type="button" class="btn btn-secondary" data-bs-dismiss="modal">
+          Cancel
+        </button>
+        <button type="submit" class="btn btn-primary" form="classificationForm">
+          Save Classification
+        </button>
+      </div>
+
+    </div>
+  </div>
+</div>
+
 <script src="../assets/vendor/libs/jquery/jquery.js"></script>
 <script src="../assets/vendor/js/bootstrap.js"></script>
 <script src="../assets/vendor/libs/perfect-scrollbar/perfect-scrollbar.js"></script>
@@ -642,11 +736,16 @@ const facultyListState = {
 
 const addFacultyModalElement = document.getElementById("addFacultyModal");
 const designationModalElement = document.getElementById("designationModal");
+const classificationModalElement = document.getElementById("classificationModal");
 const addFacultyModal = new bootstrap.Modal(addFacultyModalElement, {
   backdrop: "static",
   keyboard: false
 });
 const designationModal = new bootstrap.Modal(designationModalElement, {
+  backdrop: "static",
+  keyboard: false
+});
+const classificationModal = new bootstrap.Modal(classificationModalElement, {
   backdrop: "static",
   keyboard: false
 });
@@ -714,6 +813,19 @@ $(document).ready(function () {
     resetDesignationForm();
   });
 
+  $("#classificationModal").on("keydown", function (e) {
+    if (e.key !== "Enter") {
+      return;
+    }
+
+    e.preventDefault();
+    $("#classificationForm").trigger("submit");
+  });
+
+  $("#classificationModal").on("hidden.bs.modal", function () {
+    resetClassificationForm();
+  });
+
   $("#btnAddFaculty").on("click", function () {
     const collegeId = Number($("#college_id").val() || 0);
 
@@ -723,6 +835,7 @@ $(document).ready(function () {
     }
 
     $("#faculty_id").val(null).trigger("change");
+    $("#add_employment_classification").val("");
     addFacultyModal.show();
   });
 
@@ -731,12 +844,13 @@ $(document).ready(function () {
 
     const collegeId = Number($("#college_id").val() || 0);
     const facultyId = Number($("#faculty_id").val() || 0);
+    const employmentClassification = String($("#add_employment_classification").val() || "").trim();
 
-    if (!collegeId || !facultyId) {
+    if (!collegeId || !facultyId || employmentClassification === "") {
       Swal.fire({
         icon: "warning",
         title: "Missing Data",
-        text: "Please select faculty to assign."
+        text: "Please select faculty and employment classification to assign."
       });
       return;
     }
@@ -748,7 +862,8 @@ $(document).ready(function () {
       data: buildRequestData({
         save_assignment: 1,
         college_id: collegeId,
-        faculty_id: facultyId
+        faculty_id: facultyId,
+        employment_classification: employmentClassification
       })
     }).done(function (res) {
       if (res.status === "inserted" || res.status === "reactivated") {
@@ -766,12 +881,23 @@ $(document).ready(function () {
         addFacultyModal.hide();
         $("#addFacultyForm")[0].reset();
         $("#faculty_id").val(null).trigger("change");
+        $("#add_employment_classification").val("");
         refreshFacultyData();
         return;
       }
 
       if (res.status === "duplicate") {
         Swal.fire("Already Assigned", "This faculty is already assigned to this college.", "info");
+        return;
+      }
+
+      if (res.status === "invalid_classification") {
+        Swal.fire("Invalid Classification", "Please select a valid employment classification.", "warning");
+        return;
+      }
+
+      if (res.status === "schema_update_required") {
+        Swal.fire("Schema Update Required", "Employment classification support is not ready in this database yet.", "warning");
         return;
       }
 
@@ -783,6 +909,10 @@ $(document).ready(function () {
 
   $(document).on("click", ".btn-edit-designation", function () {
     openDesignationModal($(this));
+  });
+
+  $(document).on("click", ".btn-edit-classification", function () {
+    openClassificationModal($(this));
   });
 
   $("#designationForm").on("submit", function (e) {
@@ -839,6 +969,63 @@ $(document).ready(function () {
       Swal.fire("Error", "Unable to update the faculty designation.", "error");
     }).fail(function (xhr) {
       Swal.fire("Error", extractErrorMessage(xhr, "Unable to update the faculty designation."), "error");
+    });
+  });
+
+  $("#classificationForm").on("submit", function (e) {
+    e.preventDefault();
+
+    const collegeId = Number($("#classification_college_id").val() || $("#college_id").val() || 0);
+    const facultyId = Number($("#classification_faculty_id").val() || 0);
+    const employmentClassification = String($("#employment_classification").val() || "").trim();
+
+    if (!collegeId || !facultyId || employmentClassification === "") {
+      Swal.fire({
+        icon: "warning",
+        title: "Missing Data",
+        text: "Please choose an employment classification before saving."
+      });
+      return;
+    }
+
+    $.ajax({
+      url: "../backend/query_college_faculty.php",
+      type: "POST",
+      dataType: "json",
+      data: buildRequestData({
+        update_employment_classification: 1,
+        college_id: collegeId,
+        faculty_id: facultyId,
+        employment_classification: employmentClassification
+      })
+    }).done(function (res) {
+      if (res && res.status === "updated") {
+        Swal.fire({
+          icon: "success",
+          title: "Classification Updated",
+          text: "Faculty employment classification has been updated successfully.",
+          timer: 1300,
+          timerProgressBar: true,
+          showConfirmButton: false
+        });
+        classificationModal.hide();
+        refreshFacultyData();
+        return;
+      }
+
+      if (res && res.status === "invalid_classification") {
+        Swal.fire("Invalid Classification", "Please select a valid employment classification.", "warning");
+        return;
+      }
+
+      if (res && res.status === "schema_update_required") {
+        Swal.fire("Schema Update Required", "Employment classification support is not ready in this database yet.", "warning");
+        return;
+      }
+
+      Swal.fire("Error", "Unable to update the employment classification.", "error");
+    }).fail(function (xhr) {
+      Swal.fire("Error", extractErrorMessage(xhr, "Unable to update the employment classification."), "error");
     });
   });
 
@@ -968,6 +1155,14 @@ function resetDesignationForm() {
     .trigger("change");
 }
 
+function resetClassificationForm() {
+  $("#classificationForm")[0].reset();
+  $("#classification_faculty_id").val("");
+  $("#classification_faculty_name").val("");
+  $("#classificationModalTitle").text("Update Employment Classification");
+  $("#employment_classification").val("");
+}
+
 function openDesignationModal($button) {
   const facultyId = Number($button.data("facultyId") || 0);
   const facultyName = String($button.data("facultyName") || "").trim();
@@ -996,6 +1191,26 @@ function openDesignationModal($button) {
     designationModal.hide();
     Swal.fire("Error", extractErrorMessage(xhr, "Unable to load designation options."), "error");
   });
+}
+
+function openClassificationModal($button) {
+  const facultyId = Number($button.data("facultyId") || 0);
+  const facultyName = String($button.data("facultyName") || "").trim();
+  const employmentClassification = String($button.data("employmentClassification") || "").trim();
+  const collegeId = Number($("#college_id").val() || 0);
+
+  if (!facultyId || !collegeId) {
+    Swal.fire("Missing Data", "Unable to load the faculty classification form.", "warning");
+    return;
+  }
+
+  $("#classification_faculty_id").val(facultyId);
+  $("#classification_college_id").val(collegeId);
+  $("#classification_faculty_name").val(facultyName);
+  $("#classificationModalTitle").text(employmentClassification !== "" ? "Update Employment Classification" : "Add Employment Classification");
+  $("#employment_classification").val(employmentClassification);
+
+  classificationModal.show();
 }
 
 function loadDesignationOptions(selectedId) {
@@ -1200,6 +1415,7 @@ function appendFacultyRows(rows, startIndex) {
   rows.forEach(function (row, index) {
     const sequence = startIndex + index;
     const designationHtml = buildDesignationHtml(row);
+    const classificationHtml = buildEmploymentClassificationHtml(row);
     const assignedHtml = buildAssignedHtml(row);
     const statusBadge = buildStatusBadge(row.status);
     const actionHtml = buildActionHtml(row);
@@ -1210,6 +1426,7 @@ function appendFacultyRows(rows, startIndex) {
         "<td class='faculty-index'>" + sequence + "</td>" +
         "<td><div class='faculty-name'>" + safeName + "</div></td>" +
         "<td>" + designationHtml + "</td>" +
+        "<td>" + classificationHtml + "</td>" +
         "<td>" + assignedHtml + "</td>" +
         "<td>" + statusBadge + "</td>" +
         "<td class='text-end faculty-action-cell'>" + actionHtml + "</td>" +
@@ -1228,6 +1445,10 @@ function appendFacultyRows(rows, startIndex) {
             "<div>" + statusBadge + "</div>" +
           "</div>" +
           "<div class='faculty-mobile-grid'>" +
+            "<div class='faculty-mobile-meta'>" +
+              "<span class='faculty-mobile-meta-label'>Classification</span>" +
+              "<span class='faculty-mobile-meta-value'>" + classificationHtml + "</span>" +
+            "</div>" +
             "<div class='faculty-mobile-meta'>" +
               "<span class='faculty-mobile-meta-label'>Assigned</span>" +
               "<span class='faculty-mobile-meta-value'>" + assignedHtml + "</span>" +
@@ -1261,6 +1482,28 @@ function buildDesignationHtml(row) {
   return "<span class='faculty-designation-pill'" + styleAttr + ">" + escapeHtml(designationName) + "</span>";
 }
 
+function buildEmploymentClassificationHtml(row) {
+  const classification = String(row.employment_classification || "").trim();
+  const label = String(row.employment_classification_label || formatEmploymentClassification(classification)).trim();
+
+  if (label === "") {
+    return "<span class='text-muted'>Not Set</span>";
+  }
+
+  return "<span class='faculty-classification-pill'>" + escapeHtml(label) + "</span>";
+}
+
+function formatEmploymentClassification(value) {
+  const labels = {
+    permanent: "Permanent",
+    temporary: "Temporary",
+    contract_of_service: "Contract of Service",
+    part_time: "Part Time"
+  };
+
+  return labels[String(value || "").trim()] || "";
+}
+
 function buildAssignedHtml(row) {
   const count = Number(row.assigned_count || 0);
   const label = count + " " + (count === 1 ? "class" : "classes");
@@ -1281,6 +1524,8 @@ function buildActionHtml(row) {
   const isActive = String(row.status || "").toLowerCase() !== "inactive";
   const hasDesignation = String(row.designation_name || "").trim() !== "";
   const designationTitle = hasDesignation ? "Edit Designation" : "Add Designation";
+  const employmentClassification = String(row.employment_classification || "").trim();
+  const classificationTitle = employmentClassification !== "" ? "Edit Employment Classification" : "Add Employment Classification";
   const designationButton = (
     "<button type='button' class='btn btn-sm btn-outline-primary btn-edit-designation' title='" +
     escapeHtml(designationTitle) +
@@ -1294,14 +1539,31 @@ function buildActionHtml(row) {
     escapeHtml(String(row.designation_id || 0)) +
     "'>" +
     "<i class='bx bx-id-card faculty-action-icon'></i>" +
-    "<span class='faculty-action-label'>Designation</span>" +
+    "<span class='faculty-action-label'>Desig.</span>" +
+    "</button>"
+  );
+  const classificationButton = (
+    "<button type='button' class='btn btn-sm btn-outline-secondary btn-edit-classification' title='" +
+    escapeHtml(classificationTitle) +
+    "' aria-label='" +
+    escapeHtml(classificationTitle) +
+    "' data-faculty-id='" +
+    escapeHtml(String(row.faculty_id || 0)) +
+    "' data-faculty-name='" +
+    escapeHtml(String(row.full_name || "Unnamed Faculty")) +
+    "' data-employment-classification='" +
+    escapeHtml(employmentClassification) +
+    "'>" +
+    "<i class='bx bx-briefcase faculty-action-icon'></i>" +
+    "<span class='faculty-action-label'>Emp.</span>" +
     "</button>"
   );
 
   if (isActive) {
     return (
-      "<div class='faculty-action-group' role='group' aria-label='Faculty row actions'>" +
+      "<div class='btn-group faculty-action-group' role='group' aria-label='Faculty row actions'>" +
         designationButton +
+        classificationButton +
         "<button type='button' class='btn btn-sm btn-outline-danger btn-remove-assignment' title='Remove Assignment' aria-label='Remove Assignment' data-id='" +
         escapeHtml(String(row.college_faculty_id || 0)) +
         "'>" +
@@ -1313,7 +1575,7 @@ function buildActionHtml(row) {
   }
 
   return (
-    "<div class='faculty-action-group' role='group' aria-label='Faculty row actions'>" +
+    "<div class='btn-group faculty-action-group' role='group' aria-label='Faculty row actions'>" +
       "<button type='button' class='btn btn-sm btn-outline-success btn-reactivate-assignment' title='Reactivate Assignment' aria-label='Reactivate Assignment' data-faculty-id='" +
       escapeHtml(String(row.faculty_id || 0)) +
       "'>" +

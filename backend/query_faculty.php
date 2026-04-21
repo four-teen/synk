@@ -13,6 +13,47 @@ function query_faculty_designation_style(int $designationId, string $designation
     return "background-color:hsla({$hue}, 78%, 91%, 0.95);color:hsla({$hue}, 72%, 32%, 1);border-color:hsla({$hue}, 68%, 78%, 1);";
 }
 
+function query_faculty_employment_classification_options(): array
+{
+    return [
+        'permanent' => 'Permanent',
+        'temporary' => 'Temporary',
+        'contract_of_service' => 'Contract of Service',
+        'part_time' => 'Part Time',
+    ];
+}
+
+function query_faculty_normalize_employment_classification(string $value): string
+{
+    $normalized = strtolower(trim($value));
+    $normalized = str_replace(['-', ' '], '_', $normalized);
+    $normalized = preg_replace('/_+/', '_', $normalized) ?? $normalized;
+
+    $aliases = [
+        'contract_service' => 'contract_of_service',
+        'contract_services' => 'contract_of_service',
+        'contract_of_services' => 'contract_of_service',
+        'cotract_of_service' => 'contract_of_service',
+        'parttime' => 'part_time',
+    ];
+
+    if (isset($aliases[$normalized])) {
+        $normalized = $aliases[$normalized];
+    }
+
+    return array_key_exists($normalized, query_faculty_employment_classification_options())
+        ? $normalized
+        : '';
+}
+
+function query_faculty_employment_classification_label(string $value): string
+{
+    $options = query_faculty_employment_classification_options();
+    $normalized = query_faculty_normalize_employment_classification($value);
+
+    return $normalized !== '' ? $options[$normalized] : '';
+}
+
 function query_faculty_describe_columns(mysqli $conn, string $tableName): array
 {
     $columns = [];
@@ -55,6 +96,7 @@ function query_faculty_schema_info(mysqli $conn): array
         'has_ext_name' => isset($facultyColumns['ext_name']),
         'has_status' => isset($facultyColumns['status']),
         'has_designation_id' => isset($facultyColumns['designation_id']),
+        'has_employment_classification' => isset($facultyColumns['employment_classification']),
         'designation_text_column' => $designationTextColumn,
         'designation_table_exists' => $hasDesignationTable,
         'designation_table_has_name' => isset($designationColumns['designation_name']),
@@ -137,6 +179,7 @@ if (isset($_POST['load_faculty'])) {
         $schema['has_middle_name'] ? "f.middle_name" : "NULL AS middle_name",
         $schema['has_ext_name'] ? "f.ext_name" : "NULL AS ext_name",
         $schema['has_status'] ? "f.status" : "'active' AS status",
+        $schema['has_employment_classification'] ? "f.employment_classification" : "NULL AS employment_classification",
     ];
     $designationLookup = [];
 
@@ -161,7 +204,7 @@ if (isset($_POST['load_faculty'])) {
     ");
 
     if (!($qry instanceof mysqli_result)) {
-        echo "<tr><td colspan='5' class='text-center text-muted'>Unable to load faculty list. Please check database connection/schema.</td></tr>";
+        echo "<tr><td colspan='6' class='text-center text-muted'>Unable to load faculty list. Please check database connection/schema.</td></tr>";
         exit;
     }
 
@@ -218,12 +261,21 @@ if (isset($_POST['load_faculty'])) {
         $designationDisplay = ($designationNameRaw !== '')
             ? "<span class='faculty-designation-pill' style='{$designationStyleAttr}'>{$designationName}</span>"
             : "<span class='text-muted'>Not Set</span>";
+        $employmentClassification = query_faculty_normalize_employment_classification((string)($row['employment_classification'] ?? ''));
+        $employmentClassificationLabelRaw = query_faculty_employment_classification_label($employmentClassification);
+        $employmentClassificationLabel = $employmentClassificationLabelRaw !== ''
+            ? htmlspecialchars($employmentClassificationLabelRaw, ENT_QUOTES, 'UTF-8')
+            : 'Not Set';
+        $employmentClassificationDisplay = $employmentClassificationLabelRaw !== ''
+            ? "<span class='badge bg-label-info'>{$employmentClassificationLabel}</span>"
+            : "<span class='text-muted'>Not Set</span>";
 
         echo "
             <tr>
                 <td>{$count}.</td>
                 <td>" . htmlspecialchars($fullname) . "</td>
                 <td>{$designationDisplay}</td>
+                <td>{$employmentClassificationDisplay}</td>
                 <td>{$badge}</td>
                 <td class='text-end'>
 
@@ -236,7 +288,9 @@ if (isset($_POST['load_faculty'])) {
                         data-status='{$row['status']}'
                         data-designation='" . htmlspecialchars($designationIdRaw, ENT_QUOTES, 'UTF-8') . "'
                         data-designation-name='" . htmlspecialchars($designationNameRaw, ENT_QUOTES, 'UTF-8') . "'
-                        data-designation-style='{$designationStyleAttr}'>
+                        data-designation-style='{$designationStyleAttr}'
+                        data-employment-classification='" . htmlspecialchars($employmentClassification, ENT_QUOTES, 'UTF-8') . "'
+                        data-employment-classification-label='" . htmlspecialchars($employmentClassificationLabelRaw, ENT_QUOTES, 'UTF-8') . "'>
                         <i class='bx bx-edit'></i>
                     </button>
 
@@ -266,10 +320,24 @@ if (isset($_POST['save_faculty'])) {
     $mname = trim(strtoupper($_POST['middle_name']));
     $ext   = trim(strtoupper($_POST['ext_name']));
     $designationId = (int)($_POST['designation_id'] ?? 0);
+    $employmentClassificationRaw = trim((string)($_POST['employment_classification'] ?? ''));
+    $employmentClassification = $employmentClassificationRaw !== ''
+        ? query_faculty_normalize_employment_classification($employmentClassificationRaw)
+        : '';
     $status = $_POST['status'];
 
     if ($lname == "" || $fname == "") {
         echo "missing";
+        exit;
+    }
+
+    if ($employmentClassificationRaw !== '' && $employmentClassification === '') {
+        echo "invalid_classification";
+        exit;
+    }
+
+    if ($employmentClassification !== '' && !$schema['has_employment_classification']) {
+        echo "schema_update_required";
         exit;
     }
 
@@ -322,6 +390,18 @@ if (isset($_POST['save_faculty'])) {
         $insertPlaceholders[] = '?';
     }
 
+    if ($schema['has_employment_classification']) {
+        $insertColumns[] = 'employment_classification';
+
+        if ($employmentClassification !== '') {
+            $insertValues[] = $employmentClassification;
+            $insertTypes .= "s";
+            $insertPlaceholders[] = '?';
+        } else {
+            $insertPlaceholders[] = 'NULL';
+        }
+    }
+
     if ($schema['has_status']) {
         $insertColumns[] = 'status';
         $insertValues[] = $status;
@@ -340,10 +420,10 @@ if (isset($_POST['save_faculty'])) {
     }
 
     query_faculty_bind_params($stmt, $insertTypes, $insertValues);
-    $stmt->execute();
+    $executed = $stmt->execute();
     $stmt->close();
 
-    echo "success";
+    echo $executed ? "success" : "save_failed";
     exit;
 }
 
@@ -353,12 +433,20 @@ if (isset($_POST['save_faculty'])) {
 // ------------------------------------------------------------
 if (isset($_POST['update_faculty'])) {
     $schema = query_faculty_schema_info($conn);
+    $hasDesignationInput = array_key_exists('designation_id', $_POST);
+    $hasEmploymentClassificationInput = array_key_exists('employment_classification', $_POST);
     $id    = (int)($_POST['faculty_id'] ?? 0);
     $lname = trim(strtoupper($_POST['last_name']));
     $fname = trim(strtoupper($_POST['first_name']));
     $mname = trim(strtoupper($_POST['middle_name']));
     $ext   = trim(strtoupper($_POST['ext_name']));
-    $designationId = (int)($_POST['designation_id'] ?? 0);
+    $designationId = $hasDesignationInput ? (int)($_POST['designation_id'] ?? 0) : 0;
+    $employmentClassificationRaw = $hasEmploymentClassificationInput
+        ? trim((string)($_POST['employment_classification'] ?? ''))
+        : '';
+    $employmentClassification = $employmentClassificationRaw !== ''
+        ? query_faculty_normalize_employment_classification($employmentClassificationRaw)
+        : '';
     $status = $_POST['status'];
 
     if ($id <= 0 || $lname == "" || $fname == "") {
@@ -366,8 +454,18 @@ if (isset($_POST['update_faculty'])) {
         exit;
     }
 
+    if ($hasEmploymentClassificationInput && $employmentClassificationRaw !== '' && $employmentClassification === '') {
+        echo "invalid_classification";
+        exit;
+    }
+
+    if ($hasEmploymentClassificationInput && $employmentClassification !== '' && !$schema['has_employment_classification']) {
+        echo "schema_update_required";
+        exit;
+    }
+
     $designationRecord = null;
-    if ($designationId > 0) {
+    if ($hasDesignationInput && $designationId > 0) {
         if (!$schema['designation_table_exists'] || !$schema['designation_table_has_name'] || !query_faculty_persist_schema_ready($schema)) {
             echo "schema_update_required";
             exit;
@@ -399,18 +497,30 @@ if (isset($_POST['update_faculty'])) {
         $updateTypes .= "s";
     }
 
-    if ($schema['has_designation_id']) {
-        if (is_array($designationRecord)) {
-            $updateParts[] = "designation_id = ?";
-            $updateValues[] = $designationRecord['designation_id'];
-            $updateTypes .= "i";
-        } else {
-            $updateParts[] = "designation_id = NULL";
+    if ($hasDesignationInput) {
+        if ($schema['has_designation_id']) {
+            if (is_array($designationRecord)) {
+                $updateParts[] = "designation_id = ?";
+                $updateValues[] = $designationRecord['designation_id'];
+                $updateTypes .= "i";
+            } else {
+                $updateParts[] = "designation_id = NULL";
+            }
+        } elseif ($schema['designation_text_column'] !== null) {
+            $updateParts[] = "`{$schema['designation_text_column']}` = ?";
+            $updateValues[] = is_array($designationRecord) ? $designationRecord['designation_name'] : '';
+            $updateTypes .= "s";
         }
-    } elseif ($schema['designation_text_column'] !== null) {
-        $updateParts[] = "`{$schema['designation_text_column']}` = ?";
-        $updateValues[] = is_array($designationRecord) ? $designationRecord['designation_name'] : '';
-        $updateTypes .= "s";
+    }
+
+    if ($hasEmploymentClassificationInput && $schema['has_employment_classification']) {
+        if ($employmentClassification !== '') {
+            $updateParts[] = "employment_classification = ?";
+            $updateValues[] = $employmentClassification;
+            $updateTypes .= "s";
+        } else {
+            $updateParts[] = "employment_classification = NULL";
+        }
     }
 
     if ($schema['has_status']) {
@@ -434,10 +544,10 @@ if (isset($_POST['update_faculty'])) {
     }
 
     query_faculty_bind_params($stmt, $updateTypes, $updateValues);
-    $stmt->execute();
+    $executed = $stmt->execute();
     $stmt->close();
 
-    echo "success";
+    echo $executed ? "success" : "update_failed";
     exit;
 }
 

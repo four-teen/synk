@@ -99,6 +99,74 @@ function query_college_faculty_designation_style(int $designationId, string $des
     return "background-color:hsla({$hue}, 78%, 91%, 0.95);color:hsla({$hue}, 72%, 32%, 1);border-color:hsla({$hue}, 68%, 78%, 1);";
 }
 
+function query_college_faculty_employment_classification_options(): array
+{
+    return [
+        'permanent' => 'Permanent',
+        'temporary' => 'Temporary',
+        'contract_of_service' => 'Contract of Service',
+        'part_time' => 'Part Time',
+    ];
+}
+
+function query_college_faculty_normalize_employment_classification(string $value): string
+{
+    $normalized = strtolower(trim($value));
+    $normalized = str_replace(['-', ' '], '_', $normalized);
+    $normalized = preg_replace('/_+/', '_', $normalized) ?? $normalized;
+
+    $aliases = [
+        'contract_service' => 'contract_of_service',
+        'contract_services' => 'contract_of_service',
+        'contract_of_services' => 'contract_of_service',
+        'cotract_of_service' => 'contract_of_service',
+        'parttime' => 'part_time',
+    ];
+
+    if (isset($aliases[$normalized])) {
+        $normalized = $aliases[$normalized];
+    }
+
+    return array_key_exists($normalized, query_college_faculty_employment_classification_options())
+        ? $normalized
+        : '';
+}
+
+function query_college_faculty_employment_classification_label(string $value): string
+{
+    $options = query_college_faculty_employment_classification_options();
+    $normalized = query_college_faculty_normalize_employment_classification($value);
+
+    return $normalized !== '' ? $options[$normalized] : '';
+}
+
+function query_college_faculty_update_employment_classification(
+    mysqli $conn,
+    int $facultyId,
+    string $employmentClassification
+): bool {
+    if ($facultyId <= 0 || $employmentClassification === '') {
+        return false;
+    }
+
+    $stmt = $conn->prepare("
+        UPDATE tbl_faculty
+        SET employment_classification = ?
+        WHERE faculty_id = ?
+        LIMIT 1
+    ");
+
+    if (!($stmt instanceof mysqli_stmt)) {
+        return false;
+    }
+
+    $stmt->bind_param('si', $employmentClassification, $facultyId);
+    $executed = $stmt->execute();
+    $stmt->close();
+
+    return $executed;
+}
+
 function query_college_faculty_describe_columns(mysqli $conn, string $tableName): array
 {
     $columns = [];
@@ -141,6 +209,7 @@ function query_college_faculty_schema_info(mysqli $conn): array
         'has_middle_name' => isset($facultyColumns['middle_name']),
         'has_ext_name' => isset($facultyColumns['ext_name']),
         'has_designation_id' => isset($facultyColumns['designation_id']),
+        'has_employment_classification' => isset($facultyColumns['employment_classification']),
         'designation_text_column' => $designationTextColumn,
         'designation_table_exists' => $hasDesignationTable,
         'designation_table_has_name' => isset($designationColumns['designation_name']),
@@ -380,6 +449,11 @@ if (isset($_POST['load_college_faculty'])) {
     $joinSql = '';
     $designationNameExpr = "''";
     $facultyDesignationExpr = 'NULL';
+    $employmentClassificationExpr = "''";
+
+    if ($schema['has_employment_classification']) {
+        $employmentClassificationExpr = "COALESCE(NULLIF(TRIM(f.employment_classification), ''), '')";
+    }
 
     if ($schema['designation_text_column'] !== null) {
         $designationColumn = $schema['designation_text_column'];
@@ -404,6 +478,7 @@ if (isset($_POST['load_college_faculty'])) {
     }
 
     $selectParts[] = "{$designationNameExpr} AS designation_name";
+    $selectParts[] = "{$employmentClassificationExpr} AS employment_classification";
 
     $nameSearchExpr = "CONCAT_WS(' ', f.last_name, f.first_name, "
         . ($schema['has_middle_name'] ? 'f.middle_name' : 'NULL')
@@ -424,15 +499,25 @@ if (isset($_POST['load_college_faculty'])) {
 
     if ($search !== '') {
         $like = '%' . $search . '%';
-        $whereParts[] = "(
-            {$nameSearchExpr} LIKE ?
-            OR {$designationNameExpr} LIKE ?
-            OR cf.status LIKE ?
-        )";
+        $searchParts = [
+            "{$nameSearchExpr} LIKE ?",
+            "{$designationNameExpr} LIKE ?",
+            "cf.status LIKE ?",
+        ];
         $whereParams[] = $like;
         $whereParams[] = $like;
         $whereParams[] = $like;
         $whereTypes .= 'sss';
+
+        if ($schema['has_employment_classification']) {
+            $searchParts[] = "{$employmentClassificationExpr} LIKE ?";
+            $searchParts[] = "REPLACE({$employmentClassificationExpr}, '_', ' ') LIKE ?";
+            $whereParams[] = $like;
+            $whereParams[] = $like;
+            $whereTypes .= 'ss';
+        }
+
+        $whereParts[] = '(' . implode("\n            OR ", $searchParts) . ')';
     }
 
     $baseTableSql = "
@@ -527,6 +612,9 @@ if (isset($_POST['load_college_faculty'])) {
     if ($dataResult instanceof mysqli_result) {
         while ($row = $dataResult->fetch_assoc()) {
             $designationName = trim((string)($row['designation_name'] ?? ''));
+            $employmentClassification = query_college_faculty_normalize_employment_classification(
+                (string)($row['employment_classification'] ?? '')
+            );
             $status = strtolower(trim((string)($row['status'] ?? '')));
             if ($status !== 'inactive') {
                 $status = 'active';
@@ -539,6 +627,8 @@ if (isset($_POST['load_college_faculty'])) {
                 'designation_id' => (int)($row['designation_id'] ?? 0),
                 'designation_name' => $designationName,
                 'designation_style' => query_college_faculty_designation_style((int)($row['designation_id'] ?? 0), $designationName),
+                'employment_classification' => $employmentClassification,
+                'employment_classification_label' => query_college_faculty_employment_classification_label($employmentClassification),
                 'status' => $status,
                 'assigned_count' => (int)($row['assigned_count'] ?? 0),
             ];
@@ -696,6 +786,10 @@ if (isset($_POST['save_assignment'])) {
 
     $college_id = (int)($_POST['college_id'] ?? 0);
     $faculty_id = (int)($_POST['faculty_id'] ?? 0);
+    $employmentClassificationRaw = trim((string)($_POST['employment_classification'] ?? ''));
+    $employmentClassification = $employmentClassificationRaw !== ''
+        ? query_college_faculty_normalize_employment_classification($employmentClassificationRaw)
+        : '';
     $schema = query_college_faculty_schema_info($conn);
     $termReady = query_college_faculty_term_ready($schema);
     $currentTerm = synk_fetch_current_academic_term($conn);
@@ -707,7 +801,17 @@ if (isset($_POST['save_assignment'])) {
         exit;
     }
 
+    if ($employmentClassificationRaw !== '' && $employmentClassification === '') {
+        echo json_encode(['status' => 'invalid_classification']);
+        exit;
+    }
+
     query_college_faculty_require_college_scope($allowedCollegeIds, $college_id);
+
+    if ($employmentClassification !== '' && !$schema['has_employment_classification']) {
+        echo json_encode(['status' => 'schema_update_required']);
+        exit;
+    }
 
     if ($termReady && ($currentAyId <= 0 || $currentSemester <= 0)) {
         echo json_encode(['status' => 'error']);
@@ -769,6 +873,15 @@ if (isset($_POST['save_assignment'])) {
         $reactivateStmt->bind_param('i', $collegeFacultyId);
 
         if ($reactivateStmt->execute()) {
+            if (
+                $employmentClassification !== ''
+                && !query_college_faculty_update_employment_classification($conn, $faculty_id, $employmentClassification)
+            ) {
+                echo json_encode(['status' => 'error']);
+                $reactivateStmt->close();
+                exit;
+            }
+
             echo json_encode(['status' => 'reactivated']);
         } else {
             echo json_encode(['status' => 'error']);
@@ -802,6 +915,15 @@ if (isset($_POST['save_assignment'])) {
     }
 
     if ($stmt->execute()) {
+        if (
+            $employmentClassification !== ''
+            && !query_college_faculty_update_employment_classification($conn, $faculty_id, $employmentClassification)
+        ) {
+            echo json_encode(['status' => 'error']);
+            $stmt->close();
+            exit;
+        }
+
         echo json_encode(['status' => 'inserted']);
     } else {
         echo json_encode(['status' => 'error']);
@@ -905,6 +1027,59 @@ if (isset($_POST['update_faculty_designation'])) {
     query_college_faculty_json_response([
         'status' => 'updated',
         'designation_name' => $designationRecord['designation_name'],
+    ]);
+}
+
+if (isset($_POST['update_employment_classification'])) {
+    query_college_faculty_require_csrf();
+
+    $college_id = (int)($_POST['college_id'] ?? 0);
+    $faculty_id = (int)($_POST['faculty_id'] ?? 0);
+    $employmentClassification = query_college_faculty_normalize_employment_classification(
+        (string)($_POST['employment_classification'] ?? '')
+    );
+
+    if ($college_id <= 0 || $faculty_id <= 0 || $employmentClassification === '') {
+        query_college_faculty_json_response(['status' => 'invalid_classification'], 400);
+    }
+
+    query_college_faculty_require_college_scope($allowedCollegeIds, $college_id);
+
+    $schema = query_college_faculty_schema_info($conn);
+    if (!$schema['has_employment_classification']) {
+        query_college_faculty_json_response(['status' => 'schema_update_required'], 400);
+    }
+
+    $currentTerm = synk_fetch_current_academic_term($conn);
+    $currentAyId = (int)($currentTerm['ay_id'] ?? 0);
+    $currentSemester = (int)($currentTerm['semester'] ?? 0);
+
+    if (query_college_faculty_term_ready($schema) && ($currentAyId <= 0 || $currentSemester <= 0)) {
+        query_college_faculty_json_response(['status' => 'error'], 500);
+    }
+
+    if (!query_college_faculty_faculty_is_assigned(
+        $conn,
+        $faculty_id,
+        $college_id,
+        $schema,
+        $currentAyId,
+        $currentSemester
+    )) {
+        query_college_faculty_json_response([
+            'status' => 'forbidden',
+            'message' => 'This faculty member is not currently assigned to your college scope.',
+        ], 403);
+    }
+
+    if (!query_college_faculty_update_employment_classification($conn, $faculty_id, $employmentClassification)) {
+        query_college_faculty_json_response(['status' => 'error'], 500);
+    }
+
+    query_college_faculty_json_response([
+        'status' => 'updated',
+        'employment_classification' => $employmentClassification,
+        'employment_classification_label' => query_college_faculty_employment_classification_label($employmentClassification),
     ]);
 }
 
