@@ -297,6 +297,10 @@ $consolidatedReportSignatories = [
             color: #9a6512;
         }
 
+        .workload-external-note-print {
+            display: none;
+        }
+
         .external-workload-lock {
             display: inline-flex;
             align-items: center;
@@ -1564,6 +1568,15 @@ $consolidatedReportSignatories = [
                 min-width: 0;
             }
 
+            .workload-table thead th.room-head,
+            .workload-table td.workload-room {
+                font-size: 5.9pt !important;
+                line-height: 1 !important;
+                white-space: normal !important;
+                word-break: break-word !important;
+                overflow-wrap: anywhere !important;
+            }
+
             .workload-table {
                 width: 100% !important;
                 border-collapse: collapse !important;
@@ -1575,10 +1588,17 @@ $consolidatedReportSignatories = [
             .btn,
             .badge,
             .select2-container,
-            .screen-only,
-            .external-workload-divider,
-            .external-workload-row {
+            .screen-only {
                 display: none !important;
+            }
+
+            .workload-table th.screen-only,
+            .workload-table td.screen-only {
+                width: 0 !important;
+                min-width: 0 !important;
+                max-width: 0 !important;
+                padding: 0 !important;
+                border: 0 !important;
             }
 
             .load-status-inline {
@@ -1601,6 +1621,34 @@ $consolidatedReportSignatories = [
             .workload-merge-note,
             .workload-desc .type-pill {
                 display: none !important;
+            }
+
+            .external-workload-divider {
+                display: none !important;
+            }
+
+            .workload-external-note {
+                margin-top: 0.12rem;
+                font-size: 6.4pt !important;
+                font-weight: 700;
+                color: #000 !important;
+            }
+
+            .workload-external-note-screen {
+                display: none !important;
+            }
+
+            .workload-external-note-print {
+                display: inline !important;
+            }
+
+            .external-workload-row td {
+                background: #fff !important;
+                color: #000 !important;
+            }
+
+            .external-workload-row .workload-code {
+                border-left: 1.15px solid #000 !important;
             }
 
             .print-type-suffix {
@@ -2111,11 +2159,6 @@ $consolidatedReportSignatories = [
         }
 
         @media print {
-            @page {
-                size: legal landscape;
-                margin: 0;
-            }
-
             html,
             body {
                 margin: 0 !important;
@@ -3822,7 +3865,12 @@ $(document).ready(function () {
             const sourceLabel = getWorkloadSourceLabel(row);
             html += `
                 <span class="workload-external-note">
-                    View-only workload${sourceLabel ? ` from ${escapeHtml(sourceLabel)}` : ""}
+                    <span class="workload-external-note-screen">
+                        View-only workload${sourceLabel ? ` from ${escapeHtml(sourceLabel)}` : ""}
+                    </span>
+                    <span class="workload-external-note-print">
+                        ${sourceLabel ? escapeHtml(sourceLabel) : ""}
+                    </span>
                 </span>
             `;
         }
@@ -4508,6 +4556,14 @@ $(document).ready(function () {
                 <meta charset="utf-8">
                 <meta name="viewport" content="width=device-width, initial-scale=1.0">
                 <title>Consolidated Faculty Workload</title>
+                <style>
+                    @media print {
+                        @page {
+                            size: legal landscape;
+                            margin: 0;
+                        }
+                    }
+                </style>
                 ${reportStyleTag ? reportStyleTag.outerHTML : ""}
             </head>
             <body class="consolidated-report-print-body">
@@ -4621,7 +4677,9 @@ $(document).ready(function () {
 
         let rows = `
             <tr class="external-workload-divider">
-                <td colspan="12">Other college / campus workload - view only</td>
+                <td colspan="12">
+                    <span class="external-divider-screen">Other college / campus workload - view only</span>
+                </td>
             </tr>
         `;
 
@@ -5118,15 +5176,14 @@ $(document).ready(function () {
             rows += renderExternalWorkloadRows(externalRowsData);
 
             const designationUnits = toNumber(meta.designation_units);
-            const collegeTotals = calculateWorkloadMetricTotals(rowsData);
             const screenTotals = calculateWorkloadMetricTotals(currentWorkloadRows);
             const printTotalPreparations = Math.max(
                 Number(meta.total_preparations) || 0,
-                collegeTotals.preparations
+                screenTotals.preparations
             );
             const screenTotalPreparations = Math.max(printTotalPreparations, screenTotals.preparations);
-            const printGrandTotalUnits = collegeTotals.unit + designationUnits;
-            const printGrandTotalLoad = collegeTotals.load + designationUnits;
+            const printGrandTotalUnits = screenTotals.unit + designationUnits;
+            const printGrandTotalLoad = screenTotals.load + designationUnits;
             const screenGrandTotalUnits = screenTotals.unit + designationUnits;
             const screenGrandTotalLoad = screenTotals.load + designationUnits;
             const loadStatus = getLoadStatus(screenGrandTotalLoad, screenTotalPreparations);
@@ -5136,8 +5193,8 @@ $(document).ready(function () {
             $("#designationUNIT").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
             $("#designationLOAD").text(designationUnits > 0 ? formatNumber(designationUnits) : "");
             $("#totalPreparations").html(buildDualTotalValue(screenTotalPreparations, printTotalPreparations));
-            $("#totalLAB").html(buildDualTotalValue(screenTotals.lab, collegeTotals.lab));
-            $("#totalLEC").html(buildDualTotalValue(screenTotals.lec, collegeTotals.lec));
+            $("#totalLAB").html(buildDualTotalValue(screenTotals.lab, screenTotals.lab));
+            $("#totalLEC").html(buildDualTotalValue(screenTotals.lec, screenTotals.lec));
             $("#totalUNIT").html(buildDualTotalValue(screenGrandTotalUnits, printGrandTotalUnits));
             $("#totalLOADCell").html(`
                 <span class="total-load-screen-inner">
