@@ -5,6 +5,7 @@ include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/schema_helper.php';
 require_once '../backend/faculty_need_helper.php';
+require_once '../backend/signatory_settings_helper.php';
 
 /* =====================================================
    WORKLOAD COMPUTATION CONFIG
@@ -18,6 +19,18 @@ require_once '../backend/faculty_need_helper.php';
 if (!isset($_SESSION['user_id']) || $_SESSION['role'] !== 'scheduler') {
     header("Location: ../index.php");
     exit;
+}
+
+function workload_report_signatory_slot(array $settings, string $slotCode, string $fallbackLabel): array
+{
+    $row = is_array($settings[$slotCode] ?? null) ? $settings[$slotCode] : [];
+
+    return [
+        'slot_code' => $slotCode,
+        'label' => trim((string)($row['label'] ?? $fallbackLabel)) ?: $fallbackLabel,
+        'signatory_name' => trim((string)($row['signatory_name'] ?? '')),
+        'signatory_title' => trim((string)($row['signatory_title'] ?? '')),
+    ];
 }
 
 $college_id   = $_SESSION['college_id'];
@@ -109,6 +122,16 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
         $faculty_need_options .= "<option value='need:{$needId}' data-assignee-type='faculty_need' data-faculty-need-id='{$needId}'>{$needLabel}</option>";
     }
 }
+
+$globalSignatorySettings = synk_fetch_signatory_settings($conn, 'global', 0);
+$collegeSignatorySettings = (int)$college_id > 0 ? synk_fetch_signatory_settings($conn, 'college', (int)$college_id) : [];
+$consolidatedReportSignatories = [
+    'prepared_by' => workload_report_signatory_slot($collegeSignatorySettings, 'prepared_by', 'Prepared by'),
+    'checked_by_left' => workload_report_signatory_slot($globalSignatorySettings, 'checked_by_left', 'Checked by'),
+    'checked_by_right' => workload_report_signatory_slot($globalSignatorySettings, 'checked_by_right', 'Checked by'),
+    'recommending_approval' => workload_report_signatory_slot($globalSignatorySettings, 'recommending_approval', 'Recommending Approval'),
+    'approved_by' => workload_report_signatory_slot($globalSignatorySettings, 'approved_by', 'Approved by'),
+];
 
 ?>
 <!DOCTYPE html>
@@ -801,6 +824,63 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
             pointer-events: auto;
         }
 
+        .scheduler-activity-indicator {
+            position: fixed;
+            right: 1.25rem;
+            bottom: 6.2rem;
+            z-index: 1032;
+            min-width: 300px;
+            max-width: min(92vw, 360px);
+            display: flex;
+            align-items: center;
+            gap: 0.85rem;
+            padding: 0.9rem 1rem;
+            border: 1px solid rgba(93, 104, 244, 0.14);
+            border-radius: 18px;
+            background: rgba(255, 255, 255, 0.97);
+            box-shadow: 0 20px 40px rgba(18, 38, 63, 0.16);
+            backdrop-filter: blur(14px);
+            opacity: 0;
+            transform: translateY(14px);
+            pointer-events: none;
+            transition: opacity 0.18s ease, transform 0.18s ease;
+        }
+
+        .scheduler-activity-indicator.is-visible {
+            opacity: 1;
+            transform: translateY(0);
+        }
+
+        .scheduler-activity-spinner {
+            width: 2rem;
+            height: 2rem;
+            border-radius: 999px;
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            background: rgba(93, 104, 244, 0.08);
+            color: #5d68f4;
+            flex: 0 0 auto;
+        }
+
+        .scheduler-activity-copy {
+            min-width: 0;
+        }
+
+        .scheduler-activity-title {
+            font-size: 0.92rem;
+            font-weight: 700;
+            color: #22354a;
+            line-height: 1.2;
+        }
+
+        .scheduler-activity-meta {
+            margin-top: 0.16rem;
+            font-size: 0.78rem;
+            color: #6b7d92;
+            line-height: 1.28;
+        }
+
         .faculty-browser-launcher {
             position: fixed;
             right: 0.9rem;
@@ -1191,6 +1271,14 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
                 width: 100%;
             }
 
+            .scheduler-activity-indicator {
+                left: 1rem;
+                right: 1rem;
+                bottom: 7.2rem;
+                min-width: 0;
+                max-width: none;
+            }
+
             .faculty-browser-launcher {
                 top: auto;
                 bottom: 1rem;
@@ -1549,6 +1637,515 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
         }
 
     </style>
+    <style id="consolidatedReportStyleTag">
+        .consolidated-report-modal .modal-dialog {
+            max-width: min(96vw, 1800px);
+        }
+
+        .consolidated-report-modal .modal-content {
+            border: 0;
+            overflow: hidden;
+        }
+
+        .consolidated-report-modal .modal-header,
+        .consolidated-report-modal .modal-footer {
+            background: #ffffff;
+        }
+
+        .consolidated-report-modal .modal-body {
+            background: #eef3f9;
+            padding: 1rem;
+        }
+
+        .consolidated-report-toolbar-note {
+            display: inline-flex;
+            align-items: center;
+            gap: 0.5rem;
+            font-size: 0.84rem;
+            color: #66768a;
+        }
+
+        .consolidated-report-toolbar-note i {
+            color: #5d68f4;
+            font-size: 1rem;
+        }
+
+        .consolidated-report-preview-root {
+            display: flex;
+            flex-direction: column;
+            gap: 1.25rem;
+        }
+
+        .consolidated-report-loading {
+            min-height: 50vh;
+            display: flex;
+            align-items: center;
+            justify-content: center;
+        }
+
+        .consolidated-report-loading-card,
+        .consolidated-report-empty-state {
+            width: min(100%, 560px);
+            margin: 0 auto;
+            background: #fff;
+            border: 1px solid #dbe5f1;
+            border-radius: 1rem;
+            box-shadow: 0 20px 45px rgba(22, 40, 75, 0.08);
+            padding: 1.5rem;
+            text-align: center;
+        }
+
+        .consolidated-report-loading-card .spinner-border,
+        .consolidated-report-empty-state i {
+            width: 2.1rem;
+            height: 2.1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .consolidated-report-empty-state i {
+            display: inline-flex;
+            align-items: center;
+            justify-content: center;
+            font-size: 2rem;
+            color: #5d68f4;
+        }
+
+        .consolidated-report-loading-title,
+        .consolidated-report-empty-title {
+            font-size: 1.08rem;
+            font-weight: 700;
+            color: #304257;
+            margin-bottom: 0.35rem;
+        }
+
+        .consolidated-report-loading-copy,
+        .consolidated-report-empty-copy {
+            font-size: 0.92rem;
+            color: #6a7d94;
+            margin-bottom: 0.9rem;
+        }
+
+        .consolidated-report-progress {
+            display: flex;
+            flex-direction: column;
+            gap: 0.45rem;
+            align-items: stretch;
+        }
+
+        .consolidated-report-progress-meta {
+            display: flex;
+            align-items: center;
+            justify-content: space-between;
+            gap: 0.75rem;
+            font-size: 0.82rem;
+            color: #61748b;
+        }
+
+        .consolidated-report-progress-track {
+            width: 100%;
+            height: 0.55rem;
+            background: #e6edf7;
+            border-radius: 999px;
+            overflow: hidden;
+        }
+
+        .consolidated-report-progress-bar {
+            width: 0;
+            height: 100%;
+            background: linear-gradient(90deg, #198754 0%, #5d68f4 100%);
+            transition: width 0.2s ease;
+        }
+
+        .consolidated-report-page {
+            --consolidated-page-width: min(100%, 1180px);
+            --consolidated-page-height: calc(var(--consolidated-page-width) * 0.6071428571);
+            position: relative;
+            width: var(--consolidated-page-width);
+            height: var(--consolidated-page-height);
+            margin: 0 auto;
+            background: #fff;
+            box-shadow: 0 22px 50px rgba(25, 42, 70, 0.16);
+            overflow: hidden;
+        }
+
+        .consolidated-report-page.is-measure {
+            --consolidated-page-width: 1400px;
+            --consolidated-page-height: 850px;
+            box-shadow: none;
+            margin: 0;
+        }
+
+        .consolidated-report-page-background {
+            position: absolute;
+            inset: 0;
+            background-image: var(--consolidated-report-bg);
+            background-repeat: no-repeat;
+            background-position: center;
+            background-size: 100% 100%;
+        }
+
+        .consolidated-report-page-inner {
+            position: absolute;
+            inset: 188px 48px 68px 74px;
+            display: flex;
+            flex-direction: column;
+            min-height: 0;
+        }
+
+        .consolidated-report-page-header {
+            text-align: center;
+            padding: 0 0 0.32rem;
+        }
+
+        .consolidated-report-title {
+            font-family: "Arial Narrow", Arial, sans-serif;
+            font-size: 1.14rem;
+            font-weight: 700;
+            letter-spacing: 0.04em;
+            text-transform: uppercase;
+            color: #0f3140;
+            margin-bottom: 0.14rem;
+        }
+
+        .consolidated-report-subtitle,
+        .consolidated-report-term,
+        .consolidated-report-page-count {
+            font-family: Arial, sans-serif;
+            color: #10212f;
+            line-height: 1.15;
+        }
+
+        .consolidated-report-subtitle {
+            font-size: 0.78rem;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .consolidated-report-term {
+            margin-top: 0.12rem;
+            font-size: 0.72rem;
+            font-weight: 600;
+            letter-spacing: 0.02em;
+        }
+
+        .consolidated-report-page-count {
+            margin-top: 0.12rem;
+            font-size: 0.68rem;
+            font-weight: 600;
+            color: #4b5f70;
+        }
+
+        .consolidated-report-table-wrap {
+            flex: 1 1 auto;
+            min-height: 0;
+            padding-inline: 24px;
+            box-sizing: border-box;
+        }
+
+        .consolidated-report-table {
+            width: 100%;
+            border-collapse: collapse;
+            table-layout: fixed;
+            font-family: Arial, sans-serif;
+            font-size: 9.25px;
+            color: #000;
+            background: #fff;
+        }
+
+        .consolidated-report-table thead th,
+        .consolidated-report-table tbody td {
+            border: 1px solid #000;
+            padding: 0.18rem 0.22rem;
+            vertical-align: top;
+        }
+
+        .consolidated-report-table thead th {
+            background: #fff;
+            color: #000;
+            font-size: 8.4px;
+            font-weight: 700;
+            line-height: 1.15;
+            text-align: center;
+            text-transform: uppercase;
+        }
+
+        .consolidated-report-table thead .is-lower {
+            text-transform: none;
+        }
+
+        .consolidated-report-table tbody td {
+            line-height: 1.18;
+        }
+
+        .consolidated-report-table tbody + tbody td {
+            border-top-width: 1px;
+            border-top-color: #000;
+        }
+
+        .consolidated-cell-index,
+        .consolidated-cell-name,
+        .consolidated-cell-prep,
+        .consolidated-cell-students,
+        .consolidated-cell-units,
+        .consolidated-cell-hours,
+        .consolidated-cell-load,
+        .consolidated-cell-designation,
+        .consolidated-cell-total,
+        .consolidated-cell-remark {
+            text-align: center;
+            vertical-align: middle !important;
+        }
+
+        .consolidated-cell-index {
+            width: 3.1%;
+            font-weight: 700;
+        }
+
+        .consolidated-cell-name {
+            width: 12%;
+            font-weight: 700;
+            text-transform: uppercase;
+        }
+
+        .consolidated-cell-prep {
+            width: 4.5%;
+            font-weight: 700;
+        }
+
+        .consolidated-cell-code {
+            width: 7.2%;
+            font-weight: 700;
+        }
+
+        .consolidated-cell-title {
+            width: 15.5%;
+        }
+
+        .consolidated-cell-schedule {
+            width: 11.5%;
+        }
+
+        .consolidated-cell-course {
+            width: 9.6%;
+        }
+
+        .consolidated-cell-students {
+            width: 5%;
+        }
+
+        .consolidated-cell-units {
+            width: 4.7%;
+        }
+
+        .consolidated-cell-hours {
+            width: 4.2%;
+        }
+
+        .consolidated-cell-load {
+            width: 5%;
+            font-weight: 700;
+        }
+
+        .consolidated-cell-designation {
+            width: 8.8%;
+        }
+
+        .consolidated-cell-total {
+            width: 4.5%;
+            font-weight: 700;
+        }
+
+        .consolidated-cell-remark {
+            width: 4.2%;
+            font-weight: 700;
+        }
+
+        .consolidated-campus-term {
+            font-size: 9px !important;
+            font-weight: 700 !important;
+            text-transform: none !important;
+            padding: 0.28rem 0.2rem !important;
+        }
+
+        .consolidated-campus-term-line {
+            display: block;
+            line-height: 1.2;
+        }
+
+        .consolidated-campus-term-line + .consolidated-campus-term-line {
+            margin-top: 0.08rem;
+        }
+
+        .consolidated-course-title {
+            font-weight: 700;
+            color: #000;
+        }
+
+        .consolidated-schedule-line {
+            display: block;
+            white-space: pre-line;
+        }
+
+        .consolidated-schedule-line + .consolidated-schedule-line {
+            margin-top: 0.12rem;
+        }
+
+        .consolidated-designation-title {
+            font-weight: 700;
+            color: #000;
+        }
+
+        .consolidated-designation-units {
+            margin-top: 0.12rem;
+            font-size: 8px;
+            color: #000;
+        }
+
+        .consolidated-remark-text {
+            display: inline-block;
+            font-size: 9px;
+            font-weight: 700;
+            letter-spacing: 0.03em;
+            text-transform: uppercase;
+            color: #000;
+        }
+
+        .consolidated-faculty-total-row td {
+            border-top-width: 1px;
+            font-weight: 700;
+            vertical-align: middle !important;
+        }
+
+        .consolidated-faculty-total-row .consolidated-cell-load,
+        .consolidated-faculty-total-row .consolidated-cell-designation,
+        .consolidated-faculty-total-row .consolidated-cell-remark-total {
+            font-size: 10px;
+        }
+
+        .consolidated-cell-remark-total {
+            text-align: center;
+            vertical-align: middle !important;
+        }
+
+        .consolidated-signatory-page .consolidated-report-page-inner {
+            inset: 208px 90px 88px 100px;
+        }
+
+        .consolidated-signatory-wrap {
+            margin-top: auto;
+            padding-top: 1rem;
+            font-family: Arial, sans-serif;
+            color: #182b3d;
+        }
+
+        .consolidated-signatory-top {
+            display: grid;
+            grid-template-columns: repeat(3, minmax(0, 1fr));
+            gap: 1.6rem;
+        }
+
+        .consolidated-signatory-bottom {
+            display: grid;
+            grid-template-columns: minmax(0, 1fr);
+            gap: 2rem;
+            margin-top: 2.5rem;
+            max-width: 31%;
+        }
+
+        .consolidated-signatory-block {
+            min-width: 0;
+        }
+
+        .consolidated-signatory-label {
+            margin-bottom: 1.5rem;
+            font-size: 0.92rem;
+            font-weight: 700;
+        }
+
+        .consolidated-signatory-name {
+            min-height: 1.2rem;
+            font-size: 0.86rem;
+            font-weight: 800;
+            text-transform: uppercase;
+            border-bottom: 1px solid #455a6f;
+            padding-bottom: 0.08rem;
+        }
+
+        .consolidated-signatory-title {
+            min-height: 1.15rem;
+            margin-top: 0.28rem;
+            font-size: 0.82rem;
+            color: #50657c;
+        }
+
+        #consolidatedReportMeasureRoot {
+            position: absolute;
+            left: -20000px;
+            top: 0;
+            visibility: hidden;
+            pointer-events: none;
+            width: 0;
+            height: 0;
+            overflow: hidden;
+        }
+
+        @media (max-width: 1199.98px) {
+            .consolidated-report-page {
+                --consolidated-page-width: min(100%, 1040px);
+            }
+        }
+
+        @media (max-width: 767.98px) {
+            .consolidated-report-modal .modal-body {
+                padding: 0.65rem;
+            }
+
+            .consolidated-signatory-top {
+                grid-template-columns: 1fr;
+                gap: 1.2rem;
+            }
+
+            .consolidated-signatory-bottom {
+                max-width: 100%;
+            }
+        }
+
+        @media print {
+            @page {
+                size: legal landscape;
+                margin: 0;
+            }
+
+            html,
+            body {
+                margin: 0 !important;
+                padding: 0 !important;
+                background: #fff !important;
+                -webkit-print-color-adjust: exact !important;
+                print-color-adjust: exact !important;
+            }
+
+            body.consolidated-report-print-body .consolidated-report-preview-root {
+                gap: 0 !important;
+            }
+
+            body.consolidated-report-print-body .consolidated-report-page {
+                --consolidated-page-width: 14in;
+                --consolidated-page-height: 8.5in;
+                width: 14in !important;
+                height: 8.5in !important;
+                margin: 0 !important;
+                box-shadow: none !important;
+                page-break-after: always;
+                break-after: page;
+            }
+
+            body.consolidated-report-print-body .consolidated-report-page:last-child {
+                page-break-after: auto;
+                break-after: auto;
+            }
+        }
+    </style>
 </head>
 
 <body>
@@ -1578,6 +2175,9 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
         <div class="d-flex flex-wrap align-items-center gap-2">
             <button type="button" class="btn btn-outline-info btn-sm screen-only" data-bs-toggle="modal" data-bs-target="#workloadHelpModal">
                 <i class="bx bx-help-circle me-1"></i> Help
+            </button>
+            <button type="button" class="btn btn-outline-primary btn-sm screen-only" id="btnOpenConsolidatedReport">
+                <i class="bx bx-file me-1"></i> Consolidated Faculty Workload
             </button>
             <button type="button" class="btn btn-outline-danger btn-sm screen-only" id="btnClearCollegeWorkload">
                 <i class="bx bx-trash me-1"></i> Remove All Assigned Workload
@@ -1663,6 +2263,9 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
         <div class="workload-start-actions">
             <button type="button" class="btn btn-primary" id="btnStartOpenFacultyOverview">
                 <i class="bx bx-user-pin me-1"></i> Open Faculty Load Overview
+            </button>
+            <button type="button" class="btn btn-outline-primary" id="btnStartOpenConsolidatedReport">
+                <i class="bx bx-file me-1"></i> Consolidated Report
             </button>
             <button type="button" class="btn btn-outline-secondary" id="btnStartChooseFaculty">
                 <i class="bx bx-search me-1"></i> Choose Faculty
@@ -1917,6 +2520,16 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
     </button>
 </div>
 
+<div class="scheduler-activity-indicator screen-only" id="schedulerActivityIndicator" hidden aria-live="polite" aria-atomic="true">
+    <span class="scheduler-activity-spinner">
+        <span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>
+    </span>
+    <div class="scheduler-activity-copy">
+        <div class="scheduler-activity-title" id="schedulerActivityTitle">Loading scheduler data...</div>
+        <div class="scheduler-activity-meta" id="schedulerActivityMeta">Please wait while Synk updates the selected view.</div>
+    </div>
+</div>
+
 <button
     type="button"
     class="faculty-browser-launcher screen-only"
@@ -2005,6 +2618,56 @@ foreach (synk_faculty_need_fetch_options($conn, (int)$college_id, (int)$defaultA
     </div>
 </div>
 
+<div class="modal fade consolidated-report-modal" id="consolidatedReportModal" tabindex="-1" aria-labelledby="consolidatedReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable">
+        <div class="modal-content">
+            <div class="modal-header">
+                <div>
+                    <h5 class="modal-title" id="consolidatedReportModalLabel">Consolidated Faculty Workload</h5>
+                    <small class="text-muted">Preview first, then print the legal landscape report for the selected term.</small>
+                </div>
+                <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+            </div>
+            <div class="modal-body">
+                <div id="consolidatedReportPreviewRoot" class="consolidated-report-preview-root">
+                    <div class="consolidated-report-loading">
+                        <div class="consolidated-report-loading-card">
+                            <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                            <div class="consolidated-report-loading-title">Preparing consolidated faculty workload</div>
+                            <div class="consolidated-report-loading-copy">Choose an academic year and semester, then generate the preview.</div>
+                            <div class="consolidated-report-progress">
+                                <div class="consolidated-report-progress-meta">
+                                    <span id="consolidatedReportProgressLabel">Waiting to start</span>
+                                    <span id="consolidatedReportProgressValue">0%</span>
+                                </div>
+                                <div class="consolidated-report-progress-track">
+                                    <div id="consolidatedReportProgressBar" class="consolidated-report-progress-bar"></div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+                <div id="consolidatedReportMeasureRoot" aria-hidden="true"></div>
+            </div>
+            <div class="modal-footer justify-content-between">
+                <div class="consolidated-report-toolbar-note">
+                    <i class="bx bx-info-circle"></i>
+                    <span>Signatories follow the same configuration used by the faculty workload reports.</span>
+                </div>
+                <div class="d-flex flex-wrap gap-2">
+                    <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+                    <button type="button" class="btn btn-outline-primary" id="btnRefreshConsolidatedReport">
+                        <i class="bx bx-refresh me-1"></i> Refresh Preview
+                    </button>
+                    <button type="button" class="btn btn-primary" id="btnPrintConsolidatedReport" disabled>
+                        <i class="bx bx-printer me-1"></i> Print Report
+                    </button>
+                </div>
+            </div>
+        </div>
+    </div>
+</div>
+
 <!-- JS -->
     <!-- Core JS -->
     <!-- build:js assets/vendor/js/core.js -->
@@ -2032,8 +2695,18 @@ let selectionRequestToken = 0;
 let facultyOverviewCacheKey = "";
 let facultyOverviewCache = [];
 let facultyBrowserDrawerInstance = null;
+let consolidatedReportModalInstance = null;
 let currentScheduledClassRows = [];
 let currentWorkloadRows = [];
+let consolidatedReportGeneratedHtml = "";
+let consolidatedReportIsBuilding = false;
+let schedulerActivitySequence = 0;
+const schedulerActivityState = new Map();
+const panelLoadState = {
+    requestToken: 0,
+    pending: 0,
+    busyToken: null
+};
 const SCHEDULE_PAIR_COLORS = ["#22a06b", "#e85d75", "#5d68f4", "#d39c0f", "#2e8de4", "#8a63f7"];
 const NORMAL_LOAD_SINGLE_PREP_UNITS = 21;
 const NORMAL_LOAD_MULTIPLE_PREP_UNITS = 18;
@@ -2050,9 +2723,19 @@ $(document).ready(function () {
         "Midyear": 3
     };
     const WORKLOAD_COLLEGE_NAME = <?= json_encode($college_name) ?>;
+    const WORKLOAD_CAMPUS_NAME = <?= json_encode($campus_name) ?>;
+    const CONSOLIDATED_REPORT_SIGNATORIES = <?= json_encode($consolidatedReportSignatories, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) ?>;
+    const CONSOLIDATED_REPORT_BACKGROUND_URL = new URL(
+        "../assets/img/print/consolidated-faculty-workload-template.png",
+        window.location.href
+    ).href;
     const facultyBrowserElement = document.getElementById("facultyBrowserDrawer");
     if (facultyBrowserElement) {
         facultyBrowserDrawerInstance = bootstrap.Offcanvas.getOrCreateInstance(facultyBrowserElement);
+    }
+    const consolidatedReportModalElement = document.getElementById("consolidatedReportModal");
+    if (consolidatedReportModalElement) {
+        consolidatedReportModalInstance = bootstrap.Modal.getOrCreateInstance(consolidatedReportModalElement);
     }
 
     function escapeHtml(value) {
@@ -2062,6 +2745,110 @@ $(document).ready(function () {
             .replace(/>/g, "&gt;")
             .replace(/"/g, "&quot;")
             .replace(/'/g, "&#39;");
+    }
+
+    function renderSchedulerActivityIndicator() {
+        const indicator = $("#schedulerActivityIndicator");
+        if (indicator.length === 0) {
+            return;
+        }
+
+        const labels = Array.from(schedulerActivityState.values());
+        if (labels.length === 0) {
+            indicator.prop("hidden", true).removeClass("is-visible");
+            return;
+        }
+
+        const latestLabel = String(labels[labels.length - 1] || "Loading scheduler data...");
+        const totalTasks = labels.length;
+        $("#schedulerActivityTitle").text(latestLabel);
+        $("#schedulerActivityMeta").text(
+            totalTasks > 1
+                ? `${totalTasks} scheduler tasks are still running.`
+                : "Please wait while Synk updates the selected view."
+        );
+        indicator.prop("hidden", false).addClass("is-visible");
+    }
+
+    function beginSchedulerActivity(label) {
+        const token = `activity-${++schedulerActivitySequence}`;
+        schedulerActivityState.set(token, String(label || "Loading scheduler data..."));
+        renderSchedulerActivityIndicator();
+        return token;
+    }
+
+    function endSchedulerActivity(token) {
+        if (!token) {
+            return;
+        }
+
+        schedulerActivityState.delete(token);
+        renderSchedulerActivityIndicator();
+    }
+
+    function setButtonBusy(target, isBusy, busyHtml) {
+        const buttons = target instanceof jQuery ? target : $(target);
+
+        buttons.each(function () {
+            const button = $(this);
+            if (isBusy) {
+                if (typeof button.data("busyOriginalHtml") === "undefined") {
+                    button.data("busyOriginalHtml", button.html());
+                }
+                if (typeof button.data("busyOriginalDisabled") === "undefined") {
+                    button.data("busyOriginalDisabled", button.prop("disabled"));
+                }
+
+                button.prop("disabled", true);
+                if (busyHtml) {
+                    button.html(busyHtml);
+                }
+                return;
+            }
+
+            const originalHtml = button.data("busyOriginalHtml");
+            const originalDisabled = button.data("busyOriginalDisabled");
+            if (typeof originalHtml !== "undefined") {
+                button.html(originalHtml);
+                button.removeData("busyOriginalHtml");
+            }
+            if (typeof originalDisabled !== "undefined") {
+                button.prop("disabled", Boolean(originalDisabled));
+                button.removeData("busyOriginalDisabled");
+            } else {
+                button.prop("disabled", false);
+            }
+        });
+    }
+
+    function resetPanelLoadingState() {
+        if (panelLoadState.busyToken) {
+            endSchedulerActivity(panelLoadState.busyToken);
+        }
+
+        panelLoadState.requestToken = 0;
+        panelLoadState.pending = 0;
+        panelLoadState.busyToken = null;
+    }
+
+    function beginPanelLoading(requestToken, label) {
+        resetPanelLoadingState();
+        panelLoadState.requestToken = requestToken;
+        panelLoadState.pending = 2;
+        panelLoadState.busyToken = beginSchedulerActivity(label || "Loading selected faculty data...");
+    }
+
+    function finishPanelLoading(requestToken) {
+        if (panelLoadState.requestToken !== requestToken) {
+            return;
+        }
+
+        panelLoadState.pending = Math.max(0, panelLoadState.pending - 1);
+        if (panelLoadState.pending > 0) {
+            return;
+        }
+
+        resetPanelLoadingState();
     }
 
     /* =========================================================
@@ -2194,6 +2981,8 @@ $(document).ready(function () {
             return $.Deferred().resolve([]).promise();
         }
 
+        const busyToken = beginSchedulerActivity("Loading faculty needs...");
+
         return $.ajax({
             url: "../backend/query_faculty_need.php",
             type: "POST",
@@ -2205,6 +2994,8 @@ $(document).ready(function () {
             }
         }).done(function (response) {
             renderFacultyNeedOptions(response && response.status === "ok" ? response.needs : [], selectedValue);
+        }).always(function () {
+            endSchedulerActivity(busyToken);
         });
     }
 
@@ -2238,6 +3029,14 @@ $(document).ready(function () {
             if (!result.isConfirmed) {
                 return;
             }
+
+            const deleteButton = $("#btnDeleteFacultyNeed");
+            const busyToken = beginSchedulerActivity(`Deleting ${labelText}...`);
+            setButtonBusy(
+                deleteButton,
+                true,
+                '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Deleting...'
+            );
 
             $.ajax({
                 url: "../backend/query_faculty_need.php",
@@ -2275,6 +3074,9 @@ $(document).ready(function () {
                 });
             }).fail(function (xhr) {
                 Swal.fire("Error", xhr.responseText || "Unable to delete faculty need.", "error");
+            }).always(function () {
+                setButtonBusy(deleteButton, false);
+                endSchedulerActivity(busyToken);
             });
         });
     }
@@ -2490,6 +3292,7 @@ $(document).ready(function () {
 
         abortPendingRequest(facultyOverviewRequest);
         setFacultyBrowserMessage("Loading faculty workload overview...", true);
+        const busyToken = beginSchedulerActivity("Loading faculty workload overview...");
 
         facultyOverviewRequest = $.ajax({
             url: "../backend/query_workload_faculty_overview.php",
@@ -2521,6 +3324,8 @@ $(document).ready(function () {
             clearFacultyOverviewCache();
             setFacultyBrowserMessage("Failed to load faculty workload overview.");
             dfd.reject(xhr);
+        }).always(function () {
+            endSchedulerActivity(busyToken);
         });
 
         return dfd.promise();
@@ -3089,6 +3894,654 @@ $(document).ready(function () {
         return `schedule:${Number(row?.schedule_id) || 0}`;
     }
 
+    function uppercaseDisplayText(value) {
+        return String(value ?? "").trim().toLocaleUpperCase();
+    }
+
+    function getConsolidatedReportTermLabel(termContext) {
+        if (!termContext) {
+            return "";
+        }
+
+        return `${termContext.semesterUi} Semester AY ${termContext.ayText}`;
+    }
+
+    function getConsolidatedCampusHeaderLines(termContext) {
+        const campusSource = String(WORKLOAD_CAMPUS_NAME || "Campus").trim();
+        const campusLabel = campusSource.replace(/\s+campus$/i, "").trim().toLocaleUpperCase() || "CAMPUS";
+        const semesterLabel = String(termContext?.semesterUi || "").trim() || "Semester";
+        const ayLabel = String(termContext?.ayText || "").trim();
+
+        return [
+            campusLabel,
+            "Campus",
+            semesterLabel,
+            ayLabel ? `Semester AY ${ayLabel}` : "Semester AY"
+        ];
+    }
+
+    function formatConsolidatedRemarkVariance(value) {
+        const n = Math.abs(toNumber(value));
+        return n > LOAD_COMPARISON_TOLERANCE ? n.toFixed(2) : "";
+    }
+
+    function getConsolidatedRemarkMeta(loadStatus) {
+        const statusClass = String(loadStatus?.className || "normal").trim() || "normal";
+
+        if (statusClass === "overload") {
+            return { code: "OL", className: "is-overload" };
+        }
+
+        if (statusClass === "underload") {
+            return { code: "UL", className: "is-underload" };
+        }
+
+        return { code: "NL", className: "is-normal" };
+    }
+
+    function setConsolidatedReportPrintEnabled(enabled) {
+        $("#btnPrintConsolidatedReport").prop("disabled", !enabled);
+    }
+
+    function setConsolidatedReportProgress(percent, label) {
+        const safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+        $("#consolidatedReportProgressLabel").text(String(label || "Preparing preview..."));
+        $("#consolidatedReportProgressValue").text(`${safePercent}%`);
+        $("#consolidatedReportProgressBar").css("width", `${safePercent}%`);
+    }
+
+    function showConsolidatedReportLoading(label = "Preparing preview...", percent = 0) {
+        consolidatedReportGeneratedHtml = "";
+        setConsolidatedReportPrintEnabled(false);
+        setConsolidatedReportProgress(percent, label);
+        $("#consolidatedReportPreviewRoot").html(`
+            <div class="consolidated-report-loading">
+                <div class="consolidated-report-loading-card">
+                    <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                    <div class="consolidated-report-loading-title">Preparing consolidated faculty workload</div>
+                    <div class="consolidated-report-loading-copy">The preview is built from the actual workload assigned in scheduler for the selected college and term.</div>
+                    <div class="consolidated-report-progress">
+                        <div class="consolidated-report-progress-meta">
+                            <span id="consolidatedReportProgressLabel">${escapeHtml(String(label || "Preparing preview..."))}</span>
+                            <span id="consolidatedReportProgressValue">${escapeHtml(String(Math.max(0, Math.min(100, Math.round(Number(percent) || 0)))))}%</span>
+                        </div>
+                        <div class="consolidated-report-progress-track">
+                            <div id="consolidatedReportProgressBar" class="consolidated-report-progress-bar" style="width:${Math.max(0, Math.min(100, Math.round(Number(percent) || 0)))}%;"></div>
+                        </div>
+                    </div>
+                </div>
+            </div>
+        `);
+    }
+
+    function setConsolidatedReportEmptyState(title, message) {
+        consolidatedReportGeneratedHtml = "";
+        setConsolidatedReportPrintEnabled(false);
+        $("#consolidatedReportPreviewRoot").html(`
+            <div class="consolidated-report-empty-state">
+                <i class="bx bx-file-blank"></i>
+                <div class="consolidated-report-empty-title">${escapeHtml(title)}</div>
+                <div class="consolidated-report-empty-copy">${escapeHtml(message)}</div>
+            </div>
+        `);
+    }
+
+    function fetchConsolidatedFacultyWorkloadPayload(facultyId, termContext) {
+        return new Promise(function (resolve, reject) {
+            $.ajax({
+                url: "../backend/query_load_faculty_workload.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    assignee_type: "faculty",
+                    faculty_id: facultyId,
+                    faculty_need_id: 0,
+                    ay_id: termContext.ayId,
+                    semester: termContext.semesterNum
+                }
+            }).done(resolve).fail(reject);
+        });
+    }
+
+    function buildConsolidatedScheduleLine(row, includeTypeTag) {
+        const dayLabel = String(row?.days || "").trim();
+        const timeLabel = String(row?.time || "").trim();
+        const typeLabel = String(row?.type || row?.schedule_type || "").trim().toUpperCase();
+        const parts = [];
+
+        if (dayLabel) {
+            parts.push(dayLabel);
+        }
+
+        if (timeLabel) {
+            parts.push(timeLabel);
+        }
+
+        let line = parts.join(" ").trim() || "-";
+        if (includeTypeTag && typeLabel) {
+            line += ` (${typeLabel === "LAB" ? "Lab" : "Lec"})`;
+        }
+
+        return line;
+    }
+
+    function groupWorkloadRowsForConsolidatedReport(rowsData) {
+        const groups = [];
+        const orderedRows = Array.isArray(rowsData) ? rowsData : [];
+        const groupedRows = new Map();
+
+        orderedRows.forEach(function (row) {
+            const groupKey = getWorkloadGroupKey(row);
+            if (!groupedRows.has(groupKey)) {
+                groupedRows.set(groupKey, []);
+            }
+
+            groupedRows.get(groupKey).push(row);
+        });
+
+        groupedRows.forEach(function (groupRows) {
+            const firstRow = groupRows[0] || {};
+            const uniqueTypes = Array.from(new Set(groupRows
+                .map(function (groupRow) {
+                    return String(groupRow?.type || groupRow?.schedule_type || "").trim().toUpperCase();
+                })
+                .filter(Boolean)));
+            const scheduleLines = [];
+
+            groupRows.forEach(function (groupRow) {
+                const line = buildConsolidatedScheduleLine(groupRow, uniqueTypes.length > 1);
+                if (line && scheduleLines.indexOf(line) === -1) {
+                    scheduleLines.push(line);
+                }
+            });
+
+            groups.push({
+                sub_code: String(firstRow?.sub_code || "").trim(),
+                desc: String(firstRow?.desc || "").trim(),
+                course: String(firstRow?.course || firstRow?.section || "").trim(),
+                student_count: groupRows.reduce(function (maxValue, groupRow) {
+                    return Math.max(maxValue, Math.round(toNumber(groupRow?.student_count)));
+                }, 0),
+                units: toNumber(firstRow?.units),
+                lec: toNumber(firstRow?.lec),
+                lab: toNumber(firstRow?.lab),
+                faculty_load: toNumber(firstRow?.faculty_load),
+                schedule_lines: scheduleLines.length > 0 ? scheduleLines : ["-"],
+                type_labels: uniqueTypes
+            });
+        });
+
+        return groups;
+    }
+
+    function buildConsolidatedFacultyRecord(option, payload, overviewRow = null) {
+        const sourcePayload = normalizeWorkloadResponse(payload);
+        if (!sourcePayload) {
+            return null;
+        }
+
+        const collegeRows = Array.isArray(sourcePayload.rows) ? sourcePayload.rows : [];
+        const entries = groupWorkloadRowsForConsolidatedReport(collegeRows);
+        const meta = sourcePayload.meta || {};
+        const totals = calculateWorkloadMetricTotals(collegeRows);
+        const designationUnits = Math.max(
+            toNumber(meta.designation_units),
+            toNumber(overviewRow?.designation_units)
+        );
+        const totalPreparations = Math.max(
+            Number(meta.total_preparations) || 0,
+            Number(overviewRow?.total_preparations) || 0,
+            totals.preparations
+        );
+        const teachingLoad = totals.load;
+        const totalWorkload = teachingLoad + designationUnits;
+        const designationText = formatDesignationDisplay(meta);
+        const normalLoadUnits = getNormalLoadUnits(totalPreparations);
+        const loadStatus = getLoadStatus(totalWorkload, totalPreparations);
+        const remarkMeta = getConsolidatedRemarkMeta(loadStatus);
+        const overloadExcess = totalWorkload - normalLoadUnits;
+        const remarkTotal = overloadExcess > LOAD_COMPARISON_TOLERANCE
+            ? overloadExcess
+            : 0;
+
+        if (entries.length === 0 && totalWorkload <= LOAD_COMPARISON_TOLERANCE) {
+            return null;
+        }
+
+        return {
+            faculty_id: Number(option?.faculty_id) || 0,
+            full_name: String(option?.full_name || "").trim(),
+            display_name: uppercaseDisplayText(option?.full_name || ""),
+            total_preparations: totalPreparations,
+            designation_text: designationText,
+            designation_units: designationUnits,
+            teaching_load: teachingLoad,
+            total_workload: totalWorkload,
+            normal_load_units: normalLoadUnits,
+            remark_code: remarkMeta.code,
+            remark_class: remarkMeta.className,
+            remark_total: remarkTotal,
+            entries: entries.length > 0 ? entries : [{
+                sub_code: "",
+                desc: "",
+                course: "",
+                student_count: 0,
+                units: 0,
+                lec: 0,
+                lab: 0,
+                faculty_load: 0,
+                schedule_lines: ["-"],
+                type_labels: []
+            }]
+        };
+    }
+
+    function renderConsolidatedReportTableHead(termContext) {
+        const campusLines = getConsolidatedCampusHeaderLines(termContext)
+            .map(function (line) {
+                return `<span class="consolidated-campus-term-line">${escapeHtml(line)}</span>`;
+            })
+            .join("");
+
+        return `
+            <thead>
+                <tr>
+                    <th rowspan="3" colspan="2" class="consolidated-campus-term">${campusLines}</th>
+                    <th rowspan="3">No. of<br>Preparations</th>
+                    <th colspan="9">Actual Teaching Loads</th>
+                    <th rowspan="3">Designation &amp; Load<br>Displacement</th>
+                    <th rowspan="3">Total<br>Workload</th>
+                    <th rowspan="3">Remarks<br>(OL/UL)</th>
+                </tr>
+                <tr>
+                    <th rowspan="2">Course<br>Code</th>
+                    <th rowspan="2">Course Title</th>
+                    <th rowspan="2">Day &amp; Time</th>
+                    <th rowspan="2">Course,<br>Year &amp; Section</th>
+                    <th rowspan="2">No. of<br>Students</th>
+                    <th rowspan="2">No. of<br>Units</th>
+                    <th colspan="2">No of Hours</th>
+                    <th rowspan="2">Teaching<br>Load</th>
+                </tr>
+                <tr>
+                    <th class="is-lower">Lec</th>
+                    <th class="is-lower">Lab</th>
+                </tr>
+            </thead>
+        `;
+    }
+
+    function renderConsolidatedFacultyBlock(record) {
+        const rows = Array.isArray(record?.entries) && record.entries.length > 0
+            ? record.entries
+            : [];
+        const contentRowspan = Math.max(rows.length, 1);
+        const blockRowspan = contentRowspan + 1;
+        const designationHtml = record.designation_text
+            ? `<div class="consolidated-designation-title">${escapeHtml(record.designation_text)}</div>`
+            : (record.designation_units > 0 ? '<div class="consolidated-designation-title">Load Displacement</div>' : "&nbsp;");
+        const remarkTotalText = record.remark_code === "OL"
+            ? formatConsolidatedRemarkVariance(record.remark_total)
+            : "";
+
+        return `
+            <tbody class="consolidated-faculty-block">
+                ${rows.map(function (entry, index) {
+                    const scheduleHtml = (Array.isArray(entry?.schedule_lines) ? entry.schedule_lines : ["-"])
+                        .map(function (line) {
+                            return `<span class="consolidated-schedule-line">${escapeHtml(line)}</span>`;
+                        })
+                        .join("");
+
+                    return `
+                        <tr>
+                            ${index === 0 ? `
+                                <td rowspan="${blockRowspan}" class="consolidated-cell-index">${escapeHtml(String(record.sequence || ""))}</td>
+                                <td rowspan="${blockRowspan}" class="consolidated-cell-name">${escapeHtml(record.display_name || record.full_name || "")}</td>
+                                <td rowspan="${blockRowspan}" class="consolidated-cell-prep">${escapeHtml(String(record.total_preparations || 0))}</td>
+                            ` : ""}
+                            <td class="consolidated-cell-code">${escapeHtml(entry?.sub_code || "")}</td>
+                            <td class="consolidated-cell-title">
+                                <span class="consolidated-course-title">${escapeHtml(entry?.desc || "")}</span>
+                            </td>
+                            <td class="consolidated-cell-schedule">${scheduleHtml}</td>
+                            <td class="consolidated-cell-course">${escapeHtml(entry?.course || "")}</td>
+                            <td class="consolidated-cell-students">${escapeHtml(formatStudentCount(entry?.student_count || 0))}</td>
+                            <td class="consolidated-cell-units">${escapeHtml(formatNumber(entry?.units || 0))}</td>
+                            <td class="consolidated-cell-hours">${escapeHtml(formatNumber(entry?.lec || 0))}</td>
+                            <td class="consolidated-cell-hours">${escapeHtml(formatNumber(entry?.lab || 0))}</td>
+                            <td class="consolidated-cell-load">${escapeHtml(formatNumber(entry?.faculty_load || 0))}</td>
+                            ${index === 0 ? `
+                                <td rowspan="${contentRowspan}" class="consolidated-cell-designation">${designationHtml}</td>
+                                <td rowspan="${contentRowspan}" class="consolidated-cell-total">${escapeHtml(formatNumber(record.total_workload || 0))}</td>
+                                <td rowspan="${contentRowspan}" class="consolidated-cell-remark">
+                                    <span class="consolidated-remark-text">${escapeHtml(record.remark_code || "NL")}</span>
+                                </td>
+                            ` : ""}
+                        </tr>
+                    `;
+                }).join("")}
+                <tr class="consolidated-faculty-total-row">
+                    <td class="consolidated-cell-code">&nbsp;</td>
+                    <td class="consolidated-cell-title">&nbsp;</td>
+                    <td class="consolidated-cell-schedule">&nbsp;</td>
+                    <td class="consolidated-cell-course">&nbsp;</td>
+                    <td class="consolidated-cell-students">&nbsp;</td>
+                    <td class="consolidated-cell-units">&nbsp;</td>
+                    <td class="consolidated-cell-hours">&nbsp;</td>
+                    <td class="consolidated-cell-hours">&nbsp;</td>
+                    <td class="consolidated-cell-load">${escapeHtml(formatNumber(record.teaching_load || 0))}</td>
+                    <td class="consolidated-cell-designation">${record.designation_units > 0 ? escapeHtml(formatNumber(record.designation_units)) : "&nbsp;"}</td>
+                    <td class="consolidated-cell-total">&nbsp;</td>
+                    <td class="consolidated-cell-remark-total">${remarkTotalText ? escapeHtml(remarkTotalText) : "&nbsp;"}</td>
+                </tr>
+            </tbody>
+        `;
+    }
+
+    function renderConsolidatedSignatoryBlock(label, signatory) {
+        const name = uppercaseDisplayText(signatory?.signatory_name || "");
+        const title = String(signatory?.signatory_title || "").trim();
+
+        return `
+            <div class="consolidated-signatory-block">
+                <div class="consolidated-signatory-label">${escapeHtml(label)}</div>
+                <div class="consolidated-signatory-name">${name ? escapeHtml(name) : "&nbsp;"}</div>
+                <div class="consolidated-signatory-title">${title ? escapeHtml(title) : "&nbsp;"}</div>
+            </div>
+        `;
+    }
+
+    function createConsolidatedReportElement(templateHtml) {
+        const template = document.createElement("template");
+        template.innerHTML = String(templateHtml || "").trim();
+        return template.content.firstElementChild;
+    }
+
+    function createConsolidatedReportPage(termContext, options = {}) {
+        const page = document.createElement("section");
+        page.className = `consolidated-report-page ${options.measure ? "is-measure" : ""} ${options.signatoryPage ? "consolidated-signatory-page" : ""}`.trim();
+        page.style.setProperty("--consolidated-report-bg", `url("${CONSOLIDATED_REPORT_BACKGROUND_URL}")`);
+
+        const campusLabel = uppercaseDisplayText(WORKLOAD_CAMPUS_NAME || "Campus");
+        const collegeLabel = uppercaseDisplayText(WORKLOAD_COLLEGE_NAME || "College");
+        const titleLabel = options.signatoryPage ? "CONSOLIDATED FACULTY WORKLOAD SIGNATORIES" : "CONSOLIDATED FACULTY WORKLOAD";
+        const bodyHtml = options.signatoryPage
+            ? `
+                <div class="consolidated-signatory-wrap">
+                    <div class="consolidated-signatory-top">
+                        ${renderConsolidatedSignatoryBlock("Prepared by:", CONSOLIDATED_REPORT_SIGNATORIES?.prepared_by || {})}
+                        ${renderConsolidatedSignatoryBlock("Checked by:", CONSOLIDATED_REPORT_SIGNATORIES?.checked_by_left || {})}
+                        ${renderConsolidatedSignatoryBlock("Checked by:", CONSOLIDATED_REPORT_SIGNATORIES?.checked_by_right || {})}
+                    </div>
+                    <div class="consolidated-signatory-bottom">
+                        ${renderConsolidatedSignatoryBlock("Recommending Approval:", CONSOLIDATED_REPORT_SIGNATORIES?.recommending_approval || {})}
+                        ${renderConsolidatedSignatoryBlock("Approved by:", CONSOLIDATED_REPORT_SIGNATORIES?.approved_by || {})}
+                    </div>
+                </div>
+            `
+            : `
+                <div class="consolidated-report-table-wrap">
+                    <table class="consolidated-report-table">
+                        ${renderConsolidatedReportTableHead(termContext)}
+                    </table>
+                </div>
+            `;
+
+        page.innerHTML = `
+            <div class="consolidated-report-page-background"></div>
+            <div class="consolidated-report-page-inner">
+                <div class="consolidated-report-page-header">
+                    <div class="consolidated-report-title">${escapeHtml(titleLabel)}</div>
+                    <div class="consolidated-report-subtitle">${escapeHtml(campusLabel)}</div>
+                    <div class="consolidated-report-subtitle">${escapeHtml(collegeLabel)}</div>
+                    <div class="consolidated-report-term">${escapeHtml(getConsolidatedReportTermLabel(termContext))}</div>
+                    <div class="consolidated-report-page-count">Page <span class="consolidated-page-number">1</span> of <span class="consolidated-page-total">1</span></div>
+                </div>
+                ${bodyHtml}
+            </div>
+        `;
+
+        return {
+            page,
+            inner: page.querySelector(".consolidated-report-page-inner"),
+            table: page.querySelector(".consolidated-report-table")
+        };
+    }
+
+    function updateConsolidatedReportPageMeta(pageElements) {
+        const pages = Array.isArray(pageElements) ? pageElements : [];
+        const total = pages.length;
+
+        pages.forEach(function (page, index) {
+            $(page).find(".consolidated-page-number").text(index + 1);
+            $(page).find(".consolidated-page-total").text(total);
+        });
+    }
+
+    function buildConsolidatedPreviewHtml(records, termContext) {
+        const measureRoot = document.getElementById("consolidatedReportMeasureRoot");
+        if (!measureRoot) {
+            return "";
+        }
+
+        measureRoot.innerHTML = "";
+        const generatedPages = [];
+        let pageBundle = createConsolidatedReportPage(termContext, { measure: true });
+        measureRoot.appendChild(pageBundle.page);
+        generatedPages.push(pageBundle.page);
+
+        records.forEach(function (record) {
+            const blockElement = createConsolidatedReportElement(renderConsolidatedFacultyBlock(record));
+            if (!(blockElement instanceof HTMLElement)) {
+                return;
+            }
+
+            pageBundle.table.appendChild(blockElement);
+
+            if (pageBundle.inner.scrollHeight > pageBundle.inner.clientHeight + 2) {
+                pageBundle.table.removeChild(blockElement);
+                pageBundle = createConsolidatedReportPage(termContext, { measure: true });
+                measureRoot.appendChild(pageBundle.page);
+                generatedPages.push(pageBundle.page);
+                pageBundle.table.appendChild(blockElement);
+            }
+        });
+
+        const signatoryBundle = createConsolidatedReportPage(termContext, { measure: true, signatoryPage: true });
+        measureRoot.appendChild(signatoryBundle.page);
+        generatedPages.push(signatoryBundle.page);
+
+        const printablePages = generatedPages.map(function (page) {
+            return page.cloneNode(true);
+        });
+        updateConsolidatedReportPageMeta(printablePages);
+        measureRoot.innerHTML = "";
+
+        return printablePages.map(function (page) {
+            return page.outerHTML;
+        }).join("");
+    }
+
+    async function openConsolidatedReportPreview(forceReloadOverview = false) {
+        const termContext = getFacultyBrowserTermContext();
+        if (!termContext) {
+            Swal.fire("Missing Term", "Select Academic Year and Semester first.", "warning");
+            return;
+        }
+
+        const facultyOptions = getFacultyOptionList()
+            .slice()
+            .sort(function (left, right) {
+                return String(left.full_name || "").localeCompare(String(right.full_name || ""));
+            });
+
+        if (facultyOptions.length === 0) {
+            Swal.fire("No Faculty", "No active faculty are available in this college for the selected term.", "info");
+            return;
+        }
+
+        if (consolidatedReportIsBuilding) {
+            return;
+        }
+
+        if (consolidatedReportModalInstance) {
+            consolidatedReportModalInstance.show();
+        }
+
+        consolidatedReportIsBuilding = true;
+        showConsolidatedReportLoading("Loading faculty workload overview...", 5);
+        $("#btnRefreshConsolidatedReport").prop("disabled", true);
+
+        try {
+            let overviewRows = [];
+
+            try {
+                overviewRows = await loadFacultyOverview(forceReloadOverview);
+            } catch (overviewError) {
+                overviewRows = Array.isArray(facultyOverviewCache) ? facultyOverviewCache : [];
+            }
+
+            const overviewMap = new Map(
+                (Array.isArray(overviewRows) ? overviewRows : []).map(function (row) {
+                    return [Number(row?.faculty_id) || 0, row];
+                })
+            );
+            const records = [];
+
+            for (let index = 0; index < facultyOptions.length; index++) {
+                const option = facultyOptions[index];
+                const percent = Math.round(((index + 1) / facultyOptions.length) * 86);
+                setConsolidatedReportProgress(
+                    percent,
+                    `Loading ${option.full_name} (${index + 1} of ${facultyOptions.length})...`
+                );
+
+                try {
+                    const payload = await fetchConsolidatedFacultyWorkloadPayload(option.faculty_id, termContext);
+                    const record = buildConsolidatedFacultyRecord(option, payload, overviewMap.get(option.faculty_id) || null);
+                    if (record) {
+                        records.push(record);
+                    }
+                } catch (facultyError) {
+                    console.error("Failed to load consolidated workload for faculty", option.faculty_id, facultyError);
+                }
+            }
+
+            records.sort(function (left, right) {
+                return String(left.full_name || "").localeCompare(String(right.full_name || ""));
+            });
+            records.forEach(function (record, index) {
+                record.sequence = index + 1;
+            });
+
+            if (records.length === 0) {
+                setConsolidatedReportEmptyState(
+                    "No report rows available",
+                    "There is no assigned scheduler workload yet for the selected college and term."
+                );
+                return;
+            }
+
+            setConsolidatedReportProgress(95, "Building legal landscape preview...");
+            const previewHtml = buildConsolidatedPreviewHtml(records, termContext);
+
+            if (!previewHtml) {
+                setConsolidatedReportEmptyState(
+                    "Preview unavailable",
+                    "The consolidated report preview could not be generated right now."
+                );
+                return;
+            }
+
+            consolidatedReportGeneratedHtml = previewHtml;
+            $("#consolidatedReportPreviewRoot").html(previewHtml);
+            setConsolidatedReportProgress(100, "Preview ready");
+            setConsolidatedReportPrintEnabled(true);
+        } catch (reportError) {
+            console.error("Failed to build consolidated workload preview", reportError);
+            setConsolidatedReportEmptyState(
+                "Preview unavailable",
+                "The consolidated faculty workload preview could not be generated right now."
+            );
+        } finally {
+            consolidatedReportIsBuilding = false;
+            $("#btnRefreshConsolidatedReport").prop("disabled", false);
+        }
+    }
+
+    function printConsolidatedReportPreview() {
+        if (!consolidatedReportGeneratedHtml) {
+            return;
+        }
+
+        const reportStyleTag = document.getElementById("consolidatedReportStyleTag");
+        const frameId = "consolidatedReportPrintFrame";
+        const existingFrame = document.getElementById(frameId);
+        if (existingFrame) {
+            existingFrame.remove();
+        }
+
+        const printFrame = document.createElement("iframe");
+        printFrame.id = frameId;
+        printFrame.style.position = "fixed";
+        printFrame.style.right = "0";
+        printFrame.style.bottom = "0";
+        printFrame.style.width = "0";
+        printFrame.style.height = "0";
+        printFrame.style.border = "0";
+        printFrame.setAttribute("aria-hidden", "true");
+        document.body.appendChild(printFrame);
+
+        const printDocument = printFrame.contentWindow?.document;
+        if (!printDocument || !printFrame.contentWindow) {
+            printFrame.remove();
+            Swal.fire("Print Error", "The print preview could not be opened right now.", "error");
+            return;
+        }
+
+        printDocument.open();
+        printDocument.write(`
+            <!DOCTYPE html>
+            <html lang="en">
+            <head>
+                <meta charset="utf-8">
+                <meta name="viewport" content="width=device-width, initial-scale=1.0">
+                <title>Consolidated Faculty Workload</title>
+                ${reportStyleTag ? reportStyleTag.outerHTML : ""}
+            </head>
+            <body class="consolidated-report-print-body">
+                <div class="consolidated-report-preview-root">
+                    ${consolidatedReportGeneratedHtml}
+                </div>
+            </body>
+            </html>
+        `);
+        printDocument.close();
+
+        let printTriggered = false;
+        const triggerPrint = function () {
+            if (printTriggered) {
+                return;
+            }
+
+            printTriggered = true;
+            setTimeout(function () {
+                try {
+                    printFrame.contentWindow.focus();
+                    printFrame.contentWindow.print();
+                } finally {
+                    setTimeout(function () {
+                        printFrame.remove();
+                    }, 1500);
+                }
+            }, 350);
+        };
+
+        printFrame.addEventListener("load", triggerPrint, { once: true });
+        setTimeout(triggerPrint, 700);
+    }
+
     function getSchedulePairColor(groupKey) {
         const text = String(groupKey || "");
         let hash = 0;
@@ -3300,6 +4753,7 @@ $(document).ready(function () {
     function hideSelectionPanels() {
         abortPendingRequest(scheduledClassesRequest);
         abortPendingRequest(workloadListRequest);
+        resetPanelLoadingState();
         currentAyId = null;
         currentSemesterNum = null;
         currentScheduledClassRows = [];
@@ -3342,6 +4796,12 @@ $(document).ready(function () {
         currentSemesterNum = context.semesterNum;
 
         const requestToken = ++selectionRequestToken;
+        beginPanelLoading(
+            requestToken,
+            context.isFacultyNeed
+                ? "Loading faculty need schedules and workload..."
+                : "Loading faculty schedules and workload..."
+        );
         loadScheduledClasses(context, requestToken);
         loadWorkloadList(context, requestToken);
 
@@ -3472,6 +4932,8 @@ $(document).ready(function () {
 
             showInvalid();
             updateApplyWorkloadControls();
+        }).always(function () {
+            finishPanelLoading(requestToken);
         });
     }
 
@@ -3712,6 +5174,8 @@ $(document).ready(function () {
             clearPrintSignatories();
             $("#workloadCard").show();
             applyScheduledClassAvailability();
+        }).always(function () {
+            finishPanelLoading(requestToken);
         });
     }
 
@@ -3751,7 +5215,16 @@ $(document).ready(function () {
 
             if (!res.isConfirmed) return;
 
-            button.prop("disabled", true);
+            const busyToken = beginSchedulerActivity(
+                deleteCount > 1
+                    ? `Removing linked workload for ${subjectCode}...`
+                    : `Removing workload for ${subjectCode}...`
+            );
+            setButtonBusy(
+                button,
+                true,
+                '<span class="spinner-border spinner-border-sm" role="status" aria-hidden="true"></span>'
+            );
 
             $.post(
                 "../backend/query_remove_workload.php",
@@ -3765,7 +5238,8 @@ $(document).ready(function () {
             ).fail(function (xhr) {
                 Swal.fire("Error", xhr.responseText || "Failed to remove workload.", "error");
             }).always(function () {
-                button.prop("disabled", false);
+                setButtonBusy(button, false);
+                endSchedulerActivity(busyToken);
             });
         });
     });
@@ -3819,6 +5293,18 @@ $(document).ready(function () {
         $("#btnOpenFacultyBrowser").trigger("click");
     });
 
+    $("#btnOpenConsolidatedReport, #btnStartOpenConsolidatedReport").on("click", function () {
+        openConsolidatedReportPreview(false);
+    });
+
+    $("#btnRefreshConsolidatedReport").on("click", function () {
+        openConsolidatedReportPreview(true);
+    });
+
+    $("#btnPrintConsolidatedReport").on("click", function () {
+        printConsolidatedReportPreview();
+    });
+
     $("#btnStartChooseFaculty").on("click", function () {
         const selectElement = $("#faculty_id");
         if (selectElement.hasClass("select2-hidden-accessible")) {
@@ -3837,7 +5323,12 @@ $(document).ready(function () {
         }
 
         const button = $(this);
-        button.prop("disabled", true);
+        const busyToken = beginSchedulerActivity("Creating faculty need...");
+        setButtonBusy(
+            button,
+            true,
+            '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Creating...'
+        );
 
         $.ajax({
             url: "../backend/query_faculty_need.php",
@@ -3860,7 +5351,8 @@ $(document).ready(function () {
         }).fail(function (xhr) {
             Swal.fire("Error", xhr.responseText || "Unable to create faculty need.", "error");
         }).always(function () {
-            button.prop("disabled", false);
+            setButtonBusy(button, false);
+            endSchedulerActivity(busyToken);
         });
     });
 
@@ -3873,11 +5365,12 @@ $(document).ready(function () {
     });
 
     $("#btnOpenFacultyBrowser").on("click", function () {
+        setFacultyBrowserMessage("Loading faculty workload overview...", true);
+        if (facultyBrowserDrawerInstance) {
+            facultyBrowserDrawerInstance.show();
+        }
         loadFacultyOverview(false).always(function () {
             renderFacultyBrowser();
-            if (facultyBrowserDrawerInstance) {
-                facultyBrowserDrawerInstance.show();
-            }
         });
     });
 
@@ -3921,17 +5414,21 @@ $(document).ready(function () {
             return;
         }
 
-        $.post(
-            "../backend/query_apply_workload.php",
-            {
-                assignee_type: context.assigneeType,
-                faculty_id: context.facultyId,
-                faculty_need_id: context.facultyNeedId,
-                ay_id: currentAyId,
-                semester: currentSemesterNum,
-                schedule_ids: schedule_ids
-            },
-            function (res) {
+        const busyToken = beginSchedulerActivity("Applying selected classes to workload...");
+        setButtonBusy(
+            $("#btnApplyToWorkload, #btnApplyToWorkloadFloating"),
+            true,
+            '<span class="spinner-border spinner-border-sm me-1" role="status" aria-hidden="true"></span>Applying...'
+        );
+
+        $.post("../backend/query_apply_workload.php", {
+            assignee_type: context.assigneeType,
+            faculty_id: context.facultyId,
+            faculty_need_id: context.facultyNeedId,
+            ay_id: currentAyId,
+            semester: currentSemesterNum,
+            schedule_ids: schedule_ids
+        }, null, "json").done(function (res) {
                 if (!res || typeof res !== "object") {
                     Swal.fire("Error", "Invalid response from server.", "error");
                     return;
@@ -3960,9 +5457,12 @@ $(document).ready(function () {
                 }
 
                 Swal.fire("Error", res.message || "Failed to apply workload.", "error");
-            },
-            "json"
-        );
+            }).fail(function (xhr) {
+                Swal.fire("Error", xhr.responseText || "Failed to apply workload.", "error");
+            }).always(function () {
+                setButtonBusy($("#btnApplyToWorkload, #btnApplyToWorkloadFloating"), false);
+                endSchedulerActivity(busyToken);
+            });
     });
 
 
