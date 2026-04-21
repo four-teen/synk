@@ -1026,7 +1026,12 @@ if (isset($_POST['update_faculty_designation'])) {
 
     query_college_faculty_json_response([
         'status' => 'updated',
+        'designation_id' => $designationRecord['designation_id'],
         'designation_name' => $designationRecord['designation_name'],
+        'designation_style' => query_college_faculty_designation_style(
+            (int)$designationRecord['designation_id'],
+            (string)$designationRecord['designation_name']
+        ),
     ]);
 }
 

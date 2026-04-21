@@ -867,6 +867,8 @@ $(document).ready(function () {
       })
     }).done(function (res) {
       if (res.status === "inserted" || res.status === "reactivated") {
+        const viewportState = captureFacultyViewportState();
+
         Swal.fire({
           icon: "success",
           title: res.status === "reactivated" ? "Assignment Restored" : "Faculty Assigned",
@@ -878,11 +880,10 @@ $(document).ready(function () {
           showConfirmButton: false
         });
 
-        addFacultyModal.hide();
         $("#addFacultyForm")[0].reset();
         $("#faculty_id").val(null).trigger("change");
         $("#add_employment_classification").val("");
-        refreshFacultyData();
+        hideModalAndRefresh(addFacultyModalElement, addFacultyModal, viewportState);
         return;
       }
 
@@ -951,8 +952,8 @@ $(document).ready(function () {
           timerProgressBar: true,
           showConfirmButton: false
         });
+        applyFacultyDesignationUpdate(facultyId, res);
         designationModal.hide();
-        refreshFacultyData();
         return;
       }
 
@@ -1008,8 +1009,8 @@ $(document).ready(function () {
           timerProgressBar: true,
           showConfirmButton: false
         });
+        applyFacultyClassificationUpdate(facultyId, res);
         classificationModal.hide();
-        refreshFacultyData();
         return;
       }
 
@@ -1065,7 +1066,7 @@ $(document).ready(function () {
             timer: 1300,
             showConfirmButton: false
           });
-          refreshFacultyData();
+          refreshFacultyData({ preserveScroll: true });
           return;
         }
 
@@ -1102,12 +1103,12 @@ $(document).ready(function () {
           timer: 1300,
           showConfirmButton: false
         });
-        refreshFacultyData();
+        refreshFacultyData({ preserveScroll: true });
         return;
       }
 
       if (res.status === "duplicate") {
-        refreshFacultyData();
+        refreshFacultyData({ preserveScroll: true });
         return;
       }
 
@@ -1272,12 +1273,42 @@ function initializeFacultyScroll() {
   facultyListState.observer.observe(sentinel);
 }
 
-function refreshFacultyData() {
+function refreshFacultyData(options) {
+  const settings = Object.assign({
+    preserveScroll: false,
+    viewportState: null
+  }, options || {});
+
   loadFacultyDropdown();
-  resetFacultyList();
+
+  if (!settings.preserveScroll) {
+    resetFacultyList();
+    return;
+  }
+
+  reloadFacultyListPreservingViewport(settings.viewportState || captureFacultyViewportState());
 }
 
-function resetFacultyList() {
+function hideModalAndRefresh(modalElement, modalInstance, viewportState) {
+  $(modalElement).one("hidden.bs.modal", function () {
+    if (document.activeElement && typeof document.activeElement.blur === "function") {
+      document.activeElement.blur();
+    }
+
+    refreshFacultyData({
+      preserveScroll: true,
+      viewportState: viewportState
+    });
+  });
+
+  modalInstance.hide();
+}
+
+function resetFacultyList(options) {
+  const settings = Object.assign({
+    deferLoad: false
+  }, options || {});
+
   if (facultyListState.currentRequest) {
     facultyListState.currentRequest.abort();
     facultyListState.currentRequest = null;
@@ -1296,7 +1327,12 @@ function resetFacultyList() {
 
   toggleFacultyLoading(false);
   updateFacultyResultsSummary();
-  loadCollegeFaculty();
+
+  if (settings.deferLoad) {
+    return null;
+  }
+
+  return loadCollegeFaculty();
 }
 
 function loadFacultyDropdown() {
@@ -1332,7 +1368,7 @@ function loadCollegeFaculty() {
   const collegeId = Number($("#college_id").val() || 0);
 
   if (!collegeId || facultyListState.loading || !facultyListState.hasMore) {
-    return;
+    return null;
   }
 
   facultyListState.loading = true;
@@ -1406,6 +1442,235 @@ function loadCollegeFaculty() {
       toggleFacultyLoading(false);
     }
   });
+
+  return facultyListState.currentRequest;
+}
+
+function reloadFacultyListPreservingViewport(viewportState) {
+  const safeViewportState = viewportState || captureFacultyViewportState();
+  const targetLoadedCount = Math.max(
+    facultyListState.pageSize,
+    Number(safeViewportState.targetLoadedCount || facultyListState.pageSize)
+  );
+  const targetPageCount = Math.max(1, Math.ceil(targetLoadedCount / facultyListState.pageSize));
+
+  resetFacultyList({ deferLoad: true });
+
+  const requestToken = facultyListState.requestToken;
+
+  function finalizeRefresh() {
+    if (requestToken !== facultyListState.requestToken) {
+      return;
+    }
+
+    restoreFacultyViewport(safeViewportState);
+  }
+
+  function loadNextPage(pageNumber) {
+    if (requestToken !== facultyListState.requestToken) {
+      return;
+    }
+
+    const request = loadCollegeFaculty();
+    if (!request || typeof request.done !== "function") {
+      finalizeRefresh();
+      return;
+    }
+
+    request.done(function (res) {
+      if (requestToken !== facultyListState.requestToken) {
+        return;
+      }
+
+      const rows = res && Array.isArray(res.data) ? res.data : [];
+      const shouldContinue = rows.length > 0 && facultyListState.hasMore && pageNumber < targetPageCount;
+
+      if (shouldContinue) {
+        loadNextPage(pageNumber + 1);
+        return;
+      }
+
+      finalizeRefresh();
+    }).fail(function (xhr, statusText) {
+      if (statusText === "abort") {
+        return;
+      }
+
+      finalizeRefresh();
+    });
+  }
+
+  loadNextPage(1);
+}
+
+function captureFacultyViewportState() {
+  const items = getFacultyViewportItems();
+  const viewportHeight = window.innerHeight || document.documentElement.clientHeight || 0;
+  const scrollTarget = getPrimaryScrollTarget();
+  let anchorElement = null;
+  let anchorIndex = 0;
+
+  items.some(function (item, index) {
+    const rect = item.getBoundingClientRect();
+    const isVisible = rect.bottom > 0 && rect.top < viewportHeight;
+
+    if (!isVisible) {
+      return false;
+    }
+
+    anchorElement = item;
+    anchorIndex = index + 1;
+    return true;
+  });
+
+  const targetLoadedCount = anchorIndex > 0
+    ? Math.max(
+      facultyListState.pageSize,
+      Math.min(facultyListState.loadedCount, anchorIndex + facultyListState.pageSize)
+    )
+    : Math.max(
+      facultyListState.pageSize,
+      Math.min(facultyListState.loadedCount || 0, facultyListState.pageSize)
+    );
+
+  return {
+    scrollTarget: scrollTarget,
+    scrollTop: getScrollTargetTop(scrollTarget),
+    targetLoadedCount: targetLoadedCount,
+    anchorAssignmentId: anchorElement ? String(anchorElement.getAttribute("data-assignment-id") || "") : "",
+    anchorOffset: anchorElement ? anchorElement.getBoundingClientRect().top : 0
+  };
+}
+
+function restoreFacultyViewport(viewportState) {
+  const scrollTarget = (viewportState && viewportState.scrollTarget) || getPrimaryScrollTarget();
+  const scrollTop = Math.max(0, Number(viewportState && viewportState.scrollTop ? viewportState.scrollTop : 0));
+
+  window.requestAnimationFrame(function () {
+    window.requestAnimationFrame(function () {
+      if (viewportState && viewportState.anchorAssignmentId) {
+        const anchorItems = getFacultyViewportItems();
+        let anchorElement = null;
+
+        anchorItems.some(function (item) {
+          if (String(item.getAttribute("data-assignment-id") || "") !== String(viewportState.anchorAssignmentId)) {
+            return false;
+          }
+
+          anchorElement = item;
+          return true;
+        });
+
+        if (anchorElement) {
+          const nextScrollTop = getScrollTargetTop(scrollTarget)
+            + anchorElement.getBoundingClientRect().top
+            - Number(viewportState.anchorOffset || 0);
+
+          restoreScrollTarget(scrollTarget, nextScrollTop);
+          return;
+        }
+      }
+
+      restoreScrollTarget(scrollTarget, scrollTop);
+    });
+  });
+}
+
+function getFacultyViewportItems() {
+  const isMobileViewport = window.matchMedia("(max-width: 767.98px)").matches;
+  const selector = isMobileViewport
+    ? "#collegeFacultyMobileList .faculty-mobile-card"
+    : "#collegeFacultyTableBody tr";
+
+  return Array.prototype.slice.call(document.querySelectorAll(selector));
+}
+
+function getPrimaryScrollTarget() {
+  const candidates = [];
+  const seen = [];
+
+  function pushCandidate(candidate) {
+    if (!candidate || seen.indexOf(candidate) !== -1) {
+      return;
+    }
+
+    seen.push(candidate);
+    candidates.push(candidate);
+  }
+
+  pushCandidate(window);
+  pushCandidate(document.scrollingElement);
+  pushCandidate(document.documentElement);
+  pushCandidate(document.body);
+  pushCandidate(document.querySelector(".layout-page"));
+  pushCandidate(document.querySelector(".content-wrapper"));
+  pushCandidate(document.querySelector(".layout-wrapper"));
+  pushCandidate(document.querySelector(".layout-content-navbar"));
+
+  let activeTarget = window;
+  let bestScore = -1;
+
+  candidates.forEach(function (candidate) {
+    const scrollTop = getScrollTargetTop(candidate);
+    const maxScrollTop = getScrollTargetMaxTop(candidate);
+
+    if (maxScrollTop <= 0) {
+      return;
+    }
+
+    const score = (scrollTop > 0 ? 1000000 : 0) + scrollTop + maxScrollTop;
+    if (score > bestScore) {
+      bestScore = score;
+      activeTarget = candidate;
+    }
+  });
+
+  return activeTarget;
+}
+
+function getScrollTargetTop(target) {
+  if (!target || target === window) {
+    return window.pageYOffset
+      || document.documentElement.scrollTop
+      || document.body.scrollTop
+      || 0;
+  }
+
+  return Number(target.scrollTop || 0);
+}
+
+function getScrollTargetMaxTop(target) {
+  if (!target || target === window) {
+    const scrollingElement = document.scrollingElement || document.documentElement || document.body;
+    if (!scrollingElement) {
+      return 0;
+    }
+
+    return Math.max(0, Number(scrollingElement.scrollHeight || 0) - Number(window.innerHeight || 0));
+  }
+
+  return Math.max(0, Number(target.scrollHeight || 0) - Number(target.clientHeight || 0));
+}
+
+function setScrollTargetTop(target, top) {
+  const safeTop = Math.max(0, Number(top || 0));
+
+  if (!target || target === window) {
+    window.scrollTo(0, safeTop);
+    return;
+  }
+
+  target.scrollTop = safeTop;
+}
+
+function restoreScrollTarget(target, top) {
+  const safeTop = Math.max(0, Number(top || 0));
+
+  setScrollTargetTop(target, safeTop);
+
+  window.setTimeout(function () {
+    setScrollTargetTop(target, safeTop);
+  }, 60);
 }
 
 function appendFacultyRows(rows, startIndex) {
@@ -1420,34 +1685,36 @@ function appendFacultyRows(rows, startIndex) {
     const statusBadge = buildStatusBadge(row.status);
     const actionHtml = buildActionHtml(row);
     const safeName = escapeHtml(row.full_name || "Unnamed Faculty");
+    const assignmentId = escapeHtml(String(row.college_faculty_id || 0));
+    const facultyId = escapeHtml(String(row.faculty_id || 0));
 
     tableRows.push(
-      "<tr>" +
+      "<tr data-assignment-id='" + assignmentId + "' data-faculty-id='" + facultyId + "'>" +
         "<td class='faculty-index'>" + sequence + "</td>" +
         "<td><div class='faculty-name'>" + safeName + "</div></td>" +
-        "<td>" + designationHtml + "</td>" +
-        "<td>" + classificationHtml + "</td>" +
+        "<td class='faculty-designation-slot'>" + designationHtml + "</td>" +
+        "<td class='faculty-classification-slot'>" + classificationHtml + "</td>" +
         "<td>" + assignedHtml + "</td>" +
         "<td>" + statusBadge + "</td>" +
-        "<td class='text-end faculty-action-cell'>" + actionHtml + "</td>" +
+        "<td class='text-end faculty-action-cell faculty-actions-slot'>" + actionHtml + "</td>" +
       "</tr>"
     );
 
     mobileCards.push(
-      "<div class='card faculty-mobile-card'>" +
+      "<div class='card faculty-mobile-card' data-assignment-id='" + assignmentId + "' data-faculty-id='" + facultyId + "'>" +
         "<div class='card-body'>" +
           "<div class='faculty-mobile-top'>" +
             "<div>" +
               "<span class='faculty-mobile-index'>#" + sequence + "</span>" +
               "<h6 class='faculty-mobile-name'>" + safeName + "</h6>" +
-              "<div>" + designationHtml + "</div>" +
+              "<div class='faculty-designation-slot'>" + designationHtml + "</div>" +
             "</div>" +
             "<div>" + statusBadge + "</div>" +
           "</div>" +
           "<div class='faculty-mobile-grid'>" +
             "<div class='faculty-mobile-meta'>" +
               "<span class='faculty-mobile-meta-label'>Classification</span>" +
-              "<span class='faculty-mobile-meta-value'>" + classificationHtml + "</span>" +
+              "<span class='faculty-mobile-meta-value faculty-classification-slot'>" + classificationHtml + "</span>" +
             "</div>" +
             "<div class='faculty-mobile-meta'>" +
               "<span class='faculty-mobile-meta-label'>Assigned</span>" +
@@ -1458,7 +1725,7 @@ function appendFacultyRows(rows, startIndex) {
               "<span class='faculty-mobile-meta-value'>" + escapeHtml(facultyListState.termText || "Current academic term") + "</span>" +
             "</div>" +
           "</div>" +
-          "<div class='faculty-mobile-actions'>" + actionHtml + "</div>" +
+          "<div class='faculty-mobile-actions faculty-actions-slot'>" + actionHtml + "</div>" +
         "</div>" +
       "</div>"
     );
@@ -1518,6 +1785,65 @@ function buildStatusBadge(status) {
   const label = normalizedStatus === "active" ? "ACTIVE" : "INACTIVE";
 
   return "<span class='badge " + badgeClass + "'>" + label + "</span>";
+}
+
+function applyFacultyDesignationUpdate(facultyId, response) {
+  const normalizedFacultyId = String(facultyId || "").trim();
+  if (normalizedFacultyId === "") {
+    return;
+  }
+
+  const row = {
+    designation_id: Number(response && response.designation_id ? response.designation_id : 0),
+    designation_name: String(response && response.designation_name ? response.designation_name : "").trim(),
+    designation_style: String(response && response.designation_style ? response.designation_style : "").trim()
+  };
+  const designationHtml = buildDesignationHtml(row);
+  const hasDesignation = row.designation_name !== "";
+  const designationTitle = hasDesignation ? "Edit Designation" : "Add Designation";
+
+  $("[data-faculty-id='" + escapeSelectorValue(normalizedFacultyId) + "']").each(function () {
+    const $container = $(this);
+    $container.find(".faculty-designation-slot").first().html(designationHtml);
+
+    const $button = $container.find(".btn-edit-designation").first();
+    if ($button.length) {
+      $button
+        .attr("title", designationTitle)
+        .attr("aria-label", designationTitle)
+        .attr("data-designation-id", String(row.designation_id || 0))
+        .data("designationId", Number(row.designation_id || 0));
+    }
+  });
+}
+
+function applyFacultyClassificationUpdate(facultyId, response) {
+  const normalizedFacultyId = String(facultyId || "").trim();
+  if (normalizedFacultyId === "") {
+    return;
+  }
+
+  const row = {
+    employment_classification: String(response && response.employment_classification ? response.employment_classification : "").trim(),
+    employment_classification_label: String(response && response.employment_classification_label ? response.employment_classification_label : "").trim()
+  };
+  const classificationHtml = buildEmploymentClassificationHtml(row);
+  const hasClassification = row.employment_classification !== "";
+  const classificationTitle = hasClassification ? "Edit Employment Classification" : "Add Employment Classification";
+
+  $("[data-faculty-id='" + escapeSelectorValue(normalizedFacultyId) + "']").each(function () {
+    const $container = $(this);
+    $container.find(".faculty-classification-slot").first().html(classificationHtml);
+
+    const $button = $container.find(".btn-edit-classification").first();
+    if ($button.length) {
+      $button
+        .attr("title", classificationTitle)
+        .attr("aria-label", classificationTitle)
+        .attr("data-employment-classification", row.employment_classification)
+        .data("employmentClassification", row.employment_classification);
+    }
+  });
 }
 
 function buildActionHtml(row) {
@@ -1623,6 +1949,10 @@ function escapeHtml(value) {
     .replace(/>/g, "&gt;")
     .replace(/\"/g, "&quot;")
     .replace(/'/g, "&#39;");
+}
+
+function escapeSelectorValue(value) {
+  return String(value).replace(/'/g, "\\'");
 }
 </script>
 
