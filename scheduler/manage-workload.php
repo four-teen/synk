@@ -214,6 +214,15 @@ $consolidatedReportSignatories = [
             color: #5f728b;
         }
 
+        .program-major-note {
+            display: block;
+            margin-top: 0.18rem;
+            color: #7890ab;
+            font-size: 0.72rem;
+            font-weight: 600;
+            line-height: 1.25;
+        }
+
         .workload-days,
         .workload-room {
             white-space: nowrap;
@@ -938,7 +947,7 @@ $consolidatedReportSignatories = [
         }
 
         #facultyBrowserDrawer {
-            width: min(430px, calc(100vw - 1rem));
+            width: min(620px, calc(100vw - 1rem));
             border-left: 1px solid #dbe3f6;
             box-shadow: -24px 0 48px rgba(25, 40, 90, 0.14);
         }
@@ -1024,7 +1033,7 @@ $consolidatedReportSignatories = [
 
         .faculty-browser-classification-summary {
             display: grid;
-            grid-template-columns: repeat(3, minmax(0, 1fr));
+            grid-template-columns: repeat(4, minmax(0, 1fr));
             gap: 0.4rem;
             margin: 0 0 1rem;
             color: #6f7f9b;
@@ -1062,6 +1071,12 @@ $consolidatedReportSignatories = [
             border-color: #f7dfb1;
             background: #fff8e8;
             color: #815c07;
+        }
+
+        .faculty-browser-classification-badge.is-faculty-need {
+            border-color: #ead6ff;
+            background: #faf5ff;
+            color: #6b3ba7;
         }
 
         .faculty-browser-classification-label {
@@ -1358,6 +1373,10 @@ $consolidatedReportSignatories = [
             .faculty-browser-summary {
                 grid-template-columns: repeat(2, minmax(0, 1fr));
             }
+
+            .faculty-browser-classification-summary {
+                grid-template-columns: repeat(2, minmax(0, 1fr));
+            }
         }
 
         @media (max-width: 575.98px) {
@@ -1366,6 +1385,10 @@ $consolidatedReportSignatories = [
             }
 
             .faculty-browser-summary {
+                grid-template-columns: 1fr;
+            }
+
+            .faculty-browser-classification-summary {
                 grid-template-columns: 1fr;
             }
 
@@ -2788,6 +2811,7 @@ let facultyOverviewRequest = null;
 let selectionRequestToken = 0;
 let facultyOverviewCacheKey = "";
 let facultyOverviewCache = [];
+let facultyNeedOverviewCache = [];
 let facultyBrowserDrawerInstance = null;
 let consolidatedReportModalInstance = null;
 let currentScheduledClassRows = [];
@@ -3031,11 +3055,36 @@ $(document).ready(function () {
         return items;
     }
 
+    function getFacultyNeedOptionList() {
+        const items = [];
+        $("#faculty_id option").each(function () {
+            const option = $(this);
+            if (String(option.data("assigneeType") || "") !== "faculty_need") {
+                return;
+            }
+
+            const facultyNeedId = Number(option.data("facultyNeedId")) || Number(String(option.val() || "").replace(/^need:/, "")) || 0;
+            const label = String(option.text() || "").trim();
+
+            if (!facultyNeedId || !label) {
+                return;
+            }
+
+            items.push({
+                faculty_need_id: facultyNeedId,
+                need_label: label
+            });
+        });
+
+        return items;
+    }
+
     function clearFacultyOverviewCache() {
         abortPendingRequest(facultyOverviewRequest);
         facultyOverviewRequest = null;
         facultyOverviewCacheKey = "";
         facultyOverviewCache = [];
+        facultyNeedOverviewCache = [];
     }
 
     function renderFacultyNeedOptions(needs, selectedValue = "") {
@@ -3201,7 +3250,8 @@ $(document).ready(function () {
         const items = [
             { key: "permanent", label: "Permanent", className: "is-permanent" },
             { key: "contract_of_service", label: "COS", className: "is-cos" },
-            { key: "part_time", label: "Part-time", className: "is-part-time" }
+            { key: "part_time", label: "Part-time", className: "is-part-time" },
+            { key: "faculty_need", label: "Faculty Need", className: "is-faculty-need" }
         ];
 
         return items.map(function (item) {
@@ -3234,17 +3284,18 @@ $(document).ready(function () {
 
         const termContext = getFacultyBrowserTermContext();
         const facultyOptions = getFacultyOptionList();
+        const facultyNeedOptions = getFacultyNeedOptionList();
         if (!termContext) {
             setFacultyBrowserMessage("Select A.Y. and semester to browse faculty loads.");
             return;
         }
 
-        if (facultyOptions.length === 0) {
-            setFacultyBrowserMessage("No faculty options are available on this page.");
+        if (facultyOptions.length === 0 && facultyNeedOptions.length === 0) {
+            setFacultyBrowserMessage("No faculty or faculty need options are available on this page.");
             return;
         }
 
-        if (facultyOverviewCacheKey === "" && facultyOverviewCache.length === 0) {
+        if (facultyOverviewCacheKey === "" && facultyOverviewCache.length === 0 && facultyNeedOverviewCache.length === 0) {
             if (facultyOverviewRequest && facultyOverviewRequest.readyState !== 4) {
                 setFacultyBrowserMessage("Loading faculty load overview...", true);
                 return;
@@ -3257,7 +3308,10 @@ $(document).ready(function () {
         const overviewMap = new Map(
             (Array.isArray(facultyOverviewCache) ? facultyOverviewCache : []).map(item => [Number(item.faculty_id), item])
         );
-        const currentFacultyId = String($("#faculty_id").val() || "");
+        const facultyNeedOverviewMap = new Map(
+            (Array.isArray(facultyNeedOverviewCache) ? facultyNeedOverviewCache : []).map(item => [Number(item.faculty_need_id), item])
+        );
+        const currentAssigneeValue = String($("#faculty_id").val() || "");
         const merged = facultyOptions.map(option => {
             const summaryRow = overviewMap.get(option.faculty_id) || {};
             const totalLoad = toNumber(summaryRow.total_load);
@@ -3275,9 +3329,32 @@ $(document).ready(function () {
                 total_preparations: totalPreparations,
                 designation_label: String(summaryRow.designation_label || "").trim(),
                 employment_classification: normalizeFacultyBrowserClassification(summaryRow.employment_classification || ""),
-                load_status: loadStatus
+                load_status: loadStatus,
+                assignee_value: String(option.faculty_id),
+                is_faculty_need: false
             };
-        });
+        }).concat(facultyNeedOptions.map(option => {
+            const summaryRow = facultyNeedOverviewMap.get(option.faculty_need_id) || {};
+            const totalLoad = toNumber(summaryRow.total_load);
+            const workloadLoad = toNumber(summaryRow.workload_load);
+            const totalPreparations = Math.max(0, Number(summaryRow.total_preparations) || 0);
+            const loadStatus = getLoadStatus(totalLoad, totalPreparations);
+
+            return {
+                faculty_id: 0,
+                faculty_need_id: option.faculty_need_id,
+                full_name: option.need_label,
+                total_load: totalLoad,
+                workload_load: workloadLoad,
+                designation_units: 0,
+                total_preparations: totalPreparations,
+                designation_label: "",
+                employment_classification: "faculty_need",
+                load_status: loadStatus,
+                assignee_value: `need:${option.faculty_need_id}`,
+                is_faculty_need: true
+            };
+        }));
 
         const sections = [
             {
@@ -3312,7 +3389,8 @@ $(document).ready(function () {
         }, {
             permanent: 0,
             contract_of_service: 0,
-            part_time: 0
+            part_time: 0,
+            faculty_need: 0
         });
 
         summary.html(
@@ -3355,8 +3433,9 @@ $(document).ready(function () {
                 return `
                     <button
                         type="button"
-                        class="faculty-browser-card ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"} ${currentFacultyId === String(item.faculty_id) ? "is-current" : ""}"
-                        data-faculty-id="${escapeHtml(item.faculty_id)}"
+                        class="faculty-browser-card ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"} ${currentAssigneeValue === String(item.assignee_value) ? "is-current" : ""}"
+                        data-faculty-id="${escapeHtml(item.faculty_id || "")}"
+                        data-assignee-value="${escapeHtml(item.assignee_value)}"
                     >
                         <div>
                             <div class="faculty-browser-name ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"}">
@@ -3365,8 +3444,9 @@ $(document).ready(function () {
                             <div class="faculty-browser-subtext">${escapeHtml(noteParts.join(" | "))}</div>
                             <div class="faculty-browser-tags">
                                 <span class="faculty-browser-tag ${statusClass === "normal" ? "is-normal" : statusClass === "overload" ? "is-overload" : "is-underload"}">${escapeHtml(item.load_status.drawerLabel)}</span>
+                                ${item.is_faculty_need ? '<span class="faculty-browser-tag">Faculty Need</span>' : ""}
                                 <span class="faculty-browser-tag">${escapeHtml(prepLabel)}</span>
-                                ${currentFacultyId === String(item.faculty_id) ? '<span class="faculty-browser-tag">Selected</span>' : ""}
+                                ${currentAssigneeValue === String(item.assignee_value) ? '<span class="faculty-browser-tag">Selected</span>' : ""}
                             </div>
                         </div>
                         <div class="faculty-browser-load">
@@ -3405,6 +3485,7 @@ $(document).ready(function () {
         const dfd = $.Deferred();
         const termContext = getFacultyBrowserTermContext();
         const facultyOptions = getFacultyOptionList();
+        const facultyNeedOptions = getFacultyNeedOptionList();
 
         if (!termContext) {
             clearFacultyOverviewCache();
@@ -3413,17 +3494,18 @@ $(document).ready(function () {
             return dfd.promise();
         }
 
-        if (facultyOptions.length === 0) {
+        if (facultyOptions.length === 0 && facultyNeedOptions.length === 0) {
             clearFacultyOverviewCache();
             renderFacultyBrowser();
-            dfd.reject("missing_faculty");
+            dfd.reject("missing_assignees");
             return dfd.promise();
         }
 
         const facultyIds = facultyOptions.map(item => item.faculty_id);
-        const cacheKey = `${termContext.ayId}-${termContext.semesterNum}-${facultyIds.join(",")}`;
+        const facultyNeedIds = facultyNeedOptions.map(item => item.faculty_need_id);
+        const cacheKey = `${termContext.ayId}-${termContext.semesterNum}-${facultyIds.join(",")}-needs:${facultyNeedIds.join(",")}`;
 
-        if (!forceReload && cacheKey === facultyOverviewCacheKey && facultyOverviewCache.length > 0) {
+        if (!forceReload && cacheKey === facultyOverviewCacheKey && (facultyOverviewCache.length > 0 || facultyNeedOverviewCache.length > 0)) {
             renderFacultyBrowser();
             dfd.resolve(facultyOverviewCache);
             return dfd.promise();
@@ -3440,7 +3522,8 @@ $(document).ready(function () {
             data: {
                 ay_id: termContext.ayId,
                 semester: termContext.semesterNum,
-                faculty_ids: facultyIds
+                faculty_ids: facultyIds,
+                faculty_need_ids: facultyNeedIds
             }
         }).done(function (response) {
             if (!response || response.status !== "ok" || !Array.isArray(response.faculty)) {
@@ -3452,6 +3535,7 @@ $(document).ready(function () {
 
             facultyOverviewCacheKey = cacheKey;
             facultyOverviewCache = response.faculty;
+            facultyNeedOverviewCache = Array.isArray(response.faculty_needs) ? response.faculty_needs : [];
             renderFacultyBrowser();
             dfd.resolve(facultyOverviewCache);
         }).fail(function (xhr, status) {
@@ -4765,6 +4849,43 @@ $(document).ready(function () {
         `;
     }
 
+    function getProgramMajorLabel(row) {
+        const majors = [];
+        const addMajor = function (value) {
+            const major = String(value || "").trim();
+            if (major !== "" && majors.indexOf(major) === -1) {
+                majors.push(major);
+            }
+        };
+
+        addMajor(row?.program_major);
+
+        if (Array.isArray(row?.program_scope)) {
+            row.program_scope.forEach(function (program) {
+                addMajor(program?.major);
+            });
+        }
+
+        return majors.join(" / ");
+    }
+
+    function buildProgramMajorNote(row) {
+        const major = getProgramMajorLabel(row);
+        return major !== ""
+            ? `<span class="program-major-note">Major: ${escapeHtml(major)}</span>`
+            : "";
+    }
+
+    function buildWorkloadCourseCell(row) {
+        const courseLabel = String(row?.course || row?.section || "").trim();
+        return `${escapeHtml(courseLabel)}${buildProgramMajorNote(row)}`;
+    }
+
+    function buildScheduledSectionCell(row, sectionLabel) {
+        const label = String(sectionLabel || "").trim();
+        return `${escapeHtml(label)}${buildProgramMajorNote(row)}`;
+    }
+
     function renderExternalWorkloadRows(externalRowsData) {
         const sourceRows = Array.isArray(externalRowsData) ? externalRowsData : [];
         if (sourceRows.length === 0) {
@@ -4807,7 +4928,7 @@ $(document).ready(function () {
                         <tr class="external-workload-row ${groupIndex === 0 ? "paired-row paired-anchor" : "paired-row"}">
                             <td class="workload-code">${escapeHtml(groupRow.sub_code)}</td>
                             <td class="workload-desc">${buildWorkloadDescription(groupRow, true)}</td>
-                            <td>${escapeHtml(groupRow.course || groupRow.section)}</td>
+                            <td>${buildWorkloadCourseCell(groupRow)}</td>
                             <td class="workload-days">${escapeHtml(groupRow.days)}</td>
                             <td class="workload-time">${formatCompactTime(groupRow.time)}</td>
                             <td class="workload-room">${escapeHtml(groupRow.room)}</td>
@@ -4833,7 +4954,7 @@ $(document).ready(function () {
                 <tr class="external-workload-row">
                     <td class="workload-code">${escapeHtml(row.sub_code)}</td>
                     <td class="workload-desc">${buildWorkloadDescription(row)}</td>
-                    <td>${escapeHtml(row.course || row.section)}</td>
+                    <td>${buildWorkloadCourseCell(row)}</td>
                     <td class="workload-days">${escapeHtml(row.days)}</td>
                     <td class="workload-time">${formatCompactTime(row.time)}</td>
                     <td class="workload-room">${escapeHtml(row.room)}</td>
@@ -5062,7 +5183,7 @@ $(document).ready(function () {
                             </td>
                             <td>${escapeHtml(groupRow.subject_code)}</td>
                             <td>${escapeHtml(groupRow.subject_description)}${partnerNote}${mergeNoteHtml}</td>
-                            <td>${escapeHtml(sectionLabel)}</td>
+                            <td>${buildScheduledSectionCell(groupRow, sectionLabel)}</td>
                             <td class="text-center">${typeBadge}</td>
                             <td>${escapeHtml(groupRow.days)}</td>
                             <td>${escapeHtml(groupRow.time)}</td>
@@ -5213,7 +5334,7 @@ $(document).ready(function () {
                             <tr class="${groupIndex === 0 ? "paired-row paired-anchor" : "paired-row"}">
                                 <td class="workload-code">${escapeHtml(groupRow.sub_code)}</td>
                                 <td class="workload-desc">${buildWorkloadDescription(groupRow, true)}</td>
-                                <td>${escapeHtml(groupRow.course || groupRow.section)}</td>
+                                <td>${buildWorkloadCourseCell(groupRow)}</td>
                                 <td class="workload-days">${escapeHtml(groupRow.days)}</td>
                                 <td class="workload-time">${formatCompactTime(groupRow.time)}</td>
                                 <td class="workload-room">${escapeHtml(groupRow.room)}</td>
@@ -5243,7 +5364,7 @@ $(document).ready(function () {
                     <tr>
                         <td class="workload-code">${escapeHtml(row.sub_code)}</td>
                         <td class="workload-desc">${buildWorkloadDescription(row)}</td>
-                        <td>${escapeHtml(row.course || row.section)}</td>
+                        <td>${buildWorkloadCourseCell(row)}</td>
                         <td class="workload-days">${escapeHtml(row.days)}</td>
                         <td class="workload-time">${formatCompactTime(row.time)}</td>
                         <td class="workload-room">${escapeHtml(row.room)}</td>
@@ -5417,9 +5538,10 @@ $(document).ready(function () {
                 return;
             }
 
-            loadFacultyNeedOptions(currentAssigneeValue);
             clearFacultyOverviewCache();
-            loadFacultyOverview(true);
+            loadFacultyNeedOptions(currentAssigneeValue).always(function () {
+                loadFacultyOverview(true);
+            });
         } else {
             renderFacultyBrowser();
         }
@@ -5500,7 +5622,9 @@ $(document).ready(function () {
 
             const selectedValue = `need:${Number(response.need.faculty_need_id) || 0}`;
             renderFacultyNeedOptions(response.needs || [], selectedValue);
+            clearFacultyOverviewCache();
             $("#faculty_id").val(selectedValue).trigger("change");
+            loadFacultyOverview(true);
         }).fail(function (xhr) {
             Swal.fire("Error", xhr.responseText || "Unable to create faculty need.", "error");
         }).always(function () {
@@ -5528,17 +5652,17 @@ $(document).ready(function () {
     });
 
     $(document).on("click", ".faculty-browser-card", function () {
-        const facultyId = String($(this).data("facultyId") || "").trim();
-        if (!facultyId) {
+        const assigneeValue = String($(this).data("assigneeValue") || $(this).data("facultyId") || "").trim();
+        if (!assigneeValue) {
             return;
         }
 
-        if ($("#faculty_id option[value='" + facultyId.replace(/'/g, "\\'") + "']").length === 0) {
+        if ($("#faculty_id option[value='" + assigneeValue.replace(/'/g, "\\'") + "']").length === 0) {
             return;
         }
 
-        if (String($("#faculty_id").val() || "") !== facultyId) {
-            $("#faculty_id").val(facultyId).trigger("change");
+        if (String($("#faculty_id").val() || "") !== assigneeValue) {
+            $("#faculty_id").val(assigneeValue).trigger("change");
             return;
         }
 

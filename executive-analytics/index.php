@@ -63,8 +63,8 @@ $activeSignalCampuses = count(array_filter($campusRows, static function (array $
 }));
 
 $scopeTitle = $selectedCampusRow
-    ? ((string)($selectedCampusRow['campus_name'] ?? 'Campus') . ' Command Deck')
-    : 'University Command Deck';
+    ? trim((string)($selectedCampusRow['campus_name'] ?? 'Campus'))
+    : 'University Academic Monitoring';
 $scopeDisplayName = $selectedCampusRow
     ? trim((string)($selectedCampusRow['campus_name'] ?? 'Selected campus'))
     : 'All campuses';
@@ -272,8 +272,6 @@ $sidebarSummary = $summary;
                             </div>
 
                             <h3 class="exec-college-title"><?php echo synk_exec_analytics_h($collegeName); ?></h3>
-                            <p class="exec-college-note">College-level academic footprint, scheduling readiness, and staffing signal inside <?php echo synk_exec_analytics_h($scopeDisplayName); ?>.</p>
-
                             <div class="exec-college-chip-grid">
                               <div class="exec-college-chip">
                                 <span class="exec-college-chip-label">Programs</span>
@@ -299,17 +297,6 @@ $sidebarSummary = $summary;
                                 <span class="exec-college-chip-label">Rooms</span>
                                 <strong><?php echo synk_exec_analytics_number((int)($collegeCardRow['rooms'] ?? 0)); ?></strong>
                               </div>
-                            </div>
-
-                            <div class="exec-college-footer">
-                              <span class="exec-college-footer-chip">
-                                <i class="bx bx-git-branch"></i>
-                                <span>Workflow <?php echo synk_exec_analytics_number((int)($collegeCardRow['workflows'] ?? 0)); ?></span>
-                              </span>
-                              <span class="exec-college-footer-chip">
-                                <i class="bx bx-pulse"></i>
-                                <span>Activity <?php echo synk_exec_analytics_number((int)($collegeCardRow['activity_score'] ?? 0)); ?></span>
-                              </span>
                             </div>
                           </article>
                         <?php endforeach; ?>

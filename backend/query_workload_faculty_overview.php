@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/faculty_need_helper.php';
 require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
@@ -16,17 +17,26 @@ $collegeId = (int)($_SESSION['college_id'] ?? 0);
 $ayId = (int)($_POST['ay_id'] ?? 0);
 $semester = (int)($_POST['semester'] ?? 0);
 $facultyIds = $_POST['faculty_ids'] ?? [];
+$facultyNeedIds = $_POST['faculty_need_ids'] ?? [];
 
 if (!is_array($facultyIds)) {
     $facultyIds = [$facultyIds];
+}
+
+if (!is_array($facultyNeedIds)) {
+    $facultyNeedIds = [$facultyNeedIds];
 }
 
 $facultyIds = array_values(array_unique(array_filter(array_map('intval', $facultyIds), static function ($value) {
     return $value > 0;
 })));
 
-if ($collegeId <= 0 || $ayId <= 0 || $semester <= 0 || empty($facultyIds)) {
-    echo json_encode(['status' => 'ok', 'faculty' => []]);
+$facultyNeedIds = array_values(array_unique(array_filter(array_map('intval', $facultyNeedIds), static function ($value) {
+    return $value > 0;
+})));
+
+if ($collegeId <= 0 || $ayId <= 0 || $semester <= 0 || (empty($facultyIds) && empty($facultyNeedIds))) {
+    echo json_encode(['status' => 'ok', 'faculty' => [], 'faculty_needs' => []]);
     exit;
 }
 
@@ -65,7 +75,7 @@ $facultyHasDesignationId = synk_table_has_column($conn, 'tbl_faculty', 'designat
 $facultyHasEmploymentClassification = synk_table_has_column($conn, 'tbl_faculty', 'employment_classification');
 $designationTableExists = synk_table_exists($conn, 'tbl_designation');
 $designationHasStatus = $designationTableExists && synk_table_has_column($conn, 'tbl_designation', 'status');
-$facultyIdList = implode(',', array_map('intval', $facultyIds));
+$facultyIdList = !empty($facultyIds) ? implode(',', array_map('intval', $facultyIds)) : '';
 
 $summaries = [];
 foreach ($facultyIds as $facultyId) {
@@ -81,7 +91,7 @@ foreach ($facultyIds as $facultyId) {
     ];
 }
 
-if ($facultyHasDesignationId && $designationTableExists) {
+if (!empty($facultyIds) && $facultyHasDesignationId && $designationTableExists) {
     $designationSql = "
         SELECT
             f.faculty_id,
@@ -112,7 +122,7 @@ if ($facultyHasDesignationId && $designationTableExists) {
     }
 }
 
-if ($facultyHasEmploymentClassification) {
+if (!empty($facultyIds) && $facultyHasEmploymentClassification) {
     $classificationSql = "
         SELECT
             faculty_id,
@@ -137,99 +147,242 @@ if ($facultyHasEmploymentClassification) {
     }
 }
 
-$selectParts = [
-    'fw.faculty_id',
-    'cs.schedule_id',
-    'o.offering_id',
-    $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
-    $classScheduleHasType ? 'cs.schedule_type AS schedule_type' : "'LEC' AS schedule_type",
-    'sm.sub_code',
-    'ps.lec_units',
-    'ps.lab_units',
-    'ps.total_units'
-];
-
-$orderParts = [
-    'fw.faculty_id',
-    'sec.section_name',
-    'sm.sub_code',
-    $classScheduleHasGroupId ? 'COALESCE(cs.schedule_group_id, cs.schedule_id)' : 'cs.schedule_id'
-];
-
-if ($classScheduleHasType) {
-    $orderParts[] = "FIELD(cs.schedule_type, 'LEC', 'LAB')";
-}
-
-$rawSql = "
-    SELECT
-        " . implode(",\n        ", $selectParts) . "
-    FROM tbl_faculty_workload_sched fw
-    INNER JOIN tbl_class_schedule cs
-        ON cs.schedule_id = fw.schedule_id
-    INNER JOIN tbl_prospectus_offering o
-        ON o.offering_id = cs.offering_id
-    {$liveOfferingJoins}
-    INNER JOIN tbl_program p
-        ON p.program_id = o.program_id
-    INNER JOIN tbl_subject_masterlist sm
-        ON sm.sub_id = ps.sub_id
-    WHERE fw.ay_id = ?
-      AND fw.semester = ?
-      AND fw.faculty_id IN ({$facultyIdList})
-    ORDER BY " . implode(",\n             ", $orderParts) . "
-";
-
-$rawStmt = $conn->prepare($rawSql);
-$rawStmt->bind_param("ii", $ayId, $semester);
-$rawStmt->execute();
-$rawRes = $rawStmt->get_result();
-
 $rowsByFacultyContext = [];
 $preparationMap = [];
 $offeringIds = [];
 
-while ($row = $rawRes->fetch_assoc()) {
-    $facultyId = (int)($row['faculty_id'] ?? 0);
-    if (!isset($summaries[$facultyId])) {
-        continue;
-    }
-
-    $offeringId = (int)($row['offering_id'] ?? 0);
-    $contextKey = workload_overview_context_key(
-        (int)($row['group_id'] ?? 0),
-        (int)($row['schedule_id'] ?? 0),
-        $offeringId
-    );
-
-    if (!isset($rowsByFacultyContext[$facultyId])) {
-        $rowsByFacultyContext[$facultyId] = [];
-    }
-
-    if (!isset($rowsByFacultyContext[$facultyId][$contextKey])) {
-        $rowsByFacultyContext[$facultyId][$contextKey] = [];
-    }
-
-    $rowsByFacultyContext[$facultyId][$contextKey][] = [
-        'schedule_type' => (string)($row['schedule_type'] ?? 'LEC'),
-        'lec_units' => (float)($row['lec_units'] ?? 0),
-        'lab_units' => (float)($row['lab_units'] ?? 0),
-        'total_units' => (float)($row['total_units'] ?? 0)
+if (!empty($facultyIds)) {
+    $selectParts = [
+        'fw.faculty_id',
+        'cs.schedule_id',
+        'o.offering_id',
+        $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
+        $classScheduleHasType ? 'cs.schedule_type AS schedule_type' : "'LEC' AS schedule_type",
+        'sm.sub_code',
+        'ps.lec_units',
+        'ps.lab_units',
+        'ps.total_units'
     ];
 
-    if ($offeringId > 0) {
-        $offeringIds[$offeringId] = true;
+    $orderParts = [
+        'fw.faculty_id',
+        'sec.section_name',
+        'sm.sub_code',
+        $classScheduleHasGroupId ? 'COALESCE(cs.schedule_group_id, cs.schedule_id)' : 'cs.schedule_id'
+    ];
+
+    if ($classScheduleHasType) {
+        $orderParts[] = "FIELD(cs.schedule_type, 'LEC', 'LAB')";
     }
 
-    $preparationKey = trim((string)($row['sub_code'] ?? ''));
-    if ($preparationKey !== '') {
-        if (!isset($preparationMap[$facultyId])) {
-            $preparationMap[$facultyId] = [];
+    $rawSql = "
+        SELECT
+            " . implode(",\n            ", $selectParts) . "
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$liveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        INNER JOIN tbl_subject_masterlist sm
+            ON sm.sub_id = ps.sub_id
+        WHERE fw.ay_id = ?
+          AND fw.semester = ?
+          AND fw.faculty_id IN ({$facultyIdList})
+        ORDER BY " . implode(",\n                 ", $orderParts) . "
+    ";
+
+    $rawStmt = $conn->prepare($rawSql);
+    if ($rawStmt instanceof mysqli_stmt) {
+        $rawStmt->bind_param("ii", $ayId, $semester);
+        $rawStmt->execute();
+        $rawRes = $rawStmt->get_result();
+
+        while ($row = $rawRes->fetch_assoc()) {
+            $facultyId = (int)($row['faculty_id'] ?? 0);
+            if (!isset($summaries[$facultyId])) {
+                continue;
+            }
+
+            $offeringId = (int)($row['offering_id'] ?? 0);
+            $contextKey = workload_overview_context_key(
+                (int)($row['group_id'] ?? 0),
+                (int)($row['schedule_id'] ?? 0),
+                $offeringId
+            );
+
+            if (!isset($rowsByFacultyContext[$facultyId])) {
+                $rowsByFacultyContext[$facultyId] = [];
+            }
+
+            if (!isset($rowsByFacultyContext[$facultyId][$contextKey])) {
+                $rowsByFacultyContext[$facultyId][$contextKey] = [];
+            }
+
+            $rowsByFacultyContext[$facultyId][$contextKey][] = [
+                'schedule_type' => (string)($row['schedule_type'] ?? 'LEC'),
+                'lec_units' => (float)($row['lec_units'] ?? 0),
+                'lab_units' => (float)($row['lab_units'] ?? 0),
+                'total_units' => (float)($row['total_units'] ?? 0)
+            ];
+
+            if ($offeringId > 0) {
+                $offeringIds[$offeringId] = true;
+            }
+
+            $preparationKey = trim((string)($row['sub_code'] ?? ''));
+            if ($preparationKey !== '') {
+                if (!isset($preparationMap[$facultyId])) {
+                    $preparationMap[$facultyId] = [];
+                }
+                $preparationMap[$facultyId][$preparationKey] = true;
+            }
         }
-        $preparationMap[$facultyId][$preparationKey] = true;
+
+        $rawStmt->close();
     }
 }
 
-$rawStmt->close();
+$facultyNeedSummaries = [];
+$rowsByFacultyNeedContext = [];
+$facultyNeedPreparationMap = [];
+
+if (!empty($facultyNeedIds)) {
+    synk_faculty_need_ensure_tables($conn);
+    $facultyNeedIdList = implode(',', array_map('intval', $facultyNeedIds));
+
+    $validNeedSql = "
+        SELECT faculty_need_id
+        FROM `" . synk_faculty_need_table_name() . "`
+        WHERE college_id = ?
+          AND ay_id = ?
+          AND semester = ?
+          AND status = 'active'
+          AND faculty_need_id IN ({$facultyNeedIdList})
+    ";
+
+    $validNeedStmt = $conn->prepare($validNeedSql);
+    if ($validNeedStmt instanceof mysqli_stmt) {
+        $validNeedStmt->bind_param('iii', $collegeId, $ayId, $semester);
+        $validNeedStmt->execute();
+        $validNeedRes = $validNeedStmt->get_result();
+
+        if ($validNeedRes instanceof mysqli_result) {
+            while ($needRow = $validNeedRes->fetch_assoc()) {
+                $facultyNeedId = (int)($needRow['faculty_need_id'] ?? 0);
+                if ($facultyNeedId <= 0) {
+                    continue;
+                }
+
+                $facultyNeedSummaries[$facultyNeedId] = [
+                    'faculty_need_id' => $facultyNeedId,
+                    'workload_load' => 0.0,
+                    'total_load' => 0.0,
+                    'total_preparations' => 0
+                ];
+            }
+        }
+
+        $validNeedStmt->close();
+    }
+
+    if (!empty($facultyNeedSummaries)) {
+        $validFacultyNeedIdList = implode(',', array_map('intval', array_keys($facultyNeedSummaries)));
+        $needSelectParts = [
+            'fw.faculty_need_id',
+            'cs.schedule_id',
+            'o.offering_id',
+            $classScheduleHasGroupId ? 'cs.schedule_group_id AS group_id' : 'NULL AS group_id',
+            $classScheduleHasType ? 'cs.schedule_type AS schedule_type' : "'LEC' AS schedule_type",
+            'sm.sub_code',
+            'ps.lec_units',
+            'ps.lab_units',
+            'ps.total_units'
+        ];
+
+        $needOrderParts = [
+            'fw.faculty_need_id',
+            'sec.section_name',
+            'sm.sub_code',
+            $classScheduleHasGroupId ? 'COALESCE(cs.schedule_group_id, cs.schedule_id)' : 'cs.schedule_id'
+        ];
+
+        if ($classScheduleHasType) {
+            $needOrderParts[] = "FIELD(cs.schedule_type, 'LEC', 'LAB')";
+        }
+
+        $needRawSql = "
+            SELECT
+                " . implode(",\n                ", $needSelectParts) . "
+            FROM `" . synk_faculty_need_workload_table_name() . "` fw
+            INNER JOIN tbl_class_schedule cs
+                ON cs.schedule_id = fw.schedule_id
+            INNER JOIN tbl_prospectus_offering o
+                ON o.offering_id = cs.offering_id
+            {$liveOfferingJoins}
+            INNER JOIN tbl_program p
+                ON p.program_id = o.program_id
+            INNER JOIN tbl_subject_masterlist sm
+                ON sm.sub_id = ps.sub_id
+            WHERE fw.ay_id = ?
+              AND fw.semester = ?
+              AND fw.faculty_need_id IN ({$validFacultyNeedIdList})
+            ORDER BY " . implode(",\n                     ", $needOrderParts) . "
+        ";
+
+        $needRawStmt = $conn->prepare($needRawSql);
+        if ($needRawStmt instanceof mysqli_stmt) {
+            $needRawStmt->bind_param('ii', $ayId, $semester);
+            $needRawStmt->execute();
+            $needRawRes = $needRawStmt->get_result();
+
+            while ($needRow = $needRawRes->fetch_assoc()) {
+                $facultyNeedId = (int)($needRow['faculty_need_id'] ?? 0);
+                if (!isset($facultyNeedSummaries[$facultyNeedId])) {
+                    continue;
+                }
+
+                $offeringId = (int)($needRow['offering_id'] ?? 0);
+                $contextKey = workload_overview_context_key(
+                    (int)($needRow['group_id'] ?? 0),
+                    (int)($needRow['schedule_id'] ?? 0),
+                    $offeringId
+                );
+
+                if (!isset($rowsByFacultyNeedContext[$facultyNeedId])) {
+                    $rowsByFacultyNeedContext[$facultyNeedId] = [];
+                }
+
+                if (!isset($rowsByFacultyNeedContext[$facultyNeedId][$contextKey])) {
+                    $rowsByFacultyNeedContext[$facultyNeedId][$contextKey] = [];
+                }
+
+                $rowsByFacultyNeedContext[$facultyNeedId][$contextKey][] = [
+                    'schedule_type' => (string)($needRow['schedule_type'] ?? 'LEC'),
+                    'lec_units' => (float)($needRow['lec_units'] ?? 0),
+                    'lab_units' => (float)($needRow['lab_units'] ?? 0),
+                    'total_units' => (float)($needRow['total_units'] ?? 0)
+                ];
+
+                if ($offeringId > 0) {
+                    $offeringIds[$offeringId] = true;
+                }
+
+                $preparationKey = trim((string)($needRow['sub_code'] ?? ''));
+                if ($preparationKey !== '') {
+                    if (!isset($facultyNeedPreparationMap[$facultyNeedId])) {
+                        $facultyNeedPreparationMap[$facultyNeedId] = [];
+                    }
+                    $facultyNeedPreparationMap[$facultyNeedId][$preparationKey] = true;
+                }
+            }
+
+            $needRawStmt->close();
+        }
+    }
+}
 
 $contextTotals = [];
 if (!empty($offeringIds)) {
@@ -292,9 +445,25 @@ foreach ($summaries as $facultyId => &$summary) {
 }
 unset($summary);
 
+foreach ($facultyNeedSummaries as $facultyNeedId => &$facultyNeedSummary) {
+    $contextRows = $rowsByFacultyNeedContext[$facultyNeedId] ?? [];
+    $totalLoad = 0.0;
+
+    foreach ($contextRows as $contextKey => $rows) {
+        $metrics = synk_schedule_sum_display_metrics($rows, $contextTotals[$contextKey] ?? []);
+        $totalLoad += (float)($metrics['faculty_load'] ?? 0);
+    }
+
+    $facultyNeedSummary['workload_load'] = round($totalLoad, 2);
+    $facultyNeedSummary['total_preparations'] = count($facultyNeedPreparationMap[$facultyNeedId] ?? []);
+    $facultyNeedSummary['total_load'] = round($facultyNeedSummary['workload_load'], 2);
+}
+unset($facultyNeedSummary);
+
 echo json_encode([
     'status' => 'ok',
-    'faculty' => array_values($summaries)
+    'faculty' => array_values($summaries),
+    'faculty_needs' => array_values($facultyNeedSummaries)
 ]);
 exit;
 ?>

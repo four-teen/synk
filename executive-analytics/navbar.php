@@ -41,7 +41,7 @@ $execNavbarShowAllCampusesLink = !empty($execNavbarShowAllCampusesLink);
           <span><?php echo synk_exec_analytics_h((string)($execNavbarViewer['role_label'] ?? 'Executive Viewer')); ?></span>
         </span>
 
-        <a href="logout.php" class="btn exec-toolbar-button danger exec-toolbar-button-logout">
+        <a href="logout.php" class="btn exec-toolbar-button danger exec-toolbar-button-logout" aria-label="Log out" title="Log out">
           <i class="bx bx-log-out"></i>
           <span>Log Out</span>
         </a>
