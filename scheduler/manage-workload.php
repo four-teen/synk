@@ -4231,6 +4231,29 @@ $(document).ready(function () {
         });
     }
 
+    function fetchConsolidatedAssigneeWorkloadPayload(option, termContext) {
+        const assigneeType = String(option?.assignee_type || "faculty").trim() === "faculty_need"
+            ? "faculty_need"
+            : "faculty";
+        const facultyId = assigneeType === "faculty" ? (Number(option?.faculty_id) || 0) : 0;
+        const facultyNeedId = assigneeType === "faculty_need" ? (Number(option?.faculty_need_id) || 0) : 0;
+
+        return new Promise(function (resolve, reject) {
+            $.ajax({
+                url: "../backend/query_load_faculty_workload.php",
+                type: "POST",
+                dataType: "json",
+                data: {
+                    assignee_type: assigneeType,
+                    faculty_id: facultyId,
+                    faculty_need_id: facultyNeedId,
+                    ay_id: termContext.ayId,
+                    semester: termContext.semesterNum
+                }
+            }).done(resolve).fail(reject);
+        });
+    }
+
     function buildConsolidatedScheduleLine(row, includeTypeTag) {
         const dayLabel = String(row?.days || "").trim();
         const timeLabel = String(row?.time || "").trim();
@@ -4337,7 +4360,9 @@ $(document).ready(function () {
         }
 
         return {
+            assignee_type: String(option?.assignee_type || "faculty").trim() === "faculty_need" ? "faculty_need" : "faculty",
             faculty_id: Number(option?.faculty_id) || 0,
+            faculty_need_id: Number(option?.faculty_need_id) || 0,
             full_name: String(option?.full_name || "").trim(),
             display_name: uppercaseDisplayText(option?.full_name || ""),
             total_preparations: totalPreparations,
@@ -4598,14 +4623,30 @@ $(document).ready(function () {
             return;
         }
 
-        const facultyOptions = getFacultyOptionList()
+        const facultyOptions = getFacultyOptionList().map(function (option) {
+            return {
+                assignee_type: "faculty",
+                faculty_id: option.faculty_id,
+                faculty_need_id: 0,
+                full_name: option.full_name
+            };
+        });
+        const facultyNeedOptions = getFacultyNeedOptionList().map(function (option) {
+            return {
+                assignee_type: "faculty_need",
+                faculty_id: 0,
+                faculty_need_id: option.faculty_need_id,
+                full_name: option.need_label
+            };
+        });
+        const assigneeOptions = facultyOptions.concat(facultyNeedOptions)
             .slice()
             .sort(function (left, right) {
                 return String(left.full_name || "").localeCompare(String(right.full_name || ""));
             });
 
-        if (facultyOptions.length === 0) {
-            Swal.fire("No Faculty", "No active faculty are available in this college for the selected term.", "info");
+        if (assigneeOptions.length === 0) {
+            Swal.fire("No Faculty", "No active faculty or faculty need is available in this college for the selected term.", "info");
             return;
         }
 
@@ -4635,24 +4676,32 @@ $(document).ready(function () {
                     return [Number(row?.faculty_id) || 0, row];
                 })
             );
+            const facultyNeedOverviewMap = new Map(
+                (Array.isArray(facultyNeedOverviewCache) ? facultyNeedOverviewCache : []).map(function (row) {
+                    return [Number(row?.faculty_need_id) || 0, row];
+                })
+            );
             const records = [];
 
-            for (let index = 0; index < facultyOptions.length; index++) {
-                const option = facultyOptions[index];
-                const percent = Math.round(((index + 1) / facultyOptions.length) * 86);
+            for (let index = 0; index < assigneeOptions.length; index++) {
+                const option = assigneeOptions[index];
+                const percent = Math.round(((index + 1) / assigneeOptions.length) * 86);
                 setConsolidatedReportProgress(
                     percent,
-                    `Loading ${option.full_name} (${index + 1} of ${facultyOptions.length})...`
+                    `Loading ${option.full_name} (${index + 1} of ${assigneeOptions.length})...`
                 );
 
                 try {
-                    const payload = await fetchConsolidatedFacultyWorkloadPayload(option.faculty_id, termContext);
-                    const record = buildConsolidatedFacultyRecord(option, payload, overviewMap.get(option.faculty_id) || null);
+                    const payload = await fetchConsolidatedAssigneeWorkloadPayload(option, termContext);
+                    const overviewRow = option.assignee_type === "faculty_need"
+                        ? (facultyNeedOverviewMap.get(option.faculty_need_id) || null)
+                        : (overviewMap.get(option.faculty_id) || null);
+                    const record = buildConsolidatedFacultyRecord(option, payload, overviewRow);
                     if (record) {
                         records.push(record);
                     }
                 } catch (facultyError) {
-                    console.error("Failed to load consolidated workload for faculty", option.faculty_id, facultyError);
+                    console.error("Failed to load consolidated workload for assignee", option, facultyError);
                 }
             }
 
