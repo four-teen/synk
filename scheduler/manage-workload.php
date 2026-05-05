@@ -1795,6 +1795,8 @@ $consolidatedReportSignatories = [
             display: flex;
             flex-direction: column;
             gap: 1.25rem;
+            align-items: stretch;
+            overflow-x: auto;
         }
 
         .consolidated-report-loading {
@@ -1878,8 +1880,8 @@ $consolidatedReportSignatories = [
         }
 
         .consolidated-report-page {
-            --consolidated-page-width: min(100%, 1180px);
-            --consolidated-page-height: calc(var(--consolidated-page-width) * 0.6071428571);
+            --consolidated-page-width: 1344px;
+            --consolidated-page-height: 816px;
             position: relative;
             width: var(--consolidated-page-width);
             height: var(--consolidated-page-height);
@@ -1887,11 +1889,12 @@ $consolidatedReportSignatories = [
             background: #fff;
             box-shadow: 0 22px 50px rgba(25, 42, 70, 0.16);
             overflow: hidden;
+            flex: 0 0 auto;
         }
 
         .consolidated-report-page.is-measure {
-            --consolidated-page-width: 1400px;
-            --consolidated-page-height: 850px;
+            --consolidated-page-width: 1344px;
+            --consolidated-page-height: 816px;
             box-shadow: none;
             margin: 0;
         }
@@ -1978,6 +1981,9 @@ $consolidatedReportSignatories = [
             border: 1px solid #000;
             padding: 0.18rem 0.22rem;
             vertical-align: top;
+            box-sizing: border-box;
+            overflow-wrap: anywhere;
+            word-break: normal;
         }
 
         .consolidated-report-table thead th {
@@ -2014,7 +2020,16 @@ $consolidatedReportSignatories = [
         .consolidated-cell-total,
         .consolidated-cell-remark {
             text-align: center;
-            vertical-align: middle !important;
+            vertical-align: top !important;
+        }
+
+        .consolidated-cell-index,
+        .consolidated-cell-name,
+        .consolidated-cell-prep,
+        .consolidated-cell-designation,
+        .consolidated-cell-total,
+        .consolidated-cell-remark {
+            padding-top: 0.28rem !important;
         }
 
         .consolidated-cell-index {
@@ -2026,6 +2041,7 @@ $consolidatedReportSignatories = [
             width: 12%;
             font-weight: 700;
             text-transform: uppercase;
+            line-height: 1.12;
         }
 
         .consolidated-cell-prep {
@@ -2137,6 +2153,12 @@ $consolidatedReportSignatories = [
             vertical-align: middle !important;
         }
 
+        .consolidated-faculty-block,
+        .consolidated-report-table tr {
+            page-break-inside: avoid;
+            break-inside: avoid;
+        }
+
         .consolidated-faculty-total-row .consolidated-cell-load,
         .consolidated-faculty-total-row .consolidated-cell-designation,
         .consolidated-faculty-total-row .consolidated-cell-remark-total {
@@ -2211,8 +2233,8 @@ $consolidatedReportSignatories = [
         }
 
         @media (max-width: 1199.98px) {
-            .consolidated-report-page {
-                --consolidated-page-width: min(100%, 1040px);
+            .consolidated-report-preview-root {
+                align-items: flex-start;
             }
         }
 
@@ -4424,12 +4446,35 @@ $(document).ready(function () {
         `;
     }
 
-    function renderConsolidatedFacultyBlock(record) {
-        const rows = Array.isArray(record?.entries) && record.entries.length > 0
-            ? record.entries
+    function renderConsolidatedReportColGroup() {
+        const columnWidths = [
+            3.1, 11.4, 4.4, 6.8, 15.6,
+            10.9, 9.1, 4.8, 4.4, 4,
+            4, 4.8, 8.3, 4.3, 4.1
+        ];
+
+        return `
+            <colgroup>
+                ${columnWidths.map(function (width) {
+                    return `<col style="width:${width}%">`;
+                }).join("")}
+            </colgroup>
+        `;
+    }
+
+    function renderConsolidatedFacultyBlock(record, options = {}) {
+        const rows = Array.isArray(options.entries)
+            ? options.entries
+            : (Array.isArray(record?.entries) && record.entries.length > 0
+                ? record.entries
+                : []);
+        const safeRows = rows.length > 0
+            ? rows
             : [];
-        const contentRowspan = Math.max(rows.length, 1);
-        const blockRowspan = contentRowspan + 1;
+        const showTotalRow = options.showTotalRow !== false;
+        const contentRowspan = Math.max(safeRows.length, 1);
+        const blockRowspan = contentRowspan + (showTotalRow ? 1 : 0);
+        const blockClasses = ["consolidated-faculty-block"];
         const designationHtml = record.designation_text
             ? `<div class="consolidated-designation-title">${escapeHtml(record.designation_text)}</div>`
             : (record.designation_units > 0 ? '<div class="consolidated-designation-title">Load Displacement</div>' : "&nbsp;");
@@ -4437,9 +4482,13 @@ $(document).ready(function () {
             ? formatConsolidatedRemarkVariance(record.remark_total)
             : "";
 
+        if (options.continuation) {
+            blockClasses.push("is-continuation");
+        }
+
         return `
-            <tbody class="consolidated-faculty-block">
-                ${rows.map(function (entry, index) {
+            <tbody class="${blockClasses.join(" ")}">
+                ${safeRows.map(function (entry, index) {
                     const scheduleHtml = (Array.isArray(entry?.schedule_lines) ? entry.schedule_lines : ["-"])
                         .map(function (line) {
                             return `<span class="consolidated-schedule-line">${escapeHtml(line)}</span>`;
@@ -4474,20 +4523,22 @@ $(document).ready(function () {
                         </tr>
                     `;
                 }).join("")}
-                <tr class="consolidated-faculty-total-row">
-                    <td class="consolidated-cell-code">&nbsp;</td>
-                    <td class="consolidated-cell-title">&nbsp;</td>
-                    <td class="consolidated-cell-schedule">&nbsp;</td>
-                    <td class="consolidated-cell-course">&nbsp;</td>
-                    <td class="consolidated-cell-students">&nbsp;</td>
-                    <td class="consolidated-cell-units">&nbsp;</td>
-                    <td class="consolidated-cell-hours">&nbsp;</td>
-                    <td class="consolidated-cell-hours">&nbsp;</td>
-                    <td class="consolidated-cell-load">${escapeHtml(formatNumber(record.teaching_load || 0))}</td>
-                    <td class="consolidated-cell-designation">${record.designation_units > 0 ? escapeHtml(formatNumber(record.designation_units)) : "&nbsp;"}</td>
-                    <td class="consolidated-cell-total">&nbsp;</td>
-                    <td class="consolidated-cell-remark-total">${remarkTotalText ? escapeHtml(remarkTotalText) : "&nbsp;"}</td>
-                </tr>
+                ${showTotalRow ? `
+                    <tr class="consolidated-faculty-total-row">
+                        <td class="consolidated-cell-code">&nbsp;</td>
+                        <td class="consolidated-cell-title">&nbsp;</td>
+                        <td class="consolidated-cell-schedule">&nbsp;</td>
+                        <td class="consolidated-cell-course">&nbsp;</td>
+                        <td class="consolidated-cell-students">&nbsp;</td>
+                        <td class="consolidated-cell-units">&nbsp;</td>
+                        <td class="consolidated-cell-hours">&nbsp;</td>
+                        <td class="consolidated-cell-hours">&nbsp;</td>
+                        <td class="consolidated-cell-load">${escapeHtml(formatNumber(record.teaching_load || 0))}</td>
+                        <td class="consolidated-cell-designation">${record.designation_units > 0 ? escapeHtml(formatNumber(record.designation_units)) : "&nbsp;"}</td>
+                        <td class="consolidated-cell-total">&nbsp;</td>
+                        <td class="consolidated-cell-remark-total">${remarkTotalText ? escapeHtml(remarkTotalText) : "&nbsp;"}</td>
+                    </tr>
+                ` : ""}
             </tbody>
         `;
     }
@@ -4536,6 +4587,7 @@ $(document).ready(function () {
             : `
                 <div class="consolidated-report-table-wrap">
                     <table class="consolidated-report-table">
+                        ${renderConsolidatedReportColGroup()}
                         ${renderConsolidatedReportTableHead(termContext)}
                     </table>
                 </div>
@@ -4572,6 +4624,78 @@ $(document).ready(function () {
         });
     }
 
+    function createConsolidatedMeasurePageBundle(measureRoot, generatedPages, termContext) {
+        const pageBundle = createConsolidatedReportPage(termContext, { measure: true });
+        measureRoot.appendChild(pageBundle.page);
+        generatedPages.push(pageBundle.page);
+        return pageBundle;
+    }
+
+    function consolidatedReportPageOverflows(pageBundle) {
+        if (!pageBundle?.inner) {
+            return false;
+        }
+
+        return pageBundle.inner.scrollHeight > pageBundle.inner.clientHeight + 1;
+    }
+
+    function pageHasConsolidatedReportRows(pageBundle) {
+        return Boolean(pageBundle?.table?.querySelector("tbody"));
+    }
+
+    function createConsolidatedFacultyChunkElement(record, entries, options = {}) {
+        return createConsolidatedReportElement(renderConsolidatedFacultyBlock(record, {
+            entries,
+            continuation: Boolean(options.continuation),
+            showTotalRow: options.showTotalRow !== false
+        }));
+    }
+
+    function consolidatedFacultyChunkFits(pageBundle, record, entries, options = {}) {
+        const blockElement = createConsolidatedFacultyChunkElement(record, entries, options);
+        if (!(blockElement instanceof HTMLElement)) {
+            return false;
+        }
+
+        pageBundle.table.appendChild(blockElement);
+        const fits = !consolidatedReportPageOverflows(pageBundle);
+        pageBundle.table.removeChild(blockElement);
+        return fits;
+    }
+
+    function getConsolidatedFittableEntryCount(pageBundle, record, entries, startIndex) {
+        const safeEntries = Array.isArray(entries) ? entries : [];
+        const remainingCount = safeEntries.length - startIndex;
+        let bestCount = 0;
+
+        for (let count = 1; count <= remainingCount; count++) {
+            const isFinalChunk = (startIndex + count) >= safeEntries.length;
+            const chunkEntries = safeEntries.slice(startIndex, startIndex + count);
+            const fits = consolidatedFacultyChunkFits(pageBundle, record, chunkEntries, {
+                continuation: startIndex > 0,
+                showTotalRow: isFinalChunk
+            });
+
+            if (!fits) {
+                break;
+            }
+
+            bestCount = count;
+        }
+
+        return bestCount;
+    }
+
+    function appendConsolidatedFacultyChunk(pageBundle, record, entries, options = {}) {
+        const blockElement = createConsolidatedFacultyChunkElement(record, entries, options);
+        if (!(blockElement instanceof HTMLElement)) {
+            return false;
+        }
+
+        pageBundle.table.appendChild(blockElement);
+        return true;
+    }
+
     function buildConsolidatedPreviewHtml(records, termContext) {
         const measureRoot = document.getElementById("consolidatedReportMeasureRoot");
         if (!measureRoot) {
@@ -4580,24 +4704,38 @@ $(document).ready(function () {
 
         measureRoot.innerHTML = "";
         const generatedPages = [];
-        let pageBundle = createConsolidatedReportPage(termContext, { measure: true });
-        measureRoot.appendChild(pageBundle.page);
-        generatedPages.push(pageBundle.page);
+        let pageBundle = createConsolidatedMeasurePageBundle(measureRoot, generatedPages, termContext);
 
         records.forEach(function (record) {
-            const blockElement = createConsolidatedReportElement(renderConsolidatedFacultyBlock(record));
-            if (!(blockElement instanceof HTMLElement)) {
-                return;
-            }
+            const entries = Array.isArray(record?.entries) && record.entries.length > 0
+                ? record.entries
+                : [];
+            let startIndex = 0;
 
-            pageBundle.table.appendChild(blockElement);
+            while (startIndex < entries.length) {
+                let fitCount = getConsolidatedFittableEntryCount(pageBundle, record, entries, startIndex);
 
-            if (pageBundle.inner.scrollHeight > pageBundle.inner.clientHeight + 2) {
-                pageBundle.table.removeChild(blockElement);
-                pageBundle = createConsolidatedReportPage(termContext, { measure: true });
-                measureRoot.appendChild(pageBundle.page);
-                generatedPages.push(pageBundle.page);
-                pageBundle.table.appendChild(blockElement);
+                if (fitCount <= 0 && pageHasConsolidatedReportRows(pageBundle)) {
+                    pageBundle = createConsolidatedMeasurePageBundle(measureRoot, generatedPages, termContext);
+                    fitCount = getConsolidatedFittableEntryCount(pageBundle, record, entries, startIndex);
+                }
+
+                if (fitCount <= 0) {
+                    fitCount = 1;
+                }
+
+                const chunkEntries = entries.slice(startIndex, startIndex + fitCount);
+                const isFinalChunk = (startIndex + fitCount) >= entries.length;
+                const appended = appendConsolidatedFacultyChunk(pageBundle, record, chunkEntries, {
+                    continuation: startIndex > 0,
+                    showTotalRow: isFinalChunk
+                });
+
+                if (!appended) {
+                    break;
+                }
+
+                startIndex += fitCount;
             }
         });
 
