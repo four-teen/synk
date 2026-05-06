@@ -4,19 +4,10 @@ ob_start();
 
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
-require_once '../backend/scheduler_access_helper.php';
 require_once '../backend/workload_audit_helper.php';
 
-synk_scheduler_bootstrap_session_scope($conn);
-
-if (!isset($_SESSION['user_id']) || (string)($_SESSION['role'] ?? '') !== 'scheduler') {
+if (!isset($_SESSION['user_id']) || (string)($_SESSION['role'] ?? '') !== 'admin') {
     header('Location: ../index.php');
-    exit;
-}
-
-$collegeId = (int)($_SESSION['college_id'] ?? 0);
-if ($collegeId <= 0) {
-    echo 'Scheduler error: missing college assignment.';
     exit;
 }
 
@@ -115,6 +106,23 @@ function audit_page_assignment_label(array $row, array $details): string
     return $facultyId > 0 ? 'Faculty #' . $facultyId : '-';
 }
 
+function audit_page_college_label(array $row, array $details): string
+{
+    $collegeName = trim((string)($row['college_name'] ?? ''));
+    $detailCollegeLabel = trim((string)($details['college_label'] ?? ''));
+    $collegeId = (int)($row['college_id'] ?? 0);
+
+    if ($collegeName !== '') {
+        return $collegeName;
+    }
+
+    if ($detailCollegeLabel !== '') {
+        return $detailCollegeLabel;
+    }
+
+    return $collegeId > 0 ? 'College #' . $collegeId : 'College not captured';
+}
+
 function audit_page_scope_label(array $row, array $details): string
 {
     $actionType = (string)($row['action_type'] ?? '');
@@ -200,6 +208,7 @@ $defaultSemester = (int)($currentTerm['semester'] ?? 0);
 
 $selectedAction = trim((string)($_GET['action_type'] ?? ''));
 $selectedActor = (int)($_GET['actor_user_id'] ?? 0);
+$selectedCollegeId = (int)($_GET['college_id'] ?? 0);
 $selectedAyId = array_key_exists('ay_id', $_GET) ? (int)($_GET['ay_id'] ?? 0) : $defaultAyId;
 $selectedSemester = array_key_exists('semester', $_GET) ? (int)($_GET['semester'] ?? 0) : $defaultSemester;
 $selectedDateFrom = trim((string)($_GET['date_from'] ?? ''));
@@ -211,6 +220,7 @@ $selectedLimit = in_array($selectedLimit, [100, 250, 500], true) ? $selectedLimi
 $filters = [
     'action_type' => $selectedAction,
     'actor_user_id' => $selectedActor,
+    'college_id' => $selectedCollegeId,
     'ay_id' => $selectedAyId,
     'semester' => $selectedSemester,
     'date_from' => $selectedDateFrom,
@@ -218,9 +228,9 @@ $filters = [
     'search' => $selectedSearch,
 ];
 
-$auditRows = synk_workload_audit_fetch_logs($conn, $collegeId, $filters, $selectedLimit);
-$userOptions = synk_workload_audit_fetch_users($conn, $collegeId);
-$actionCounts = synk_workload_audit_fetch_action_counts($conn, $collegeId);
+$auditRows = synk_workload_audit_fetch_logs($conn, 0, $filters, $selectedLimit);
+$userOptions = synk_workload_audit_fetch_users($conn, 0);
+$actionCounts = synk_workload_audit_fetch_action_counts($conn, 0);
 
 $knownActions = [
     'workload_add' => synk_workload_audit_action_label('workload_add'),
@@ -249,9 +259,28 @@ if ($ayResult instanceof mysqli_result) {
     }
 }
 
+$collegeOptions = [];
+$collegeResult = $conn->query("
+    SELECT college_id, college_code, college_name
+    FROM tbl_college
+    WHERE status = 'active'
+    ORDER BY college_name ASC, college_code ASC
+");
+if ($collegeResult instanceof mysqli_result) {
+    while ($collegeRow = $collegeResult->fetch_assoc()) {
+        $collegeCode = trim((string)($collegeRow['college_code'] ?? ''));
+        $collegeName = trim((string)($collegeRow['college_name'] ?? ''));
+        $collegeOptions[] = [
+            'college_id' => (int)($collegeRow['college_id'] ?? 0),
+            'label' => trim($collegeCode . ' - ' . $collegeName, ' -'),
+        ];
+    }
+}
+
 $visibleTransactionCount = count($auditRows);
 $visibleAffectedCount = 0;
 $visibleUsers = [];
+$visibleColleges = [];
 $visibleAdds = 0;
 $visibleDeletes = 0;
 
@@ -260,6 +289,11 @@ foreach ($auditRows as $auditRow) {
     $actorId = (int)($auditRow['actor_user_id'] ?? 0);
     if ($actorId > 0) {
         $visibleUsers[$actorId] = true;
+    }
+
+    $rowCollegeId = (int)($auditRow['college_id'] ?? 0);
+    if ($rowCollegeId > 0) {
+        $visibleColleges[$rowCollegeId] = true;
     }
 
     $actionType = (string)($auditRow['action_type'] ?? '');
@@ -272,7 +306,13 @@ foreach ($auditRows as $auditRow) {
     }
 }
 
-$collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
+$selectedCollegeLabel = 'All Colleges';
+foreach ($collegeOptions as $collegeOption) {
+    if ((int)($collegeOption['college_id'] ?? 0) === $selectedCollegeId) {
+        $selectedCollegeLabel = (string)($collegeOption['label'] ?? 'Selected College');
+        break;
+    }
+}
 ?>
 <!DOCTYPE html>
 <html
@@ -286,7 +326,7 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
 <head>
   <meta charset="utf-8" />
   <meta name="viewport" content="width=device-width, initial-scale=1.0, user-scalable=no, minimum-scale=1.0, maximum-scale=1.0" />
-  <title>Workload Transactions | Synk Scheduler</title>
+  <title>Workload Transactions | Synk Administrator</title>
 
   <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
   <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
@@ -428,11 +468,11 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
                   <div class="text-uppercase text-muted fw-semibold small mb-2">User Audit</div>
                   <h4 class="audit-hero-title mb-2">Workload Transactions</h4>
                   <p class="text-muted mb-0">
-                    Review who added, removed, or cleared workload records for <?= audit_page_h($collegeLabel); ?>.
+                    Review who added, removed, or cleared workload records across scheduler accounts and colleges.
                   </p>
                 </div>
                 <div class="d-flex align-items-start gap-2 flex-wrap">
-                  <span class="badge bg-label-primary"><?= audit_page_h($collegeLabel); ?></span>
+                  <span class="badge bg-label-primary"><?= audit_page_h($selectedCollegeLabel); ?></span>
                   <span class="badge bg-label-info"><?= audit_page_h(audit_page_semester_label($selectedSemester)); ?></span>
                 </div>
               </div>
@@ -458,8 +498,8 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
                 </div>
                 <div class="col-sm-6 col-xl-3">
                   <div class="audit-stat p-3">
-                    <div class="audit-stat-label">Adds / Deletes</div>
-                    <div class="audit-stat-value mt-2"><?= number_format($visibleAdds); ?> / <?= number_format($visibleDeletes); ?></div>
+                    <div class="audit-stat-label">Colleges In View</div>
+                    <div class="audit-stat-value mt-2"><?= number_format(count($visibleColleges)); ?></div>
                   </div>
                 </div>
               </div>
@@ -487,6 +527,19 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
                       <?php $actorId = (int)($userRow['actor_user_id'] ?? 0); ?>
                       <option value="<?= $actorId; ?>" <?= $selectedActor === $actorId ? 'selected' : ''; ?>>
                         <?= audit_page_h($userRow['actor_display_name'] ?? 'Unknown user'); ?>
+                      </option>
+                    <?php endforeach; ?>
+                  </select>
+                </div>
+
+                <div class="col-md-3 col-xl-2">
+                  <label class="form-label" for="college_id">College</label>
+                  <select class="form-select" id="college_id" name="college_id">
+                    <option value="0">All colleges</option>
+                    <?php foreach ($collegeOptions as $collegeOption): ?>
+                      <?php $optionCollegeId = (int)($collegeOption['college_id'] ?? 0); ?>
+                      <option value="<?= $optionCollegeId; ?>" <?= $selectedCollegeId === $optionCollegeId ? 'selected' : ''; ?>>
+                        <?= audit_page_h($collegeOption['label'] ?? 'College'); ?>
                       </option>
                     <?php endforeach; ?>
                   </select>
@@ -561,10 +614,10 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
               <div class="d-flex flex-column flex-md-row justify-content-between gap-2 p-3 border-bottom">
                 <div>
                   <h5 class="mb-1">Transaction Log</h5>
-                  <div class="audit-muted">Newest transactions are shown first. Audit rows are append-only.</div>
+                <div class="audit-muted">Newest transactions are shown first. Audit rows are append-only and visible to administrators.</div>
                 </div>
-                <a href="manage-workload.php" class="btn btn-outline-primary align-self-start">
-                  <i class="bx bx-user-check me-1"></i> Open Workload
+                <a href="monitoring-faculty-load.php" class="btn btn-outline-primary align-self-start">
+                  <i class="bx bx-user-pin me-1"></i> Faculty Load Monitoring
                 </a>
               </div>
 
@@ -580,6 +633,7 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
                       <tr>
                         <th>Date / Time</th>
                         <th>User</th>
+                        <th>College</th>
                         <th>Action</th>
                         <th>Assignment</th>
                         <th>Class / Scope</th>
@@ -607,6 +661,12 @@ $collegeLabel = trim((string)($_SESSION['college_name'] ?? 'Assigned College'));
                             <div class="audit-muted">
                               <?= $actorId > 0 ? 'User #' . $actorId : 'User not captured'; ?>
                               <?= $actorRole !== '' ? ' | ' . audit_page_h(ucfirst($actorRole)) : ''; ?>
+                            </div>
+                          </td>
+                          <td style="min-width: 170px;">
+                            <div class="fw-semibold"><?= audit_page_h(audit_page_college_label($row, $details)); ?></div>
+                            <div class="audit-muted">
+                              <?= (int)($row['college_id'] ?? 0) > 0 ? 'College #' . (int)$row['college_id'] : 'Scope not captured'; ?>
                             </div>
                           </td>
                           <td>

@@ -634,9 +634,22 @@ function synk_workload_audit_fetch_logs(mysqli $conn, int $collegeId, array $fil
 
     $limit = max(25, min(500, $limit));
     $tableName = synk_workload_audit_table_name();
-    $where = ['l.college_id = ?'];
-    $types = 'i';
-    $params = [$collegeId];
+    $where = [];
+    $types = '';
+    $params = [];
+
+    if ($collegeId > 0) {
+        $where[] = 'l.college_id = ?';
+        $types .= 'i';
+        $params[] = $collegeId;
+    } else {
+        $filterCollegeId = (int)($filters['college_id'] ?? 0);
+        if ($filterCollegeId > 0) {
+            $where[] = 'l.college_id = ?';
+            $types .= 'i';
+            $params[] = $filterCollegeId;
+        }
+    }
 
     $actionType = trim((string)($filters['action_type'] ?? ''));
     if ($actionType !== '') {
@@ -694,6 +707,10 @@ function synk_workload_audit_fetch_logs(mysqli $conn, int $collegeId, array $fil
         array_push($params, $term, $term, $term, $term, $term);
     }
 
+    if (empty($where)) {
+        $where[] = '1 = 1';
+    }
+
     $sql = "
         SELECT
             l.*,
@@ -728,11 +745,12 @@ function synk_workload_audit_fetch_logs(mysqli $conn, int $collegeId, array $fil
 
 function synk_workload_audit_fetch_users(mysqli $conn, int $collegeId): array
 {
-    if (!synk_workload_audit_ensure_table($conn) || $collegeId <= 0) {
+    if (!synk_workload_audit_ensure_table($conn)) {
         return [];
     }
 
     $tableName = synk_workload_audit_table_name();
+    $whereSql = $collegeId > 0 ? 'WHERE l.college_id = ?' : '';
     $stmt = $conn->prepare("
         SELECT
             l.actor_user_id,
@@ -741,7 +759,7 @@ function synk_workload_audit_fetch_users(mysqli $conn, int $collegeId): array
         FROM `{$tableName}` l
         LEFT JOIN tbl_useraccount u
             ON u.user_id = l.actor_user_id
-        WHERE l.college_id = ?
+        {$whereSql}
         GROUP BY l.actor_user_id, u.username, l.actor_username
         ORDER BY actor_display_name ASC
     ");
@@ -750,7 +768,9 @@ function synk_workload_audit_fetch_users(mysqli $conn, int $collegeId): array
         return [];
     }
 
-    $stmt->bind_param('i', $collegeId);
+    if ($collegeId > 0) {
+        $stmt->bind_param('i', $collegeId);
+    }
     $stmt->execute();
     $result = $stmt->get_result();
     $rows = [];
@@ -771,15 +791,16 @@ function synk_workload_audit_fetch_users(mysqli $conn, int $collegeId): array
 
 function synk_workload_audit_fetch_action_counts(mysqli $conn, int $collegeId): array
 {
-    if (!synk_workload_audit_ensure_table($conn) || $collegeId <= 0) {
+    if (!synk_workload_audit_ensure_table($conn)) {
         return [];
     }
 
     $tableName = synk_workload_audit_table_name();
+    $whereSql = $collegeId > 0 ? 'WHERE college_id = ?' : '';
     $stmt = $conn->prepare("
         SELECT action_type, action_label, COUNT(*) AS transaction_count
         FROM `{$tableName}`
-        WHERE college_id = ?
+        {$whereSql}
         GROUP BY action_type, action_label
         ORDER BY action_label ASC
     ");
@@ -788,7 +809,9 @@ function synk_workload_audit_fetch_action_counts(mysqli $conn, int $collegeId): 
         return [];
     }
 
-    $stmt->bind_param('i', $collegeId);
+    if ($collegeId > 0) {
+        $stmt->bind_param('i', $collegeId);
+    }
     $stmt->execute();
     $result = $stmt->get_result();
     $rows = [];

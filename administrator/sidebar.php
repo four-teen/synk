@@ -204,6 +204,15 @@ $sidebarSections = [
                         'pages' => ['monitoring-faculty-load.php'],
                     ],
                     [
+                        'key' => 'workload_transactions',
+                        'href' => 'manage-workload-transactions.php',
+                        'icon_bg' => 'bg-label-warning',
+                        'icon' => 'bx-history',
+                        'title' => 'User Transactions',
+                        'description' => 'Audit workload changes across all scheduler accounts',
+                        'pages' => ['manage-workload-transactions.php'],
+                    ],
+                    [
                         'key' => 'alphabetical_courses',
                         'href' => 'report_alphabetical_courses.php',
                         'icon_bg' => 'bg-label-primary',
