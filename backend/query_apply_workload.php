@@ -5,6 +5,7 @@ require_once __DIR__ . '/offering_scope_helper.php';
 require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/academic_schedule_policy_helper.php';
 require_once __DIR__ . '/faculty_need_helper.php';
+require_once __DIR__ . '/workload_audit_helper.php';
 
 header('Content-Type: application/json');
 
@@ -294,6 +295,7 @@ $insSql = $isFacultyNeed
 $insStmt = $conn->prepare($insSql);
 
 $inserted = 0;
+$insertedWorkloadIds = [];
 $acceptedBatch = [];
 $conflicts = [];
 
@@ -329,11 +331,23 @@ foreach ($candidates as $cand) {
     $insStmt->bind_param('iiii', $sid, $targetId, $ay_id, $semester);
     if ($insStmt->execute() && $insStmt->affected_rows > 0) {
         $inserted++;
+        $newWorkloadId = (int)$conn->insert_id;
+        if ($newWorkloadId > 0) {
+            $insertedWorkloadIds[] = $newWorkloadId;
+        }
         $acceptedBatch[] = $cand;
     }
 }
 
 $insStmt->close();
+
+if (!empty($insertedWorkloadIds)) {
+    foreach (synk_workload_audit_fetch_workload_rows($conn, $assigneeType, $insertedWorkloadIds) as $auditRow) {
+        synk_workload_audit_record_workload_event($conn, 'workload_add', $auditRow, [
+            'selected_schedule_ids' => $schedule_ids,
+        ]);
+    }
+}
 
 /* ===============================
    RESPONSE

@@ -1,6 +1,7 @@
 <?php
 
 require_once __DIR__ . '/schema_helper.php';
+require_once __DIR__ . '/workload_audit_helper.php';
 
 function synk_faculty_need_table_name(): string
 {
@@ -205,7 +206,8 @@ function synk_faculty_need_delete(
     int $collegeId,
     int $ayId,
     int $semester,
-    int $facultyNeedId
+    int $facultyNeedId,
+    int $actorUserId = 0
 ): ?array {
     if ($collegeId <= 0 || $ayId <= 0 || $semester <= 0 || $facultyNeedId <= 0) {
         return null;
@@ -219,6 +221,44 @@ function synk_faculty_need_delete(
     }
 
     $workloadDeletedCount = 0;
+    $auditWorkloadRows = [];
+    $auditNeedWorkloadIds = [];
+    $auditScheduleIds = [];
+    if ($actorUserId > 0) {
+        $auditIdStmt = $conn->prepare("
+            SELECT need_workload_id
+            FROM `" . synk_faculty_need_workload_table_name() . "`
+            WHERE faculty_need_id = ?
+        ");
+
+        if ($auditIdStmt instanceof mysqli_stmt) {
+            $auditIdStmt->bind_param('i', $facultyNeedId);
+            $auditIdStmt->execute();
+            $auditIdResult = $auditIdStmt->get_result();
+
+            if ($auditIdResult instanceof mysqli_result) {
+                while ($auditIdRow = $auditIdResult->fetch_assoc()) {
+                    $needWorkloadId = (int)($auditIdRow['need_workload_id'] ?? 0);
+                    if ($needWorkloadId > 0) {
+                        $auditNeedWorkloadIds[] = $needWorkloadId;
+                    }
+                }
+            }
+
+            $auditIdStmt->close();
+        }
+
+        if (!empty($auditNeedWorkloadIds)) {
+            $auditWorkloadRows = synk_workload_audit_fetch_workload_rows($conn, 'faculty_need', $auditNeedWorkloadIds);
+            foreach ($auditWorkloadRows as $auditRow) {
+                $scheduleId = (int)($auditRow['schedule_id'] ?? 0);
+                if ($scheduleId > 0) {
+                    $auditScheduleIds[] = $scheduleId;
+                }
+            }
+        }
+    }
+
     $conn->begin_transaction();
 
     $deleteWorkloadStmt = $conn->prepare("
@@ -267,6 +307,33 @@ function synk_faculty_need_delete(
     if (!$conn->commit()) {
         $conn->rollback();
         return null;
+    }
+
+    if ($actorUserId > 0) {
+        foreach ($auditWorkloadRows as $auditRow) {
+            synk_workload_audit_record_workload_event($conn, 'faculty_need_workload_delete', $auditRow, [
+                'deleted_with_faculty_need_id' => $facultyNeedId,
+                'deleted_workload_count' => $workloadDeletedCount,
+            ]);
+        }
+
+        synk_workload_audit_record($conn, 'faculty_need_delete', [
+            'college_id' => $collegeId,
+            'ay_id' => $ayId,
+            'semester' => $semester,
+            'assignee_type' => 'faculty_need',
+            'faculty_need_id' => $facultyNeedId,
+            'entity_type' => 'faculty_need',
+            'entity_id' => $facultyNeedId,
+            'affected_count' => max(1, 1 + $workloadDeletedCount),
+            'details' => [
+                'faculty_need_id' => $facultyNeedId,
+                'need_label' => (string)($need['need_label'] ?? ''),
+                'deleted_workload_count' => $workloadDeletedCount,
+                'need_workload_ids' => array_values(array_unique($auditNeedWorkloadIds)),
+                'schedule_ids' => array_values(array_unique($auditScheduleIds)),
+            ],
+        ]);
     }
 
     return [

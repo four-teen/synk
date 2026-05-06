@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/faculty_need_helper.php';
+require_once __DIR__ . '/workload_audit_helper.php';
 
 if (!isset($_SESSION['user_id'])) exit;
 
@@ -45,6 +46,8 @@ if ($isFacultyNeed) {
     synk_faculty_need_ensure_tables($conn);
 }
 
+$auditRows = synk_workload_audit_fetch_workload_rows($conn, $assigneeType, $ids);
+
 $stmt = $conn->prepare("
     DELETE FROM `{$targetTable}`
     WHERE {$targetColumn} IN ($placeholders)
@@ -59,5 +62,16 @@ foreach ($ids as $index => $idValue) {
 
 call_user_func_array([$stmt, 'bind_param'], $params);
 $stmt->execute();
+$deletedCount = max(0, (int)$stmt->affected_rows);
 $stmt->close();
+
+if ($deletedCount > 0 && !empty($auditRows)) {
+    foreach ($auditRows as $auditRow) {
+        synk_workload_audit_record_workload_event($conn, 'workload_delete', $auditRow, [
+            'requested_workload_ids' => $ids,
+            'deleted_count' => $deletedCount,
+        ]);
+    }
+}
+
 exit;

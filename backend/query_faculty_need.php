@@ -2,6 +2,7 @@
 session_start();
 include 'db.php';
 require_once __DIR__ . '/faculty_need_helper.php';
+require_once __DIR__ . '/workload_audit_helper.php';
 
 header('Content-Type: application/json');
 
@@ -36,6 +37,23 @@ if ($action === 'create') {
         faculty_need_response('error', ['message' => 'Unable to create faculty need right now.']);
     }
 
+    synk_workload_audit_record($conn, 'faculty_need_create', [
+        'college_id' => $collegeId,
+        'ay_id' => $ayId,
+        'semester' => $semester,
+        'assignee_type' => 'faculty_need',
+        'faculty_need_id' => (int)($need['faculty_need_id'] ?? 0),
+        'entity_type' => 'faculty_need',
+        'entity_id' => (int)($need['faculty_need_id'] ?? 0),
+        'details' => [
+            'faculty_need_id' => (int)($need['faculty_need_id'] ?? 0),
+            'need_label' => (string)($need['need_label'] ?? ''),
+            'college_id' => $collegeId,
+            'ay_id' => $ayId,
+            'semester' => $semester,
+        ],
+    ]);
+
     faculty_need_response('ok', [
         'message' => 'Faculty need created successfully.',
         'need' => $need,
@@ -48,7 +66,7 @@ if ($action === 'delete') {
         faculty_need_response('error', ['message' => 'Invalid faculty need selected.']);
     }
 
-    $deleted = synk_faculty_need_delete($conn, $collegeId, $ayId, $semester, $facultyNeedId);
+    $deleted = synk_faculty_need_delete($conn, $collegeId, $ayId, $semester, $facultyNeedId, $userId);
     if (!is_array($deleted)) {
         faculty_need_response('error', ['message' => 'Unable to delete faculty need right now.']);
     }

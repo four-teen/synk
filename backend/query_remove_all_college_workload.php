@@ -1,6 +1,7 @@
 <?php
 session_start();
 include 'db.php';
+require_once __DIR__ . '/workload_audit_helper.php';
 
 header('Content-Type: application/json');
 
@@ -33,6 +34,8 @@ if ($ayId <= 0 || !in_array($semester, [1, 2, 3], true)) {
     respond('error', 'Select Academic Year and Semester first.');
 }
 
+$auditRows = synk_workload_audit_fetch_college_workload_rows($conn, $collegeId, $ayId, $semester);
+
 $deleteSql = "
     DELETE fw
     FROM tbl_faculty_workload_sched fw
@@ -61,6 +64,10 @@ if (!$deleteStmt->execute()) {
 
 $deletedCount = max(0, (int)$deleteStmt->affected_rows);
 $deleteStmt->close();
+
+if ($deletedCount > 0) {
+    synk_workload_audit_record_bulk_delete($conn, $collegeId, $ayId, $semester, $auditRows, $deletedCount);
+}
 
 respond(
     'ok',
