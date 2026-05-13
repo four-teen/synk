@@ -463,7 +463,7 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
   <script src="../assets/vendor/js/helpers.js"></script>
   <script src="../assets/js/config.js"></script>
 
-  <style>
+  <style id="consolidatedReportStyleTag">
     .report-hero {
       border: 1px solid #e3e8f2;
       box-shadow: 0 12px 30px rgba(67, 89, 113, 0.07);
@@ -482,9 +482,6 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
       gap: 1.25rem;
       align-items: stretch;
       overflow-x: auto;
-      padding: 1rem;
-      background: #eef3f9;
-      border-radius: 0 0 0.5rem 0.5rem;
     }
 
     .consolidated-report-loading {
@@ -715,21 +712,22 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
       padding-top: 0.28rem !important;
     }
 
-    .consolidated-cell-index,
-    .consolidated-cell-name,
-    .consolidated-cell-prep,
-    .consolidated-cell-code,
-    .consolidated-cell-load,
-    .consolidated-cell-total,
-    .consolidated-cell-remark,
-    .consolidated-course-title,
-    .consolidated-designation-title {
+    .consolidated-cell-index {
       font-weight: 700;
     }
 
     .consolidated-cell-name {
+      font-weight: 700;
       text-transform: uppercase;
       line-height: 1.12;
+    }
+
+    .consolidated-cell-prep,
+    .consolidated-cell-code,
+    .consolidated-cell-load,
+    .consolidated-cell-total,
+    .consolidated-cell-remark {
+      font-weight: 700;
     }
 
     .consolidated-campus-term {
@@ -746,6 +744,12 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
 
     .consolidated-campus-term-line + .consolidated-campus-term-line {
       margin-top: 0.08rem;
+    }
+
+    .consolidated-course-title,
+    .consolidated-designation-title {
+      font-weight: 700;
+      color: #000;
     }
 
     .consolidated-schedule-line {
@@ -844,6 +848,17 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
     @media (max-width: 1199.98px) {
       .consolidated-report-preview-root {
         align-items: flex-start;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .consolidated-signatory-top {
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      .consolidated-signatory-bottom {
+        max-width: 100%;
       }
     }
 
@@ -1899,6 +1914,7 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
       }
 
       function printReportPreview() {
+        var reportStyleTag;
         var frameId = "consolidatedReportPrintFrame";
         var existingFrame = document.getElementById(frameId);
         var printFrame;
@@ -1909,6 +1925,7 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
           return;
         }
 
+        reportStyleTag = document.getElementById("consolidatedReportStyleTag");
         if (existingFrame) {
           existingFrame.remove();
         }
@@ -1939,7 +1956,7 @@ $campusNameEscaped = htmlspecialchars($campusName, ENT_QUOTES, 'UTF-8');
             '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
             "<title>Campus Consolidated Faculty Workload</title>" +
             "<style>@media print {@page { size: legal landscape; margin: 0; }}</style>" +
-            '<style>' + document.querySelector("style").textContent + "</style>" +
+            (reportStyleTag ? reportStyleTag.outerHTML : "") +
           "</head>" +
           '<body class="consolidated-report-print-body">' +
             '<div class="consolidated-report-preview-root">' + reportGeneratedHtml + "</div>" +
