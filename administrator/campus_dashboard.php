@@ -4,9 +4,11 @@ ob_start();
 include '../backend/db.php';
 require_once '../backend/academic_term_helper.php';
 require_once '../backend/academic_schedule_policy_helper.php';
+require_once '../backend/faculty_need_helper.php';
 require_once '../backend/offering_scope_helper.php';
 require_once '../backend/schema_helper.php';
 require_once '../backend/schedule_block_helper.php';
+require_once '../backend/signatory_settings_helper.php';
 
 function campus_dashboard_day_token(string $day): string
 {
@@ -160,6 +162,18 @@ function campus_dashboard_format_load_value(float $value): string
     }
 
     return rtrim(rtrim(number_format($value, 2, '.', ''), '0'), '.');
+}
+
+function campus_dashboard_report_signatory_slot(array $settings, string $slotCode, string $fallbackLabel): array
+{
+    $row = is_array($settings[$slotCode] ?? null) ? $settings[$slotCode] : [];
+
+    return [
+        'slot_code' => $slotCode,
+        'label' => trim((string)($row['label'] ?? $fallbackLabel)) ?: $fallbackLabel,
+        'signatory_name' => trim((string)($row['signatory_name'] ?? '')),
+        'signatory_title' => trim((string)($row['signatory_title'] ?? '')),
+    ];
 }
 
 if (!isset($_SESSION['user_id'])) {
@@ -1500,6 +1514,293 @@ if ($facultyDirectoryJson === false) {
     $facultyDirectoryJson = '[]';
 }
 
+$globalSignatorySettings = synk_fetch_signatory_settings($conn, 'global', 0);
+$collegeSignatorySettings = $selectedCollegeId
+    ? synk_fetch_signatory_settings($conn, 'college', (int)$selectedCollegeId)
+    : [];
+$consolidatedReportSignatories = [
+    'prepared_by' => campus_dashboard_report_signatory_slot($collegeSignatorySettings, 'prepared_by', 'Prepared by'),
+    'checked_by_left' => campus_dashboard_report_signatory_slot($globalSignatorySettings, 'checked_by_left', 'Checked by'),
+    'checked_by_right' => campus_dashboard_report_signatory_slot($globalSignatorySettings, 'checked_by_right', 'Checked by'),
+    'recommending_approval' => campus_dashboard_report_signatory_slot($globalSignatorySettings, 'recommending_approval', 'Recommending Approval'),
+    'approved_by' => campus_dashboard_report_signatory_slot($globalSignatorySettings, 'approved_by', 'Approved by'),
+];
+
+$consolidatedReportScope = [
+    'view_type' => $selectedCollegeId ? 'college' : ($isUniversitySummary ? 'university' : 'campus'),
+    'campus_name' => $isUniversitySummary ? 'All Campuses' : $campusName,
+    'college_name' => $selectedCollegeId ? (string)$selectedCollegeName : 'All Colleges',
+    'scope_label' => $facultyDirectoryScopeLabel,
+];
+
+$consolidatedReportAssigneeMap = [];
+foreach ($facultyDirectory['rows'] as $facultyDirectoryRow) {
+    $facultyId = (int)($facultyDirectoryRow['faculty_id'] ?? 0);
+    if ($facultyId <= 0) {
+        continue;
+    }
+
+    $consolidatedReportAssigneeMap['faculty:' . $facultyId] = [
+        'assignee_type' => 'faculty',
+        'faculty_id' => $facultyId,
+        'faculty_need_id' => 0,
+        'college_id' => 0,
+        'full_name' => (string)($facultyDirectoryRow['full_name'] ?? ''),
+        'status' => (string)($facultyDirectoryRow['status'] ?? 'active'),
+        'designation_name' => (string)($facultyDirectoryRow['designation_name'] ?? ''),
+        'designation_label' => (string)($facultyDirectoryRow['designation_label'] ?? ''),
+        'designation_units' => round((float)($facultyDirectoryRow['designation_units'] ?? 0), 2),
+        'total_preparations' => (int)($facultyDirectoryRow['total_preparations'] ?? 0),
+        'college_label' => (string)($facultyDirectoryRow['college_label'] ?? ''),
+        'campus_label' => (string)($facultyDirectoryRow['campus_label'] ?? ''),
+    ];
+}
+
+if (
+    $analyticsReady
+    && $currentAyId > 0
+    && $currentSem > 0
+    && synk_table_exists($conn, 'tbl_faculty_workload_sched')
+    && synk_table_exists($conn, 'tbl_faculty')
+    && synk_table_exists($conn, 'tbl_class_schedule')
+    && synk_table_exists($conn, 'tbl_prospectus_offering')
+    && synk_table_exists($conn, 'tbl_program')
+    && synk_table_exists($conn, 'tbl_college')
+) {
+    $reportFacultyHasMiddleName = synk_table_has_column($conn, 'tbl_faculty', 'middle_name');
+    $reportFacultyHasExtName = synk_table_has_column($conn, 'tbl_faculty', 'ext_name');
+    $reportFacultyHasStatus = synk_table_has_column($conn, 'tbl_faculty', 'status');
+    $reportFacultyHasDesignationId = synk_table_has_column($conn, 'tbl_faculty', 'designation_id');
+    $reportFacultyDesignationTextColumn = null;
+    foreach (['designation', 'designation_name'] as $candidate) {
+        if (synk_table_has_column($conn, 'tbl_faculty', $candidate)) {
+            $reportFacultyDesignationTextColumn = $candidate;
+            break;
+        }
+    }
+
+    $reportDesignationTableExists = synk_table_exists($conn, 'tbl_designation');
+    $reportDesignationHasName = $reportDesignationTableExists && synk_table_has_column($conn, 'tbl_designation', 'designation_name');
+    $reportDesignationHasUnits = $reportDesignationTableExists && synk_table_has_column($conn, 'tbl_designation', 'designation_units');
+    $reportDesignationHasStatus = $reportDesignationTableExists && synk_table_has_column($conn, 'tbl_designation', 'status');
+    $reportDesignationJoinSql = '';
+    $reportDesignationSelectId = $reportFacultyHasDesignationId ? 'f.designation_id' : '0';
+    $reportFacultyDesignationExpr = $reportFacultyDesignationTextColumn !== null
+        ? "NULLIF(TRIM(f.`{$reportFacultyDesignationTextColumn}`), '')"
+        : 'NULL';
+    $reportDesignationNameExpr = "''";
+    $reportDesignationUnitsExpr = '0';
+
+    if ($reportFacultyHasDesignationId && $reportDesignationTableExists && $reportDesignationHasName) {
+        $reportDesignationJoinSql = "
+            LEFT JOIN tbl_designation d
+                ON d.designation_id = f.designation_id
+               " . ($reportDesignationHasStatus ? "AND d.status = 'active'" : '') . "
+        ";
+        $reportDesignationNameExpr = "COALESCE(NULLIF(TRIM(d.designation_name), ''), {$reportFacultyDesignationExpr}, '')";
+        $reportDesignationUnitsExpr = $reportDesignationHasUnits ? 'COALESCE(d.designation_units, 0)' : '0';
+    } elseif ($reportFacultyDesignationExpr !== 'NULL') {
+        $reportDesignationNameExpr = "COALESCE({$reportFacultyDesignationExpr}, '')";
+    }
+
+    $reportWorkloadWhere = [
+        'fw.ay_id = ?',
+        'fw.semester = ?',
+    ];
+    $reportWorkloadTypes = 'ii';
+    $reportWorkloadParams = [$currentAyId, $currentSem];
+
+    if ($selectedCollegeId) {
+        $reportWorkloadWhere[] = 'p.college_id = ?';
+        $reportWorkloadTypes .= 'i';
+        $reportWorkloadParams[] = (int)$selectedCollegeId;
+    } elseif (!$isUniversitySummary) {
+        $reportWorkloadWhere[] = 'camp.campus_id = ?';
+        $reportWorkloadTypes .= 'i';
+        $reportWorkloadParams[] = (int)$campusId;
+    }
+
+    $reportFacultyGroupBy = ['f.faculty_id', 'f.last_name', 'f.first_name'];
+    if ($reportFacultyHasMiddleName) {
+        $reportFacultyGroupBy[] = 'f.middle_name';
+    }
+    if ($reportFacultyHasExtName) {
+        $reportFacultyGroupBy[] = 'f.ext_name';
+    }
+    if ($reportFacultyHasStatus) {
+        $reportFacultyGroupBy[] = 'f.status';
+    }
+    $reportFacultyGroupBy[] = $reportDesignationSelectId;
+    $reportFacultyGroupBy[] = $reportDesignationNameExpr;
+    $reportFacultyGroupBy[] = $reportDesignationUnitsExpr;
+
+    $reportLiveOfferingJoins = synk_section_curriculum_live_offering_join_sql('o', 'sec', 'sc', 'ps', 'pys', 'ph');
+    $reportFacultySql = "
+        SELECT
+            f.faculty_id,
+            f.last_name,
+            f.first_name,
+            " . ($reportFacultyHasMiddleName ? 'f.middle_name' : 'NULL AS middle_name') . ",
+            " . ($reportFacultyHasExtName ? 'f.ext_name' : 'NULL AS ext_name') . ",
+            " . ($reportFacultyHasStatus ? "LOWER(TRIM(COALESCE(f.status, 'active'))) AS faculty_status" : "'active' AS faculty_status") . ",
+            {$reportDesignationSelectId} AS designation_id,
+            {$reportDesignationNameExpr} AS designation_name,
+            {$reportDesignationUnitsExpr} AS designation_units,
+            GROUP_CONCAT(DISTINCT col.college_name ORDER BY col.college_name SEPARATOR '||') AS college_names,
+            GROUP_CONCAT(DISTINCT camp.campus_name ORDER BY camp.campus_name SEPARATOR '||') AS campus_names
+        FROM tbl_faculty_workload_sched fw
+        INNER JOIN tbl_faculty f
+            ON f.faculty_id = fw.faculty_id
+        INNER JOIN tbl_class_schedule cs
+            ON cs.schedule_id = fw.schedule_id
+        INNER JOIN tbl_prospectus_offering o
+            ON o.offering_id = cs.offering_id
+        {$reportLiveOfferingJoins}
+        INNER JOIN tbl_program p
+            ON p.program_id = o.program_id
+        INNER JOIN tbl_college col
+            ON col.college_id = p.college_id
+        INNER JOIN tbl_campus camp
+            ON camp.campus_id = col.campus_id
+        {$reportDesignationJoinSql}
+        WHERE " . implode("\n          AND ", $reportWorkloadWhere) . "
+        GROUP BY " . implode(",\n            ", $reportFacultyGroupBy) . "
+        ORDER BY f.last_name ASC, f.first_name ASC, f.faculty_id ASC
+    ";
+
+    $reportFacultyStmt = $conn->prepare($reportFacultySql);
+    if ($reportFacultyStmt && synk_bind_dynamic_params($reportFacultyStmt, $reportWorkloadTypes, $reportWorkloadParams)) {
+        $reportFacultyStmt->execute();
+        $reportFacultyResult = $reportFacultyStmt->get_result();
+
+        if ($reportFacultyResult instanceof mysqli_result) {
+            while ($reportFacultyRow = $reportFacultyResult->fetch_assoc()) {
+                $facultyId = (int)($reportFacultyRow['faculty_id'] ?? 0);
+                if ($facultyId <= 0 || isset($consolidatedReportAssigneeMap['faculty:' . $facultyId])) {
+                    continue;
+                }
+
+                $status = strtolower(trim((string)($reportFacultyRow['faculty_status'] ?? 'active')));
+                if ($status !== 'inactive') {
+                    $status = 'active';
+                }
+
+                $designationName = trim((string)($reportFacultyRow['designation_name'] ?? ''));
+                $collegeNames = campus_dashboard_unique_labels(explode('||', (string)($reportFacultyRow['college_names'] ?? '')));
+                $campusNames = campus_dashboard_unique_labels(explode('||', (string)($reportFacultyRow['campus_names'] ?? '')));
+
+                $consolidatedReportAssigneeMap['faculty:' . $facultyId] = [
+                    'assignee_type' => 'faculty',
+                    'faculty_id' => $facultyId,
+                    'faculty_need_id' => 0,
+                    'college_id' => 0,
+                    'full_name' => campus_dashboard_format_faculty_name($reportFacultyRow),
+                    'status' => $status,
+                    'designation_name' => $designationName,
+                    'designation_label' => campus_dashboard_title_case($designationName),
+                    'designation_units' => round((float)($reportFacultyRow['designation_units'] ?? 0), 2),
+                    'total_preparations' => 0,
+                    'college_label' => implode(', ', $collegeNames),
+                    'campus_label' => implode(', ', $campusNames),
+                ];
+            }
+        }
+
+        $reportFacultyStmt->close();
+    } elseif ($reportFacultyStmt) {
+        $reportFacultyStmt->close();
+    }
+}
+
+if ($currentAyId > 0 && $currentSem > 0 && synk_table_exists($conn, 'tbl_college')) {
+    synk_faculty_need_ensure_tables($conn);
+
+    $needWhere = [
+        'fn.ay_id = ?',
+        'fn.semester = ?',
+        "fn.status = 'active'",
+    ];
+    $needTypes = 'ii';
+    $needParams = [$currentAyId, $currentSem];
+
+    if ($selectedCollegeId) {
+        $needWhere[] = 'fn.college_id = ?';
+        $needTypes .= 'i';
+        $needParams[] = (int)$selectedCollegeId;
+    } elseif (!$isUniversitySummary) {
+        $needWhere[] = 'camp.campus_id = ?';
+        $needTypes .= 'i';
+        $needParams[] = (int)$campusId;
+    }
+
+    $needSql = "
+        SELECT
+            fn.faculty_need_id,
+            fn.college_id,
+            fn.need_label,
+            COALESCE(col.college_name, '') AS college_name,
+            COALESCE(camp.campus_name, '') AS campus_name
+        FROM `" . synk_faculty_need_table_name() . "` fn
+        INNER JOIN tbl_college col
+            ON col.college_id = fn.college_id
+        LEFT JOIN tbl_campus camp
+            ON camp.campus_id = col.campus_id
+        WHERE " . implode("\n          AND ", $needWhere) . "
+        ORDER BY camp.campus_name ASC, col.college_name ASC, fn.faculty_need_id ASC
+    ";
+
+    $needStmt = $conn->prepare($needSql);
+    if ($needStmt && synk_bind_dynamic_params($needStmt, $needTypes, $needParams)) {
+        $needStmt->execute();
+        $needResult = $needStmt->get_result();
+
+        if ($needResult instanceof mysqli_result) {
+            while ($needRow = $needResult->fetch_assoc()) {
+                $facultyNeedId = (int)($needRow['faculty_need_id'] ?? 0);
+                $collegeId = (int)($needRow['college_id'] ?? 0);
+                $needLabel = trim((string)($needRow['need_label'] ?? ''));
+                if ($facultyNeedId <= 0 || $collegeId <= 0 || $needLabel === '') {
+                    continue;
+                }
+
+                $consolidatedReportAssigneeMap['need:' . $facultyNeedId] = [
+                    'assignee_type' => 'faculty_need',
+                    'faculty_id' => 0,
+                    'faculty_need_id' => $facultyNeedId,
+                    'college_id' => $collegeId,
+                    'full_name' => $needLabel,
+                    'status' => 'active',
+                    'designation_name' => '',
+                    'designation_label' => '',
+                    'designation_units' => 0,
+                    'total_preparations' => 0,
+                    'college_label' => trim((string)($needRow['college_name'] ?? '')),
+                    'campus_label' => trim((string)($needRow['campus_name'] ?? '')),
+                ];
+            }
+        }
+
+        $needStmt->close();
+    } elseif ($needStmt) {
+        $needStmt->close();
+    }
+}
+
+$consolidatedReportAssignees = array_values($consolidatedReportAssigneeMap);
+usort($consolidatedReportAssignees, static function (array $left, array $right): int {
+    $nameCompare = strnatcasecmp((string)($left['full_name'] ?? ''), (string)($right['full_name'] ?? ''));
+    if ($nameCompare !== 0) {
+        return $nameCompare;
+    }
+
+    return strnatcasecmp((string)($left['assignee_type'] ?? ''), (string)($right['assignee_type'] ?? ''));
+});
+
+$consolidatedReportAssigneesJson = json_encode($consolidatedReportAssignees, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+if ($consolidatedReportAssigneesJson === false) {
+    $consolidatedReportAssigneesJson = '[]';
+}
+
 
 
 
@@ -2586,6 +2887,460 @@ if ($facultyDirectoryJson === false) {
       }
     }
   </style>
+  <style id="consolidatedReportStyleTag">
+    .consolidated-report-modal .modal-dialog {
+      max-width: min(96vw, 1800px);
+    }
+
+    .consolidated-report-modal .modal-content {
+      border: 0;
+      overflow: hidden;
+    }
+
+    .consolidated-report-modal .modal-header,
+    .consolidated-report-modal .modal-footer {
+      background: #ffffff;
+    }
+
+    .consolidated-report-modal .modal-body {
+      background: #eef3f9;
+      padding: 1rem;
+    }
+
+    .consolidated-report-toolbar-note {
+      display: inline-flex;
+      align-items: center;
+      gap: 0.5rem;
+      font-size: 0.84rem;
+      color: #66768a;
+    }
+
+    .consolidated-report-toolbar-note i {
+      color: #5d68f4;
+      font-size: 1rem;
+    }
+
+    .consolidated-report-preview-root {
+      display: flex;
+      flex-direction: column;
+      gap: 1.25rem;
+      align-items: stretch;
+      overflow-x: auto;
+    }
+
+    .consolidated-report-loading {
+      min-height: 50vh;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+    }
+
+    .consolidated-report-loading-card,
+    .consolidated-report-empty-state {
+      width: min(100%, 560px);
+      margin: 0 auto;
+      background: #fff;
+      border: 1px solid #dbe5f1;
+      border-radius: 1rem;
+      box-shadow: 0 20px 45px rgba(22, 40, 75, 0.08);
+      padding: 1.5rem;
+      text-align: center;
+    }
+
+    .consolidated-report-loading-card .spinner-border,
+    .consolidated-report-empty-state i {
+      width: 2.1rem;
+      height: 2.1rem;
+      margin-bottom: 0.75rem;
+    }
+
+    .consolidated-report-empty-state i {
+      display: inline-flex;
+      align-items: center;
+      justify-content: center;
+      font-size: 2rem;
+      color: #5d68f4;
+    }
+
+    .consolidated-report-loading-title,
+    .consolidated-report-empty-title {
+      font-size: 1.08rem;
+      font-weight: 700;
+      color: #304257;
+      margin-bottom: 0.35rem;
+    }
+
+    .consolidated-report-loading-copy,
+    .consolidated-report-empty-copy {
+      font-size: 0.92rem;
+      color: #6a7d94;
+      margin-bottom: 0.9rem;
+    }
+
+    .consolidated-report-progress {
+      display: flex;
+      flex-direction: column;
+      gap: 0.45rem;
+      align-items: stretch;
+    }
+
+    .consolidated-report-progress-meta {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      gap: 0.75rem;
+      font-size: 0.82rem;
+      color: #61748b;
+    }
+
+    .consolidated-report-progress-track {
+      width: 100%;
+      height: 0.55rem;
+      background: #e6edf7;
+      border-radius: 999px;
+      overflow: hidden;
+    }
+
+    .consolidated-report-progress-bar {
+      width: 0;
+      height: 100%;
+      background: linear-gradient(90deg, #198754 0%, #5d68f4 100%);
+      transition: width 0.2s ease;
+    }
+
+    .consolidated-report-page {
+      --consolidated-page-width: 1344px;
+      --consolidated-page-height: 816px;
+      position: relative;
+      width: var(--consolidated-page-width);
+      height: var(--consolidated-page-height);
+      margin: 0 auto;
+      background: #fff;
+      box-shadow: 0 22px 50px rgba(25, 42, 70, 0.16);
+      overflow: hidden;
+      flex: 0 0 auto;
+    }
+
+    .consolidated-report-page.is-measure {
+      --consolidated-page-width: 1344px;
+      --consolidated-page-height: 816px;
+      box-shadow: none;
+      margin: 0;
+    }
+
+    .consolidated-report-page-background {
+      position: absolute;
+      inset: 0;
+      background-image: var(--consolidated-report-bg);
+      background-repeat: no-repeat;
+      background-position: center;
+      background-size: 100% 100%;
+    }
+
+    .consolidated-report-page-inner {
+      position: absolute;
+      inset: 188px 48px 68px 74px;
+      display: flex;
+      flex-direction: column;
+      min-height: 0;
+    }
+
+    .consolidated-report-page-header {
+      text-align: center;
+      padding: 0 0 0.32rem;
+    }
+
+    .consolidated-report-title {
+      font-family: "Arial Narrow", Arial, sans-serif;
+      font-size: 1.14rem;
+      font-weight: 700;
+      letter-spacing: 0.04em;
+      text-transform: uppercase;
+      color: #0f3140;
+      margin-bottom: 0.14rem;
+    }
+
+    .consolidated-report-subtitle,
+    .consolidated-report-term,
+    .consolidated-report-page-count {
+      font-family: Arial, sans-serif;
+      color: #10212f;
+      line-height: 1.15;
+    }
+
+    .consolidated-report-subtitle {
+      font-size: 0.78rem;
+      font-weight: 700;
+      text-transform: uppercase;
+    }
+
+    .consolidated-report-term {
+      margin-top: 0.12rem;
+      font-size: 0.72rem;
+      font-weight: 600;
+      letter-spacing: 0.02em;
+    }
+
+    .consolidated-report-page-count {
+      margin-top: 0.12rem;
+      font-size: 0.68rem;
+      font-weight: 600;
+      color: #4b5f70;
+    }
+
+    .consolidated-report-table-wrap {
+      flex: 1 1 auto;
+      min-height: 0;
+      padding-inline: 24px;
+      box-sizing: border-box;
+    }
+
+    .consolidated-report-table {
+      width: 100%;
+      border-collapse: collapse;
+      table-layout: fixed;
+      font-family: Arial, sans-serif;
+      font-size: 9.25px;
+      color: #000;
+      background: #fff;
+    }
+
+    .consolidated-report-table thead th,
+    .consolidated-report-table tbody td {
+      border: 1px solid #000;
+      padding: 0.18rem 0.22rem;
+      vertical-align: top;
+      box-sizing: border-box;
+      overflow-wrap: anywhere;
+      word-break: normal;
+    }
+
+    .consolidated-report-table thead th {
+      background: #fff;
+      color: #000;
+      font-size: 8.4px;
+      font-weight: 700;
+      line-height: 1.15;
+      text-align: center;
+      text-transform: uppercase;
+    }
+
+    .consolidated-report-table thead .is-lower {
+      text-transform: none;
+    }
+
+    .consolidated-report-table tbody td {
+      line-height: 1.18;
+    }
+
+    .consolidated-cell-index,
+    .consolidated-cell-name,
+    .consolidated-cell-prep,
+    .consolidated-cell-students,
+    .consolidated-cell-units,
+    .consolidated-cell-hours,
+    .consolidated-cell-load,
+    .consolidated-cell-designation,
+    .consolidated-cell-total,
+    .consolidated-cell-remark {
+      text-align: center;
+      vertical-align: top !important;
+    }
+
+    .consolidated-cell-index,
+    .consolidated-cell-name,
+    .consolidated-cell-prep,
+    .consolidated-cell-designation,
+    .consolidated-cell-total,
+    .consolidated-cell-remark {
+      padding-top: 0.28rem !important;
+    }
+
+    .consolidated-cell-index {
+      font-weight: 700;
+    }
+
+    .consolidated-cell-name {
+      font-weight: 700;
+      text-transform: uppercase;
+      line-height: 1.12;
+    }
+
+    .consolidated-cell-prep,
+    .consolidated-cell-code,
+    .consolidated-cell-load,
+    .consolidated-cell-total,
+    .consolidated-cell-remark {
+      font-weight: 700;
+    }
+
+    .consolidated-campus-term {
+      font-size: 9px !important;
+      font-weight: 700 !important;
+      text-transform: none !important;
+      padding: 0.28rem 0.2rem !important;
+    }
+
+    .consolidated-campus-term-line {
+      display: block;
+      line-height: 1.2;
+    }
+
+    .consolidated-campus-term-line + .consolidated-campus-term-line {
+      margin-top: 0.08rem;
+    }
+
+    .consolidated-course-title,
+    .consolidated-designation-title {
+      font-weight: 700;
+      color: #000;
+    }
+
+    .consolidated-schedule-line {
+      display: block;
+      white-space: pre-line;
+    }
+
+    .consolidated-schedule-line + .consolidated-schedule-line {
+      margin-top: 0.12rem;
+    }
+
+    .consolidated-remark-text {
+      display: inline-block;
+      font-size: 9px;
+      font-weight: 700;
+      letter-spacing: 0.03em;
+      text-transform: uppercase;
+      color: #000;
+    }
+
+    .consolidated-faculty-total-row td {
+      border-top-width: 1px;
+      font-weight: 700;
+      vertical-align: middle !important;
+    }
+
+    .consolidated-faculty-block,
+    .consolidated-report-table tr {
+      page-break-inside: avoid;
+      break-inside: avoid;
+    }
+
+    .consolidated-cell-remark-total {
+      text-align: center;
+      vertical-align: middle !important;
+    }
+
+    .consolidated-signatory-page .consolidated-report-page-inner {
+      inset: 208px 90px 88px 100px;
+    }
+
+    .consolidated-signatory-wrap {
+      margin-top: auto;
+      padding-top: 1rem;
+      font-family: Arial, sans-serif;
+      color: #182b3d;
+    }
+
+    .consolidated-signatory-top {
+      display: grid;
+      grid-template-columns: repeat(3, minmax(0, 1fr));
+      gap: 1.6rem;
+    }
+
+    .consolidated-signatory-bottom {
+      display: grid;
+      grid-template-columns: minmax(0, 1fr);
+      gap: 2rem;
+      margin-top: 2.5rem;
+      max-width: 31%;
+    }
+
+    .consolidated-signatory-label {
+      margin-bottom: 1.5rem;
+      font-size: 0.92rem;
+      font-weight: 700;
+    }
+
+    .consolidated-signatory-name {
+      min-height: 1.2rem;
+      font-size: 0.86rem;
+      font-weight: 800;
+      text-transform: uppercase;
+      border-bottom: 1px solid #455a6f;
+      padding-bottom: 0.08rem;
+    }
+
+    .consolidated-signatory-title {
+      min-height: 1.15rem;
+      margin-top: 0.28rem;
+      font-size: 0.82rem;
+      color: #50657c;
+    }
+
+    #consolidatedReportMeasureRoot {
+      position: absolute;
+      left: -20000px;
+      top: 0;
+      visibility: hidden;
+      pointer-events: none;
+      width: 0;
+      height: 0;
+      overflow: hidden;
+    }
+
+    @media (max-width: 1199.98px) {
+      .consolidated-report-preview-root {
+        align-items: flex-start;
+      }
+    }
+
+    @media (max-width: 767.98px) {
+      .consolidated-report-modal .modal-body {
+        padding: 0.65rem;
+      }
+
+      .consolidated-signatory-top {
+        grid-template-columns: 1fr;
+        gap: 1.2rem;
+      }
+
+      .consolidated-signatory-bottom {
+        max-width: 100%;
+      }
+    }
+
+    @media print {
+      html,
+      body {
+        margin: 0 !important;
+        padding: 0 !important;
+        background: #fff !important;
+        -webkit-print-color-adjust: exact !important;
+        print-color-adjust: exact !important;
+      }
+
+      body.consolidated-report-print-body .consolidated-report-preview-root {
+        gap: 0 !important;
+      }
+
+      body.consolidated-report-print-body .consolidated-report-page {
+        --consolidated-page-width: 14in;
+        --consolidated-page-height: 8.5in;
+        width: 14in !important;
+        height: 8.5in !important;
+        margin: 0 !important;
+        box-shadow: none !important;
+        page-break-after: always;
+        break-after: page;
+      }
+
+      body.consolidated-report-print-body .consolidated-report-page:last-child {
+        page-break-after: auto;
+        break-after: auto;
+      }
+    }
+  </style>
 </head>
 
 <body>
@@ -2638,7 +3393,7 @@ if ($facultyDirectoryJson === false) {
                         <?= $isUniversitySummary ? 'SKSU University Summary' : $campusName . ' Campus'; ?>
                       </h4>
                       <p class="mb-3 text-muted">
-                        Welcome back, <strong><?= $_SESSION['username'] ?? 'Administrator'; ?></strong>! 
+                        Welcome back, <strong><?= $_SESSION['username'] ?? 'Administrator'; ?></strong>!
                         This page shows an executive snapshot of
                         <?= $isUniversitySummary ? 'all SKSU campuses combined' : 'academic operations and resources for this campus'; ?>.
                       </p>
@@ -3012,9 +3767,14 @@ if ($facultyDirectoryJson === false) {
                       <p class="card-section-title mb-1">People</p>
                       <h5 class="m-0">Faculty Directory</h5>
                     </div>
-                    <a href="manage-faculty.php" class="btn btn-sm btn-outline-primary">
-                      Manage Faculty
-                    </a>
+                    <div class="d-flex flex-wrap gap-2">
+                      <button type="button" class="btn btn-sm btn-outline-primary" id="btnOpenCampusConsolidatedReport">
+                        <i class="bx bx-file me-1"></i> Consolidated Workload
+                      </button>
+                      <a href="manage-faculty.php" class="btn btn-sm btn-outline-primary">
+                        Manage Faculty
+                      </a>
+                    </div>
                   </div>
                   <div class="card-body">
                     <p class="faculty-directory-note mb-3">
@@ -3145,6 +3905,56 @@ if ($facultyDirectoryJson === false) {
     </div>
   </div>
 
+  <div class="modal fade consolidated-report-modal" id="campusConsolidatedReportModal" tabindex="-1" aria-labelledby="campusConsolidatedReportModalLabel" aria-hidden="true">
+    <div class="modal-dialog modal-fullscreen-lg-down modal-xl modal-dialog-scrollable">
+      <div class="modal-content">
+        <div class="modal-header">
+          <div>
+            <h5 class="modal-title" id="campusConsolidatedReportModalLabel">Consolidated Faculty Workload</h5>
+            <small class="text-muted">Preview first, then print the legal landscape report for the current academic term.</small>
+          </div>
+          <button type="button" class="btn-close" data-bs-dismiss="modal" aria-label="Close"></button>
+        </div>
+        <div class="modal-body">
+          <div id="consolidatedReportPreviewRoot" class="consolidated-report-preview-root">
+            <div class="consolidated-report-loading">
+              <div class="consolidated-report-loading-card">
+                <div class="spinner-border text-primary" role="status" aria-hidden="true"></div>
+                <div class="consolidated-report-loading-title">Preparing consolidated faculty workload</div>
+                <div class="consolidated-report-loading-copy">Open the report to generate the campus preview.</div>
+                <div class="consolidated-report-progress">
+                  <div class="consolidated-report-progress-meta">
+                    <span id="consolidatedReportProgressLabel">Waiting to start</span>
+                    <span id="consolidatedReportProgressValue">0%</span>
+                  </div>
+                  <div class="consolidated-report-progress-track">
+                    <div id="consolidatedReportProgressBar" class="consolidated-report-progress-bar"></div>
+                  </div>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div id="consolidatedReportMeasureRoot" aria-hidden="true"></div>
+        </div>
+        <div class="modal-footer justify-content-between">
+          <div class="consolidated-report-toolbar-note">
+            <i class="bx bx-info-circle"></i>
+            <span>Rows follow the current campus dashboard scope and current academic term.</span>
+          </div>
+          <div class="d-flex flex-wrap gap-2">
+            <button type="button" class="btn btn-outline-secondary" data-bs-dismiss="modal">Close</button>
+            <button type="button" class="btn btn-outline-primary" id="btnRefreshConsolidatedReport">
+              <i class="bx bx-refresh me-1"></i> Refresh Preview
+            </button>
+            <button type="button" class="btn btn-primary" id="btnPrintConsolidatedReport" disabled>
+              <i class="bx bx-printer me-1"></i> Print Report
+            </button>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
   <div class="modal fade" id="matrixModal" tabindex="-1" data-bs-backdrop="false" aria-hidden="true">
     <div class="modal-dialog modal-fullscreen-lg-down modal-xxl modal-dialog-scrollable">
       <div class="modal-content">
@@ -3200,8 +4010,9 @@ if ($facultyDirectoryJson === false) {
       var dashboardCampusId = <?= $isUniversitySummary ? 0 : (int)$campusId; ?>;
       var currentAyId = <?= (int)$currentAyId; ?>;
       var currentSem = <?= (int)$currentSem; ?>;
+      var currentAyLabel = <?= json_encode((string)($currentTerm['ay_label'] ?? '')); ?>;
       var selectedCollegeId = <?= (int)$selectedCollegeId; ?>;
-      var selectedCollegeName = <?= json_encode(htmlspecialchars((string)($selectedCollegeName ?? 'Selected College'), ENT_QUOTES, 'UTF-8')); ?>;
+      var selectedCollegeName = <?= json_encode(htmlspecialchars((string)($selectedCollegeName ?? ''), ENT_QUOTES, 'UTF-8')); ?>;
       var selectedCollegePolicySource = <?= json_encode((string)($selectedCollegeSchedulePolicy['source_label'] ?? 'Scheduling policy')); ?>;
       var selectedCollegePolicyWindow = <?= json_encode((string)($selectedCollegeSchedulePolicy['window_label'] ?? '')); ?>;
       var academicTermText = <?= json_encode(htmlspecialchars($academicTermText, ENT_QUOTES, 'UTF-8')); ?>;
@@ -3211,6 +4022,9 @@ if ($facultyDirectoryJson === false) {
       var highestUtilizationLabel = <?= json_encode((string)$highestUtilizationLabel); ?>;
       var highestUtilizationPercent = <?= json_encode((float)$highestUtilizationPercent, JSON_NUMERIC_CHECK); ?>;
       var facultyDirectoryData = <?= $facultyDirectoryJson; ?>;
+      var consolidatedReportAssignees = <?= $consolidatedReportAssigneesJson; ?>;
+      var consolidatedReportScope = <?= json_encode($consolidatedReportScope, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
+      var consolidatedReportSignatories = <?= json_encode($consolidatedReportSignatories, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); ?>;
       var facultyDirectoryScopeLabel = <?= json_encode((string)$facultyDirectory['scope_label']); ?>;
       var facultyDirectorySearchInput = document.getElementById("facultyDirectorySearch");
       var facultyDirectoryClearButton = document.getElementById("facultyDirectoryClearSearch");
@@ -3223,6 +4037,16 @@ if ($facultyDirectoryJson === false) {
       var facultyDirectoryDetailModal = facultyDirectoryDetailModalElement && typeof bootstrap !== "undefined"
         ? new bootstrap.Modal(facultyDirectoryDetailModalElement)
         : null;
+      var consolidatedReportModalElement = document.getElementById("campusConsolidatedReportModal");
+      var consolidatedReportModal = consolidatedReportModalElement && typeof bootstrap !== "undefined"
+        ? new bootstrap.Modal(consolidatedReportModalElement)
+        : null;
+      var consolidatedReportBackgroundUrl = new URL(
+        "../assets/img/print/consolidated-faculty-workload-template.png",
+        window.location.href
+      ).href;
+      var consolidatedReportGeneratedHtml = "";
+      var consolidatedReportIsBuilding = false;
       var facultyDirectoryWorkloadRequest = null;
       var facultyDirectoryWorkloadCache = new Map();
       var facultyDirectoryActiveFacultyId = 0;
@@ -3780,6 +4604,829 @@ if ($facultyDirectoryJson === false) {
             '</div>' +
           '</div>'
         );
+      }
+
+      function uppercaseDisplayText(value) {
+        return String(value == null ? "" : value).trim().toUpperCase();
+      }
+
+      function semesterUiLabel(value) {
+        var semester = Number(value) || 0;
+        if (semester === 1) {
+          return "1st";
+        }
+        if (semester === 2) {
+          return "2nd";
+        }
+        if (semester === 3) {
+          return "Midyear";
+        }
+
+        return "Current";
+      }
+
+      function getConsolidatedTermContext() {
+        return {
+          ayId: Number(currentAyId) || 0,
+          ayText: String(currentAyLabel || "").trim(),
+          semesterNum: Number(currentSem) || 0,
+          semesterUi: semesterUiLabel(currentSem),
+          termText: String(academicTermText || "Current academic term").trim()
+        };
+      }
+
+      function getConsolidatedReportTermLabel(termContext) {
+        if (termContext && termContext.ayText) {
+          return String(termContext.semesterUi || "Current") + " Semester AY " + termContext.ayText;
+        }
+
+        return String(termContext && termContext.termText || academicTermText || "Current academic term");
+      }
+
+      function getConsolidatedCampusHeaderLines(termContext) {
+        var scope = consolidatedReportScope || {};
+        var campusSource = String(scope.campus_name || "Campus").trim();
+        var campusLabel = campusSource.replace(/\s+campus$/i, "").trim().toUpperCase() || "CAMPUS";
+        var semesterLabel = String(termContext && termContext.semesterUi || "").trim() || "Semester";
+        var ayLabel = String(termContext && termContext.ayText || "").trim();
+
+        return [
+          campusLabel,
+          "Campus",
+          semesterLabel,
+          ayLabel ? "Semester AY " + ayLabel : "Semester AY"
+        ];
+      }
+
+      function normalizeWorkloadResponse(payload) {
+        if (Array.isArray(payload)) {
+          return {
+            rows: payload,
+            external_rows: [],
+            meta: {}
+          };
+        }
+
+        if (!payload || !Array.isArray(payload.rows)) {
+          return null;
+        }
+
+        return {
+          rows: payload.rows,
+          external_rows: Array.isArray(payload.external_rows) ? payload.external_rows : [],
+          meta: payload.meta || {}
+        };
+      }
+
+      function getConsolidatedRemarkMeta(loadStatus) {
+        var statusClass = String(loadStatus && loadStatus.className || "normal").trim() || "normal";
+        if (statusClass === "overload") {
+          return { code: "OL", className: "is-overload" };
+        }
+        if (statusClass === "underload") {
+          return { code: "UL", className: "is-underload" };
+        }
+
+        return { code: "NL", className: "is-normal" };
+      }
+
+      function formatConsolidatedRemarkVariance(value) {
+        var n = Math.abs(toNumber(value));
+        return n > 0.0001 ? n.toFixed(2) : "";
+      }
+
+      function setConsolidatedReportPrintEnabled(enabled) {
+        var button = document.getElementById("btnPrintConsolidatedReport");
+        if (button) {
+          button.disabled = !enabled;
+        }
+      }
+
+      function setConsolidatedReportProgress(percent, label) {
+        var safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+        var labelElement = document.getElementById("consolidatedReportProgressLabel");
+        var valueElement = document.getElementById("consolidatedReportProgressValue");
+        var barElement = document.getElementById("consolidatedReportProgressBar");
+
+        if (labelElement) {
+          labelElement.textContent = String(label || "Preparing preview...");
+        }
+        if (valueElement) {
+          valueElement.textContent = safePercent + "%";
+        }
+        if (barElement) {
+          barElement.style.width = safePercent + "%";
+        }
+      }
+
+      function showConsolidatedReportLoading(label, percent) {
+        var previewRoot = document.getElementById("consolidatedReportPreviewRoot");
+        var safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
+        consolidatedReportGeneratedHtml = "";
+        setConsolidatedReportPrintEnabled(false);
+
+        if (!previewRoot) {
+          return;
+        }
+
+        previewRoot.innerHTML =
+          '<div class="consolidated-report-loading">' +
+            '<div class="consolidated-report-loading-card">' +
+              '<div class="spinner-border text-primary" role="status" aria-hidden="true"></div>' +
+              '<div class="consolidated-report-loading-title">Preparing consolidated faculty workload</div>' +
+              '<div class="consolidated-report-loading-copy">The preview is built from actual scheduler workload in the current dashboard scope.</div>' +
+              '<div class="consolidated-report-progress">' +
+                '<div class="consolidated-report-progress-meta">' +
+                  '<span id="consolidatedReportProgressLabel">' + escapeHtml(label || "Preparing preview...") + "</span>" +
+                  '<span id="consolidatedReportProgressValue">' + escapeHtml(String(safePercent)) + "%</span>" +
+                "</div>" +
+                '<div class="consolidated-report-progress-track">' +
+                  '<div id="consolidatedReportProgressBar" class="consolidated-report-progress-bar" style="width:' + safePercent + '%;"></div>' +
+                "</div>" +
+              "</div>" +
+            "</div>" +
+          "</div>";
+      }
+
+      function setConsolidatedReportEmptyState(title, message) {
+        var previewRoot = document.getElementById("consolidatedReportPreviewRoot");
+        consolidatedReportGeneratedHtml = "";
+        setConsolidatedReportPrintEnabled(false);
+
+        if (previewRoot) {
+          previewRoot.innerHTML =
+            '<div class="consolidated-report-empty-state">' +
+              '<i class="bx bx-file-blank"></i>' +
+              '<div class="consolidated-report-empty-title">' + escapeHtml(title) + "</div>" +
+              '<div class="consolidated-report-empty-copy">' + escapeHtml(message) + "</div>" +
+            "</div>";
+        }
+      }
+
+      function fetchConsolidatedAssigneeWorkloadPayload(option) {
+        var assigneeType = String(option && option.assignee_type || "faculty").trim() === "faculty_need"
+          ? "faculty_need"
+          : "faculty";
+        var facultyId = assigneeType === "faculty" ? (Number(option && option.faculty_id) || 0) : 0;
+        var facultyNeedId = assigneeType === "faculty_need" ? (Number(option && option.faculty_need_id) || 0) : 0;
+        var scopeCollegeId = assigneeType === "faculty_need"
+          ? (Number(option && option.college_id) || 0)
+          : (Number(selectedCollegeId) || 0);
+
+        return new Promise(function (resolve, reject) {
+          $.ajax({
+            url: "../backend/query_admin_faculty_workload.php",
+            type: "POST",
+            dataType: "json",
+            data: {
+              assignee_type: assigneeType,
+              faculty_id: facultyId,
+              faculty_need_id: facultyNeedId,
+              college_id: scopeCollegeId,
+              campus_id: Number(dashboardCampusId) || 0
+            }
+          }).done(resolve).fail(reject);
+        });
+      }
+
+      function buildConsolidatedScheduleLine(row, includeTypeTag) {
+        var dayLabel = String(row && row.days || "").trim();
+        var timeLabel = String(row && row.time || "").trim();
+        var typeLabel = String(row && (row.type || row.schedule_type) || "").trim().toUpperCase();
+        var parts = [];
+        var line;
+
+        if (dayLabel) {
+          parts.push(dayLabel);
+        }
+        if (timeLabel) {
+          parts.push(timeLabel);
+        }
+
+        line = parts.join(" ").trim() || "-";
+        if (includeTypeTag && typeLabel) {
+          line += " (" + (typeLabel === "LAB" ? "Lab" : "Lec") + ")";
+        }
+
+        return line;
+      }
+
+      function groupWorkloadRowsForConsolidatedReport(rowsData) {
+        var groups = [];
+        var orderedRows = Array.isArray(rowsData) ? rowsData : [];
+        var groupedRows = new Map();
+
+        orderedRows.forEach(function (row) {
+          var groupKey = getWorkloadGroupKey(row);
+          if (!groupedRows.has(groupKey)) {
+            groupedRows.set(groupKey, []);
+          }
+          groupedRows.get(groupKey).push(row);
+        });
+
+        groupedRows.forEach(function (groupRows) {
+          var firstRow = groupRows[0] || {};
+          var typeMap = new Map();
+          var scheduleLines = [];
+          var uniqueTypes;
+
+          groupRows.forEach(function (groupRow) {
+            var typeLabel = String(groupRow && (groupRow.type || groupRow.schedule_type) || "").trim().toUpperCase();
+            if (typeLabel) {
+              typeMap.set(typeLabel, true);
+            }
+          });
+          uniqueTypes = Array.from(typeMap.keys());
+
+          groupRows.forEach(function (groupRow) {
+            var line = buildConsolidatedScheduleLine(groupRow, uniqueTypes.length > 1);
+            if (line && scheduleLines.indexOf(line) === -1) {
+              scheduleLines.push(line);
+            }
+          });
+
+          groups.push({
+            sub_code: String(firstRow && firstRow.sub_code || "").trim(),
+            desc: String(firstRow && firstRow.desc || "").trim(),
+            course: String(firstRow && (firstRow.course || firstRow.section) || "").trim(),
+            student_count: groupRows.reduce(function (maxValue, groupRow) {
+              return Math.max(maxValue, Math.round(toNumber(groupRow && groupRow.student_count)));
+            }, 0),
+            units: toNumber(firstRow && firstRow.units),
+            lec: toNumber(firstRow && firstRow.lec),
+            lab: toNumber(firstRow && firstRow.lab),
+            faculty_load: toNumber(firstRow && firstRow.faculty_load),
+            schedule_lines: scheduleLines.length > 0 ? scheduleLines : ["-"],
+            type_labels: uniqueTypes
+          });
+        });
+
+        return groups;
+      }
+
+      function buildConsolidatedFacultyRecord(option, payload) {
+        var sourcePayload = normalizeWorkloadResponse(payload);
+        var rows;
+        var entries;
+        var meta;
+        var totals;
+        var designationUnits;
+        var totalPreparations;
+        var teachingLoad;
+        var totalWorkload;
+        var normalLoadUnits;
+        var loadStatus;
+        var remarkMeta;
+        var overloadExcess;
+
+        if (!sourcePayload) {
+          return null;
+        }
+
+        rows = Array.isArray(sourcePayload.rows) ? sourcePayload.rows : [];
+        entries = groupWorkloadRowsForConsolidatedReport(rows);
+        meta = sourcePayload.meta || {};
+        totals = calculateWorkloadMetricTotals(rows);
+        designationUnits = Math.max(toNumber(meta.designation_units), toNumber(option && option.designation_units));
+        totalPreparations = Math.max(
+          Number(meta.total_preparations) || 0,
+          Number(option && option.total_preparations) || 0,
+          totals.preparations
+        );
+        teachingLoad = totals.load;
+        totalWorkload = teachingLoad + designationUnits;
+        normalLoadUnits = getNormalLoadUnits(totalPreparations);
+        loadStatus = getLoadStatus(totalWorkload, totalPreparations);
+        remarkMeta = getConsolidatedRemarkMeta(loadStatus);
+        overloadExcess = totalWorkload - normalLoadUnits;
+
+        if (String(option && option.status || "").toLowerCase() === "inactive" && entries.length === 0 && teachingLoad <= 0.0001) {
+          return null;
+        }
+
+        if (entries.length === 0 && totalWorkload <= 0.0001) {
+          return null;
+        }
+
+        return {
+          assignee_type: String(option && option.assignee_type || "faculty").trim() === "faculty_need" ? "faculty_need" : "faculty",
+          faculty_id: Number(option && option.faculty_id) || 0,
+          faculty_need_id: Number(option && option.faculty_need_id) || 0,
+          full_name: String(option && option.full_name || "").trim(),
+          display_name: uppercaseDisplayText(option && option.full_name || ""),
+          total_preparations: totalPreparations,
+          designation_text: formatDesignationDisplay(meta, option),
+          designation_units: designationUnits,
+          teaching_load: teachingLoad,
+          total_workload: totalWorkload,
+          normal_load_units: normalLoadUnits,
+          remark_code: remarkMeta.code,
+          remark_class: remarkMeta.className,
+          remark_total: overloadExcess > 0.0001 ? overloadExcess : 0,
+          entries: entries.length > 0 ? entries : [{
+            sub_code: "",
+            desc: "",
+            course: "",
+            student_count: 0,
+            units: 0,
+            lec: 0,
+            lab: 0,
+            faculty_load: 0,
+            schedule_lines: ["-"],
+            type_labels: []
+          }]
+        };
+      }
+
+      function renderConsolidatedReportTableHead(termContext) {
+        var campusLines = getConsolidatedCampusHeaderLines(termContext).map(function (line) {
+          return '<span class="consolidated-campus-term-line">' + escapeHtml(line) + "</span>";
+        }).join("");
+
+        return (
+          "<thead>" +
+            "<tr>" +
+              '<th rowspan="3" colspan="2" class="consolidated-campus-term">' + campusLines + "</th>" +
+              '<th rowspan="3">No. of<br>Preparations</th>' +
+              '<th colspan="9">Actual Teaching Loads</th>' +
+              '<th rowspan="3">Designation &amp; Load<br>Displacement</th>' +
+              '<th rowspan="3">Total<br>Workload</th>' +
+              '<th rowspan="3">Remarks<br>(OL/UL)</th>' +
+            "</tr>" +
+            "<tr>" +
+              '<th rowspan="2">Course<br>Code</th>' +
+              '<th rowspan="2">Course Title</th>' +
+              '<th rowspan="2">Day &amp; Time</th>' +
+              '<th rowspan="2">Course,<br>Year &amp; Section</th>' +
+              '<th rowspan="2">No. of<br>Students</th>' +
+              '<th rowspan="2">No. of<br>Units</th>' +
+              '<th colspan="2">No of Hours</th>' +
+              '<th rowspan="2">Teaching<br>Load</th>' +
+            "</tr>" +
+            "<tr>" +
+              '<th class="is-lower">Lec</th>' +
+              '<th class="is-lower">Lab</th>' +
+            "</tr>" +
+          "</thead>"
+        );
+      }
+
+      function renderConsolidatedReportColGroup() {
+        var columnWidths = [
+          3.1, 11.4, 4.4, 6.8, 15.6,
+          10.9, 9.1, 4.8, 4.4, 4,
+          4, 4.8, 8.3, 4.3, 4.1
+        ];
+
+        return "<colgroup>" + columnWidths.map(function (width) {
+          return '<col style="width:' + width + '%">';
+        }).join("") + "</colgroup>";
+      }
+
+      function renderConsolidatedFacultyBlock(record, options) {
+        var opts = options || {};
+        var rows = Array.isArray(opts.entries)
+          ? opts.entries
+          : (Array.isArray(record && record.entries) ? record.entries : []);
+        var showTotalRow = opts.showTotalRow !== false;
+        var contentRowspan = Math.max(rows.length, 1);
+        var blockRowspan = contentRowspan + (showTotalRow ? 1 : 0);
+        var designationHtml = record.designation_text
+          ? '<div class="consolidated-designation-title">' + escapeHtml(record.designation_text) + "</div>"
+          : (record.designation_units > 0 ? '<div class="consolidated-designation-title">Load Displacement</div>' : "&nbsp;");
+        var remarkTotalText = record.remark_code === "OL" ? formatConsolidatedRemarkVariance(record.remark_total) : "";
+        var blockClasses = ["consolidated-faculty-block"];
+
+        if (opts.continuation) {
+          blockClasses.push("is-continuation");
+        }
+
+        return (
+          '<tbody class="' + blockClasses.join(" ") + '">' +
+            rows.map(function (entry, index) {
+              var scheduleHtml = (Array.isArray(entry && entry.schedule_lines) ? entry.schedule_lines : ["-"]).map(function (line) {
+                return '<span class="consolidated-schedule-line">' + escapeHtml(line) + "</span>";
+              }).join("");
+
+              return (
+                "<tr>" +
+                  (index === 0
+                    ? '<td rowspan="' + blockRowspan + '" class="consolidated-cell-index">' + escapeHtml(String(record.sequence || "")) + "</td>" +
+                      '<td rowspan="' + blockRowspan + '" class="consolidated-cell-name">' + escapeHtml(record.display_name || record.full_name || "") + "</td>" +
+                      '<td rowspan="' + blockRowspan + '" class="consolidated-cell-prep">' + escapeHtml(String(record.total_preparations || 0)) + "</td>"
+                    : "") +
+                  '<td class="consolidated-cell-code">' + escapeHtml(entry && entry.sub_code || "") + "</td>" +
+                  '<td class="consolidated-cell-title"><span class="consolidated-course-title">' + escapeHtml(entry && entry.desc || "") + "</span></td>" +
+                  '<td class="consolidated-cell-schedule">' + scheduleHtml + "</td>" +
+                  '<td class="consolidated-cell-course">' + escapeHtml(entry && entry.course || "") + "</td>" +
+                  '<td class="consolidated-cell-students">' + escapeHtml(formatStudentCount(entry && entry.student_count || 0)) + "</td>" +
+                  '<td class="consolidated-cell-units">' + escapeHtml(formatNumber(entry && entry.units || 0)) + "</td>" +
+                  '<td class="consolidated-cell-hours">' + escapeHtml(formatNumber(entry && entry.lec || 0)) + "</td>" +
+                  '<td class="consolidated-cell-hours">' + escapeHtml(formatNumber(entry && entry.lab || 0)) + "</td>" +
+                  '<td class="consolidated-cell-load">' + escapeHtml(formatNumber(entry && entry.faculty_load || 0)) + "</td>" +
+                  (index === 0
+                    ? '<td rowspan="' + contentRowspan + '" class="consolidated-cell-designation">' + designationHtml + "</td>" +
+                      '<td rowspan="' + contentRowspan + '" class="consolidated-cell-total">' + escapeHtml(formatNumber(record.total_workload || 0)) + "</td>" +
+                      '<td rowspan="' + contentRowspan + '" class="consolidated-cell-remark"><span class="consolidated-remark-text">' + escapeHtml(record.remark_code || "NL") + "</span></td>"
+                    : "") +
+                "</tr>"
+              );
+            }).join("") +
+            (showTotalRow
+              ? '<tr class="consolidated-faculty-total-row">' +
+                  '<td class="consolidated-cell-code">&nbsp;</td>' +
+                  '<td class="consolidated-cell-title">&nbsp;</td>' +
+                  '<td class="consolidated-cell-schedule">&nbsp;</td>' +
+                  '<td class="consolidated-cell-course">&nbsp;</td>' +
+                  '<td class="consolidated-cell-students">&nbsp;</td>' +
+                  '<td class="consolidated-cell-units">&nbsp;</td>' +
+                  '<td class="consolidated-cell-hours">&nbsp;</td>' +
+                  '<td class="consolidated-cell-hours">&nbsp;</td>' +
+                  '<td class="consolidated-cell-load">' + escapeHtml(formatNumber(record.teaching_load || 0)) + "</td>" +
+                  '<td class="consolidated-cell-designation">' + (record.designation_units > 0 ? escapeHtml(formatNumber(record.designation_units)) : "&nbsp;") + "</td>" +
+                  '<td class="consolidated-cell-total">&nbsp;</td>' +
+                  '<td class="consolidated-cell-remark-total">' + (remarkTotalText ? escapeHtml(remarkTotalText) : "&nbsp;") + "</td>" +
+                "</tr>"
+              : "") +
+          "</tbody>"
+        );
+      }
+
+      function renderConsolidatedSignatoryBlock(label, signatory) {
+        var name = uppercaseDisplayText(signatory && signatory.signatory_name || "");
+        var title = String(signatory && signatory.signatory_title || "").trim();
+
+        return (
+          '<div class="consolidated-signatory-block">' +
+            '<div class="consolidated-signatory-label">' + escapeHtml(label) + "</div>" +
+            '<div class="consolidated-signatory-name">' + (name ? escapeHtml(name) : "&nbsp;") + "</div>" +
+            '<div class="consolidated-signatory-title">' + (title ? escapeHtml(title) : "&nbsp;") + "</div>" +
+          "</div>"
+        );
+      }
+
+      function createConsolidatedReportElement(templateHtml) {
+        var template = document.createElement("template");
+        template.innerHTML = String(templateHtml || "").trim();
+        return template.content.firstElementChild;
+      }
+
+      function createConsolidatedReportPage(termContext, options) {
+        var opts = options || {};
+        var page = document.createElement("section");
+        var scope = consolidatedReportScope || {};
+        var campusLabel = uppercaseDisplayText(scope.campus_name || "Campus");
+        var collegeLabel = uppercaseDisplayText(scope.college_name || "All Colleges");
+        var titleLabel = opts.signatoryPage ? "CONSOLIDATED FACULTY WORKLOAD SIGNATORIES" : "CONSOLIDATED FACULTY WORKLOAD";
+        var bodyHtml;
+
+        page.className = ("consolidated-report-page " + (opts.measure ? "is-measure " : "") + (opts.signatoryPage ? "consolidated-signatory-page" : "")).trim();
+        page.style.setProperty("--consolidated-report-bg", 'url("' + consolidatedReportBackgroundUrl + '")');
+
+        bodyHtml = opts.signatoryPage
+          ? '<div class="consolidated-signatory-wrap">' +
+              '<div class="consolidated-signatory-top">' +
+                renderConsolidatedSignatoryBlock("Prepared by:", consolidatedReportSignatories && consolidatedReportSignatories.prepared_by || {}) +
+                renderConsolidatedSignatoryBlock("Checked by:", consolidatedReportSignatories && consolidatedReportSignatories.checked_by_left || {}) +
+                renderConsolidatedSignatoryBlock("Checked by:", consolidatedReportSignatories && consolidatedReportSignatories.checked_by_right || {}) +
+              "</div>" +
+              '<div class="consolidated-signatory-bottom">' +
+                renderConsolidatedSignatoryBlock("Recommending Approval:", consolidatedReportSignatories && consolidatedReportSignatories.recommending_approval || {}) +
+                renderConsolidatedSignatoryBlock("Approved by:", consolidatedReportSignatories && consolidatedReportSignatories.approved_by || {}) +
+              "</div>" +
+            "</div>"
+          : '<div class="consolidated-report-table-wrap">' +
+              '<table class="consolidated-report-table">' +
+                renderConsolidatedReportColGroup() +
+                renderConsolidatedReportTableHead(termContext) +
+              "</table>" +
+            "</div>";
+
+        page.innerHTML =
+          '<div class="consolidated-report-page-background"></div>' +
+          '<div class="consolidated-report-page-inner">' +
+            '<div class="consolidated-report-page-header">' +
+              '<div class="consolidated-report-title">' + escapeHtml(titleLabel) + "</div>" +
+              '<div class="consolidated-report-subtitle">' + escapeHtml(campusLabel) + "</div>" +
+              '<div class="consolidated-report-subtitle">' + escapeHtml(collegeLabel) + "</div>" +
+              '<div class="consolidated-report-term">' + escapeHtml(getConsolidatedReportTermLabel(termContext)) + "</div>" +
+              '<div class="consolidated-report-page-count">Page <span class="consolidated-page-number">1</span> of <span class="consolidated-page-total">1</span></div>' +
+            "</div>" +
+            bodyHtml +
+          "</div>";
+
+        return {
+          page: page,
+          inner: page.querySelector(".consolidated-report-page-inner"),
+          table: page.querySelector(".consolidated-report-table")
+        };
+      }
+
+      function updateConsolidatedReportPageMeta(pageElements) {
+        var pages = Array.isArray(pageElements) ? pageElements : [];
+        var total = pages.length;
+        pages.forEach(function (page, index) {
+          $(page).find(".consolidated-page-number").text(index + 1);
+          $(page).find(".consolidated-page-total").text(total);
+        });
+      }
+
+      function createConsolidatedMeasurePageBundle(measureRoot, generatedPages, termContext) {
+        var pageBundle = createConsolidatedReportPage(termContext, { measure: true });
+        measureRoot.appendChild(pageBundle.page);
+        generatedPages.push(pageBundle.page);
+        return pageBundle;
+      }
+
+      function consolidatedReportPageOverflows(pageBundle) {
+        if (!pageBundle || !pageBundle.inner) {
+          return false;
+        }
+
+        return pageBundle.inner.scrollHeight > pageBundle.inner.clientHeight + 1;
+      }
+
+      function pageHasConsolidatedReportRows(pageBundle) {
+        return Boolean(pageBundle && pageBundle.table && pageBundle.table.querySelector("tbody"));
+      }
+
+      function createConsolidatedFacultyChunkElement(record, entries, options) {
+        return createConsolidatedReportElement(renderConsolidatedFacultyBlock(record, {
+          entries: entries,
+          continuation: Boolean(options && options.continuation),
+          showTotalRow: !(options && options.showTotalRow === false)
+        }));
+      }
+
+      function consolidatedFacultyChunkFits(pageBundle, record, entries, options) {
+        var blockElement = createConsolidatedFacultyChunkElement(record, entries, options);
+        var fits;
+        if (!(blockElement instanceof HTMLElement) || !pageBundle || !pageBundle.table) {
+          return false;
+        }
+
+        pageBundle.table.appendChild(blockElement);
+        fits = !consolidatedReportPageOverflows(pageBundle);
+        pageBundle.table.removeChild(blockElement);
+        return fits;
+      }
+
+      function getConsolidatedFittableEntryCount(pageBundle, record, entries, startIndex) {
+        var safeEntries = Array.isArray(entries) ? entries : [];
+        var remainingCount = safeEntries.length - startIndex;
+        var bestCount = 0;
+        var count;
+
+        for (count = 1; count <= remainingCount; count += 1) {
+          var isFinalChunk = (startIndex + count) >= safeEntries.length;
+          var chunkEntries = safeEntries.slice(startIndex, startIndex + count);
+          var fits = consolidatedFacultyChunkFits(pageBundle, record, chunkEntries, {
+            continuation: startIndex > 0,
+            showTotalRow: isFinalChunk
+          });
+
+          if (!fits) {
+            break;
+          }
+
+          bestCount = count;
+        }
+
+        return bestCount;
+      }
+
+      function appendConsolidatedFacultyChunk(pageBundle, record, entries, options) {
+        var blockElement = createConsolidatedFacultyChunkElement(record, entries, options);
+        if (!(blockElement instanceof HTMLElement) || !pageBundle || !pageBundle.table) {
+          return false;
+        }
+
+        pageBundle.table.appendChild(blockElement);
+        return true;
+      }
+
+      function buildConsolidatedPreviewHtml(records, termContext) {
+        var measureRoot = document.getElementById("consolidatedReportMeasureRoot");
+        var generatedPages = [];
+        var pageBundle;
+        var signatoryBundle;
+        var printablePages;
+
+        if (!measureRoot) {
+          return "";
+        }
+
+        measureRoot.innerHTML = "";
+        pageBundle = createConsolidatedMeasurePageBundle(measureRoot, generatedPages, termContext);
+
+        records.forEach(function (record) {
+          var entries = Array.isArray(record && record.entries) && record.entries.length > 0 ? record.entries : [];
+          var startIndex = 0;
+
+          while (startIndex < entries.length) {
+            var fitCount = getConsolidatedFittableEntryCount(pageBundle, record, entries, startIndex);
+            var chunkEntries;
+            var isFinalChunk;
+
+            if (fitCount <= 0 && pageHasConsolidatedReportRows(pageBundle)) {
+              pageBundle = createConsolidatedMeasurePageBundle(measureRoot, generatedPages, termContext);
+              fitCount = getConsolidatedFittableEntryCount(pageBundle, record, entries, startIndex);
+            }
+
+            if (fitCount <= 0) {
+              fitCount = 1;
+            }
+
+            chunkEntries = entries.slice(startIndex, startIndex + fitCount);
+            isFinalChunk = (startIndex + fitCount) >= entries.length;
+
+            if (!appendConsolidatedFacultyChunk(pageBundle, record, chunkEntries, {
+              continuation: startIndex > 0,
+              showTotalRow: isFinalChunk
+            })) {
+              break;
+            }
+
+            startIndex += fitCount;
+          }
+        });
+
+        signatoryBundle = createConsolidatedReportPage(termContext, { measure: true, signatoryPage: true });
+        measureRoot.appendChild(signatoryBundle.page);
+        generatedPages.push(signatoryBundle.page);
+
+        printablePages = generatedPages.map(function (page) {
+          return page.cloneNode(true);
+        });
+        updateConsolidatedReportPageMeta(printablePages);
+        measureRoot.innerHTML = "";
+
+        return printablePages.map(function (page) {
+          return page.outerHTML;
+        }).join("");
+      }
+
+      async function openConsolidatedReportPreview() {
+        var termContext = getConsolidatedTermContext();
+        var assignees = (Array.isArray(consolidatedReportAssignees) ? consolidatedReportAssignees : []).slice();
+        var records = [];
+        var index;
+
+        if (consolidatedReportIsBuilding) {
+          return;
+        }
+
+        if (!termContext.ayId || !termContext.semesterNum) {
+          if (consolidatedReportModal) {
+            consolidatedReportModal.show();
+          }
+          setConsolidatedReportEmptyState("Missing academic term", "Configure the current academic year and semester before generating the consolidated workload.");
+          return;
+        }
+
+        if (consolidatedReportModal) {
+          consolidatedReportModal.show();
+        }
+
+        if (!assignees.length) {
+          setConsolidatedReportEmptyState("No faculty available", "No faculty or faculty need is available in the current dashboard scope.");
+          return;
+        }
+
+        consolidatedReportIsBuilding = true;
+        showConsolidatedReportLoading("Loading faculty workload...", 5);
+        $("#btnRefreshConsolidatedReport").prop("disabled", true);
+
+        try {
+          assignees.sort(function (left, right) {
+            return String(left && left.full_name || "").localeCompare(String(right && right.full_name || ""));
+          });
+
+          for (index = 0; index < assignees.length; index += 1) {
+            var option = assignees[index];
+            var percent = Math.round(((index + 1) / assignees.length) * 86);
+            var payload;
+            var record;
+
+            setConsolidatedReportProgress(percent, "Loading " + String(option && option.full_name || "assignee") + " (" + (index + 1) + " of " + assignees.length + ")...");
+
+            try {
+              payload = await fetchConsolidatedAssigneeWorkloadPayload(option);
+              record = buildConsolidatedFacultyRecord(option, payload);
+              if (record) {
+                records.push(record);
+              }
+            } catch (facultyError) {
+              console.error("Failed to load consolidated workload", option, facultyError);
+            }
+          }
+
+          records.sort(function (left, right) {
+            return String(left && left.full_name || "").localeCompare(String(right && right.full_name || ""));
+          });
+          records.forEach(function (record, recordIndex) {
+            record.sequence = recordIndex + 1;
+          });
+
+          if (!records.length) {
+            setConsolidatedReportEmptyState("No report rows available", "There is no assigned scheduler workload yet for the current dashboard scope and term.");
+            return;
+          }
+
+          setConsolidatedReportProgress(95, "Building legal landscape preview...");
+          consolidatedReportGeneratedHtml = buildConsolidatedPreviewHtml(records, termContext);
+
+          if (!consolidatedReportGeneratedHtml) {
+            setConsolidatedReportEmptyState("Preview unavailable", "The consolidated faculty workload preview could not be generated right now.");
+            return;
+          }
+
+          $("#consolidatedReportPreviewRoot").html(consolidatedReportGeneratedHtml);
+          setConsolidatedReportProgress(100, "Preview ready");
+          setConsolidatedReportPrintEnabled(true);
+        } catch (reportError) {
+          console.error("Failed to build consolidated workload preview", reportError);
+          setConsolidatedReportEmptyState("Preview unavailable", "The consolidated faculty workload preview could not be generated right now.");
+        } finally {
+          consolidatedReportIsBuilding = false;
+          $("#btnRefreshConsolidatedReport").prop("disabled", false);
+        }
+      }
+
+      function printConsolidatedReportPreview() {
+        var reportStyleTag;
+        var frameId;
+        var existingFrame;
+        var printFrame;
+        var printDocument;
+        var printTriggered = false;
+
+        if (!consolidatedReportGeneratedHtml) {
+          return;
+        }
+
+        reportStyleTag = document.getElementById("consolidatedReportStyleTag");
+        frameId = "consolidatedReportPrintFrame";
+        existingFrame = document.getElementById(frameId);
+        if (existingFrame) {
+          existingFrame.remove();
+        }
+
+        printFrame = document.createElement("iframe");
+        printFrame.id = frameId;
+        printFrame.style.position = "fixed";
+        printFrame.style.right = "0";
+        printFrame.style.bottom = "0";
+        printFrame.style.width = "0";
+        printFrame.style.height = "0";
+        printFrame.style.border = "0";
+        printFrame.setAttribute("aria-hidden", "true");
+        document.body.appendChild(printFrame);
+
+        printDocument = printFrame.contentWindow && printFrame.contentWindow.document;
+        if (!printDocument || !printFrame.contentWindow) {
+          printFrame.remove();
+          return;
+        }
+
+        printDocument.open();
+        printDocument.write(
+          '<!DOCTYPE html>' +
+          '<html lang="en">' +
+          "<head>" +
+            '<meta charset="utf-8">' +
+            '<meta name="viewport" content="width=device-width, initial-scale=1.0">' +
+            "<title>Consolidated Faculty Workload</title>" +
+            "<style>@media print {@page { size: legal landscape; margin: 0; }}</style>" +
+            (reportStyleTag ? reportStyleTag.outerHTML : "") +
+          "</head>" +
+          '<body class="consolidated-report-print-body">' +
+            '<div class="consolidated-report-preview-root">' + consolidatedReportGeneratedHtml + "</div>" +
+          "</body>" +
+          "</html>"
+        );
+        printDocument.close();
+
+        function triggerPrint() {
+          if (printTriggered) {
+            return;
+          }
+
+          printTriggered = true;
+          setTimeout(function () {
+            try {
+              printFrame.contentWindow.focus();
+              printFrame.contentWindow.print();
+            } finally {
+              setTimeout(function () {
+                printFrame.remove();
+              }, 1500);
+            }
+          }, 350);
+        }
+
+        printFrame.addEventListener("load", triggerPrint, { once: true });
+        setTimeout(triggerPrint, 700);
       }
 
       function loadFacultyDirectoryWorkload(item) {
@@ -4392,6 +6039,14 @@ if ($facultyDirectoryJson === false) {
           facultyDirectoryWorkloadRequest = null;
         });
       }
+
+      $("#btnOpenCampusConsolidatedReport, #btnRefreshConsolidatedReport").on("click", function () {
+        openConsolidatedReportPreview();
+      });
+
+      $("#btnPrintConsolidatedReport").on("click", function () {
+        printConsolidatedReportPreview();
+      });
 
       if (!analyticsReady) {
         return;
