@@ -3946,6 +3946,9 @@ if ($consolidatedReportAssigneesJson === false) {
             <button type="button" class="btn btn-outline-primary" id="btnRefreshConsolidatedReport">
               <i class="bx bx-refresh me-1"></i> Refresh Preview
             </button>
+            <button type="button" class="btn btn-outline-success" id="btnExportConsolidatedExcel" disabled>
+              <i class="bx bx-spreadsheet me-1"></i> Export Excel
+            </button>
             <button type="button" class="btn btn-primary" id="btnPrintConsolidatedReport" disabled>
               <i class="bx bx-printer me-1"></i> Print Report
             </button>
@@ -4046,6 +4049,7 @@ if ($consolidatedReportAssigneesJson === false) {
         window.location.href
       ).href;
       var consolidatedReportGeneratedHtml = "";
+      var consolidatedReportRecords = [];
       var consolidatedReportIsBuilding = false;
       var facultyDirectoryWorkloadRequest = null;
       var facultyDirectoryWorkloadCache = new Map();
@@ -4697,8 +4701,12 @@ if ($consolidatedReportAssigneesJson === false) {
 
       function setConsolidatedReportPrintEnabled(enabled) {
         var button = document.getElementById("btnPrintConsolidatedReport");
+        var excelButton = document.getElementById("btnExportConsolidatedExcel");
         if (button) {
           button.disabled = !enabled;
+        }
+        if (excelButton) {
+          excelButton.disabled = !enabled;
         }
       }
 
@@ -4723,6 +4731,7 @@ if ($consolidatedReportAssigneesJson === false) {
         var previewRoot = document.getElementById("consolidatedReportPreviewRoot");
         var safePercent = Math.max(0, Math.min(100, Math.round(Number(percent) || 0)));
         consolidatedReportGeneratedHtml = "";
+        consolidatedReportRecords = [];
         setConsolidatedReportPrintEnabled(false);
 
         if (!previewRoot) {
@@ -4751,6 +4760,7 @@ if ($consolidatedReportAssigneesJson === false) {
       function setConsolidatedReportEmptyState(title, message) {
         var previewRoot = document.getElementById("consolidatedReportPreviewRoot");
         consolidatedReportGeneratedHtml = "";
+        consolidatedReportRecords = [];
         setConsolidatedReportPrintEnabled(false);
 
         if (previewRoot) {
@@ -5334,9 +5344,11 @@ if ($consolidatedReportAssigneesJson === false) {
           }
 
           setConsolidatedReportProgress(95, "Building legal landscape preview...");
+          consolidatedReportRecords = records;
           consolidatedReportGeneratedHtml = buildConsolidatedPreviewHtml(records, termContext);
 
           if (!consolidatedReportGeneratedHtml) {
+            consolidatedReportRecords = [];
             setConsolidatedReportEmptyState("Preview unavailable", "The consolidated faculty workload preview could not be generated right now.");
             return;
           }
@@ -5351,6 +5363,122 @@ if ($consolidatedReportAssigneesJson === false) {
           consolidatedReportIsBuilding = false;
           $("#btnRefreshConsolidatedReport").prop("disabled", false);
         }
+      }
+
+      function consolidatedExcelFilename() {
+        var scope = consolidatedReportScope || {};
+        var parts = [
+          "consolidated-faculty-workload",
+          scope.campus_name || "campus",
+          scope.college_name || "all-colleges",
+          currentAyLabel || "current-ay",
+          semesterUiLabel(currentSem) || "semester"
+        ];
+
+        return parts.join("-")
+          .replace(/[^A-Za-z0-9]+/g, "-")
+          .replace(/^-+|-+$/g, "")
+          .toLowerCase() + ".xls";
+      }
+
+      function renderConsolidatedExcelSignatoryRows() {
+        var signatories = consolidatedReportSignatories || {};
+        var rows = [
+          ["Prepared by:", signatories.prepared_by || {}],
+          ["Checked by:", signatories.checked_by_left || {}],
+          ["Checked by:", signatories.checked_by_right || {}],
+          ["Recommending Approval:", signatories.recommending_approval || {}],
+          ["Approved by:", signatories.approved_by || {}]
+        ];
+
+        return (
+          '<table class="consolidated-excel-signatories">' +
+            '<tr><th colspan="3">Signatories</th></tr>' +
+            rows.map(function (row) {
+              var label = row[0];
+              var signatory = row[1] || {};
+              return (
+                "<tr>" +
+                  '<td class="signatory-label">' + escapeHtml(label) + "</td>" +
+                  '<td class="signatory-name">' + escapeHtml(uppercaseDisplayText(signatory.signatory_name || "")) + "</td>" +
+                  '<td>' + escapeHtml(signatory.signatory_title || "") + "</td>" +
+                "</tr>"
+              );
+            }).join("") +
+          "</table>"
+        );
+      }
+
+      function buildConsolidatedExcelWorkbookHtml(records, termContext) {
+        var scope = consolidatedReportScope || {};
+        var reportRows = (Array.isArray(records) ? records : []).map(function (record) {
+          return renderConsolidatedFacultyBlock(record, {
+            entries: Array.isArray(record && record.entries) ? record.entries : [],
+            showTotalRow: true
+          });
+        }).join("");
+
+        return (
+          '<html xmlns:o="urn:schemas-microsoft-com:office:office" xmlns:x="urn:schemas-microsoft-com:office:excel" xmlns="http://www.w3.org/TR/REC-html40">' +
+          "<head>" +
+            '<meta charset="utf-8">' +
+            "<style>" +
+              "table{border-collapse:collapse;font-family:Arial,sans-serif;font-size:10pt;}" +
+              ".consolidated-report-table th,.consolidated-report-table td{border:1px solid #000;padding:4px;vertical-align:top;mso-number-format:\\@;}" +
+              ".consolidated-report-table th{text-align:center;font-weight:bold;background:#f2f2f2;}" +
+              ".consolidated-cell-index,.consolidated-cell-name,.consolidated-cell-prep,.consolidated-cell-students,.consolidated-cell-units,.consolidated-cell-hours,.consolidated-cell-load,.consolidated-cell-designation,.consolidated-cell-total,.consolidated-cell-remark,.consolidated-cell-remark-total{text-align:center;}" +
+              ".consolidated-cell-name,.consolidated-cell-code,.consolidated-cell-load,.consolidated-cell-total,.consolidated-cell-remark,.consolidated-course-title,.consolidated-designation-title{font-weight:bold;}" +
+              ".consolidated-report-title-row th{font-size:13pt;text-align:center;border:0;background:#fff;}" +
+              ".consolidated-report-subtitle-row th{font-size:11pt;text-align:center;border:0;background:#fff;}" +
+              ".consolidated-faculty-total-row td{font-weight:bold;background:#f8f8f8;}" +
+              ".consolidated-schedule-line{display:block;}" +
+              ".consolidated-excel-signatories{margin-top:18px;}" +
+              ".consolidated-excel-signatories th,.consolidated-excel-signatories td{border:1px solid #000;padding:6px;}" +
+              ".signatory-label{font-weight:bold;}" +
+              ".signatory-name{font-weight:bold;text-transform:uppercase;}" +
+            "</style>" +
+          "</head>" +
+          "<body>" +
+            '<table class="consolidated-report-table">' +
+              '<tr class="consolidated-report-title-row"><th colspan="15">CONSOLIDATED FACULTY WORKLOAD</th></tr>' +
+              '<tr class="consolidated-report-subtitle-row"><th colspan="15">' + escapeHtml(uppercaseDisplayText(scope.campus_name || "Campus")) + "</th></tr>" +
+              '<tr class="consolidated-report-subtitle-row"><th colspan="15">' + escapeHtml(uppercaseDisplayText(scope.college_name || "All Colleges")) + "</th></tr>" +
+              '<tr class="consolidated-report-subtitle-row"><th colspan="15">' + escapeHtml(getConsolidatedReportTermLabel(termContext)) + "</th></tr>" +
+              renderConsolidatedReportTableHead(termContext) +
+              reportRows +
+            "</table>" +
+            renderConsolidatedExcelSignatoryRows() +
+          "</body>" +
+          "</html>"
+        );
+      }
+
+      function exportConsolidatedReportExcel() {
+        var records = Array.isArray(consolidatedReportRecords) ? consolidatedReportRecords : [];
+        var termContext = getConsolidatedTermContext();
+        var workbookHtml;
+        var blob;
+        var url;
+        var link;
+
+        if (!records.length) {
+          return;
+        }
+
+        workbookHtml = buildConsolidatedExcelWorkbookHtml(records, termContext);
+        blob = new Blob(["\ufeff", workbookHtml], {
+          type: "application/vnd.ms-excel;charset=utf-8;"
+        });
+        url = URL.createObjectURL(blob);
+        link = document.createElement("a");
+        link.href = url;
+        link.download = consolidatedExcelFilename();
+        document.body.appendChild(link);
+        link.click();
+        document.body.removeChild(link);
+        setTimeout(function () {
+          URL.revokeObjectURL(url);
+        }, 1000);
       }
 
       function printConsolidatedReportPreview() {
@@ -6046,6 +6174,10 @@ if ($consolidatedReportAssigneesJson === false) {
 
       $("#btnPrintConsolidatedReport").on("click", function () {
         printConsolidatedReportPreview();
+      });
+
+      $("#btnExportConsolidatedExcel").on("click", function () {
+        exportConsolidatedReportExcel();
       });
 
       if (!analyticsReady) {

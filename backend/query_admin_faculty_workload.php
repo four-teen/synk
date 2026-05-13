@@ -9,14 +9,20 @@ require_once __DIR__ . '/schema_helper.php';
 require_once __DIR__ . '/schedule_block_helper.php';
 require_once __DIR__ . '/schedule_merge_helper.php';
 require_once __DIR__ . '/faculty_need_helper.php';
+require_once __DIR__ . '/scheduler_access_helper.php';
 
 header('Content-Type: application/json');
 
-if (!isset($_SESSION['user_id']) || (string)($_SESSION['role'] ?? '') !== 'admin') {
+$sessionRole = (string)($_SESSION['role'] ?? '');
+if ($sessionRole === 'scheduler') {
+    synk_scheduler_bootstrap_session_scope($conn);
+}
+
+if (!isset($_SESSION['user_id']) || !in_array($sessionRole, ['admin', 'scheduler'], true)) {
     http_response_code(401);
     echo json_encode([
         'status' => 'error',
-        'message' => 'Administrator session required.',
+        'message' => 'Administrator or scheduler session required.',
         'rows' => [],
         'external_rows' => [],
         'meta' => [],
@@ -41,6 +47,67 @@ $workloadTable = $isFacultyNeed ? synk_faculty_need_workload_table_name() : 'tbl
 $workloadIdSelect = $isFacultyNeed ? 'fw.need_workload_id AS workload_id' : 'fw.workload_id';
 $workloadTargetColumn = $isFacultyNeed ? 'fw.faculty_need_id' : 'fw.faculty_id';
 $workloadSourceReady = $ayId > 0 && $semester > 0 && synk_table_exists($conn, $workloadTable);
+
+if ($sessionRole === 'scheduler') {
+    $schedulerCampusId = (int)($_SESSION['campus_id'] ?? 0);
+
+    if ($schedulerCampusId <= 0) {
+        http_response_code(403);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Scheduler campus assignment required.',
+            'rows' => [],
+            'external_rows' => [],
+            'meta' => [],
+        ]);
+        exit;
+    }
+
+    if ($scopeCampusId > 0 && $scopeCampusId !== $schedulerCampusId) {
+        http_response_code(403);
+        echo json_encode([
+            'status' => 'error',
+            'message' => 'Requested campus is outside the scheduler assignment.',
+            'rows' => [],
+            'external_rows' => [],
+            'meta' => [],
+        ]);
+        exit;
+    }
+
+    $scopeCampusId = $schedulerCampusId;
+
+    if ($scopeCollegeId > 0 && synk_table_exists($conn, 'tbl_college')) {
+        $collegeScopeStmt = $conn->prepare("
+            SELECT campus_id
+            FROM tbl_college
+            WHERE college_id = ?
+            LIMIT 1
+        ");
+
+        if ($collegeScopeStmt instanceof mysqli_stmt) {
+            $collegeScopeStmt->bind_param('i', $scopeCollegeId);
+            $collegeScopeStmt->execute();
+            $collegeScopeResult = $collegeScopeStmt->get_result();
+            $collegeScopeRow = $collegeScopeResult instanceof mysqli_result
+                ? $collegeScopeResult->fetch_assoc()
+                : null;
+            $collegeScopeStmt->close();
+
+            if ((int)($collegeScopeRow['campus_id'] ?? 0) !== $schedulerCampusId) {
+                http_response_code(403);
+                echo json_encode([
+                    'status' => 'error',
+                    'message' => 'Requested college is outside the scheduler campus assignment.',
+                    'rows' => [],
+                    'external_rows' => [],
+                    'meta' => [],
+                ]);
+                exit;
+            }
+        }
+    }
+}
 
 function admin_faculty_workload_emit_empty_response(
     array $currentTerm,

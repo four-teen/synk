@@ -714,6 +714,23 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
                         </div>
                       </a>
 
+                      <a href="campus-consolidated-workload.php" class="workspace-card-link">
+                        <div class="workspace-card shadow-sm">
+                          <div class="d-flex justify-content-between align-items-center gap-3">
+                            <div class="d-flex align-items-center gap-3">
+                              <div class="workspace-icon bg-success">
+                                <i class="bx bx-spreadsheet"></i>
+                              </div>
+                              <div>
+                                <h6 class="mb-1 fw-bold text-dark">Consolidated Workload for <?php echo $campusName; ?></h6>
+                                <small class="text-muted">Generate the campus report for print, PDF, and Excel</small>
+                              </div>
+                            </div>
+                            <i class="bx bx-chevron-right text-success fs-4"></i>
+                          </div>
+                        </div>
+                      </a>
+
                       <div class="border-top pt-3 mt-3">
                         <h6 class="fw-bold mb-3">Current Checks</h6>
 

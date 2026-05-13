@@ -2,6 +2,10 @@
 $sidebarCurrentPage = basename($_SERVER['PHP_SELF'] ?? '');
 $sidebarActiveKey = 'dashboard';
 $sidebarOpenGroupKey = 'preparation_priority';
+$sidebarCampusName = trim((string)($_SESSION['campus_name'] ?? 'Current Campus'));
+if ($sidebarCampusName === '') {
+    $sidebarCampusName = 'Current Campus';
+}
 
 $sidebarSections = [
     [
@@ -165,6 +169,15 @@ $sidebarSections = [
                         'title' => 'Faculty Workloads',
                         'description' => 'Review completed schedules and teaching loads',
                         'pages' => ['manage-faculty-workload.php'],
+                    ],
+                    [
+                        'key' => 'campus_consolidated_workload',
+                        'href' => 'campus-consolidated-workload.php',
+                        'icon_bg' => 'bg-label-success',
+                        'icon' => 'bx-spreadsheet',
+                        'title' => 'Consolidated Workload for ' . $sidebarCampusName,
+                        'description' => 'Generate the campus workload report for print, PDF, and Excel',
+                        'pages' => ['campus-consolidated-workload.php'],
                     ],
                     [
                         'key' => 'schedule_activity',
