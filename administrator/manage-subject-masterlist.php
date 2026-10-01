@@ -22,7 +22,7 @@
 
     <title>Subject Masterlist | Synk</title>
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="../assets/img/favicon/synk-icon.png" />
     <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
     <link rel="stylesheet" href="../assets/vendor/css/core.css" />
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />

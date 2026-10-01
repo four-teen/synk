@@ -53,7 +53,7 @@ while ($f = mysqli_fetch_assoc($f_run)) {
     <meta charset="utf-8" />
     <title>Faculty Workload | Synk Scheduler</title>
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="../assets/img/favicon/synk-icon.png" />
     <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
     <link rel="stylesheet" href="../assets/vendor/css/core.css" />
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />

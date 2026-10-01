@@ -121,7 +121,7 @@
 
     <title>User Accounts | Synk</title>
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="../assets/img/favicon/synk-icon.png" />
     <link rel="stylesheet" href="../assets/vendor/fonts/boxicons.css" />
     <link rel="stylesheet" href="../assets/vendor/css/core.css" />
     <link rel="stylesheet" href="../assets/vendor/css/theme-default.css" />
@@ -199,6 +199,54 @@
 
       #accountsTable td:last-child {
         white-space: nowrap !important;
+      }
+
+      .account-display-name,
+      .account-mobile-name {
+        white-space: nowrap;
+        text-transform: uppercase;
+        line-height: 1.3;
+      }
+
+      .account-email,
+      .account-mobile-email {
+        margin-top: 0;
+        font-style: italic;
+        line-height: 1.3;
+      }
+
+      .account-email {
+        font-size: 0.85rem;
+        color: #697a8d;
+        white-space: nowrap;
+        text-transform: lowercase;
+      }
+
+      .account-role-list > div:last-child {
+        margin-bottom: 0 !important;
+      }
+
+      .account-access {
+        margin-top: 0.2rem;
+      }
+
+      .account-scope-codes {
+        white-space: nowrap;
+        overflow-x: auto;
+        max-width: 100%;
+      }
+
+      .account-mobile-grid > div {
+        min-width: 0;
+      }
+
+      .account-mobile-identity {
+        min-width: 0;
+        max-width: 100%;
+      }
+
+      .account-mobile-name {
+        overflow-x: auto;
       }
 
       .account-mobile-list {
@@ -577,8 +625,6 @@
                       <tr>
                         <th style="width:60px;">#</th>
                         <th>Display Name</th>
-                        <th>Email</th>
-                        <th>Access</th>
                         <th>Roles</th>
                         <th>Faculty Link</th>
                         <th>Assigned Scope</th>
@@ -1045,28 +1091,16 @@ function buildStatusBadgeHtml(status) {
     : "<span class='badge bg-secondary'>INACTIVE</span>";
 }
 
-function buildCollegeAccessHtml(accessRows) {
-  if (!Array.isArray(accessRows) || accessRows.length === 0) {
+function buildAssignedScopeHtml(scopeRows) {
+  if (scopeRows.length === 0) {
     return "<span class='text-muted'>N/A</span>";
   }
 
-  return accessRows.map(function(row) {
-    const label = escapeHtml(row && row.display_label ? row.display_label : "College");
-    const defaultBadge = row && row.is_default
-      ? " <span class='badge bg-label-primary ms-1'>Default</span>"
-      : "";
-
-    return "<div class='small text-wrap mb-1'>" + label + defaultBadge + "</div>";
-  }).join("");
-}
-
-function buildAssignedCollegeHtml(label) {
-  const safeLabel = $.trim(String(label || ""));
-  if (safeLabel === "") {
-    return "<span class='text-muted'>N/A</span>";
-  }
-
-  return "<div class='small text-wrap mb-1'>" + escapeHtml(safeLabel) + " <span class='badge bg-label-info ms-1'>Assigned</span></div>";
+  const codes = scopeRows.map(function(row) {
+    const code = String(row.code || '').trim() || '—';
+    return `<span title="${escapeHtml(row.label)}">${escapeHtml(code)}</span>`;
+  }).join(", ");
+  return `<div class="small account-scope-codes">${codes}</div>`;
 }
 
 function buildCollegeAccessText(accessRows, fallbackLabel) {
@@ -1207,17 +1241,18 @@ function normalizeAccountRecord(rawAccount) {
   const facultyId = String(rawAccount && rawAccount.faculty_id ? rawAccount.faculty_id : "");
   const facultyText = String(rawAccount && rawAccount.faculty_label ? rawAccount.faculty_label : "");
   const hasProfessorRole = roles.indexOf("professor") !== -1;
-  let scopeHtml = "<span class='text-muted'>N/A</span>";
-
-  if (accessRows.length > 0) {
-    scopeHtml = buildCollegeAccessHtml(accessRows);
-  } else if (hasProgramChairRole) {
-    scopeHtml = buildAssignedCollegeHtml(programChairCollegeLabel);
+  const scopeRows = accessRows.map(function(row) {
+    return {code: row.college_code, label: row.display_label || ''};
+  });
+  if (hasProgramChairRole && programChairCollegeId !== "" && !accessRows.some(function(row) {
+    return String(row.college_id) === programChairCollegeId;
+  })) {
+    scopeRows.push({code: rawAccount.program_chair_college_code, label: programChairCollegeLabel});
   }
-
-  if (hasRegistrarRole && registrarCampusLabel !== "") {
-    const registrarBadge = `<div class='small text-wrap mb-1'>${escapeHtml(registrarCampusLabel)} <span class='badge bg-label-danger ms-1'>Registrar</span></div>`;
-    scopeHtml = scopeHtml === "<span class='text-muted'>N/A</span>" ? registrarBadge : scopeHtml + registrarBadge;
+  if (hasRegistrarRole) {
+    registrarScopeRows.forEach(function(row) {
+      scopeRows.push({code: row.campus_code, label: row.display_label || ''});
+    });
   }
 
   return {
@@ -1234,7 +1269,7 @@ function normalizeAccountRecord(rawAccount) {
     facultyHtml: buildFacultyLinkHtml(facultyText, hasProfessorRole),
     facultyText: hasProfessorRole ? (facultyText || "Not linked") : "N/A",
     facultyIdValue: facultyId,
-    collegeHtml: scopeHtml,
+    collegeHtml: buildAssignedScopeHtml(scopeRows),
     collegeText: collegeText,
     collegeIds: collegeIds,
     collegeIdsAttr: JSON.stringify(collegeIds),
@@ -1251,6 +1286,7 @@ function normalizeAccountRecord(rawAccount) {
       roleText,
       facultyText,
       collegeText,
+      scopeRows.map(function(row) { return row.code || ''; }).join(' '),
       statusValue.toUpperCase()
     ].join(" ").toLowerCase()
   };
@@ -1353,10 +1389,14 @@ function buildDesktopRowHtml(account, rowNumber) {
   return `
     <tr>
       <td>${rowNumber}</td>
-      <td>${escapeHtml(account.username)}</td>
-      <td>${escapeHtml(account.email)}</td>
-      <td>${account.accessHtml}</td>
-      <td>${account.roleHtml}</td>
+      <td>
+        <div class="account-display-name fw-semibold">${escapeHtml(account.username.toUpperCase())}</div>
+        <div class="account-email">${escapeHtml(account.email.toLowerCase())}</div>
+      </td>
+      <td>
+        <div class="account-role-list">${account.roleHtml}</div>
+        <div class="account-access">${account.accessHtml}</div>
+      </td>
       <td>${account.facultyHtml}</td>
       <td>${account.collegeHtml || "<span class='text-muted'>N/A</span>"}</td>
       <td>${account.statusHtml}</td>
@@ -1370,13 +1410,12 @@ function buildMobileCardHtml(account, rowNumber) {
     <div class="card account-mobile-card">
       <div class="card-body">
         <div class="account-mobile-top">
-          <div>
+          <div class="account-mobile-identity">
             <span class="account-mobile-index">#${rowNumber}</span>
-            <h6 class="account-mobile-name mt-3">${escapeHtml(account.username)}</h6>
-            <div class="account-mobile-email mt-1">${escapeHtml(account.email)}</div>
+            <h6 class="account-mobile-name mt-3" title="${escapeHtml(account.username.toUpperCase())}">${escapeHtml(account.username.toUpperCase())}</h6>
+            <div class="account-mobile-email">${escapeHtml(account.email.toLowerCase())}</div>
           </div>
           <div class="account-mobile-badges">
-            ${account.accessHtml}
             ${account.statusHtml}
           </div>
         </div>
@@ -1384,6 +1423,7 @@ function buildMobileCardHtml(account, rowNumber) {
           <div>
             <span class="account-mobile-meta-label">Roles</span>
             <span class="account-mobile-meta-value">${escapeHtml(account.roleText)}</span>
+            <div class="account-access">${account.accessHtml}</div>
           </div>
           <div>
             <span class="account-mobile-meta-label">Faculty Link</span>
@@ -1391,7 +1431,7 @@ function buildMobileCardHtml(account, rowNumber) {
           </div>
           <div>
             <span class="account-mobile-meta-label">Assigned Scope</span>
-            <span class="account-mobile-meta-value">${escapeHtml(account.collegeText)}</span>
+            <div class="account-mobile-meta-value">${account.collegeHtml}</div>
           </div>
         </div>
         <div class="account-mobile-actions">
@@ -1497,7 +1537,7 @@ function renderAccountsLoadError() {
 
   $("#accountsTable tbody").html(`
     <tr>
-      <td colspan="9" class="text-center py-4 text-danger">
+      <td colspan="7" class="text-center py-4 text-danger">
         Unable to load the account list right now.
       </td>
     </tr>
@@ -1516,7 +1556,7 @@ function renderAccountsLoadError() {
 function renderAccountsEmptyState() {
   $("#accountsTable tbody").html(`
     <tr>
-      <td colspan="9" class="text-center py-4 text-muted">
+      <td colspan="7" class="text-center py-4 text-muted">
         No accounts found.
       </td>
     </tr>

@@ -192,7 +192,7 @@ if (isset($_POST['login'])) {
 
     <meta name="description" content="" />
 
-    <link rel="icon" type="image/x-icon" href="assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="assets/img/favicon/synk-icon.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -339,10 +339,30 @@ if (isset($_POST['login'])) {
         text-align: center;
         font-size: 1.55rem;
         font-weight: 800;
-        letter-spacing: -0.03em;
+        letter-spacing: 0.06em;
         line-height: 1.1;
         text-transform: lowercase;
         color: var(--login-title);
+      }
+
+      .login-brand span:nth-child(1) {
+        color: #007bff;
+        text-shadow: 0 0 8px rgba(0, 123, 255, 0.3);
+      }
+
+      .login-brand span:nth-child(2) {
+        color: #ff8a00;
+        text-shadow: 0 0 8px rgba(255, 138, 0, 0.3);
+      }
+
+      .login-brand span:nth-child(3) {
+        color: #e000d5;
+        text-shadow: 0 0 8px rgba(224, 0, 213, 0.3);
+      }
+
+      .login-brand span:nth-child(4) {
+        color: #00b85a;
+        text-shadow: 0 0 8px rgba(0, 184, 90, 0.3);
       }
 
       .login-title {
@@ -805,12 +825,12 @@ if (isset($_POST['login'])) {
 
           <div class="card login-card">
             <div class="card-body">
-              <div class="login-brand">sksu synk</div>
+              <div class="login-brand"><span>s</span><span>y</span><span>n</span><span>k</span></div>
 
               <h1 class="login-title">Centralized Academic Management Platform</h1>
               <p class="login-subtitle">
                 Official platform for centralized academic operations, designed to unify scheduling,
-                enrollment, billing, and other university processes in one system.
+                enrollment, faculty profiling, and other university processes in one system.
                 <small>Sultan Kudarat State University</small>
               </p>
 
@@ -897,7 +917,7 @@ if (isset($_POST['login'])) {
                   Access is limited to approved Synk administrator, scheduler, professor, program chair, and registrar accounts.
                 </div>
 
-                <div class="login-project-note">SAM + eSKALA project 2026</div>
+                <div class="login-project-note">SYNKronized 2025</div>
               </div>
             </div>
           </div>

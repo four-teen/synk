@@ -387,17 +387,20 @@ function query_accounts_payload_from_row(array $row, array $roleRows, array $acc
         'college_access' => array_values(array_map(static function (array $item): array {
             return [
                 'college_id' => (int)($item['college_id'] ?? 0),
+                'college_code' => (string)($item['college_code'] ?? ''),
                 'display_label' => (string)($item['display_label'] ?? ''),
                 'is_default' => !empty($item['is_default'])
             ];
         }, $accessRows)),
         'program_chair_college_id' => (int)($row['college_id'] ?? 0),
+        'program_chair_college_code' => (string)($row['college_code'] ?? ''),
         'program_chair_college_label' => $programChairCollegeLabel,
         'registrar_campus_id' => $defaultRegistrarCampusId,
         'registrar_campus_label' => (string)($defaultRegistrarScopeRow['display_label'] ?? ''),
         'registrar_scope' => array_values(array_map(static function (array $item): array {
             return [
                 'campus_id' => (int)($item['campus_id'] ?? 0),
+                'campus_code' => (string)($item['campus_code'] ?? ''),
                 'display_label' => (string)($item['display_label'] ?? ''),
                 'is_default' => !empty($item['is_default']),
             ];

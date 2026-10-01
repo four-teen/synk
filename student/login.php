@@ -36,7 +36,7 @@ if (isset($_SESSION['user_id'], $_SESSION['role'])) {
 
     <title>Student Login | SKSU Synk</title>
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="../assets/img/favicon/synk-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link
