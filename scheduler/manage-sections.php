@@ -121,7 +121,7 @@ $prospectusVersionsJson = json_encode($prospectusVersionsByProgram, JSON_UNESCAP
     <meta charset="utf-8" />
     <title>Section Generator | Synk Scheduler</title>
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="../assets/img/favicon/synk-icon.png" />
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Public+Sans:wght@300;400;500;600;700&display=swap" rel="stylesheet" />

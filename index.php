@@ -58,7 +58,7 @@ if (isset($_POST['complete_role_login'])) {
         synk_login_json_response(['status' => 'role_selection_missing']);
     }
 
-    $selectedRole = strtolower(trim((string)($_POST['selected_role'] ?? '')));
+    $selectedRole = synk_normalize_role_code((string)($_POST['selected_role'] ?? ''));
     $userId = (int)($pendingLogin['user_id'] ?? 0);
     $row = synk_find_useraccount_by_id($conn, $userId);
 
@@ -192,7 +192,7 @@ if (isset($_POST['login'])) {
 
     <meta name="description" content="" />
 
-    <link rel="icon" type="image/x-icon" href="assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="assets/img/favicon/synk-icon.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
@@ -339,10 +339,30 @@ if (isset($_POST['login'])) {
         text-align: center;
         font-size: 1.55rem;
         font-weight: 800;
-        letter-spacing: -0.03em;
+        letter-spacing: 0.06em;
         line-height: 1.1;
         text-transform: lowercase;
         color: var(--login-title);
+      }
+
+      .login-brand span:nth-child(1) {
+        color: #007bff;
+        text-shadow: 0 0 8px rgba(0, 123, 255, 0.3);
+      }
+
+      .login-brand span:nth-child(2) {
+        color: #ff8a00;
+        text-shadow: 0 0 8px rgba(255, 138, 0, 0.3);
+      }
+
+      .login-brand span:nth-child(3) {
+        color: #e000d5;
+        text-shadow: 0 0 8px rgba(224, 0, 213, 0.3);
+      }
+
+      .login-brand span:nth-child(4) {
+        color: #00b85a;
+        text-shadow: 0 0 8px rgba(0, 184, 90, 0.3);
       }
 
       .login-title {
@@ -805,12 +825,12 @@ if (isset($_POST['login'])) {
 
           <div class="card login-card">
             <div class="card-body">
-              <div class="login-brand">sksu synk</div>
+              <div class="login-brand"><span>s</span><span>y</span><span>n</span><span>k</span></div>
 
               <h1 class="login-title">Centralized Academic Management Platform</h1>
               <p class="login-subtitle">
                 Official platform for centralized academic operations, designed to unify scheduling,
-                enrollment, billing, and other university processes in one system.
+                enrollment, faculty profiling, and other university processes in one system.
                 <small>Sultan Kudarat State University</small>
               </p>
 
@@ -894,10 +914,10 @@ if (isset($_POST['login'])) {
                 <?php endif; ?>
 
                 <div class="login-footnote">
-                  Access is limited to approved Synk administrator, scheduler, professor, program chair, and registrar accounts.
+                  Access is limited to approved Synk administrator, scheduler, professor, program chair, registrar, VPAA, and DI accounts.
                 </div>
 
-                <div class="login-project-note">SAM + eSKALA project 2026</div>
+                <div class="login-project-note">SYNKronized 2025</div>
               </div>
             </div>
           </div>
@@ -1054,7 +1074,8 @@ if (isset($_POST['login'])) {
           }
 
           return roleRows.map(function (roleRow) {
-            const role = String(roleRow && roleRow.role ? roleRow.role : "").toLowerCase();
+            const rawRole = String(roleRow && roleRow.role ? roleRow.role : "").trim().toLowerCase();
+            const role = ["vpaa", "di"].indexOf(rawRole) !== -1 ? rawRole.toUpperCase() : rawRole;
             const label = String(roleRow && roleRow.label ? roleRow.label : role);
 
             if (role === "") {
@@ -1086,6 +1107,16 @@ if (isset($_POST['login'])) {
                 icon: "bx-clipboard-check",
                 iconClass: "bg-label-danger",
                 description: "Campus registrar queue, draft review, and enrollment approval tracking."
+              },
+              VPAA: {
+                icon: "bx-briefcase-alt-2",
+                iconClass: "bg-label-primary",
+                description: "Open the VPAA module and account dashboard."
+              },
+              DI: {
+                icon: "bx-book-open",
+                iconClass: "bg-label-info",
+                description: "Open the DI module and account dashboard."
               }
             };
 

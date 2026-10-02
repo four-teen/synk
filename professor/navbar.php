@@ -63,6 +63,13 @@ $professorAvatarUrl = synk_resolve_user_avatar_url($professorEmail, (string)($_S
           <li><div class="dropdown-divider"></div></li>
 
           <li>
+            <a class="dropdown-item" href="manage-profile.php">
+              <i class="bx bx-id-card me-2"></i>
+              <span class="align-middle">Manage Profile</span>
+            </a>
+          </li>
+
+          <li>
             <a class="dropdown-item" href="../logout.php">
               <i class="bx bx-power-off me-2"></i>
               <span class="align-middle">Log Out</span>

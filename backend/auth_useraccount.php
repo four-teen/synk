@@ -49,11 +49,18 @@ function synk_is_allowed_email_domain(string $email, string $allowedDomain): boo
 
 function synk_supported_module_roles(): array
 {
-    return ['admin', 'scheduler', 'professor', 'program_chair', 'registrar'];
+    return ['admin', 'scheduler', 'professor', 'program_chair', 'registrar', 'VPAA', 'DI'];
+}
+
+function synk_normalize_role_code(string $role): string
+{
+    $role = strtolower(trim($role));
+    return in_array($role, ['vpaa', 'di'], true) ? strtoupper($role) : $role;
 }
 
 function synk_role_label(string $role): string
 {
+    $role = synk_normalize_role_code($role);
     if ($role === 'admin') {
         return 'Administrator';
     }
@@ -83,6 +90,7 @@ function synk_role_label(string $role): string
 
 function synk_role_redirect_path(string $role): ?string
 {
+    $role = synk_normalize_role_code($role);
     if ($role === 'admin') {
         return 'administrator/';
     }
@@ -101,6 +109,14 @@ function synk_role_redirect_path(string $role): ?string
 
     if ($role === 'registrar') {
         return 'registrar/';
+    }
+
+    if ($role === 'VPAA') {
+        return 'vpaa/';
+    }
+
+    if ($role === 'DI') {
+        return 'di/';
     }
 
     if ($role === 'student') {
@@ -181,7 +197,7 @@ function synk_normalize_supported_roles($roles): array
     $normalized = [];
 
     foreach ($roles as $role) {
-        $safeRole = strtolower(trim((string)$role));
+        $safeRole = synk_normalize_role_code((string)$role);
         if ($safeRole === '' || !isset($supportedLookup[$safeRole])) {
             continue;
         }
@@ -249,7 +265,7 @@ function synk_fetch_useraccount_role_rows(mysqli $conn, int $userId, string $fal
     $roleRows = [];
 
     while ($result instanceof mysqli_result && ($row = $result->fetch_assoc())) {
-        $safeRole = strtolower(trim((string)($row['role'] ?? '')));
+        $safeRole = synk_normalize_role_code((string)($row['role'] ?? ''));
         if ($safeRole === '') {
             continue;
         }
@@ -284,6 +300,7 @@ function synk_fetch_useraccount_role_rows(mysqli $conn, int $userId, string $fal
     }
 
     if ($primaryRole === '') {
+        $fallbackRole = synk_normalize_role_code($fallbackRole);
         $primaryRole = in_array($fallbackRole, $normalizedRoles, true) ? $fallbackRole : $normalizedRoles[0];
     }
 
@@ -310,7 +327,7 @@ function synk_fetch_useraccount_role_rows_bulk(mysqli $conn, array $fallbackRole
             continue;
         }
 
-        $normalizedFallbacks[$safeUserId] = trim((string)$fallbackRole);
+        $normalizedFallbacks[$safeUserId] = synk_normalize_role_code((string)$fallbackRole);
     }
 
     if (empty($normalizedFallbacks)) {
@@ -343,7 +360,7 @@ function synk_fetch_useraccount_role_rows_bulk(mysqli $conn, array $fallbackRole
     $rawRowsByUser = [];
     while ($row = $result->fetch_assoc()) {
         $userId = (int)($row['user_id'] ?? 0);
-        $safeRole = strtolower(trim((string)($row['role'] ?? '')));
+        $safeRole = synk_normalize_role_code((string)($row['role'] ?? ''));
 
         if ($userId <= 0 || $safeRole === '') {
             continue;
@@ -408,22 +425,22 @@ function synk_fetch_useraccount_role_rows_bulk(mysqli $conn, array $fallbackRole
 function synk_useraccount_primary_role(array $roleRows, string $fallbackRole = ''): string
 {
     foreach ($roleRows as $row) {
-        $role = strtolower(trim((string)($row['role'] ?? '')));
+        $role = synk_normalize_role_code((string)($row['role'] ?? ''));
         if (!empty($row['is_primary']) && $role !== '') {
             return $role;
         }
     }
 
-    $safeFallbackRole = strtolower(trim($fallbackRole));
+    $safeFallbackRole = synk_normalize_role_code($fallbackRole);
     if ($safeFallbackRole !== '') {
         foreach ($roleRows as $row) {
-            if (strtolower(trim((string)($row['role'] ?? ''))) === $safeFallbackRole) {
+            if (synk_normalize_role_code((string)($row['role'] ?? '')) === $safeFallbackRole) {
                 return $safeFallbackRole;
             }
         }
     }
 
-    return isset($roleRows[0]['role']) ? strtolower(trim((string)$roleRows[0]['role'])) : '';
+    return isset($roleRows[0]['role']) ? synk_normalize_role_code((string)$roleRows[0]['role']) : '';
 }
 
 function synk_role_rows_to_payload(array $roleRows): array
@@ -431,7 +448,7 @@ function synk_role_rows_to_payload(array $roleRows): array
     $payload = [];
 
     foreach ($roleRows as $row) {
-        $role = strtolower(trim((string)($row['role'] ?? '')));
+        $role = synk_normalize_role_code((string)($row['role'] ?? ''));
         if ($role === '') {
             continue;
         }
@@ -446,14 +463,51 @@ function synk_role_rows_to_payload(array $roleRows): array
     return array_values($payload);
 }
 
+function synk_useraccount_has_active_role(mysqli $conn, array $account, string $role): bool
+{
+    $role = synk_normalize_role_code($role);
+    $fallbackHasRole = synk_normalize_role_code((string)($account['role'] ?? '')) === $role;
+    if (!synk_useraccount_role_table_exists($conn)) {
+        return $fallbackHasRole;
+    }
+
+    $stmt = $conn->prepare('SELECT role, status FROM `' . synk_useraccount_role_table_name() . '` WHERE user_id = ?');
+    if (!$stmt) {
+        return false;
+    }
+    $userId = (int)($account['user_id'] ?? 0);
+    $stmt->bind_param('i', $userId);
+    if (!$stmt->execute()) {
+        $stmt->close();
+        return false;
+    }
+    $result = $stmt->get_result();
+    $hasRoleRows = false;
+    $hasActiveRole = false;
+    while ($roleRow = $result->fetch_assoc()) {
+        $hasRoleRows = true;
+        if (synk_normalize_role_code((string)$roleRow['role']) === $role && $roleRow['status'] === 'active') {
+            $hasActiveRole = true;
+        }
+    }
+    $result->close();
+    $stmt->close();
+
+    return $hasRoleRows ? $hasActiveRole : $fallbackHasRole;
+}
+
 function synk_filter_loginable_role_rows(mysqli $conn, array $row, array $roleRows): array
 {
     $supportedLookup = array_fill_keys(synk_supported_module_roles(), true);
     $loginable = [];
 
     foreach ($roleRows as $roleRow) {
-        $role = strtolower(trim((string)($roleRow['role'] ?? '')));
+        $role = synk_normalize_role_code((string)($roleRow['role'] ?? ''));
         if ($role === '' || !isset($supportedLookup[$role])) {
+            continue;
+        }
+
+        if (in_array($role, ['VPAA', 'DI'], true) && !synk_useraccount_has_active_role($conn, $row, $role)) {
             continue;
         }
 
@@ -487,7 +541,7 @@ function synk_persist_useraccount_roles(mysqli $conn, int $userId, array $roles,
         return 'invalid_role';
     }
 
-    $safePrimaryRole = strtolower(trim($primaryRole));
+    $safePrimaryRole = synk_normalize_role_code($primaryRole);
     if ($safePrimaryRole === '' || !in_array($safePrimaryRole, $normalizedRoles, true)) {
         $safePrimaryRole = $normalizedRoles[0];
     }
@@ -748,9 +802,9 @@ function synk_complete_user_login(
         }
     }
 
-    $activeRole = strtolower(trim((string)$selectedRole));
+    $activeRole = synk_normalize_role_code((string)$selectedRole);
     $allowedRoles = array_map(static function (array $roleRow): string {
-        return strtolower(trim((string)($roleRow['role'] ?? '')));
+        return synk_normalize_role_code((string)($roleRow['role'] ?? ''));
     }, $availableRoleRows);
 
     if ($activeRole === '' || !in_array($activeRole, $allowedRoles, true)) {
@@ -758,7 +812,7 @@ function synk_complete_user_login(
     }
 
     if ($activeRole === '') {
-        $activeRole = strtolower(trim((string)($row['role'] ?? '')));
+        $activeRole = synk_normalize_role_code((string)($row['role'] ?? ''));
     }
 
     synk_clear_pending_role_login();

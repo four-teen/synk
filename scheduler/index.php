@@ -51,7 +51,7 @@ $campusViewEnabled = (int)($_SESSION['campus_id'] ?? 0) > 0;
 
     <meta name="description" content="" />
 
-    <link rel="icon" type="image/x-icon" href="../assets/img/favicon/favicon.ico" />
+    <link rel="icon" type="image/png" href="../assets/img/favicon/synk-icon.png" />
 
     <link rel="preconnect" href="https://fonts.googleapis.com" />
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />

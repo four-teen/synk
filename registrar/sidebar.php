@@ -53,9 +53,7 @@ $registrarSidebarItems = [
   <div class="app-brand demo">
     <a href="index.php" class="app-brand-link">
       <span class="app-brand-logo demo">
-        <svg width="25" viewBox="0 0 25 42" version="1.1" xmlns="http://www.w3.org/2000/svg">
-          <path fill="#696cff" d="M13.79.36 3.4 7.44C.57 9.69-.38 12.48.56 15.8c.13.43.54 1.99 2.57 3.43.69.49 2.2 1.15 4.52 1.99l-.05.04-4.96 3.29C.45 26.3.09 28.51 1.56 31.17c1.27 1.64 3.64 2.09 5.53 1.36 1.25-.48 4.36-2.54 9.33-6.17 1.62-1.88 2.28-3.92 1.99-6.14-.44-2.7-2.23-4.66-5.36-5.86l-2.13-.9 7.7-5.49L13.79.36Z"/>
-        </svg>
+        <img src="../assets/img/favicon/synk-icon.png" width="40" height="40" alt="" />
       </span>
       <span class="app-brand-text demo menu-text fw-bolder ms-2">Synk</span>
     </a>

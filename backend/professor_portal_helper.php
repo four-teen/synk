@@ -579,6 +579,20 @@ function synk_professor_program_label(array $row): string
     return trim($label);
 }
 
+function synk_professor_meeting_details(array $row): array
+{
+    $dayLabels = ['M' => 'Mon', 'T' => 'Tue', 'W' => 'Wed', 'Th' => 'Thu', 'F' => 'Fri', 'S' => 'Sat'];
+    $days = synk_normalize_schedule_days(json_decode((string)($row['days_json'] ?? ''), true));
+    $type = strtoupper(trim((string)($row['schedule_type'] ?? 'LEC')));
+    return [
+        'type' => $type,
+        'type_label' => $type === 'LAB' ? 'Lab' : ($type === 'LEC' ? 'Lecture' : ($type !== '' ? $type : 'Class')),
+        'days' => implode(', ', array_map(static function (string $day) use ($dayLabels): string { return $dayLabels[$day] ?? $day; }, $days)),
+        'time' => synk_professor_format_time_range((string)($row['time_start'] ?? ''), (string)($row['time_end'] ?? '')),
+        'room' => trim((string)($row['room_name'] ?? '')),
+    ];
+}
+
 function synk_professor_fetch_subject_rows_by_academic_year(mysqli $conn, int $facultyId, int $ayId, int $semester = 0): array
 {
     if (
@@ -734,10 +748,14 @@ function synk_professor_fetch_subject_rows_by_academic_year(mysqli $conn, int $f
                 'student_count' => $studentCount,
                 'schedule_lines' => [],
                 'room_values' => [],
+                'meetings' => [],
             ];
         }
 
         $scheduleType = strtoupper(trim((string)($row['schedule_type'] ?? 'LEC')));
+        $meeting = synk_professor_meeting_details($row);
+        $meetingKey = json_encode($meeting);
+        $subjectsByOffering[$ownerOfferingId]['meetings'][$meetingKey] = $meeting;
         $days = synk_professor_format_days((string)($row['days_json'] ?? ''));
         $timeRange = synk_professor_format_time_range((string)($row['time_start'] ?? ''), (string)($row['time_end'] ?? ''));
         $scheduleLine = trim(implode(' ', array_filter([
@@ -768,6 +786,7 @@ function synk_professor_fetch_subject_rows_by_academic_year(mysqli $conn, int $f
             : 'Room not assigned';
 
         unset($subject['schedule_lines'], $subject['room_values']);
+        $subject['meetings'] = array_values($subject['meetings']);
         $rows[] = $subject;
     }
 
