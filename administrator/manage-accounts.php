@@ -591,7 +591,7 @@
               <div class="accounts-card-top d-flex flex-column flex-xl-row justify-content-between align-items-xl-center">
                 <div class="accounts-card-copy">
                   <h5 class="m-0">Accounts List</h5>
-                  <small class="text-muted">Search and manage shared administrator, scheduler, professor, program chair, and registrar accounts</small>
+                  <small class="text-muted">Search and manage shared administrator, scheduler, professor, program chair, registrar, VPAA, and DI accounts</small>
                 </div>
                 <div class="accounts-toolbar align-items-stretch">
                   <div class="input-group accounts-search-group">
@@ -731,6 +731,24 @@
                     <div class="form-check-label">
                       <span class="account-role-title">Registrar</span>
                       <span class="account-role-note">Review submitted enrollment drafts inside the assigned campus queue.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_VPAA" value="VPAA">
+                    <div class="form-check-label">
+                      <span class="account-role-title">VPAA</span>
+                      <span class="account-role-note">Open the dedicated VPAA module with the shared login.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="add" name="roles[]" id="add_role_DI" value="DI">
+                    <div class="form-check-label">
+                      <span class="account-role-title">DI</span>
+                      <span class="account-role-note">Open the dedicated DI module with the shared login.</span>
                     </div>
                   </div>
                 </label>
@@ -884,6 +902,24 @@
                     <div class="form-check-label">
                       <span class="account-role-title">Registrar</span>
                       <span class="account-role-note">Review submitted enrollment drafts inside the assigned campus queue.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_VPAA" value="VPAA">
+                    <div class="form-check-label">
+                      <span class="account-role-title">VPAA</span>
+                      <span class="account-role-note">Open the dedicated VPAA module with the shared login.</span>
+                    </div>
+                  </div>
+                </label>
+                <label class="account-role-card">
+                  <div class="form-check m-0">
+                    <input type="checkbox" class="form-check-input account-role-checkbox" data-mode="edit" name="roles[]" id="edit_role_DI" value="DI">
+                    <div class="form-check-label">
+                      <span class="account-role-title">DI</span>
+                      <span class="account-role-note">Open the dedicated DI module with the shared login.</span>
                     </div>
                   </div>
                 </label>
@@ -1127,8 +1163,13 @@ function buildFacultyLinkHtml(facultyText, hasProfessorRole) {
   return "<span class='small text-wrap'>" + escapeHtml(facultyText) + "</span>";
 }
 
+function normalizeRoleCode(role) {
+  const value = String(role || "").trim().toLowerCase();
+  return ["vpaa", "di"].indexOf(value) !== -1 ? value.toUpperCase() : value;
+}
+
 function roleLabel(role) {
-  const value = String(role || "").toLowerCase();
+  const value = normalizeRoleCode(role);
 
   if (value === "admin") {
     return "Administrator";
@@ -1158,7 +1199,7 @@ function normalizeRolePayload(rawAccount) {
 
   if (rawPayload.length > 0) {
     return rawPayload.map(function(item) {
-      const role = String(item && item.role ? item.role : "").toLowerCase();
+      const role = normalizeRoleCode(item && item.role ? item.role : "");
 
       return {
         role: role,
@@ -1170,7 +1211,7 @@ function normalizeRolePayload(rawAccount) {
     });
   }
 
-  const roleValue = String(rawAccount && rawAccount.role ? rawAccount.role : "").toLowerCase();
+  const roleValue = normalizeRoleCode(rawAccount && rawAccount.role ? rawAccount.role : "");
   if (roleValue === "") {
     return [];
   }
@@ -1265,7 +1306,7 @@ function normalizeAccountRecord(rawAccount) {
     roleText: roleText,
     roles: roles,
     rolesAttr: JSON.stringify(roles),
-    primaryRoleValue: String(rawAccount && rawAccount.primary_role ? rawAccount.primary_role : (roles[0] || "")),
+    primaryRoleValue: normalizeRoleCode(rawAccount && rawAccount.primary_role ? rawAccount.primary_role : (roles[0] || "")),
     facultyHtml: buildFacultyLinkHtml(facultyText, hasProfessorRole),
     facultyText: hasProfessorRole ? (facultyText || "Not linked") : "N/A",
     facultyIdValue: facultyId,
@@ -1620,13 +1661,13 @@ function resetCollegeAccessFields(mode) {
 
 function getSelectedRoles(mode) {
   return $("#" + mode + "AccountForm .account-role-checkbox:checked").map(function() {
-    return String($(this).val() || "").toLowerCase();
+    return normalizeRoleCode($(this).val());
   }).get();
 }
 
 function setSelectedRoles(mode, roles) {
   const normalized = Array.isArray(roles)
-    ? roles.map(function(role) { return String(role || "").toLowerCase(); }).filter(Boolean)
+    ? roles.map(normalizeRoleCode).filter(Boolean)
     : [];
 
   $("#" + mode + "AccountForm .account-role-checkbox").prop("checked", false);
@@ -1656,8 +1697,8 @@ function buildPrimaryRoleOptions(mode, preferredValue) {
     return;
   }
 
-  const desiredValue = selectedRoles.indexOf(String(preferredValue || "")) !== -1
-    ? String(preferredValue)
+  const desiredValue = selectedRoles.indexOf(normalizeRoleCode(preferredValue)) !== -1
+    ? normalizeRoleCode(preferredValue)
     : selectedRoles[0];
 
   $primarySelect.val(desiredValue);

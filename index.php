@@ -58,7 +58,7 @@ if (isset($_POST['complete_role_login'])) {
         synk_login_json_response(['status' => 'role_selection_missing']);
     }
 
-    $selectedRole = strtolower(trim((string)($_POST['selected_role'] ?? '')));
+    $selectedRole = synk_normalize_role_code((string)($_POST['selected_role'] ?? ''));
     $userId = (int)($pendingLogin['user_id'] ?? 0);
     $row = synk_find_useraccount_by_id($conn, $userId);
 
@@ -914,7 +914,7 @@ if (isset($_POST['login'])) {
                 <?php endif; ?>
 
                 <div class="login-footnote">
-                  Access is limited to approved Synk administrator, scheduler, professor, program chair, and registrar accounts.
+                  Access is limited to approved Synk administrator, scheduler, professor, program chair, registrar, VPAA, and DI accounts.
                 </div>
 
                 <div class="login-project-note">SYNKronized 2025</div>
@@ -1074,7 +1074,8 @@ if (isset($_POST['login'])) {
           }
 
           return roleRows.map(function (roleRow) {
-            const role = String(roleRow && roleRow.role ? roleRow.role : "").toLowerCase();
+            const rawRole = String(roleRow && roleRow.role ? roleRow.role : "").trim().toLowerCase();
+            const role = ["vpaa", "di"].indexOf(rawRole) !== -1 ? rawRole.toUpperCase() : rawRole;
             const label = String(roleRow && roleRow.label ? roleRow.label : role);
 
             if (role === "") {
@@ -1106,6 +1107,16 @@ if (isset($_POST['login'])) {
                 icon: "bx-clipboard-check",
                 iconClass: "bg-label-danger",
                 description: "Campus registrar queue, draft review, and enrollment approval tracking."
+              },
+              VPAA: {
+                icon: "bx-briefcase-alt-2",
+                iconClass: "bg-label-primary",
+                description: "Open the VPAA module and account dashboard."
+              },
+              DI: {
+                icon: "bx-book-open",
+                iconClass: "bg-label-info",
+                description: "Open the DI module and account dashboard."
               }
             };
 

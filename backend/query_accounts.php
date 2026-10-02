@@ -179,7 +179,7 @@ function query_accounts_build_update(mysqli $conn, array $payload): array
 function query_accounts_validate_payload(array $input, string $allowedDomain, bool $requireUserId = false): array
 {
     $roles = synk_normalize_supported_roles($input['roles'] ?? ($input['role'] ?? []));
-    $primaryRole = strtolower(trim((string)($input['primary_role'] ?? ($input['role'] ?? ''))));
+    $primaryRole = synk_normalize_role_code((string)($input['primary_role'] ?? ($input['role'] ?? '')));
     $incomingCollegeIds = $input['college_ids'] ?? ($input['college_id'] ?? []);
     $defaultCollegeRaw = $input['default_college_id'] ?? ($input['college_id'] ?? '');
     $programChairCollegeRaw = $input['program_chair_college_id'] ?? '';
@@ -324,7 +324,7 @@ function query_accounts_role_payload(array $roleRows, string $fallbackRole = '')
     $payload = [];
 
     foreach ($roleRows as $row) {
-        $role = strtolower(trim((string)($row['role'] ?? '')));
+        $role = synk_normalize_role_code((string)($row['role'] ?? ''));
         if ($role === '') {
             continue;
         }
